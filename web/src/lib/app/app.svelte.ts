@@ -9,7 +9,7 @@ import { keyOf, type Ctx } from '../model/projects';
 import { busy } from '../model/status';
 import { taskPrompt } from '../model/tasks';
 import { leadsToMatch, treeIndex, treeRoots, type TreeIndex } from '../model/tree';
-import type { MachineSession, OpId, Project, Task, TaskStatus } from '../protocol';
+import type { MachineSession, OpId, Project, SessionDetail, Task, TaskStatus } from '../protocol';
 import type { Client } from '../state/client.svelte';
 import { Dialogs, Toasts } from './overlays.svelte';
 import { Prefs } from './prefs.svelte';
@@ -47,6 +47,11 @@ export class App {
       const groups = groupSessions(this.ctx, this.project, list, this.prefs.group, this.view.collapsed, this.view.filtering);
       return { visible, tree, groups };
     });
+  }
+
+  /** The detail of a session whose feed is held (the open session), else null. */
+  detail(s: SessionRef): SessionDetail | null {
+    return this.client.sessions.get(s.machine_id, s.id)?.detail ?? null;
   }
 
   get desk(): boolean {

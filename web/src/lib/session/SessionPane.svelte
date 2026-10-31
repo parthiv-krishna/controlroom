@@ -15,7 +15,7 @@
 
   let { s, header = false }: { s: MachineSession; header?: boolean } = $props();
   const app = useApp();
-  const detail = $derived(app.client.sessions.get(s.machine_id, s.id)?.detail ?? null);
+  const detail = $derived(app.detail(s));
   const key = $derived(keyOf(s));
   const hasSchedules = $derived(app.client.feed.scheduleList.some((x) => x.machine_id === s.machine_id && x.session_id === s.id));
   const showSchedules = $derived(app.view.panels['schedules:' + key] ?? hasSchedules);

@@ -105,6 +105,7 @@ input[type='file']::file-selector-button { font: inherit; color: var(--fg); back
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
 .btn.ghost { border-color: transparent; color: var(--muted); }
 .btn.ghost:hover:not(:disabled) { color: var(--fg); border-color: transparent; background: var(--bg3); }
+.btn.ghost.bad-t, .btn.ghost.bad-t:hover:not(:disabled) { color: var(--bad); }
 .btn.sm { padding: 3px 9px; font-size: 12.5px; }
 .btn.xs { padding: 1px 7px; font-size: 12px; }
 .btn.on { border-color: var(--accent); }

@@ -1,23 +1,34 @@
 // Svelte actions shared by menus and popovers.
 import type { Action } from 'svelte/action';
 
-/** Calls `close` on a mousedown outside the node or on Escape (which it consumes). */
-export const dismissable: Action<HTMLElement, () => void> = (node, close) => {
-  let handler = close;
+export interface Dismiss {
+  /** Closes the popup. */
+  close: () => void;
+  /** The toggle that opened the popup: a mousedown there is not "outside" (it toggles). */
+  anchor?: HTMLElement | null;
+}
+
+/**
+ * For a popup that is mounted only while open: calls `close` on a mousedown outside it (and its
+ * anchor), or on Escape, which it consumes.
+ */
+export const dismissable: Action<HTMLElement, Dismiss> = (node, initial) => {
+  let opts = initial;
   const down = (e: MouseEvent) => {
-    if (!node.contains(e.target as Node)) handler();
+    const t = e.target as Node;
+    if (!node.contains(t) && !opts.anchor?.contains(t)) opts.close();
   };
   const key = (e: KeyboardEvent) => {
     if (e.key !== 'Escape') return;
     e.stopPropagation();
     e.preventDefault();
-    handler();
+    opts.close();
   };
   window.addEventListener('mousedown', down);
   window.addEventListener('keydown', key, true);
   return {
-    update(next: () => void) {
-      handler = next;
+    update(next: Dismiss) {
+      opts = next;
     },
     destroy() {
       window.removeEventListener('mousedown', down);

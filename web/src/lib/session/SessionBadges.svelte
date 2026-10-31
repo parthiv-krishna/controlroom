@@ -13,6 +13,9 @@
   let { s, detail }: { s: MachineSession; detail: SessionDetail | null } = $props();
   const app = useApp();
   let pop = $state<'sandbox' | 'peers' | null>(null);
+  let sandboxAnchor: HTMLElement | undefined = $state();
+  let peersAnchor: HTMLElement | undefined = $state();
+  const close = () => (pop = null);
 
   const sb = $derived(s.sandbox);
   const lw = $derived(s.live_work);
@@ -42,12 +45,12 @@
 </script>
 
 <span class="badges">
-  <span class="wrap" use:dismissable={() => (pop = null)}>
+  <span class="wrap" bind:this={sandboxAnchor}>
     <button class="sbx lv-{sb.level}" class:looser={sb.looser_than_default} title={sb.looser_than_default ? `Looser than the defaults (${levelLabel(sb.default_level)})` : 'Sandbox'} aria-expanded={pop === 'sandbox'} onclick={() => (pop = pop === 'sandbox' ? null : 'sandbox')}>
       <Icon name={sb.level === 'off' ? 'shieldOff' : 'shield'} size={12} />{sb.level === 'off' ? 'no sandbox' : sb.level}{#if sb.grants.length}<span class="n">+{sb.grants.length}</span>{/if}
     </button>
     {#if pop === 'sandbox'}
-      <div class="pop" role="dialog" aria-label="Sandbox">
+      <div class="pop" role="dialog" aria-label="Sandbox" use:dismissable={{ close, anchor: sandboxAnchor }}>
         <b>Sandbox: {levelLabel(sb.level)}</b>
         <div class="small muted">{sb.explicit ? 'Chosen for this session' : 'From the machine and project defaults'}{#if sb.looser_than_default} · looser than the defaults ({levelLabel(sb.default_level)}){/if}</div>
         {#if sb.level === 'off'}<div class="off">Not sandboxed: the agent can read and write anything your user can.</div>{/if}
@@ -68,10 +71,10 @@
   </span>
   {#if detail?.peers.length}
     {@const peers = detail.peers}
-    <span class="wrap" use:dismissable={() => (pop = null)}>
+    <span class="wrap" bind:this={peersAnchor}>
       <button class="sbx" aria-expanded={pop === 'peers'} title="Sessions this agent may contact" onclick={() => (pop = pop === 'peers' ? null : 'peers')}>⇄ {peers.length} peer{peers.length === 1 ? '' : 's'}</button>
       {#if pop === 'peers'}
-        <div class="pop" role="dialog" aria-label="Peers">
+        <div class="pop" role="dialog" aria-label="Peers" use:dismissable={{ close, anchor: peersAnchor }}>
           <b>Peers</b>
           {#each peers as p (p.peer.session_id)}
             <button class="peer" onclick={() => openPeer(p.peer.daemon_id, p.peer.session_id)}>

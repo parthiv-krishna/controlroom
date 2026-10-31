@@ -25,6 +25,7 @@
   const icon = (st: TodoStatus) => STATUS.find(([v]) => v === st)?.[1] ?? '?';
 
   let menu = $state<string | null>(null);
+  const anchors: Record<string, HTMLButtonElement> = $state({});
   let editing = $state<string | null>(null);
   let draft = $state('');
   let adding = $state('');
@@ -96,10 +97,10 @@
     <ul>
       {#each detail.todos as t, i (t.id)}
         <li class="s-{t.status}" draggable={editing !== t.id} ondragstart={() => (dragged = t.id)} ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); if (dragged && dragged !== t.id) void reorder(dragged, i); dragged = null; }}>
-          <span class="stw" use:dismissable={() => { if (menu === t.id) menu = null; }}>
-            <button class="stb s-{t.status}" title="Status" aria-label="Status: {t.status}" aria-haspopup="menu" aria-expanded={menu === t.id} disabled={!online} onclick={() => (menu = menu === t.id ? null : t.id)}>{icon(t.status)}</button>
+          <span class="stw">
+            <button bind:this={anchors[t.id]} class="stb s-{t.status}" title="Status" aria-label="Status: {t.status}" aria-haspopup="menu" aria-expanded={menu === t.id} disabled={!online} onclick={() => (menu = menu === t.id ? null : t.id)}>{icon(t.status)}</button>
             {#if menu === t.id}
-              <span class="menu" role="menu">
+              <span class="menu" role="menu" use:dismissable={{ close: () => (menu = null), anchor: anchors[t.id] }}>
                 {#each STATUS as [v, ic, label] (v)}<button role="menuitem" class:on={t.status === v} onclick={() => setStatus(t, v)}><span class="ic s-{v}">{ic}</span> {label}</button>{/each}
               </span>
             {/if}

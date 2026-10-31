@@ -39,6 +39,9 @@
   });
 </script>
 
+<!-- When the focused field disappears (a wizard step changes), focus falls to <body>: its keys still belong here. -->
+<svelte:window onkeydown={(e) => { if (e.target === document.body) onkey(e); }} />
+
 {#if page}
   <div class="page" role="dialog" tabindex="-1" aria-label={label} bind:this={box} onkeydown={onkey}>{@render children()}</div>
 {:else}

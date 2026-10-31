@@ -11,6 +11,7 @@
 
   const app = useApp();
   const view = app.view;
+  let bar: HTMLElement | undefined = $state();
   const n = $derived(filterCount(view.filters));
   const groupLabel = $derived(GROUPS.find(([g]) => g === app.prefs.group)?.[1] ?? 'Task');
 
@@ -71,7 +72,7 @@
   }
 </script>
 
-<div class="bar" use:dismissable={() => (view.menu = null)}>
+<div class="bar" bind:this={bar}>
   <input id="session-search" class="search" placeholder="Search" aria-label="Search sessions" bind:value={view.q} oninput={() => (view.keep = [])} onkeydown={searchKey} />
   <button class="mbtn" class:open={view.menu === 'filter'} class:has={n > 0} aria-expanded={view.menu === 'filter'} onclick={() => (view.menu = view.menu === 'filter' ? null : 'filter')}>
     <Icon name="filter" size={13} /><span>Filter</span>{#if n}<b>{n}</b>{/if}
@@ -80,7 +81,7 @@
     <span class="muted">Group</span> {groupLabel} <span class="caret">▾</span>
   </button>
   {#if view.menu === 'filter'}
-    <div class="menu fmenu" role="dialog" aria-label="Filter">
+    <div class="menu fmenu" role="dialog" aria-label="Filter" use:dismissable={{ close: () => (view.menu = null), anchor: bar }}>
       <div class="sections">
         {#each FACETS as [k, label] (k)}
           <button class:on={view.filterSection === k} onclick={() => (view.filterSection = k)}>{label}{#if view.filters[k].length}<b>{view.filters[k].length}</b>{/if}</button>
@@ -100,7 +101,7 @@
       </div>
     </div>
   {:else if view.menu === 'group'}
-    <div class="menu gmenu" role="menu" aria-label="Group by">
+    <div class="menu gmenu" role="menu" aria-label="Group by" use:dismissable={{ close: () => (view.menu = null), anchor: bar }}>
       {#each GROUPS as [g, label] (g)}
         <button role="menuitemradio" aria-checked={app.prefs.group === g} onclick={() => { app.prefs.group = g; view.menu = null; }}><span class="chk">{app.prefs.group === g ? '✓' : ''}</span>{label}</button>
       {/each}

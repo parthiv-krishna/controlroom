@@ -45,11 +45,11 @@
       <div class="settings small">
         {#if m.settings}
           {@const ds = m.settings}
-          Idle stop after <Dropdown small label="Idle stop" value={String(ds.idle_timeout_h)} disabled={!online || !isLive(m)} options={[...new Set([...IDLE, ds.idle_timeout_h])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: `${h} h` }))} onchange={(v) => setDaemon(m, { idle_timeout_h: Number(v) })} />
-          · Keep archived <Dropdown small label="Retention" value={String(ds.retention.delete_closed_after_days)} disabled={!online || !isLive(m)} options={RETENTION.map(([label, d]) => ({ value: String(d), label }))} onchange={(v) => setDaemon(m, { retention: { delete_closed_after_days: v === 'null' ? null : Number(v) } })} />
+          <span>Idle stop after</span><Dropdown small label="Idle stop" value={String(ds.idle_timeout_h)} disabled={!online || !isLive(m)} options={[...new Set([...IDLE, ds.idle_timeout_h])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: `${h} h` }))} onchange={(v) => setDaemon(m, { idle_timeout_h: Number(v) })} />
+          <span>Keep archived</span><Dropdown small label="Retention" value={String(ds.retention.delete_closed_after_days)} disabled={!online || !isLive(m)} options={RETENTION.map(([label, d]) => ({ value: String(d), label }))} onchange={(v) => setDaemon(m, { retention: { delete_closed_after_days: v === 'null' ? null : Number(v) } })} />
         {/if}
         {#if keys?.additional.length}
-          · Key <Dropdown small label="SSH key" value={m.key_id ?? ''} disabled={!online} options={[{ value: '', label: 'controlroom key' }, ...keys.additional.map((k) => ({ value: k.id, label: k.name }))]} onchange={(v) => app.client.call('machines.set_settings', { machine_id: m.id, key: { key_id: v || null } })} />
+          <span>Key</span><Dropdown small label="SSH key" value={m.key_id ?? ''} disabled={!online} options={[{ value: '', label: 'controlroom key' }, ...keys.additional.map((k) => ({ value: k.id, label: k.name }))]} onchange={(v) => app.client.call('machines.set_settings', { machine_id: m.id, key: { key_id: v || null } })} />
         {/if}
       </div>
       <label class="check small"><input type="checkbox" checked={m.auto_upgrade} disabled={!online} onchange={(e) => app.client.call('machines.set_settings', { machine_id: m.id, auto_upgrade: e.currentTarget.checked })} /> Auto-upgrade the daemon while idle</label>
@@ -70,7 +70,8 @@
   .card.c-unreachable { border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
   .card.c-incompatible { border-color: color-mix(in srgb, var(--warn) 50%, var(--line)); }
   .h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .settings { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--muted); }
+  .settings { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; color: var(--muted); }
+  .settings span:not(:first-child) { margin-left: 8px; }
   .check { display: flex; align-items: center; gap: 8px; color: var(--muted); }
   .acts { display: flex; gap: 6px; flex-wrap: wrap; }
   .add { align-self: flex-start; }

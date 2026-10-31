@@ -36,6 +36,7 @@
   } = $props();
 
   let open = $state(false);
+  let button: HTMLButtonElement | undefined = $state();
   let hi = $state(0);
   const current = $derived(options.find((o) => o.value === value));
 
@@ -68,7 +69,7 @@
 </script>
 
 <span class="dd" class:sm={small} class:open>
-  <button type="button" class="dd-btn" {id} {disabled} aria-label={label} aria-haspopup="listbox" aria-expanded={open} onclick={toggle} onkeydown={onkey}>
+  <button type="button" class="dd-btn" bind:this={button} {id} {disabled} aria-label={label} aria-haspopup="listbox" aria-expanded={open} onclick={toggle} onkeydown={onkey}>
     {#if current}
       {#if icon}{@render icon(current)}{/if}<span class="dd-l">{current.label}</span>
     {:else}
@@ -77,7 +78,7 @@
     <span class="dd-caret">▾</span>
   </button>
   {#if open}
-    <div class="dd-menu" role="listbox" aria-label={label} use:dismissable={() => (open = false)}>
+    <div class="dd-menu" role="listbox" aria-label={label} use:dismissable={{ close: () => (open = false), anchor: button }}>
       {#each options as o, i (o.value)}
         <button type="button" role="option" aria-selected={o.value === value} class="dd-opt" class:on={o.value === value} class:hi={i === hi} disabled={o.disabled} onclick={() => pick(o)} onmousemove={() => (hi = i)}>
           {#if icon}{@render icon(o)}{/if}<span class="dd-l">{o.label}</span>{#if o.hint}<span class="dd-hint">{o.hint}</span>{/if}

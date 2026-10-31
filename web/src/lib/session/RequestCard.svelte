@@ -135,7 +135,7 @@
         {#each req.options as o (o.id)}
           <button class="btn" class:sm={compact} class:primary={o.style === 'allow'} class:danger={o.style === 'deny'} disabled={!live || busy} onclick={() => choose(o.id)}>{o.label}</button>
         {/each}
-        {#if req.blocking && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={startSteer}>Reject and steer…</button>{/if}
+        {#if req.kind === 'permission' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={startSteer}>Reject and steer…</button>{/if}
         {#if !live}<span class="small warn-t">{s.stale ? 'machine offline' : 'not connected'}</span>{/if}
       </div>
       {#if steering}

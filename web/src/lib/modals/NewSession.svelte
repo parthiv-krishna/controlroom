@@ -5,7 +5,7 @@
   // first message. Switching machine keeps everything typed.
   import { useApp } from '../app/app.svelte';
   import type { NewSessionPreset } from '../app/view.svelte';
-  import { prefixMatch } from '../model/location';
+  import { normPath, prefixMatch } from '../model/location';
   import { textContent } from '../model/misc';
   import { columnLabel, columnTasks, orderFor } from '../model/tasks';
   import { LEVELS, defaultLevel, levelLabel, looser } from '../model/sandbox';
@@ -55,7 +55,7 @@
   const defaults = $derived(machine ? defaultLevel(profiles, machine, cwd.trim() || '~', feed.projectList) : 'strict');
   const chosen = $derived(level === 'default' ? defaults : level);
   const recent = $derived(
-    [...new Set(app.ctx.sessions.filter((s) => s.machine_id === machineId).sort((a, b) => b.updated_at - a.updated_at).map((s) => s.cwd))].slice(0, 5),
+    [...new Set(app.ctx.sessions.filter((s) => s.machine_id === machineId).sort((a, b) => b.updated_at - a.updated_at).map((s) => (machine ? normPath(s.cwd, machine.user) : s.cwd)))].slice(0, 5),
   );
   const machineOptions = $derived<Option[]>(feed.machineList.map((m) => ({ value: m.id, label: m.name, disabled: !isLive(m), hint: isLive(m) ? undefined : connLabel(m) })));
   const levelOptions = $derived<Option[]>([

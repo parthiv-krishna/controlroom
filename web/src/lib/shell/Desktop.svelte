@@ -17,7 +17,7 @@
   const app = useApp();
   const { view, prefs } = app;
   const cur = $derived(app.current);
-  const detail = $derived(cur ? (app.client.sessions.get(cur.machine_id, cur.id)?.detail ?? null) : null);
+  const detail = $derived(cur ? app.detail(cur) : null);
   const h = $derived(health(app.ctx, app.project));
   const notesShown = $derived(prefs.notesPin || view.notesOpen);
 
