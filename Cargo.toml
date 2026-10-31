@@ -1,0 +1,53 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.99"
+
+[workspace.dependencies]
+controlroom-protocol = { path = "crates/protocol" }
+controlroom-transcript = { path = "crates/transcript" }
+controlroom-supervisor = { path = "crates/supervisor" }
+controlroom-drivers = { path = "crates/drivers" }
+controlroom-runtime = { path = "crates/runtime" }
+controlroom-sandbox = { path = "crates/sandbox" }
+controlroom-client-core = { path = "crates/client-core" }
+controlroom-controller = { path = "crates/controller" }
+
+# Shared third-party versions. Crates opt in with `foo.workspace = true`.
+# Only the integrator edits this root manifest; workstreams put one-off deps
+# in their own crate's Cargo.toml and propose shared ones.
+anyhow = "1.0"
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4.6", features = ["derive"] }
+futures = "0.3"
+russh = { version = "0.64", default-features = false, features = ["flate2", "ring", "rsa"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.27"
+thiserror = "2.0"
+tokio = { version = "1.54", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ts-rs = { version = "12.0", features = ["serde-json-impl"] }
+ulid = { version = "3.0", features = ["serde"] }
+
+[workspace.metadata.crane]
+name = "controlroom"
+
+[workspace.lints.rust]
+# `deny` (not `forbid`): a module that truly needs unsafe may
+# `#[allow(unsafe_code)]` locally with a `// SAFETY:` comment.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

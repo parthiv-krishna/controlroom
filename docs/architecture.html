@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>controlroom: architecture and build plan</title>
+<style>
+:root{--bg:#0f1115;--panel:#161a21;--fg:#e6e8eb;--mut:#9aa3ad;--acc:#7cc4ff;--ok:#5fd38d;--warn:#f2c94c;--bad:#ff6b6b;--line:#262c36;--code:#1c2129}
+@media (prefers-color-scheme: light){:root{--bg:#fbfbfc;--panel:#fff;--fg:#1b1f24;--mut:#5b6570;--acc:#0b63c5;--ok:#1a7f45;--warn:#9a6b00;--bad:#c62828;--line:#e3e6ea;--code:#f3f5f7}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{display:grid;grid-template-columns:260px minmax(0,1fr);max-width:1400px;margin:0 auto}
+nav{position:sticky;top:0;height:100vh;overflow:auto;padding:20px 14px;border-right:1px solid var(--line);font-size:13px}
+nav a{display:block;color:var(--mut);text-decoration:none;padding:3px 6px;border-radius:5px}
+nav a:hover{color:var(--fg);background:var(--panel)}
+nav .h{color:var(--fg);font-weight:600;margin-top:10px}
+main{padding:28px 40px 120px;min-width:0}
+h1{font-size:28px;margin:0 0 4px}
+h2{font-size:21px;margin:44px 0 10px;padding-top:10px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:24px 0 8px}
+.sub{color:var(--mut);margin:0 0 20px}
+p,li{max-width:900px}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow:auto;font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid var(--line)}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;margin:10px 0 16px;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:6px 9px;vertical-align:top;text-align:left}
+th{background:var(--panel)}
+.call{border-left:4px solid var(--acc);background:var(--panel);padding:10px 14px;border-radius:6px;margin:12px 0}
+.call.warn{border-color:var(--warn)}.call.bad{border-color:var(--bad)}.call.ok{border-color:var(--ok)}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;border:1px solid currentColor;margin-right:4px}
+.port{color:var(--ok)}.fresh{color:var(--acc)}.drop{color:var(--bad)}.ext{color:var(--warn)}
+.p0{color:var(--bad)}.p1{color:var(--warn)}.p2{color:var(--mut)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}main{padding:20px}.grid2{grid-template-columns:1fr}}
+.small{font-size:13px;color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+<div class="h">controlroom</div>
+<a href="#summary">0. Summary</a>
+<a href="#goals">1. Product goals</a>
+<a href="#decisions">2. Decisions</a>
+<a href="#arch">3. Architecture</a>
+<a href="#layout">4. Repository layout</a>
+<a href="#protocol">5. Protocol</a>
+<a href="#daemon">6. Daemon: supervisor, runtime, drivers</a>
+<a href="#timeline">7. Timeline model</a>
+<a href="#runtime">8. Agent runtime primitives</a>
+<a href="#tools">9. Agent tools &amp; front ends</a>
+<a href="#policy">10. Contact policy</a>
+<a href="#sandbox">11. Sandboxing (nono)</a>
+<a href="#controller">12. Controller &amp; web server</a>
+<a href="#ui">13. UI</a>
+<a href="#deploy">14. Deployment &amp; packaging</a>
+<a href="#port">15. Port map from the prototype</a>
+<a href="#bugs">16. Known-bug checklist</a>
+<a href="#plan">17. Build plan</a>
+<a href="#process">18. Process rules</a>
+<a href="#future">19. Future features</a>
+<a href="#open">20. Open questions</a>
+<a href="#terminals">22. Terminals</a>
+<a href="#extras">23. Additional features</a>
+<a href="#refs">21. References</a>
+</nav>
+<main>
+<h1>controlroom: architecture and build plan</h1>
+<p class="sub">This document is the build spec: a supervisor agent should be able to build controlroom from it alone. A <b>prototype</b> at <code>../controlroom-old</code> validated many of these ideas; proven parts of it are ported selectively (see "Port map from the prototype"). Status: <b>draft for review</b>.</p>
+
+<h2 id="summary">0. Summary</h2>
+<p>controlroom is a self-hosted web app for supervising pi coding-agent sessions that run on many Linux machines, reached over SSH. Its architecture:</p>
+<ul>
+<li><b>One deployment model:</b> a persistent web server (PWA, OIDC). The desktop app is gone.</li>
+<li><b>Agent-neutral core:</b> a <b>driver</b> (native pi RPC) folds raw stdio into one <b>timeline model</b>. The protocol and UI never see agent-specific payloads.</li>
+<li><b>controlroomd as the agent runtime:</b> jobs, subagents as child sessions, a mailbox, injection, a shared todo list with auto-continue, and non-blocking questions. Agents reach these through the controlroom pi extension.</li>
+<li><b>Sandboxed by default</b> with <b>nono</b>: confinement to the working directory, credentials injected outside the sandbox, an egress allowlist, and approvals routed to controlroom.</li>
+<li><b>Protocol 1.0:</b> agent-neutral and tolerant of additions.</li>
+</ul>
+<div class="call ok"><b>What carries over:</b> the hard, proven parts. Those are the detached supervisor, the transcript as the source of truth, exactly-once recovery algorithms, SSH, key handling and bootstrap, OIDC and request hardening, Web Push, the UI shell, Nix packaging, and the test scenarios. Each is <i>ported deliberately</i> (reviewed, adapted, known bugs fixed). Nothing is copied wholesale.</div>
+
+<h2 id="goals">1. Product goals</h2>
+<ul>
+<li>One place to discover, organize and interact with agent sessions across many machines. A failed machine never blocks the others.</li>
+<li>Reliable attention signals:
+<ul><li>needs an approval (blocking) or has an open question (non-blocking, a lighter tier);</li><li>failed or interrupted;</li><li>finished and unread.</li></ul>
+Connectivity is shown separately from agent state, and silence is never treated as failure.</li>
+<li>Remote work continues independently of clients: the laptop sleeps, the browser closes, the daemon restarts or upgrades, and the agent keeps going.</li>
+<li>Deliberate control: start, queue, send now, cancel and close are explicit. Disconnecting never cancels. Reconnecting never duplicates prompts or decisions.</li>
+<li>Agents collaborate under user control: subagents, background jobs, shared todos, and messaging across machines within an explicit sandbox and contact policy.</li>
+<li>User ownership: agents use the machine's own environment and the user's chosen harness. No hosted execution.</li>
+</ul>
+
+<h2 id="decisions">2. Decisions (final)</h2>
+<table>
+<tr><th>Area</th><th>Decision</th></tr>
+<tr><td>Deployment</td><td><b>One persistent web server</b> (OIDC, with dev-token for development), reached from any browser or as an installable PWA. Separate contexts (e.g. personal and work machines) run separate, unsynced instances. No desktop app. The controller keeps a thin shell boundary, so a native shell stays possible later.</td></tr>
+<tr><td>Languages</td><td>Rust (daemon, controller, web server). TypeScript + Svelte 5 + Vite for the UI, embedded in the web binary. Protocol types are defined in Rust; TS is generated (ts-rs) and drift-checked in CI.</td></tr>
+<tr><td>Transport</td><td>Browser ↔ server: one WebSocket per tab carrying JSON-RPC. Server ↔ daemon: in-process <code>russh</code> with a per-owner controlroom key and an exec channel running <code>controlroomd connect</code>, bridged to a unix socket. Further SSH channels are reserved for SFTP and PTYs.</td></tr>
+<tr><td>Agents</td><td><b>pi only, through the native PiDriver</b> (<code>pi --mode rpc</code>) plus <code>@controlroom/pi</code>. The deep integration (our own bash, terminals, privileged commands, runtime tools) relies on owning the harness, so <b>ACP is out of scope</b>. The <code>Driver</code> trait stays (for <code>FakeDriver</code> tests and to keep the option open). There's no AcpDriver, no <code>controlroomd mcp</code> and no pi-acp.</td></tr>
+<tr><td>Source of truth</td><td>Daemons own sessions. Each session's raw stdio transcript is authoritative, and the timeline and state are derived from it. The controller owns client data: machines, keys, projects, tasks, grants and push subscriptions.</td></tr>
+<tr><td>Sandboxing</td><td><b>nono 0.80.0 (pinned)</b>, wrapped around every agent process. The daemon generates absolute-path profiles. Registry packs are <b>never</b> used, because their wiring mutates the user's agent config.</td></tr>
+<tr><td>Agent runtime</td><td>The daemon is the runtime. The <code>@controlroom/pi</code> extension is a thin front end. Third-party pi-subagents, pi-intercom, pi-background-tasks and pi-goal are <b>not</b> loaded in controlroom-launched pi.</td></tr>
+<tr><td>Contact policy</td><td>Sessions on the same task can see and message each other on any machine. A parent and its child always can. Anything else needs user approval. Messaging fails closed and always reports the outcome to the agent, including <code>connection_lost</code>.</td></tr>
+<tr><td>Upgrades</td><td>Daemons upgrade automatically when idle (a per-machine opt-out exists) and never downgrade. Every daemon change bumps the version. Each install is verified by running it, with rollback.</td></tr>
+<tr><td>Compatibility</td><td>Starts at <b>protocol 1.0</b>, with no compatibility with the prototype. Client-store schema changes are edited in place until the first release, with no migration code (the user fixes dev databases by hand). The daemon database uses real versioned migrations from day one, because daemons upgrade themselves in the field.</td></tr>
+<tr><td>Conventions</td><td>American spelling. No real hostnames, usernames, domains or deployment contexts in code, docs, tests, fixtures or commit messages (use example.com, alice, devbox). <code>README.md</code> is human-only.</td></tr>
+</table>
+
+<h2 id="arch">3. Architecture</h2>
+<pre><code>Browser / PWA ──WS JSON-RPC──► controlroom-web  (axum shell: OIDC, hardening, push, static UI)
+                                    │  controller: client store · machine manager · hub/event bus
+                                    │              UI API router · attention · broker + policy
+                                    └─ russh (one connection per machine) ─┬─ exec: controlroomd connect  (daemon JSON-RPC)
+                                                                           ├─ sftp  (future: files)
+                                                                           └─ exec: controlroomd pty attach (future)
+controlroomd serve  (per user, per machine; runtime library + RPC server)
+   ├─ runtime: sessions · queue · requests · reconcile · injection · jobs · todos · children · outbox
+   ├─ drivers: pi (native RPC)         →  fold(raw) → timeline + agent view;  encode(intent) → lines
+   └─ supervisors (one per agent/job; detached; transcript.jsonl) ──► nono run -s --profile … ──► pi --mode rpc
+                                                                                        └─ @controlroom/pi ⇄ daemon socket</code></pre>
+<h3>Invariants (carried over from the prototype; they must hold)</h3>
+<ol>
+<li><b>Log before write:</b> every line sent to an agent goes into the transcript (and is fsynced) before the agent sees it.</li>
+<li><b>The transcript is the truth:</b> state and timeline are folds over the transcript. SQLite holds metadata, indexes and snapshots.</li>
+<li><b>Exactly once:</b> every mutating command carries an <code>op_id</code>, deduplicated in the same transaction as its effect. A failed commit discards its outbound writes. Prompts are never resent automatically, and decisions are never reused.</li>
+<li><b>One reconcile loop</b> per session decides what to write next. While the state is in doubt (just after a restart), <b>no</b> writes happen at all, answers included, until a supervisor barrier confirms that earlier writes have been logged.</li>
+<li><b>Disconnecting does nothing.</b> No action is ever triggered by a client going away.</li>
+<li><b>Detached supervisors:</b> agents survive client loss and daemon restarts or upgrades. Supervisors run from immutable versioned paths.</li>
+</ol>
+
+<h2 id="layout">4. Repository layout (new repo)</h2>
+<pre><code>Cargo.toml  flake.nix  AGENTS.md  docs/architecture.html  docs/adapters.md
+crates/
+  protocol/      wire types (daemon API, UI API, timeline), tolerant decoding, TS export
+  transcript/    record format, writer (flock, fsync), reader/tail, seq→offset index   [port]
+  supervisor/    detached per-process pipe: spawn spec (agent | job | pty), socket proto  [port+ext]
+  drivers/       trait Driver; pi/ (rpc fold, commands); FakeDriver for tests
+  runtime/       session registry, queue, requests, reconcile, intents, timeline store,
+                 injection, jobs, todos/auto-continue, children, outbox; DB migrations.
+                 Library only: no sockets, IO via traits; FakeDriver unit tests
+  sandbox/       nono profile generation + validation, per-session agent-dir builder,
+                 credential helpers, approval-webhook server types
+  daemon/        bin controlroomd: serve, supervise, connect, ctl, doctor, credential
+  client-core/   russh, keys/seal/master key, bootstrap (verify-run + rollback), daemon client  [port]
+  controller/    client store, machine manager, hub (+ event bus), rpc/* (split), attention,
+                 broker + policy                                                          [port+fresh]
+  web/           axum shell: OIDC/dev-token, hardening, ws, push, static                   [port]
+  fake-agent/    scriptable pi-RPC agent; gate steps for deterministic tests
+  fixture-tool/  record + sanitize real pi-RPC transcripts
+extensions/pi/   @controlroom/pi (TypeScript pi extension)
+web/             Svelte SPA (src/lib/protocol generated)
+fixtures/        pi-rpc/   (sanitized, committed)
+nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</code></pre>
+
+<h2 id="protocol">5. Protocol (agent-neutral)</h2>
+<h3>5.1 Principles</h3>
+<ul>
+<li><b>JSON-RPC 2.0</b> with newline-delimited framing. A per-method <code>Method</code> trait ties each method to its params and result types. ts-rs generates the TS, and a CI drift check runs under Nix.</li>
+<li><b>Tolerant of additions:</b>
+<ul>
+<li>every extensible enum (error kinds, events, annotations, timeline kinds, request kinds) has an <code>Unknown</code> fallback;</li>
+<li>a response whose body doesn't parse fails its own request id, never the connection;</li>
+<li>every call has a default timeout.</li>
+</ul></li>
+<li><b>Versioning:</b> major.minor, where a major mismatch means <code>incompatible</code> and minor versions only add. Optional features are negotiated through <code>hello.capabilities</code> (e.g. <code>"jobs"</code>, <code>"mailbox"</code>).</li>
+<li><b>Agent-neutral:</b> no pi types on the wire. Raw frames go out only on an explicit debug subscription (<code>raw: true</code>).</li>
+<li><b>Ids:</b> ULID strings. <code>RemotePath</code> is a POSIX string newtype, never <code>std::path</code>. Timestamps are unix ms.</li>
+</ul>
+<h3>5.2 Session model</h3>
+<table>
+<tr><th>Field</th><th>Notes</th></tr>
+<tr><td><code>id, name, cwd: RemotePath, agent, created_at, updated_at, closed_at</code></td><td></td></tr>
+<tr><td><code>agent_sessions: [{driver: pi, native_id, started_at, ended_at, started_by: new|resume|fresh}]</code></td><td>Replaces the prototype's <code>acp_session_id</code>. <code>driver</code> is an open enum (pi today)</td></tr>
+<tr><td><code>parent_id?, spawned_by?</code></td><td>Subagent tree</td></tr>
+<tr><td><code>state</code>: starting · idle · working · awaiting_permission · awaiting_input · failed · dormant · interrupted · closed</td><td><b>working</b> means a run is active, whoever started it (user, queue, steer, job completion, message, auto-continue)</td></tr>
+<tr><td><code>last_outcome</code>: completed · cancelled · failed · max_tokens · refusal · unknown (+ error)</td><td>Neutral. Replaces the prototype's ACP <code>StopReason</code></td></tr>
+<tr><td><code>read_seq, last_turn_end_seq, unread</code></td><td>Every way a run can end sets <code>last_turn_end_seq</code> (completed, failed, interrupted, reboot)</td></tr>
+<tr><td><code>preview</code></td><td>One line of at most 200 chars, chosen in this order: pending request, then error, then the running tool, then the last agent text. The daemon <b>strips Markdown</b> (links become their label; no backticks or emphasis). Throttled to at most 1/s</td></tr>
+<tr><td><code>context: {used, size, cost?}</code></td><td>From usage events</td></tr>
+<tr><td><code>queue[], queue_paused, auto_send, send_now_pending</code></td><td>Queued items are shown even while in flight (flag <code>sending</code>), and <code>state</code> is reported as <code>working</code> from the hand-over on. The UI derives nothing.</td></tr>
+<tr><td><code>requests[]</code>: <code>{id, kind: permission|question|dialog|sandbox|contact|spawn, blocking (false for questions, true for approvals), state, title, options|questions, origin_child?}</code></td><td>Non-blocking questions are a separate, lighter attention tier. They show in the rail as a hollow ring, and push only if the user opts in (in-app by default). The user can answer or dismiss them (dismiss answers "declined"). Escalate and withdraw are agent-side.</td></tr>
+<tr><td><code>todo: {done, total, auto_continue: on|off|paused|stalled|budget}</code>, <code>live_work: {jobs, children, asks}</code></td><td>Roll-ups. <code>total</code> excludes skipped items</td></tr>
+<tr><td><code>options: [{id, label, kind: select|bool, value, choices}]</code></td><td>Model and thinking level as neutral options</td></tr>
+<tr><td><code>sandbox: {level: strict|relaxed|off, grants[]}</code></td><td></td></tr>
+<tr><td><code>resumable</code></td><td></td></tr>
+</table>
+<h3>5.3 Daemon API (controller ↔ controlroomd)</h3>
+<ul>
+<li><code>hello</code> (versions, capabilities, machine id, <b>broker claim</b>: which controller brokers the mailbox).</li>
+<li><code>machine.subscribe {since_rev}</code>: summaries feed, with a snapshot fallback. A persisted rev log survives restarts.</li>
+<li><code>session.subscribe {id, since_seq, raw?}</code> (the UI asks for raw only on demand, when the raw view or a seq link is opened): <b>timeline ops</b> (<code>upsert</code> / <code>append_text</code> / <code>end</code>, each with a source seq range). Served from the materialized timeline, not by re-folding the whole transcript.</li>
+<li><b>Commands</b> (all carry an <code>op_id</code>):
+<ul>
+<li><b>session lifecycle:</b> <code>session.create {agent, cwd, name?, parent?, sandbox?}</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>reopen</code>, <code>resume</code>, <code>start_fresh</code>, <code>delete</code>;</li>
+<li><b>session state:</b> <code>update</code> (name, auto_send, auto_continue, budget), <code>mark_read</code>, <code>mark_unread</code>, <code>set_option</code>;</li>
+<li><b>queue:</b> <code>queue.send_now|edit|remove|reorder|resume</code>;</li>
+<li><b>requests:</b> <code>request.respond {request_id, choice|answers, then?}</code>, one method for permissions, questions, dialogs and sandbox approvals;</li>
+<li><b>todos:</b> <code>todo.add|update|remove|reorder</code>;</li>
+<li><b>jobs:</b> <code>job.list|logs|kill</code>;</li>
+<li><b>misc:</b> <code>agents.list</code>, <code>fs.list</code>, <code>doctor.report</code>, <code>settings.get|set</code>.</li>
+</ul></li>
+<li><b>Outbox (daemon → broker):</b> <code>outbox.subscribe {since}</code>, then <code>outbox.ack {item, outcome}</code>. Deliveries come back as <code>inbox.deliver {op_id, …}</code>. This is a durable, idempotent channel, and the daemon never makes RPC calls to the controller.</li>
+<li><b>Errors:</b> typed kinds (busy, already_resolved, deleted, not_resumable, unknown_session, invalid_state, invalid_params, unsupported, agent_unavailable, sandbox_unavailable, incompatible_version, …) plus <code>Unknown</code>.</li>
+</ul>
+<h3>5.4 UI API (browser ↔ controller)</h3>
+<ul>
+<li><code>hello</code> (server version, protocol, <code>user</code>, push capability).</li>
+<li><code>state.subscribe</code> (epoch+rev cursor): one aggregated feed of machines (incl. connectivity and doctor), sessions (with machine_id; stale while unreachable), projects, tasks, grants and contact requests.</li>
+<li><b>Pass-through</b> of every session/todo/job/request command with <code>machine_id</code> added.</li>
+<li><code>session.subscribe</code>: ref-counted, shared by tabs, resumed without duplicates.</li>
+<li><code>machines.*</code> (add → add_confirm, confirm_host_key, remove, reconnect, upgrade, set_settings incl. auto_upgrade), <code>keys.*</code> (incl. rotate), <code>projects.*</code>, <code>tasks.*</code> (project_ids, links, checklist), <code>grants.*</code>, <code>notifications.*</code> (web push only), <code>client.focus</code>.</li>
+<li>Connectivity per machine: connected · connecting · unreachable · incompatible · action_required{host_key_changed | auth_failed | host_key_unconfirmed} · plus <code>update_available</code>.</li>
+</ul>
+
+<h2 id="daemon">6. Daemon: supervisor, runtime, drivers</h2>
+<h3>6.1 Supervisor (port from the prototype, extend)</h3>
+<ul>
+<li><b>Keep:</b> flock single writer, log-then-fsync-then-write, partial-tail recovery, one writer role, exit drain, setsid re-exec, SIGHUP ignored, <code>meta</code> record, <code>sync</code>.</li>
+<li><b>Add:</b>
+<ul>
+<li>a <b>spawn spec</b> <code>{kind: agent|job|pty, argv|shell, env-file, cwd, sandbox profile, stdin: pipe|null, timeout}</code>;</li>
+<li>a <b>barrier</b> operation that confirms all earlier writes are logged;</li>
+<li>fsync on a blocking thread, not the async worker;</li>
+<li>a line-length cap;</li>
+<li>a seq→offset index;</li>
+<li>kill the process group on exit;</li>
+<li>later: PTY byte records, raw writes and resize.</li>
+</ul></li>
+<li><b>Launch:</b> under nono (see "Sandboxing"), keeping <code>$SHELL -lc</code> for PATH. Login-shell noise on stdout is non-JSON and the drivers ignore it.</li>
+</ul>
+<h3>6.2 Driver trait</h3>
+<pre><code>trait Driver {
+  fn fold(&amp;mut self, rec: &amp;Record) -&gt; FoldOut;          // timeline ops + driver events
+  fn view(&amp;self) -&gt; AgentView;                          // started, run_active, open tools, open requests,
+                                                       // last outcome, capabilities {steer, follow_up, load, resume, options}
+  fn encode(&amp;mut self, intent: Intent, ids: &amp;mut IdGen) -&gt; Vec&lt;String&gt;;
+}
+enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, Steer, FollowUp, Cancel,
+              Answer{request, choice}, SetOption{id, value}, Inject{item, origin} }</code></pre>
+<p>Send-now strategy belongs to the driver:</p>
+<ul>
+<li><b>pi:</b> native <code>steer</code>;</li>
+<li><b>a driver without steering</b> (e.g. FakeDriver modes): cancel at a safe point.</li>
+</ul>
+<p>Every written line embeds its <code>op_id</code>/<code>queue_id</code> so exactly-once can be derived from the transcript. The id floor is persisted.</p>
+<h3>6.3 PiDriver (new)</h3>
+<ul>
+<li><b>Launch:</b> <code>pi --mode rpc --session-id …</code>, or <code>--session &lt;abs file&gt;</code> to resume. Strict LF JSONL (never Node-readline semantics), correlated by <code>id</code>.</li>
+<li><b>Runs:</b> from <code>agent_start</code> to <code>agent_settled{aborted}</code>.</li>
+<li><b>Outcome:</b> taken from the assistant <code>stopReason</code> (error → failed, length → max_tokens, aborted → cancelled) plus <code>auto_retry_end</code>. No <code>end_turn</code> heuristics.</li>
+<li><b>Commands:</b> <code>prompt</code> after the run settles or with <code>streamingBehavior:"followUp"</code>; <code>steer</code>, <code>abort</code>, <code>clear_queue</code>; model and thinking setters; <code>get_state</code>, <code>get_commands</code>, <code>get_session_stats</code>; <code>new_session{parentSession}</code> for start fresh; <code>extension_ui_response</code>.</li>
+<li><b>Events mapped to the timeline:</b> <code>message_*</code>, <code>tool_execution_*</code> (incl. <code>parentToolCallId</code>), <code>queue_update</code>, <code>compaction_*</code>, <code>auto_retry_*</code>, <code>session_info_changed</code>, <code>thinking_level_changed</code>, <code>extension_ui_request</code>, <code>extension_error</code>, <code>entry_appended</code> (controlroom entries).</li>
+<li><b>pi's RPC is unversioned:</b> pin pi, record <code>fixtures/pi-rpc/</code> per pinned version, and tolerate unknown events.</li>
+<li><b>Signals:</b> pi exits on SIGHUP, so never deliver HUP to its group.</li>
+</ul>
+<h3>6.4 FakeDriver</h3>
+<p>A deterministic in-process driver for runtime unit tests (no processes). ACP and the prototype's AcpDriver are dropped: controlroom integrates deeply with pi only.</p>
+<h3>6.5 Runtime store</h3>
+<ul>
+<li><code>daemon.sqlite</code> with versioned migrations (<code>user_version</code>) from day one.</li>
+<li>Tables: sessions, agent_sessions, queue, ops (pruned), requests, timeline items (materialized by session/item, with checkpoints), todos, jobs, children, outbox, grants cache, settings, and a persisted rev log.</li>
+<li>Bind the socket <i>before</i> recovery. Attach supervisors concurrently. Slow work stays off the connection loop.</li>
+</ul>
+<h3>6.6 Lifecycle (finish what the prototype left undone)</h3>
+<ul>
+<li><b>Idle-stop</b> (default 48 h): only when resumable, the queue is empty, and there's <b>no live work</b> (jobs, children, asks).</li>
+<li><b>Retention:</b> closed sessions are purged after N days. The default is to keep everything forever.</li>
+<li><b>Reboot handling:</b> dead supervisor → <code>interrupted</code> or <code>dormant</code>.</li>
+<li><b>Resume:</b> via the driver.</li>
+<li><b>Start fresh:</b> optionally includes a history export.</li>
+<li><b>Boot start:</b> linger plus a systemd user unit, else <code>@reboot</code>, else lazy start (reported by <code>doctor</code>).</li>
+</ul>
+
+<h2 id="timeline">7. Timeline model</h2>
+<p>Items have stable ids. Operations are <code>upsert</code>, <code>append_text</code> and <code>end</code>, each carrying <code>{seq_from, seq_to}</code> so the raw view can link back. <code>actor</code> is <code>root</code> or a child id.</p>
+<table>
+<tr><th>kind</th><th>fields</th><th>pi source</th></tr>
+<tr><td>run</td><td>trigger (user|queue|steer|inject:origin|auto_continue|retry|extension), state, outcome, error</td><td>agent_start / agent_settled + stopReason</td></tr>
+<tr><td>message</td><td>role user|agent|notice, content parts (text, image, resource ref)</td><td>message_* / text_*</td></tr>
+<tr><td>thinking</td><td>text</td><td>thinking_*</td></tr>
+<tr><td>tool_call</td><td>name, title, kind, input, status, output (text|diff|terminal), exit, duration, parent_tool_call_id</td><td>toolcall_* / tool_execution_*</td></tr>
+<tr><td>plan / todo</td><td>items + status</td><td>controlroom todo entries</td></tr>
+<tr><td>request</td><td>kind, blocking, state pending|answered|withdrawn|expired, options/questions, answer, origin_child</td><td>extension_ui_request + bridge annotation; controlroom ask_user</td></tr>
+<tr><td>subagent</td><td>child session id, title, state, outcome, usage</td><td>daemon (child sessions are controlroom sessions)</td></tr>
+<tr><td>job</td><td>name, command, status, exit, signal, output ref, timeout</td><td>daemon</td></tr>
+<tr><td>session_message</td><td>direction, peer {session, machine, name}, reply_to, expects_reply, outcome (delivered|queued|connection_lost|denied|expired)</td><td>daemon mailbox</td></tr>
+<tr><td>usage</td><td>scope, tokens, cost, context {used, size}</td><td>message usage, get_session_stats</td></tr>
+<tr><td>compaction / retry</td><td>reason, phase, attempt, error</td><td>compaction_*, auto_retry_*</td></tr>
+<tr><td>notice / error / session_info</td><td>level, text; title, model, thinking</td><td>notify/setStatus, extension_error, session_info_changed</td></tr>
+</table>
+
+<h2 id="runtime">8. Agent runtime primitives (daemon)</h2>
+<table>
+<tr><th>Primitive</th><th>Implementation</th></tr>
+<tr><td><b>Injection</b></td><td>Delivers an item into a session's next turn, with an <code>origin</code> (user, job, child, message, answer, todo, continue). pi uses <code>steer</code>/<code>follow_up</code>. It's the single path for job completion, child results, inbound messages, non-blocking answers, todo edits made by the user, and late replies.</td></tr>
+<tr><td><b>Job</b> (background task)</td><td>A supervised process (supervisor kind <code>job</code>, sandboxed, with an optional timeout). Jobs survive pi and daemon restarts. Their output goes to the job's transcript <b>and</b> to a plain-text <b>log file</b> the agent can read inside its sandbox: <code>&lt;cwd&gt;/.controlroom/jobs/&lt;job-id&gt;.log</code> (stdout and stderr interleaved, append-only; <code>.controlroom/</code> is git-ignored automatically).
+<br><b>Wakes:</b>
+<ul>
+<li><b>Exit wake (always on):</b> when the job exits, the agent is woken with the job id, exit code or signal, duration, total line count and the log path.</li>
+<li><b>Following is a separate, optional subscription:</b> <code>job.follow {job_id, buffer_seconds = 15, pattern?, from = "unseen" | "now"}</code> and <code>job.unfollow {job_id}</code>.
+<ul>
+<li>When followed lines appear (any line, or only lines matching <code>pattern</code>, a regex such as <code>ERROR|FAIL|panicked</code>), the daemon waits <code>buffer_seconds</code> to batch them. It then wakes the agent with the job id, the number of new or matching lines and their line ranges, and the log path, plus a hint to read it with <code>grep</code>/<code>tail</code>/<code>sed -n 'a,bp'</code>.</li>
+<li><code>from: "unseen"</code> (default) covers all output the agent hasn't been told about, so following right after <code>run</code> can't miss lines.</li>
+<li>Calling <code>follow</code> again updates the settings. Following ends automatically when the job exits, and the exit wake still fires.</li>
+<li>Wakes from several followed jobs that land in the same buffer window are merged into <b>one</b> wake.</li>
+<li>The <b>user</b> can also unfollow a job from the UI, to stop noisy wakes. Following stays an agent decision.</li>
+</ul></li>
+<li><b>Logs are never dumped into the context.</b> Wakes carry only metadata and the path, and the agent reads what it needs. Wakes use injection: they start a turn when the agent is idle, or arrive as a steer or follow-up when it's busy.</li>
+</ul></td></tr>
+<tr><td><b>Subagent</b></td><td>A child controlroom session (<code>parent_id</code>) with any agent and model. It has its own transcript, sandbox (cwd inside the parent's directory or a worktree) and requests. Attention rolls up to the parent. <code>await</code> resolves with its result (or <code>connection_lost</code>) by injection.</td></tr>
+<tr><td><b>Request</b></td><td><b>Questions are non-blocking only.</b> <code>ask_user</code> returns immediately with a question id and the reminder: <i>"Question sent; the user will answer asynchronously. Keep working on other items. End your turn only if you truly can't make progress; the answer will wake you."</i> The answer (or a Dismiss, which counts as "declined") is injected. The agent can withdraw a question. There's no escalation and no blocking variant.
+<br><b>Approvals stay blocking</b> by nature, because they gate an action already in progress: <code>permission</code>, <code>sandbox</code>, <code>spawn</code> and <code>contact</code>. pi's own native blocking dialogs (<code>extension_ui_request</code> select/confirm/input) are shown as a <code>dialog</code> and answered as usual, but the agent instructions steer agents to use <code>ask_user</code> instead.</td></tr>
+<tr><td><b>Todo list</b></td><td>Per-session and shared: both the agent and the user edit it, and every change records who made it. Items: pending · in_progress · done · blocked(reason) · skipped. Can be seeded from a task's checklist.</td></tr>
+<tr><td><b>Auto-continue</b></td><td>When the agent ends its turn and open todo items remain (pending or in progress), the daemon <b>automatically restarts it</b> with a <code>continue</code> run, <b>unless</b>:
+<ul>
+<li>a <b>question is open</b> (its answer will wake the agent instead);</li>
+<li>a <b>background task is running</b> (its follow or exit wake will wake the agent instead). Awaited subagents and outstanding message asks count as background work too;</li>
+<li>an approval is pending, the run failed or was cancelled by the user, or the queue has items (queued prompts go first);</li>
+<li>auto-continue is off for the session.</li>
+</ul>
+It pauses with attention when only blocked items remain, after 3 runs with no progress (stalled), or when the budget runs out. A user cancel pauses it too.</td></tr>
+<tr><td><b>Mailbox</b></td><td>Per-session outbox and inbox: send, ask (expects a reply), reply. Brokered by the controller with policy. Every operation returns an explicit outcome.</td></tr>
+</table>
+
+<h3 id="schedules">8.1 Schedules (owned by the web server)</h3>
+<ul>
+<li><b>What they are:</b> a schedule is attached to <b>one session</b> and wakes its agent with a <b>canned message</b> on a configurable schedule. Example: every weekday at 09:00, "Check inbox/ and process anything new".</li>
+<li><b>Owned by the controller, not the daemon.</b> The web server is the always-on component and already knows every session, so schedules live in the controller store: <code>schedules {id, owner, machine_id, session_id, name, spec: cron | interval, timezone, message, enabled, if_busy, missed, next_run, last_run, last_outcome}</code>. No daemon changes and no boot-start requirement on execution hosts.</li>
+<li><b>Firing:</b> the controller's scheduler sends <code>session.prompt</code> with <b>deterministic</b> <code>op_id = schedule_id + scheduled_time</code>, so a controller restart or retry can never double-fire.
+<ul>
+<li>Dormant sessions are resumed lazily by the daemon as usual.</li>
+<li>The run's trigger shows as <code>schedule: &lt;name&gt;</code>.</li>
+<li>The agent sees it as a normal prompt with origin <code>schedule</code>.</li>
+</ul></li>
+<li><b>If busy</b> (<code>if_busy</code>): <code>queue</code> (default) or <code>skip</code>.</li>
+<li><b>If the machine is unreachable</b> at fire time, retry until the next scheduled time, then record <code>missed</code>.</li>
+<li><b>After controller downtime</b> (<code>missed</code>): <code>skip</code> (default) or <code>run_once</code>.</li>
+<li><b>Closed sessions</b> disable their schedules.</li>
+<li><b>UI:</b> a <b>Schedules</b> panel on the session (add, edit, enable/disable, "run now", next and last run with outcome), a <b>Settings › Schedules</b> overview, and schedule-triggered runs badged in the timeline.</li>
+<li><b>Not exposed to agents</b> in the first release; an agent can't schedule itself. Event triggers (file, webhook, git) come later with the same shape.</li>
+</ul>
+
+<h2 id="tools">9. Agent tools and front ends</h2>
+<p>There are three layers:</p>
+<ul>
+<li><b>Tools</b> (only things the agent initiates). These are grouped tools, each taking an action, provided by <code>@controlroom/pi</code>:
+<ul>
+<li><code>bash {command, shell?, timeout?}</code>: <b>replaces pi's built-in bash</b>. It runs in a <b>persistent shell</b> (default <code>main</code>) in the session's collaborative terminal ("Terminals"), sandboxed. <code>shell_new {name?, cwd?}</code> gives a fresh shell; <code>shell_list</code>, <code>shell_close {shell}</code>;</li>
+<li><code>terminal_read {shell?, last_lines | since_mark}</code>: reads the session terminal, including commands the <i>user</i> ran;</li>
+<li><code>bash_privileged {command, reason, cwd?}</code>: unsandboxed, and <b>every call needs human approval</b> ("Terminals");</li>
+<li><code>ask_user {questions}</code>: always non-blocking; <code>withdraw {question_id}</code>;</li>
+<li><code>todo {list|add|update|complete|block}</code>;</li>
+<li><code>job {run {command, cwd?, timeout?} | follow {job_id, buffer_seconds?, pattern?, from?} | unfollow {job_id} | status | kill}</code>. <code>run</code> returns <code>{job_id, log_path}</code>, and the exit wake is always on. There's no <code>logs</code> action: the agent reads the log file;</li>
+<li><code>subagent {spawn|await|steer|cancel}</code>;</li>
+<li><code>message {peers|send|ask|reply, queue_if_offline?}</code>;</li>
+<li><code>notify_user</code>.</li>
+</ul></li>
+<li><b>Automatic behavior:</b> injection, auto-continue, outcome reporting, and a short controlroom section in the system prompt that explains these mechanics.</li>
+<li><b>User-only, never exposed as tools:</b>
+<ul>
+<li>approving the agent's own requests;</li>
+<li>widening contact (same-task links, grants);</li>
+<li>cross-machine spawns;</li>
+<li>auto-continue settings or budget;</li>
+<li>sandbox grants;</li>
+<li>anything in sessions the agent can't reach.</li>
+</ul></li>
+</ul>
+<p><b><code>@controlroom/pi</code></b> (TypeScript, pinned in the bundle):</p>
+<ul>
+<li>Registers the tools natively and renders them nicely in pi's TUI.</li>
+<li>Talks to the daemon over a unix socket granted in the sandbox, authenticated with a per-session token from the env-file.</li>
+<li><b>Daemon → extension:</b> <code>/controlroom &lt;verb&gt; &lt;json&gt;</code> commands, which run without a model turn.</li>
+<li><b>Durable extension state:</b> <code>appendEntry</code>.</li>
+<li><b>Telemetry:</b> tagged widget lines.</li>
+<li>Bridges permission provenance from pi-permission-system (<code>permissions:*</code> events).</li>
+</ul>
+<h3>9.1 ACP agents (Claude Code, Codex): <i>dropped</i></h3>
+<p>Removed from the design: controlroom integrates deeply with pi only. There is no AcpDriver, no <code>controlroomd mcp</code>, no pi-acp and no ACP fixtures. The notes below are historical and must not be built.</p>
+<ul>
+<li><b>They keep their own harness.</b> Their built-in tools (edit, bash, search, web, their own Task subagents and background shells, TodoWrite) stay as they are. controlroom <b>adds</b> its tools as an MCP server. It does not replace their tools.</li>
+<li><b>The MCP server:</b> <code>controlroomd mcp --session &lt;id&gt;</code> runs over stdio as a child of the agent, inside the same nono sandbox. It's passed in <code>session/new</code>/<code>load</code> <code>mcpServers</code>. It talks to the daemon socket with the per-session token, so it's the same backend as <code>@controlroom/pi</code>. Tools appear as <code>mcp__controlroom__todo</code> and so on.</li>
+<li><b>Agent instructions:</b> ACP has no standard way to inject a system prompt. The controlroom section goes into the MCP server's <code>initialize</code> <code>instructions</code>, plus a short preamble on the first prompt.</li>
+<li><b>What maps from native ACP:</b>
+<ul>
+<li><code>request_permission</code> and <code>elicitation/create</code> → timeline <code>request</code> items. Their native approvals still work.</li>
+<li><code>plan</code> (e.g. Claude's TodoWrite) → a read-only timeline <code>plan</code> item. Auto-continue runs <b>only</b> on controlroom's shared todo list, and the instructions steer the agent to use it.</li>
+<li>Native subagent updates (the ACP subagent RFD, if an adapter supports it) → <code>subagent</code> timeline items marked <b>native</b>: observed, inside the parent's sandbox, not controlroom sessions.</li>
+<li>Subagents spawned with <code>mcp__controlroom__subagent</code> are full controlroom child sessions. They get their own sandbox and policy, and can run another agent kind or machine.</li>
+</ul></li>
+<li><b>Injection:</b> uses the adapter's <code>_session/steering</code> when advertised (both adapters do). Otherwise injected items are queued prompts with their <code>origin</code>. Job completions and messages therefore start a new turn rather than interrupting one.</li>
+<li><b>Sandboxing:</b> nono wraps the adapter process tree (adapter plus the native CLI).
+<ul>
+<li>Nested native sandboxes are a <b>spike item</b>. Codex's own Landlock layer stacks inside nono's (Landlock stacking is allowed). Claude Code's bubblewrap mode needs user namespaces inside nono and may fail, so it probably has to be off, with nono as the only sandbox.</li>
+<li>Credentials use the same <code>cmd://</code> proxy approach, per adapter.</li>
+</ul></li>
+<li><b>Status:</b> designed for, but not supported or tested in the first release. When adding them, record fixtures, run the shared scenario suite against the AcpDriver, and run a nono spike per adapter.</li>
+</ul>
+
+<h2 id="policy">10. Contact policy</h2>
+<ul>
+<li><b>Default deny.</b> Agents can only list sessions they're allowed to reach.</li>
+<li><b>Same task:</b> sessions linked to the same kanban task can see and message each other on any machine. Linking a session is the user's affirmative act.</li>
+<li><b>Parent and child:</b> they can always talk to each other.</li>
+<li><b>Anything else</b> raises a <code>contact</code> request to the user (allow once / allow this pair / deny). It behaves like a permission (attention and push). Grants are stored by the controller and can be revoked.</li>
+<li><b>Spawning on another machine:</b> always needs approval, raised as a <code>spawn</code> request with Allow or Deny.</li>
+<li><b>Who sees a contact request:</b> it sits on the requesting session, which waits for the answer. The target session sees nothing until it's granted; then both timelines show a grant notice. Task detail lists pending contact requests among its sessions.</li>
+<li><b>Same-machine spawns</b> Same-machine spawns follow a per-session or per-project setting (default: allowed).</li>
+<li><b>The broker is the controller</b> (the one that holds the broker claim). If the controller or the peer's machine is unreachable, the operation fails closed with <code>connection_lost{scope, since}</code>. It's queued only when the agent asked for <code>queue_if_offline</code>, with an expiry. In-flight asks and awaits resolve with <code>connection_lost</code> instead of hanging. Late replies are injected and marked late.</li>
+<li>Message contents are visible in both sessions' timelines.</li>
+</ul>
+
+<h2 id="sandbox">11. Sandboxing (nono 0.80.0)</h2>
+<div class="call ok"><b>Spike result: GO.</b> pi 1.2.0 with its extensions ran under nono on aarch64 NixOS (kernel 6.18, Landlock V6):
+<ul>
+<li>bash, children, detached grandchildren and pi's own file tools were confined to the working directory;</li>
+<li>both provider types worked with <b>no real credentials in the sandbox</b>;</li>
+<li>only allowlisted hosts were reachable, with direct TCP, UDP and DNS-over-nscd blocked;</li>
+<li>webhook approvals worked;</li>
+<li>stdout carried only JSONL;</li>
+<li>exit codes passed through, and it ran detached;</li>
+<li>overhead was about 50 ms at launch and about 0.25 s added to pi's startup.</li>
+</ul></div>
+<h3>11.1 Per-session layout (owned by controlroomd)</h3>
+<pre><code>sessions/&lt;id&gt;/agent/   PI_CODING_AGENT_DIR: generated settings.json (keep-list, "transport":"sse"),
+                        sanitized models.json (no literal keys), auth.json with FAKE tokens,
+                        npm → pinned extension bundle, pi sessions/
+sessions/&lt;id&gt;/home/    HOME (pi-lens etc.)       sessions/&lt;id&gt;/tmp/  TMPDIR (seed jiti cache; cold = ~30 s)
+sessions/&lt;id&gt;/profile.json   generated nono profile (absolute path; never registry/ns names; no extends)</code></pre>
+<h3>11.2 Profile (generated)</h3>
+<p>The spike's validated template is in <code>controlroom-artifacts/research/nono-spike.md</code>. In short:</p>
+<ul>
+<li>read-write: the working directory;</li>
+<li>read: <code>/nix/store</code> and the extension bundle;</li>
+<li>allow: session <code>agent/home/tmp</code> and the daemon socket;</li>
+<li><code>af_unix_mediation: pathname</code>, which closes the nscd DNS channel;</li>
+<li><code>linux_sysfs_read</code>;</li>
+<li>proxy mode with <code>allow_domain</code> set to the active providers' hosts (npm and GitHub opt-in per session);</li>
+<li><code>custom_credentials</code> routes (<code>cr_*</code> names) with <code>credential_key: cmd://…</code> and a <b>mandatory endpoint_policy</b>;</li>
+<li><code>credential_capture</code> runs <code>controlroomd credential &lt;session&gt; &lt;provider&gt;</code> host-side;</li>
+<li><code>security.capability_elevation</code> plus webhook approval backends (security and command_policies);</li>
+<li>a few mediated commands (e.g. <code>git push</code> → approve), pinned to exact store paths.</li>
+</ul>
+<h3>11.3 Credentials</h3>
+<ul>
+<li><b>API-key providers:</b> <code>cmd://</code> → <code>controlroomd credential</code>, which prints the key read from the user's real config, host-side.</li>
+<li><b>OAuth subscriptions:</b> the sandbox <code>auth.json</code> holds a synthetic unsigned JWT that carries only the non-secret claims pi needs (e.g. the account id), with a far-future expiry. <b>controlroomd is the only process that refreshes the token</b>, using pi-ai's locked refresh against the real <code>auth.json</code>, so it coordinates with the user's own pi processes. A refresh attempted inside the sandbox fails closed.</li>
+<li><b>Residual risk:</b> sandboxed processes can <i>use</i> the injected credential on allowed hosts, so endpoint policies are mandatory. Never put secrets in argv, because <code>/proc/*/cmdline</code> is readable.</li>
+</ul>
+<h3>11.4 Approvals</h3>
+<ul>
+<li>The webhook URL is <code>http://127.0.0.1:&lt;port&gt;/nono/v1/&lt;session&gt;/&lt;secret&gt;</code>. Correlate on the URL, because endpoint requests carry no session id. The sandbox can't reach loopback TCP.</li>
+<li>Requests map to <code>request{kind: sandbox, blocking: true}</code>:
+<ul>
+<li><code>command</code> → "run …?"</li>
+<li><code>capability</code> → "read/write path?"</li>
+<li><code>endpoint</code> → "call METHOD path?"</li>
+</ul></li>
+<li>The reply is <code>{"decision":"granted"|"denied","reason"}</code>. A timeout means deny. Use a long <code>timeout_secs</code> for human waits, or deny fast and let the agent retry after the user grants.</li>
+<li><b>Grants:</b> a path granted at runtime is remembered for the nono session. Standing grants (paths, domains, commands) are <b>profile changes and need a restart</b> plus a <code>--session</code> resume. Domains can't be approved at runtime in 0.80.</li>
+</ul>
+<h3>11.5 Hard rules and risks</h3>
+<div class="call bad">
+<ul>
+<li><b>Never</b> use nono registry packs, <code>nono pull</code> or <code>ns/name</code> profiles. Pack wiring <b>mutates the agent's config</b>: it appended to a home-manager-managed <code>settings.json</code>, and there's no flag to disable this in 0.80.</li>
+<li>Run nono with controlroom-owned <code>XDG_STATE_HOME</code>/<code>XDG_CONFIG_HOME</code>, plus <code>NONO_NO_UPDATE_CHECK=1</code> and a dead <code>NONO_REGISTRY</code>.</li>
+<li>Pin 0.80.0 (from nixpkgs or the upstream flake) and re-run the spike's checks on every bump.</li>
+<li>Without capability elevation, denials don't show up in diagnostics. Use the audit trail and <code>nono why</code>.</li>
+<li>Command mediation on NixOS is fragile: it needs exact store-path pins and only allows PATH binaries to run. Keep the mediated set small and test each command.</li>
+<li>Clean up leaked <code>/tmp/nono-*</code> directories.</li>
+</ul></div>
+<p><b>Per-session sandbox levels:</b></p>
+<ul>
+<li><code>strict</code> (default once the grant flow exists): the working directory and session dirs only;</li>
+<li><code>relaxed</code>: adds read-only home config such as git;</li>
+<li><code>off</code>: shown with a warning badge.</li>
+</ul>
+<p><code>doctor</code> reports the Landlock ABI and whether nono is available.</p>
+<h3>11.5b Default mediated commands</h3>
+<p>nono <b>command mediation</b> runs a listed command (resolved by a PATH shim, kernel-enforced; calling the binary directly is blocked) under its <i>own</i> policy: files, network, credentials, and a decision of run, approve-each-time or deny. The default set is kept deliberately small:</p>
+<table>
+<tr><th>Command</th><th>Default</th><th>Why</th></tr>
+<tr><td><code>git push</code> (incl. <code>--force</code>)</td><td><b>approve each time</b> (webhook → <code>request{kind: sandbox}</code>, showing remote, branch and force)</td><td>Publishing is the main irreversible step. Other git subcommands run normally</td></tr>
+<tr><td><code>ssh</code>, <code>scp</code>, <code>sftp</code>, remote <code>rsync</code></td><td><b>deny direct calls</b></td><td>The agent shouldn't hop to other machines. git may still use ssh internally under git's own policy (<code>can_use</code>), so fetch and push keep working</td></tr>
+<tr><td><code>gh</code></td><td>runs normally, and is the <b>only command that receives the GitHub secret</b></td><td>Ties in with secrets for jobs: the agent can use <code>gh</code>, but <code>curl</code> never sees the token</td></tr>
+<tr><td>everything else</td><td>the session sandbox rules</td><td>The network allowlist already limits curl and wget</td></tr>
+</table>
+<ul>
+<li><b>Pinning:</b> each mediated command is pinned to its <b>exact Nix store path</b>, resolved at profile generation from the session's <code>PATH</code>. A wrong pin silently bypasses mediation on NixOS (seen in the spike), so every mediated command has an automated test: an invocation through PATH and through the absolute path must both hit the policy.</li>
+<li><b>Configurable</b> per machine and project in Settings › Sandbox: add commands such as <code>kubectl apply</code>, <code>terraform apply</code> or <code>docker push</code> with approve or deny.</li>
+<li><b>Composes with secrets:</b> a secret scoped to a command is injected only into that command's sandbox.</li>
+</ul>
+
+<h3>11.6 Sandbox defaults (Settings › Sandbox)</h3>
+<ul>
+<li><b>RPCs:</b> <code>sandbox.profiles</code> and <code>sandbox.set_profile {scope: machine|project, id, level | clear_level | add_domain | remove_domain | remove_grant}</code>. The controller stores them and passes them to the daemon when a session is created or restarted.</li>
+<li><b>The effective profile for a session</b> combines the defaults of its machine and of <b>every project it belongs to</b> (a session can be in several):
+<ul>
+<li><b>level:</b> the <b>strictest</b> of the matching scopes;</li>
+<li><b>standing grants and allowed domains:</b> the union, so access is never widened implicitly beyond what some scope granted.</li>
+</ul>
+A session-level grant is added on top. <span class="small">(Open question: is "strictest level, union of grants" what you want?)</span></li>
+<li><b>Edits apply to new sessions and restarts.</b> Running sessions keep their profile until restarted. The in-session "Remove · restarts agent" applies immediately.</li>
+</ul>
+
+<h2 id="controller">12. Controller and web server</h2>
+<ul>
+<li><b>Port</b> the prototype's client store (owner-scoped repos, sealed keys, dangling task links allowed), keys and rotation, machine manager, attention, push and dedup, OIDC, hardening and static serving. Fix the review findings on the way in.</li>
+<li><b>Hub:</b> split it into modules and add an <b>event bus</b> (connectivity, summary changes). The broker, policy and timeline cache subscribe to the bus instead of growing a monolithic state.</li>
+<li><b>RPC:</b> split by namespace and make pass-through methods table-driven. Cap concurrency per WebSocket connection, define the ordering contract, and close sockets on logout or expiry.</li>
+<li><b>Store writes</b> touch only the columns that changed. Whole-row read-modify-write across an <code>await</code> caused the prototype's lost-update bug.</li>
+<li><b>Auth:</b> sessions are tagged with the auth mode and subject, and the allow-list is re-checked on every request.</li>
+<li><b>Daemon client:</b> per-call timeouts, cancellable post-connect steps, the broker claim in <code>hello</code>, and outbox pull/ack.</li>
+<li><b>Bootstrap:</b> run the new binary and check <code>--version</code> before swapping <code>current</code>. Keep the previous target for rollback if <code>hello</code> fails. Confirm the old daemon actually stopped. Pin the host-key algorithm.</li>
+</ul>
+
+<h2 id="ui">13. UI</h2>
+<ul>
+<li><b>Port</b> the prototype's shell and design: project rail, edge panes, session list (filters, group-by), tasks board (project badges, full new-task dialog), notifications, settings (machines, keys, auto-upgrade), phone layout, and interaction rules (keyboard, no native dialogs, minimal copy). The reference mock design is in <code>../controlroom-old/mock_uis</code>.</li>
+<li><b>New:</b>
+<ul>
+<li>a <b>timeline renderer</b> with one component per kind and windowed rendering;</li>
+<li>a <b>session-stream store</b> (several concurrent subscriptions for the parent and children, per-item fine-grained state, in-place text appends, eviction);</li>
+<li>one <b>RequestCard</b> for permission, question, dialog, sandbox, spawn and contact requests. Questions are always non-blocking (the lighter tier); approvals are blocking;</li>
+<li>a <b>todo panel</b> with an auto-continue control;</li>
+<li>a <b>subagent tree</b>, a jobs strip and message entries;</li>
+<li>a raw view (opt-in raw frames).</li>
+</ul></li>
+<li><b>Server-owned attention and roll-ups:</b> no client-side state derivation.</li>
+<li><b>Device names:</b> each browser has a persistent <code>device_id</code> (localStorage) and a user-chosen <b>label</b> ("Laptop", "Phone").
+<ul>
+<li><b>First load:</b> an unobtrusive inline prompt "Name this device", pre-filled with a friendly guess derived from the user agent (e.g. "Firefox on Linux", "Safari on iPhone"). It's skippable, and the guess is kept if skipped.</li>
+<li><b>Settings › Devices:</b> lists all devices (label, last seen, push enabled, "this device"), with rename and remove. Removing a device <b>signs it out</b>: its login sessions are revoked and its open WebSockets closed, and its push subscription is dropped. This lets you cut off a lost phone. Removing <i>this</i> device asks to confirm "This signs out this browser". Login sessions record their <code>device_id</code>, so revocation can target them. <code>devices.register</code> keeps the server's label if one exists.</li>
+<li><b>Attribution always uses the full device label,</b> never "you": e.g. "Allowed · Laptop (Firefox on Linux)", "Answered · Phone". The same device gets the same treatment as any other. Records store <code>{device_id, label_at_time}</code>. The UI shows the device's <b>current</b> label, falling back to the stored label if the device was removed, so renames apply to history.</li>
+<li><b>Where labels appear:</b> push device lists and focus attribution.</li>
+<li><b>RPCs:</b> <code>devices.list</code>, <code>devices.register {device_id, label}</code> (idempotent; sent on <code>hello</code>), <code>devices.rename</code>, <code>devices.remove</code>. <code>notifications.subscribe</code> and <code>client.focus</code> reference the <code>device_id</code>.</li>
+</ul></li>
+<li><b>Transport:</b> the offline queue only flushes requests still pending, and is cleared on close. Add a heartbeat. Gate actions on connectivity. Strip NUL before the Markdown renderer runs.</li>
+<li><b>Testing:</b> Playwright against the real <code>controlroom-web</code> plus <code>fake-agent</code> and pi-RPC fixtures. A small fixture-replay mock is kept for design work only. There is <b>no</b> second TypeScript implementation of the daemon.</li>
+<li><b>Future-feature placeholders</b> are kept: <code>openStream</code> and <code>resourceUrl</code>.</li>
+<li><b>Keyboard: vim-forward</b> (Settings \u203a Keyboard can turn each part off):
+<ul>
+<li><b>Pane focus with <code>Ctrl-h/j/k/l</code></b>, like vim-tmux-navigator. It moves focus spatially between visible panes (rail, session list, timeline, todo, terminal, files, notifications, tasks board) and works from inside text fields, the editor and the terminal.
+<ul>
+<li><b>Inside a terminal</b> it behaves like tmux-navigator: the keys go to the PTY when the terminal's foreground process is on a pass-through list (default: <code>vim</code>, <code>nvim</code>, <code>vi</code>, <code>fzf</code>, <code>less</code>, <code>man</code>, <code>htop</code>, <code>lazygit</code>). The daemon reports the PTY's foreground process name. Otherwise they navigate.</li>
+<li><code>Ctrl-\</code> followed by a key always sends that key to the terminal, as an escape hatch (e.g. for the shell's <code>Ctrl-l</code> clear).</li>
+<li>Browsers let pages override <code>Ctrl-h/j/k/l</code> (unlike <code>Ctrl-w/t/n</code>). The installed PWA avoids browser shortcuts entirely.</li>
+</ul></li>
+<li><b>Lists and the timeline:</b> <code>j/k</code> move, <code>h/l</code> collapse or expand (groups, tree nodes, timeline items), <code>gg</code>/<code>G</code> go to top or bottom, <code>Enter</code>/<code>o</code> open, <code>/</code> search, <code>n/N</code> next or previous match, <code>y</code> yanks the item text or path, <code>gf</code> opens the file path under the cursor.</li>
+<li><b><code>:</code> opens the command palette</b> (the same as \u2318K), with commands like <code>:approve</code>, <code>:new</code>, <code>:term</code>, <code>:files</code>, <code>:goto &lt;session&gt;</code>.</li>
+<li><b>The composer</b> has an optional vim mode (CodeMirror plus vim, off by default because Enter-to-send changes). In vim mode, normal-mode <code>Enter</code> sends and <code>i</code> starts insert.</li>
+<li><b>The terminal</b> is a plain xterm and receives every key except the navigator keys.</li>
+</ul></li>
+</ul>
+
+<h2 id="deploy">14. Deployment and packaging</h2>
+<ul>
+<li><b>Nix flake</b> (crane plus rust-overlay):
+<ul>
+<li>static musl <code>controlroomd</code> for x86_64 and aarch64;</li>
+<li><code>web-dist</code> (pnpm fetchDeps);</li>
+<li><code>controlroom-web</code> with the UI and both daemon binaries bundled;</li>
+<li><code>controlroom-pi</code> (pinned pi, <code>@controlroom/pi</code>, a launcher that applies the keep-list);</li>
+<li>nono pinned;</li>
+<li>checks: clippy, fmt, tests, web-check, TS drift, NixOS VM tests.</li>
+</ul></li>
+<li><b>NixOS module</b> <code>services.controlroom</code>:
+<ul>
+<li>hardened <code>DynamicUser</code>;</li>
+<li><code>LoadCredential</code> for the master key (required), the OIDC secret and the VAPID key;</li>
+<li><code>listenAddress</code>/<code>port</code>/<code>publicUrl</code>.</li>
+</ul>
+The reverse proxy, TLS and IdP registration live in the deployer's own config.</li>
+<li><b>Execution hosts:</b> the daemon installs itself under <code>~/.local/share/controlroom/versions/&lt;ver&gt;</code>. pi, the bundle and nono come from the host's Nix config (home-manager). The <code>agents.toml</code> pi entry points at the <code>controlroom-pi</code> launcher. Hosts without Nix are out of scope for now.</li>
+<li><b>VM tests:</b> one web VM and two execution VMs. They cover bootstrap, persistence across client disconnect, upgrade, reboot, the sandbox, and cross-machine messaging.</li>
+</ul>
+
+<h2 id="port">15. Port map from the prototype (<code>../controlroom-old</code>)</h2>
+<p><span class="tag port">PORT</span> review, adapt and fix · <span class="tag fresh">FRESH</span> write new, use the prototype only as reference · <span class="tag drop">DROP</span> · <span class="tag ext">ASSET</span> reuse as data or tests</p>
+<table>
+<tr><th>Prototype source</th><th>Action</th><th>Target and notes</th></tr>
+<tr><td><code>crates/transcript</code> (record, writer, reader, tail)</td><td><span class="tag port">PORT</span></td><td><code>transcript</code>, plus a seq index. Drop dead code.</td></tr>
+<tr><td><code>crates/daemon/src/supervise*</code></td><td><span class="tag port">PORT</span></td><td><code>supervisor</code>, plus the spawn spec, barrier, fsync off async workers, line cap, and the nono launch</td></tr>
+<tr><td><code>crates/transcript/src/replay</code>, <code>daemon/serve/acp.rs</code></td><td><span class="tag drop">DROP</span></td><td>ACP is out of the design. Read for the state-derivation algorithms only</td></tr>
+<tr><td><code>daemon/serve/{core,commands,db,rpc}</code></td><td><span class="tag fresh">FRESH</span></td><td><code>runtime</code> plus the daemon RPC. Re-implement the algorithms (queue, decisions, in-doubt, reconcile, op dedup) behind <code>Driver</code>/<code>Intent</code>. the prototype's 1.2k-line e2e suite is the behavioral spec.</td></tr>
+<tr><td><code>daemon/{connect,doctor,ctl}</code></td><td><span class="tag port">PORT</span></td><td><code>ctl</code> renders the timeline. <code>doctor</code> adds nono and Landlock checks.</td></tr>
+<tr><td><code>crates/protocol</code></td><td><span class="tag fresh">FRESH</span></td><td>New types (§5). Keep the jsonrpc, macros, ids and ts-gen infrastructure patterns.</td></tr>
+<tr><td><code>crates/client-core</code></td><td><span class="tag port">PORT</span></td><td>Unchanged except: verify-run plus rollback, call timeouts, per-id parse failure, host-key algorithm pinning, IPv6 brackets. Delete <code>Reconnector</code>.</td></tr>
+<tr><td><code>crates/controller</code> store, keys, rotation, machine, attention</td><td><span class="tag port">PORT</span></td><td>Column-targeted writes, transactional rotation, cancellable post-connect, the event bus</td></tr>
+<tr><td><code>crates/controller</code> hub, rpc</td><td><span class="tag fresh">FRESH</span></td><td>Split modules, table-driven pass-through, broker and policy</td></tr>
+<tr><td><code>crates/web</code></td><td><span class="tag port">PORT</span></td><td>Auth re-checks, WebSocket lifecycle and limits. Drop the desktop surface.</td></tr>
+<tr><td><code>crates/fake-agent</code></td><td><span class="tag port">PORT</span></td><td>Add a pi-RPC mode and gate steps</td></tr>
+<tr><td><code>crates/acp-spike</code></td><td><span class="tag port">PORT</span></td><td><code>fixture-tool</code> (recorder plus sanitizer), pi-RPC only</td></tr>
+<tr><td><code>controlroom-artifacts/design/mockup-src</code> (supersedes the prototype's <code>web/src</code>)</td><td><span class="tag fresh">FRESH</span></td><td>Reimplement the mockup's <b>functionality</b> with clean code. The mockup is a behavioral and visual reference; its code and fake backend may contain hacks and must not be copied</td></tr>
+<tr><td><code>web/src/lib/acp</code>, <code>session/TranscriptItem</code>, <code>mock/</code></td><td><span class="tag fresh">FRESH</span> / <span class="tag drop">DROP</span></td><td>Timeline renderer and store. The TS mock daemon is dropped.</td></tr>
+<tr><td><code>flake.nix</code>, <code>nix/</code></td><td><span class="tag port">PORT</span></td><td>Add <code>pi.nix</code>, <code>module.nix</code>, VM tests and pinned nono</td></tr>
+<tr><td><code>fixtures/acp</code>, <code>docs/adapters.md</code></td><td><span class="tag drop">DROP</span></td><td>ACP is out of the design</td></tr>
+<tr><td><code>daemon/tests/serve.rs</code>, <code>controller/tests/e2e.rs</code>, <code>web/e2e</code></td><td><span class="tag ext">ASSET</span></td><td>Rewrite the scenarios against the new interfaces as acceptance tests</td></tr>
+<tr><td><code>mock_uis/</code>, desktop/Tauri leftovers, native push</td><td><span class="tag drop">DROP</span></td><td>Read <code>mock_uis</code> for design reference only</td></tr>
+</table>
+
+<h2 id="bugs">16. Known-bug checklist (must not come back)</h2>
+<table>
+<tr><th>Prio</th><th>Bug (prototype)</th><th>Requirement and test</th></tr>
+<tr><td class="p1">P1</td><td>A session briefly showed idle with an empty queue while the next queued prompt was still unechoed (the flaky queue test)</td><td>Report in-flight queue items with <code>sending</code>, keep <code>working</code> until the echo, and use one fsync on the path. Tests use gate steps, not sleeps.</td></tr>
+<tr><td class="p1">P1</td><td>Controller lost update: daemon-settings and UI-settings writes each rewrote the whole row (the flaky e2e test)</td><td>Column-targeted writes. A concurrency test.</td></tr>
+<tr><td class="p1">P1</td><td>Writes were sent to the agent after a failed commit</td><td>The outbox is discarded on rollback. A fault-injection test.</td></tr>
+<tr><td class="p2">P2</td><td>Permission answer resent after a restart, and JSON-RPC ids reused (the id floor ignored SQLite)</td><td>No writes while in doubt, a barrier, a persisted id floor, and ids carried in the lines</td></tr>
+<tr><td class="p1">P1</td><td>An unknown error kind or enum variant hung the call forever; there were no call timeouts</td><td>Unknown fallbacks everywhere, per-id parse failure, and default timeouts. Forward-compatibility tests.</td></tr>
+<tr><td class="p1">P1</td><td>An upgrade swapped <code>current</code> without running the new binary, and auto-upgrade could break every machine</td><td>Verify-run before the swap, rollback if <code>hello</code> fails, stop confirmation</td></tr>
+<tr><td class="p1">P1</td><td>The OIDC allow-list wasn't re-checked after login, and sessions weren't tied to the auth mode</td><td>Re-check per request. Tag sessions with mode and subject.</td></tr>
+<tr><td class="p1">P1</td><td>The UI's WebSocket replayed requests after their callers were told they failed (duplicate prompts)</td><td>Flush only requests still pending. Clear the queue on close. Gate actions on connectivity.</td></tr>
+<tr><td class="p1">P1</td><td>O(transcript) work per streamed token, and every subscribe re-read the whole transcript</td><td>A materialized timeline with checkpoints, structural sharing in the UI, and windowing</td></tr>
+<tr><td class="p1">P1</td><td>Idle-stop and retention were stored but never enforced. The daemon DB had no migrations.</td><td>Implement both. <code>user_version</code> migrations.</td></tr>
+<tr><td class="p2">P2</td><td>Markdown NUL-marker attribute injection</td><td>Strip NUL before escaping. An XSS test corpus.</td></tr>
+<tr><td class="p2">P2</td><td>WebSockets survived logout. Unbounded per-frame spawns. A subscribe-after-close leak.</td><td>Close on logout, cap concurrency, check the client exists when subscribing</td></tr>
+<tr><td class="p2">P2</td><td>Agent questions were invisible in the transcript once answered. The mock differed from the real backend.</td><td>Timeline <code>request</code> items. No TS mock daemon.</td></tr>
+<tr><td class="p2">P2</td><td>Slow commands ran inline on the connection loop. The out channel was unbounded. The ops table was never pruned.</td><td>Spawn slow work. Bounded channels. Pruning.</td></tr>
+</table>
+<p class="small">Full findings with prototype file and line references: <code>controlroom-artifacts/reviews/*.final.md</code>.</p>
+
+<h2 id="plan">17. Build plan</h2>
+<p>Each phase lists its parallel workstreams. Every merge is gated on <code>nix flake check</code>, with the real exit code checked.</p>
+<table>
+<tr><th>Phase</th><th>Workstreams (parallel)</th><th>Done when</th></tr>
+<tr><td>P0 Skeleton</td><td>Workspace, flake (static musl, web-dist, checks), <code>AGENTS.md</code> with the process rules, CI-equivalent checks</td><td><code>nix flake check</code> passes on an empty skeleton with every crate stubbed</td></tr>
+<tr><td>P1 Protocol</td><td>The protocol crate (§5): types, tolerant decoding, TS generation plus drift check, round-trip and forward-compatibility tests</td><td>The UI can build against the generated types. The spec is reviewed.</td></tr>
+<tr><td>P2 Foundations</td><td>(a) transcript plus supervisor port; (b) client-core port; (c) the UI shell port against fixture data; (d) sandbox crate (profile generation, agent-dir builder, credential helper, webhook types); (e) fake-agent pi-RPC mode plus fixture-tool, recording pi-RPC fixtures</td><td>Each with its review checklist cleared</td></tr>
+<tr><td>P3 Runtime + drivers</td><td>Runtime (store, migrations, queue, requests, reconcile, intents, timeline materialization), PiDriver, FakeDriver, daemon binary (serve/connect/ctl/doctor)</td><td>The prototype's daemon e2e scenarios pass against PiDriver (driving fake-agent's pi-RPC mode) and FakeDriver. A real pi session on a test host works under nono, with fake credentials only.</td></tr>
+<tr><td>P4 Controller + web + UI</td><td>Controller (hub and bus, rpc split, store port, machine manager, bootstrap with verify and rollback, auto-upgrade), web shell port, timeline renderer and store, Playwright against the real server</td><td>End to end from the browser: add a machine, run a pi session (sandboxed), approvals, start fresh, auto-upgrade</td></tr>
+<tr><td>P5 Runtime primitives</td><td>Injection, jobs (notify modes, log files), <b>schedules</b> (controller), <code>ask_user</code> (non-blocking only), todo list plus auto-continue, <code>@controlroom/pi</code>, live-work-aware idle-stop (until P5b, pi keeps its built-in bash inside nono)</td><td>Acceptance scenarios for each primitive. A job-triggered continuation works.</td></tr>
+<tr><td>P6 Subagents</td><td>Child sessions, tree UI, roll-up, await and injection</td><td>A pi parent spawns, awaits and steers a child</td></tr>
+<tr><td>P7 Mailbox + policy</td><td>Outbox/ack, broker claim, same-task visibility, contact requests and grants, <code>connection_lost</code> semantics</td><td>A cross-machine ask with a link drop resolves correctly. VM test.</td></tr>
+<tr><td>P5b Terminals</td><td>PTY supervisor kind, <code>pty attach</code> channel, binary WebSocket, xterm.js panes; the collaborative session terminal with persistent shells (<code>bash</code>, <code>shell_new</code>, <code>terminal_read</code>, OSC 133/7 integration, waiting-for-input attention); <code>bash_privileged</code> with the approval flow and privileged pane; jobs on PTYs; private project terminals</td><td>Agent and user share a shell; a sudo command runs only after approval and with a password typed by the user; a private terminal can't be reached from any agent tool (test)</td></tr>
+<tr><td>P7b Extras</td><td><b>Files</b> (SFTP, browser, viewers, upload and download, light editing, content origin), Changes and undo (snapshots), dev-server previews (separate origin), templates, fork, away summary, search and ⌘K, secrets for jobs, usage and cost</td><td>Each has acceptance tests, and previews work through the reverse proxy</td></tr>
+<tr><td>P8 Ship</td><td>NixOS module, VM tests, Web Push verified on iOS, deployment</td><td>Running on the always-on server, behind the reverse proxy</td></tr>
+</table>
+
+<h2 id="process">18. Process rules (for the supervising agent)</h2>
+<ul>
+<li><b>Worktrees:</b> one git worktree per workstream under a sibling <code>controlroom-worktrees/</code> dir. Workers commit only to their own branch. The supervisor rebases and merges. Create the worktree, check it exists, then launch the worker (launches can race with directory creation).</li>
+<li><b>Gate every merge</b> on <code>nix flake check</code>, and check the <b>real exit status</b> (never pipe through <code>tail</code> without <code>pipefail</code>). Nix only sees tracked files, so <code>git add</code> first. Regenerate <code>Cargo.lock</code> on conflicts.</li>
+<li><b>Never <code>git commit -a</code></b>. Stage files by name. <code>README.md</code> is human-only: never edit or commit it. Planning files are uncommitted.</li>
+<li><b>Contract changes:</b> the protocol crate owns the TS. Generated files are read-only for the UI. Every contract change is announced to the UI owner. Minimal mechanical mock or fixture edits are allowed and must be listed.</li>
+<li><b>Version bump on every daemon change</b>, because auto-upgrade detects changes by version.</li>
+<li><b>Tests:</b> offline and deterministic (gate steps, not sleeps). Integration tests kill every process they spawn, even on failure.</li>
+<li><b>Never</b> use <code>nix profile add/install</code>, and never touch the user's <code>~/.pi/agent</code>, home-manager files or <code>~/.ssh</code> during experiments. Run nono with isolated HOME and XDG dirs.</li>
+<li><b>Privacy:</b> no real hostnames, usernames, domains, provider URLs, model ids or secrets in code, docs, fixtures (sanitize them) or commit messages. American spelling.</li>
+<li><b>Test servers:</b> keep a GC root (<code>nix build -o …</code>) for any binary you run, and start servers only after the build finishes.</li>
+</ul>
+
+<h2 id="future">19. Future features (design for them, don't build them yet)</h2>
+<ul>
+<li><i>(Terminals moved into scope; see "Terminals".)</i> <b>Remote terminals (original note):</b> supervisor kind <code>pty</code>, one SSH exec channel per terminal, xterm.js over a binary WebSocket (<code>/api/stream/</code>).</li>
+<li><i>(Files and viewers moved into scope; see "Additional features".)</i> <b>Files (original note):</b> SFTP on the existing connection, <code>GET/PUT /api/files/…</code> with Range.</li>
+<li><b>Viewers:</b> Shiki, marked plus DOMPurify, a sandboxed srcdoc iframe for HTML, <code>&lt;img&gt;</code>, pdf.js.</li>
+<li><b>File security:</b> responses are always <code>nosniff</code> with <code>CSP: sandbox</code>, and files are never rendered same-origin.</li>
+<li><b>Event triggers</b> (file changes, webhooks, git events), using the same shape as schedules ("Schedules" in the runtime section).</li>
+<li><b>Attaching TUI pi sessions</b> through the local daemon.</li>
+<li><b>Worktree per session:</b> not built in (VCS varies: git, p4, …). Users or agents manage worktrees themselves.</li>
+</ul>
+
+<h2 id="open">20. Open questions</h2>
+<ol>
+<li><s>Daemon state on hosts that ran the prototype.</s> <b>Resolved:</b> the user deletes that state on all hosts. The build assumes clean hosts and contains <b>no detection or migration code</b> for it.</li>
+<li><s>Default sandbox level.</s> <b>Resolved: <code>strict</code></b> by default for every new session.</li>
+<li><s>Mediated commands in the default profile.</s> <b>Resolved:</b> a small default set ("Default mediated commands" in the sandboxing section).</li>
+<li><s>OAuth refresh helper.</s> <b>Resolved:</b> a small Node helper in the bundle calls pi-ai's locked <code>refreshStoredOAuthCredential</code>, and controlroomd is the only process that refreshes.</li>
+<li><b>The work instance:</b> which host and which IdP. <i>TBD (user).</i></li>
+<li><s>Sandbox default precedence.</s> <b>Resolved:</b> the strictest level among the machine and all matching projects, with the union of grants and domains (multi-project sessions are expected to be rare).</li>
+<li><b>Name and remote for the new repo</b>: <i>TBD (user)</i>. It's local only for now, at <code>~/Documents/controlroom</code>.</li>
+</ol>
+
+<h2 id="terminals">22. Terminals</h2>
+<p>Every terminal is a <b>PTY supervisor</b>: supervisor kind <code>pty</code>, detached, and surviving client loss and daemon upgrades the way tmux does. It keeps an in-memory scrollback ring and may log to disk. Bytes travel on a dedicated SSH exec channel (<code>controlroomd pty attach &lt;id&gt;</code>) and a binary WebSocket (<code>/api/stream/…</code>) to <b>xterm.js</b>. Several browsers can attach at once, with input from any of them.</p>
+<table>
+<tr><th>Kind</th><th>Scope</th><th>Access</th><th>Sandbox</th><th>Notes</th></tr>
+<tr><td><b>Session terminal</b> (collaborative)</td><td>Session</td><td>User and agent share it, with one continuous history</td><td>The session's nono profile</td><td>The agent's <code>bash</code> runs here. One tab per shell (<code>main</code>, plus any from <code>shell_new</code>)</td></tr>
+<tr><td><b>Privileged pane</b></td><td>Session</td><td>User (input), agent (sees output)</td><td><b>Unsandboxed</b> (the user's login environment)</td><td>Only for approved <code>bash_privileged</code> calls. A red "UNSANDBOXED" bar and badge</td></tr>
+<tr><td><b>Job terminal</b></td><td>Session, one per job</td><td>User (watch or type); agent via the log file</td><td>The session's nono profile</td><td>Jobs run on a PTY by default (<code>pty: false</code> opts out)</td></tr>
+<tr><td><b>Private terminal</b></td><td><b>Project</b> (machine and cwd chosen from the project's locations; persists across sessions)</td><td><b>User only.</b> No agent tool can list, read or write it</td><td>None (the user's own shell)</td><td>Visually distinctive (see below). <b>No disk log</b>: scrollback is in memory only, stored under a path no sandbox can reach, and never used in previews, push or summaries</td></tr>
+</table>
+<p><b>Placement:</b> in the session view the terminal dock sits <b>below the composer</b> (timeline → todo/schedules → queue → composer → terminals), resizable from its top edge. On phone, terminals open full screen with an extra-keys row. Private terminals open as full panes under their project.</p>
+<h3>22.1 Agent shells (persistent state)</h3>
+<ul>
+<li><b>State persists within a shell:</b> <code>cd</code>, exported env vars (e.g. <code>KUBECONFIG</code>), functions and venv activation carry over between the agent's <code>bash</code> calls and the user's commands in the same shell. This stops agents from repeating env assignments in every command.</li>
+<li><b>Fresh state on request:</b> <code>shell_new {name?, cwd?}</code> opens a new shell (a new tab) with a clean login environment rooted at the session cwd (or <code>cwd</code>). <code>bash {shell}</code> targets a named shell. Separate shells also let independent commands run <b>in parallel</b>.</li>
+<li><b>Every tool result starts with a context header</b> <code>[shell main · ~/repo/sub · exit 0]</code> (cwd from OSC 7), so state drift is always visible to the agent.</li>
+<li><b>Command boundaries:</b> the daemon wraps each agent command with OSC 133 shell-integration markers (prompt, command start and end with exit code), so the tool result gets exactly that command's output (ANSI-stripped, length-capped, with a pointer to the full scrollback).</li>
+<li><b>Serialization:</b> one command at a time per shell. If the user is mid-typing at the prompt, the agent's command waits, and the pane shows "agent wants to run: <code>…</code>" with [Let it run].</li>
+<li><b>Avoiding needless prompts:</b> agent shells set <code>PAGER=cat GIT_PAGER=cat MANPAGER=cat</code>, <code>GIT_TERMINAL_PROMPT=0</code> and <code>DEBIAN_FRONTEND=noninteractive</code>.</li>
+<li><b>Waiting for input:</b> when a command is waiting on terminal input (a password, a confirmation, a pager), the tool call is marked <b>"waiting for input in terminal"</b>. It becomes a blocking attention item with push, and the user types into xterm. Passwords are not echoed, so they never reach the agent. A timeout applies, and the agent can't type into the terminal itself.</li>
+<li><b>Reading the terminal:</b> <code>terminal_read</code> lets the agent read what the <i>user</i> ran ("look at the error I just got"), limited to its own session's shells.</li>
+<li><b>Caution:</b> secrets the user exports in the collaborative shell are visible to the agent. Secrets belong in the private terminal.</li>
+<li><b>Default shell:</b> the user's login shell (bash or zsh) with the integration snippet sourced. Shells without OSC 133 support fall back to marker echoes.</li>
+</ul>
+<h3>22.2 <code>bash_privileged</code></h3>
+<ul>
+<li><b>Why it exists:</b> nono sets <code>NoNewPrivs</code>, so <code>sudo</code> and setuid can't work inside the sandbox. <code>bash_privileged {command, reason, cwd?}</code> is the only way out.</li>
+<li><b>Every call needs approval.</b> There's no auto-run, no "always allow", no patterns and no session grants.</li>
+<li><b>The approval card</b> shows the exact command, the reason, cwd and machine, with <b>Approve / Edit &amp; approve / Deny (reason)</b>. The approval is bound to the exact command text. If the command was edited, the agent is told what actually ran. A denial's reason becomes the tool result.</li>
+<li><b>Where it runs:</b> unsandboxed as the user, in the <b>privileged pane</b>, using the user's login environment (no injected proxy credentials or session tokens). It's interactive, so sudo or ssh prompt the <i>user</i>. Output and exit code go back to the agent (ANSI-stripped and capped). <b>Approval itself never times out</b>; it waits for the user. Once the command is running, a wait for terminal input (e.g. the sudo password) times out after a configurable 10 minutes, and the agent gets "timed out waiting for user input".</li>
+<li><b>The card warns</b> about anything that would outlive the call (<code>&amp;</code>, <code>nohup</code>, <code>setsid</code>, <code>disown</code>, <code>systemd-run</code>, …), because those processes run unsandboxed.</li>
+<li><b>Audit:</b> a distinct timeline item records who approved it (device label), the command that ran, and the exit code. Subagents follow the same rule, and their requests roll up to the parent.</li>
+</ul>
+<h3>22.3 Jobs on PTYs</h3>
+<ul>
+<li><b>The terminal shows raw output</b> (colors, progress bars), and the user can type into it, e.g. to answer a prompt.</li>
+<li><b>The agent's log file</b> <code>&lt;cwd&gt;/.controlroom/jobs/&lt;id&gt;.log</code> is an <b>ANSI-stripped plain-text</b> copy (carriage-return progress lines collapsed). Follow and exit wakes work as described in "Job".</li>
+</ul>
+<h3>22.4 Private terminals</h3>
+<ul>
+<li><b>Scope:</b> opened from a <b>project</b>, choosing a machine and cwd from the project's locations. Listed under the project and persistent until closed.</li>
+<li><b>Visual identity:</b> a distinct background tint and frame (e.g. a deep violet or charcoal theme in xterm), a lock icon, a "PRIVATE · agents can't see this" badge on the pane and tab, and its own section in the terminal list.</li>
+<li><b>Isolation:</b>
+<ul>
+<li>not listable or readable through any agent tool or API reachable from a sandbox;</li>
+<li>the supervisor state lives outside every session directory (mode 0700);</li>
+<li>no disk log;</li>
+<li>excluded from previews, push, the away summary and search.</li>
+</ul></li>
+</ul>
+
+<h2 id="extras">23. Additional features</h2>
+<table>
+<tr><th>Feature</th><th>Design</th></tr>
+<tr><td><b>Files: browse, upload/download, preview</b></td><td>
+<ul>
+<li><b>Transport:</b> SFTP on the existing russh connection (<code>russh-sftp</code>), falling back to an exec channel when sftp is disabled (<code>doctor</code> reports which). The daemon isn't involved. Access is the <b>user's own</b> (not the agent's sandbox): this is the human's file access, and viewing a file never exposes it to an agent.</li>
+<li><b>Browser:</b> a Files pane rooted at the session cwd (switchable to any of the project's locations or the machine's home). Sort, filter, hidden-file toggle, size and mtime, breadcrumbs, recent files. Backed by <code>fs.list {include_files}</code> and stat.</li>
+<li><b>Open from anywhere:</b> file paths in timeline items (tool calls, diffs, messages), terminal output (xterm link provider, path plus <code>:line</code>), job logs and the Changes view are clickable and open the viewer at that line.</li>
+<li><b>Viewers</b> (lazy-loaded libraries, nothing hand-written):
+<ul>
+<li><b>Text and code:</b> <b>Shiki</b> (grammars on demand). Above about 1 MB it falls back to plain text, and above about 10 MB it offers download only. Line numbers, go to line, find.</li>
+<li><b>Markdown:</b> <b>marked</b> plus <b>DOMPurify</b>, with code blocks highlighted by Shiki. Relative links and images resolve through <code>resourceUrl</code>, and remote images are blocked.</li>
+<li><b>HTML:</b> a sandboxed <code>&lt;iframe srcdoc&gt;</code> without <code>allow-same-origin</code>, scripts off by default, with a per-view "allow scripts" toggle.</li>
+<li><b>Images:</b> <code>&lt;img&gt;</code>, with SVG only via <code>&lt;img&gt;</code>.</li>
+<li><b>PDF:</b> <b>pdf.js</b>.</li>
+<li><b>Other types:</b> hex or binary info, plus download.</li>
+</ul></li>
+<li><b>Upload and download:</b> drag-and-drop or a picker uploads into the current directory, streamed and atomic (written to a temp file, then renamed), with a conflict prompt. Download works per file, or as a folder zip streamed on the fly. Uploading into a session cwd makes the file visible to that agent, and the UI says so.</li>
+<li><b>Editing (light):</b> quick edits in a <b>CodeMirror 6</b> editor with <b>vim mode on by default</b> (<code>@replit/codemirror-vim</code>, with <code>:w</code> saving and <code>:q</code> closing). Saves check mtime for conflicts and show a diff before saving. Not an IDE.</li>
+<li><b>Security (must hold):</b>
+<ul>
+<li>raw bytes are served from a <b>separate content origin</b> (e.g. <code>files-&lt;id&gt;.&lt;base&gt;</code> via the reverse proxy, the same mechanism as dev-server previews), always with <code>nosniff</code> and <code>Content-Security-Policy: sandbox</code>, and <code>Content-Disposition: attachment</code> unless the type is on the viewer allowlist;</li>
+<li>HTML and SVG are never rendered on controlroom's origin;</li>
+<li>authenticated, short-lived, signed URLs;</li>
+<li>Range support, and CSRF tokens on writes.</li>
+</ul></li>
+<li><b>Private files:</b> the file browser is available inside private-terminal context too (same user access). Nothing is shared with agents unless the user puts it in a session cwd.</li>
+</ul></td></tr>
+<tr><td><b>Changes review and undo</b> (VCS-agnostic)</td><td>The daemon takes <b>per-run snapshots</b> of the session cwd: content-addressed, incremental, honoring ignore files (<code>.gitignore</code>, <code>.p4ignore</code>, <code>node_modules</code>, build dirs) with a size cap. A <b>Changes</b> view shows the diff per run and overall, with revert per file or hunk and <b>"Undo last run"</b>. It doesn't depend on git or p4. nono's rollback snapshots are a possible implementation, to be evaluated.</td></tr>
+<tr><td><b>Dev-server previews</b></td><td>When a session's process listens on a port (detected from job or terminal output, or <code>ss</code>), the UI offers <b>Preview</b>. The controller opens an SSH <code>direct-tcpip</code> channel to the remote <code>localhost:port</code> and serves it on a <b>separate origin</b> (e.g. a wildcard subdomain <code>p-&lt;id&gt;.&lt;base&gt;</code> via the deployer's reverse proxy), so app cookies and scripts are isolated from controlroom. Access is authenticated and WebSocket upgrades work. Path-prefix proxying is avoided because it breaks absolute asset paths.</td></tr>
+<tr><td><b>Session templates</b></td><td>Named presets: agent, model, thinking level, cwd, sandbox level and grants, todo seed, schedules, task links. "New session from template".</td></tr>
+<tr><td><b>Fork session</b></td><td>Fork from any timeline point (pi <code>fork {entryId}</code>) into a new controlroom session linked to the original. Compare the two side by side.</td></tr>
+<tr><td><b>Away summary</b></td><td>"While you were away": per project, sessions finished, waiting, failed and jobs done, derived by the daemon from the timeline. Shown on return, or as an optional daily digest push.</td></tr>
+<tr><td><b>Search and command palette</b></td><td>Full-text search across timelines (daemon-side index per machine, federated by the controller). A <b>⌘K</b> palette jumps to sessions, tasks, projects, terminals and actions.</td></tr>
+<tr><td><b>Secrets for jobs</b></td><td>User-managed secrets (stored sealed by the controller, or as host references) that nono's proxy injects for specific hosts, endpoints or commands. Agents can <b>use</b> them but never <b>read</b> them. Managed in Settings › Secrets; the private terminal is the natural place to obtain or test them.</td></tr>
+<tr><td><b>Usage and cost</b></td><td>Tokens and cost per session, task and project, from pi usage events. Optional budgets per session or project pause auto-continue (budget state) when exceeded.</td></tr>
+</table>
+
+<h2 id="refs">21. References</h2>
+<ul>
+<li><code>controlroom-artifacts/prototype-plan.md</code>: the prototype's plan and decision history.</li>
+<li><code>controlroom-artifacts/research/pi-rpc-and-extensions.md</code>: pi 1.2.0 RPC surface, extension channels, layering, the ACP subagent RFD.</li>
+<li><code>controlroom-artifacts/research/nono-spike.md</code>: the nono evaluation, profile template, webhook formats, risks.</li>
+<li><code>controlroom-artifacts/reviews/*.final.md</code>: five code reviews of the prototype (daemon, controller and web, client-core and protocol, UI, architecture).</li>
+<li><code>controlroom-artifacts/handoff-private.md</code>: the user's environment and private context (not for the repo).</li>
+</ul>
+</main>
+</div>
+</body>
+</html>
