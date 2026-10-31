@@ -485,8 +485,12 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "controlroom-sandbox",
+ "controlroom-supervisor",
+ "controlroom-transcript",
+ "rustix",
  "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
