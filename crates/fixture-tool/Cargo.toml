@@ -5,6 +5,15 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+futures.workspace = true
+regex = "1.11"
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+tempfile.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true
