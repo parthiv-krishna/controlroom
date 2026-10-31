@@ -75,6 +75,7 @@
           controlroomd-static-x86_64 = rust.controlroomdStatic.x86_64;
           controlroomd-static-aarch64 = rust.controlroomdStatic.aarch64;
           controlroom-web = rust.controlroomWeb;
+          protocol-ts-drift = rust.protocolTsDrift;
           web-check = web.check;
         }
       );

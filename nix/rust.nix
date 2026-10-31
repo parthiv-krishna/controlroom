@@ -74,6 +74,25 @@ let
       }
     );
 
+  # The TypeScript drift test, with the checked-in bindings in the source so it
+  # compares instead of skipping (the plain `test` check doesn't see web/).
+  protocolTsDrift = craneLib.cargoTest (
+    commonArgs
+    // {
+      pname = "controlroom-protocol-ts-drift";
+      src = lib.fileset.toSource {
+        root = ../.;
+        fileset = lib.fileset.unions [
+          (craneLib.fileset.commonCargoSources ../.)
+          ../web/src/lib/protocol
+        ];
+      };
+      inherit cargoArtifacts;
+      cargoTestExtraArgs = "-p controlroom-protocol --test typescript";
+      CONTROLROOM_TS_DRIFT_REQUIRED = "1";
+    }
+  );
+
   controlroomdStatic = {
     x86_64 = mkStaticDaemon {
       target = "x86_64-unknown-linux-musl";
@@ -115,6 +134,7 @@ in
     workspace
     controlroomWeb
     controlroomdStatic
+    protocolTsDrift
     ;
 
   clippy = craneLib.cargoClippy (
