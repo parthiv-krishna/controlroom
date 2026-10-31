@@ -188,7 +188,7 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 </table>
 <h3>5.3 Daemon API (controller ↔ controlroomd)</h3>
 <ul>
-<li><code>hello</code> (versions, capabilities, machine id, <b>broker claim</b>: which controller brokers the mailbox).</li>
+<li><code>hello</code> (versions, capabilities, daemon id, controller id, role). <b>A daemon serves exactly one controller at a time:</b> a hello from a different controller is rejected while one is connected (a typed conflict error); a hello from the same controller replaces its old connection, so reconnects work. A local debugging client (<code>ctl</code>) connects with a debug role and is not the controller.</li>
 <li><code>machine.subscribe {since_rev}</code>: summaries feed, with a snapshot fallback. A persisted rev log survives restarts.</li>
 <li><code>session.subscribe {id, since_seq, raw?}</code> (the UI asks for raw only on demand, when the raw view or a seq link is opened): <b>timeline ops</b> (<code>upsert</code> / <code>append_text</code> / <code>end</code>, each with a source seq range). Served from the materialized timeline, not by re-folding the whole transcript.</li>
 <li><b>Commands</b> (all carry an <code>op_id</code>):
@@ -201,7 +201,7 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 <li><b>jobs:</b> <code>job.list|logs|kill</code>;</li>
 <li><b>misc:</b> <code>agents.list</code>, <code>fs.list</code>, <code>doctor.report</code>, <code>settings.get|set</code>.</li>
 </ul></li>
-<li><b>Outbox (daemon → broker):</b> <code>outbox.subscribe {since}</code>, then <code>outbox.ack {item, outcome}</code>. Deliveries come back as <code>inbox.deliver {op_id, …}</code>. This is a durable, idempotent channel, and the daemon never makes RPC calls to the controller.</li>
+<li><b>Outbox (daemon → controller):</b> <code>outbox.subscribe {since}</code>, then <code>outbox.ack {item, outcome}</code>. Deliveries come back as <code>inbox.deliver {op_id, …}</code>. This is a durable, idempotent channel, and the daemon never makes RPC calls to the controller.</li>
 <li><b>Errors:</b> typed kinds (busy, already_resolved, deleted, not_resumable, unknown_session, invalid_state, invalid_params, unsupported, agent_unavailable, sandbox_unavailable, incompatible_version, …) plus <code>Unknown</code>.</li>
 </ul>
 <h3>5.4 UI API (browser ↔ controller)</h3>
@@ -408,7 +408,7 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <li><b>Spawning on another machine:</b> always needs approval, raised as a <code>spawn</code> request with Allow or Deny.</li>
 <li><b>Who sees a contact request:</b> it sits on the requesting session, which waits for the answer. The target session sees nothing until it's granted; then both timelines show a grant notice. Task detail lists pending contact requests among its sessions.</li>
 <li><b>Same-machine spawns</b> Same-machine spawns follow a per-session or per-project setting (default: allowed).</li>
-<li><b>The broker is the controller</b> (the one that holds the broker claim). If the controller or the peer's machine is unreachable, the operation fails closed with <code>connection_lost{scope, since}</code>. It's queued only when the agent asked for <code>queue_if_offline</code>, with an expiry. In-flight asks and awaits resolve with <code>connection_lost</code> instead of hanging. Late replies are injected and marked late.</li>
+<li><b>The broker is the controller</b> (the single controller connected to each daemon). If the controller or the peer's machine is unreachable, the operation fails closed with <code>connection_lost{scope, since}</code>. It's queued only when the agent asked for <code>queue_if_offline</code>, with an expiry. In-flight asks and awaits resolve with <code>connection_lost</code> instead of hanging. Late replies are injected and marked late.</li>
 <li>Message contents are visible in both sessions' timelines.</li>
 </ul>
 
@@ -501,7 +501,8 @@ sessions/&lt;id&gt;/profile.json   generated nono profile (absolute path; never 
 <li><b>level:</b> the <b>strictest</b> of the matching scopes;</li>
 <li><b>standing grants and allowed domains:</b> the union, so access is never widened implicitly beyond what some scope granted.</li>
 </ul>
-A session-level grant is added on top. <span class="small">(Open question: is "strictest level, union of grants" what you want?)</span></li>
+A session-level grant is added on top. (Resolved: yes.)</li>
+<li><b>An explicit per-session level</b> (new-session dialog or template) is an affirmative user choice and overrides the defaults in either direction; a session looser than its defaults shows a badge (off shows the warning badge).</li>
 <li><b>Edits apply to new sessions and restarts.</b> Running sessions keep their profile until restarted. The in-session "Remove · restarts agent" applies immediately.</li>
 </ul>
 
@@ -512,7 +513,7 @@ A session-level grant is added on top. <span class="small">(Open question: is "s
 <li><b>RPC:</b> split by namespace and make pass-through methods table-driven. Cap concurrency per WebSocket connection, define the ordering contract, and close sockets on logout or expiry.</li>
 <li><b>Store writes</b> touch only the columns that changed. Whole-row read-modify-write across an <code>await</code> caused the prototype's lost-update bug.</li>
 <li><b>Auth:</b> sessions are tagged with the auth mode and subject, and the allow-list is re-checked on every request.</li>
-<li><b>Daemon client:</b> per-call timeouts, cancellable post-connect steps, the broker claim in <code>hello</code>, and outbox pull/ack.</li>
+<li><b>Daemon client:</b> per-call timeouts, cancellable post-connect steps, the controller id in <code>hello</code> (single-controller rule), and outbox pull/ack.</li>
 <li><b>Bootstrap:</b> run the new binary and check <code>--version</code> before swapping <code>current</code>. Keep the previous target for rollback if <code>hello</code> fails. Confirm the old daemon actually stopped. Pin the host-key algorithm.</li>
 </ul>
 
@@ -632,7 +633,7 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <tr><td>P4 Controller + web + UI</td><td>Controller (hub and bus, rpc split, store port, machine manager, bootstrap with verify and rollback, auto-upgrade), web shell port, timeline renderer and store, Playwright against the real server</td><td>End to end from the browser: add a machine, run a pi session (sandboxed), approvals, start fresh, auto-upgrade</td></tr>
 <tr><td>P5 Runtime primitives</td><td>Injection, jobs (notify modes, log files), <b>schedules</b> (controller), <code>ask_user</code> (non-blocking only), todo list plus auto-continue, <code>@controlroom/pi</code>, live-work-aware idle-stop (until P5b, pi keeps its built-in bash inside nono)</td><td>Acceptance scenarios for each primitive. A job-triggered continuation works.</td></tr>
 <tr><td>P6 Subagents</td><td>Child sessions, tree UI, roll-up, await and injection</td><td>A pi parent spawns, awaits and steers a child</td></tr>
-<tr><td>P7 Mailbox + policy</td><td>Outbox/ack, broker claim, same-task visibility, contact requests and grants, <code>connection_lost</code> semantics</td><td>A cross-machine ask with a link drop resolves correctly. VM test.</td></tr>
+<tr><td>P7 Mailbox + policy</td><td>Outbox/ack, same-task visibility, contact requests and grants, <code>connection_lost</code> semantics</td><td>A cross-machine ask with a link drop resolves correctly. VM test.</td></tr>
 <tr><td>P5b Terminals</td><td>PTY supervisor kind, <code>pty attach</code> channel, binary WebSocket, xterm.js panes; the collaborative session terminal with persistent shells (<code>bash</code>, <code>shell_new</code>, <code>terminal_read</code>, OSC 133/7 integration, waiting-for-input attention); <code>bash_privileged</code> with the approval flow and privileged pane; jobs on PTYs; private project terminals</td><td>Agent and user share a shell; a sudo command runs only after approval and with a password typed by the user; a private terminal can't be reached from any agent tool (test)</td></tr>
 <tr><td>P7b Extras</td><td><b>Files</b> (SFTP, browser, viewers, upload and download, light editing, content origin), Changes and undo (snapshots), dev-server previews (separate origin), templates, fork, away summary, search and ⌘K, secrets for jobs, usage and cost</td><td>Each has acceptance tests, and previews work through the reverse proxy</td></tr>
 <tr><td>P8 Ship</td><td>NixOS module, VM tests, Web Push verified on iOS, deployment</td><td>Running on the always-on server, behind the reverse proxy</td></tr>
