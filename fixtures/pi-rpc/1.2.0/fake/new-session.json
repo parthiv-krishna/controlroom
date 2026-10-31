@@ -1,0 +1,2 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "new_session": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}, {"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}],
+ "replies": [{"content": [{"type": "text", "text": "Old session answer."}]}, {"content": [{"type": "text", "text": "New session answer."}]}]}

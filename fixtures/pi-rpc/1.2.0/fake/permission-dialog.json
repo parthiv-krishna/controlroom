@@ -1,0 +1,8 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [
+  {"content": [{"type": "tool_call", "id": "call_allow", "name": "bash", "args": {"command": "echo fixture-guard ok"},
+    "permission": {"title": "Allow: echo fixture-guard ok?"}, "progress": [{"update": ""}, {"update": "fixture-guard ok\n"}],
+    "result": "fixture-guard ok\n"}]},
+  {"content": [{"type": "tool_call", "id": "call_block", "name": "bash", "args": {"command": "echo fixture-guard no"},
+    "permission": {"title": "Allow: echo fixture-guard no?"}, "result": "fixture-guard no\n"}]},
+  {"content": [{"type": "text", "text": "Permission scenario done."}]}
+]}

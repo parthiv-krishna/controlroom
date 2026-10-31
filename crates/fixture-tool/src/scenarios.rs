@@ -131,6 +131,15 @@ pub fn all() -> Vec<Scenario> {
             clear_queue
         ),
         scenario!(
+            "queue-when-idle",
+            "steer, follow_up and prompt{streamingBehavior} sent while idle.",
+            || vec![
+                Reply::text("Answer to the idle prompt."),
+                Reply::text("Answer to the idle follow-up."),
+            ],
+            queue_when_idle
+        ),
+        scenario!(
             "abort-text",
             "abort while text streams.",
             || vec![Reply::gated_text("Partial text", "never", " unreachable.")],
@@ -154,6 +163,27 @@ pub fn all() -> Vec<Scenario> {
                 Reply::text("Fresh answer."),
             ],
             abort_then_prompt
+        ),
+        scenario!(
+            "abort-with-queue",
+            "abort while a follow-up is queued; the follow-up stays queued for the next prompt.",
+            || vec![
+                Reply::gated_text("Partial", "never", " unreachable."),
+                Reply::text("Answer to the next prompt."),
+                Reply::text("Answer to the queued follow-up."),
+            ],
+            abort_with_queue
+        ),
+        scenario!("abort-idle", "abort while idle.", Vec::new, abort_idle),
+        scenario!(
+            "abort-dialog",
+            "abort while a permission dialog is open: abort answers only after the dialog does.",
+            || vec![Reply::tool_call(
+                "call_guarded",
+                "bash",
+                json!({"command": "echo fixture-guard"}),
+            )],
+            abort_dialog
         ),
         scenario!(
             "error-stop",
@@ -288,6 +318,22 @@ pub fn all() -> Vec<Scenario> {
             )],
             sighup_running
         ),
+        scenario!(
+            "sigterm-idle",
+            "SIGTERM an idle pi.",
+            Vec::new,
+            sigterm_idle
+        ),
+        scenario!(
+            "stdin-close-running",
+            "Close pi's stdin while text streams.",
+            || vec![Reply::gated_text(
+                "Streaming before stdin closes",
+                "never",
+                ""
+            )],
+            stdin_close_running
+        ),
     ]
 }
 
@@ -355,7 +401,7 @@ async fn steer_during_tool(ctx: &mut Ctx) -> Result<()> {
         json!({"type": "steer", "message": "Also mention the steer."}),
     )
     .await?;
-    pi.meta(json!({"fixture": "release_tool"}));
+    pi.meta(json!({"fixture": "release_gate", "gate": "tool"}));
     tokio::fs::write(&fifo, "tool output\n").await?;
     pi.wait_event("agent_settled").await?;
     finish(ctx, pi).await
@@ -400,6 +446,67 @@ async fn clear_queue(ctx: &mut Ctx) -> Result<()> {
     ensure_success(&cleared)?;
     ctx.release(&pi, "g1").await?;
     pi.wait_event("agent_settled").await?;
+    finish(ctx, pi).await
+}
+
+async fn queue_when_idle(ctx: &mut Ctx) -> Result<()> {
+    let mut pi = ctx.spawn(&[])?;
+    pi.call("1", json!({"type": "steer", "message": "Idle steer."}))
+        .await?;
+    pi.call(
+        "2",
+        json!({"type": "follow_up", "message": "Idle follow-up."}),
+    )
+    .await?;
+    let response = pi
+        .call(
+            "3",
+            json!({"type": "prompt", "message": "Idle prompt.", "streamingBehavior": "steer"}),
+        )
+        .await?;
+    ensure!(
+        response["data"]["disposition"] == "started",
+        "unexpected: {response}"
+    );
+    pi.wait_event("agent_settled").await?;
+    pi.call("4", json!({"type": "get_state"})).await?;
+    finish(ctx, pi).await
+}
+
+async fn abort_with_queue(ctx: &mut Ctx) -> Result<()> {
+    let mut pi = ctx.spawn(&[])?;
+    pi.call("1", prompt("Long task.")).await?;
+    wait_text_delta(&mut pi).await?;
+    pi.call(
+        "2",
+        json!({"type": "follow_up", "message": "Queued follow-up."}),
+    )
+    .await?;
+    pi.call("3", json!({"type": "abort"})).await?;
+    pi.call("4", json!({"type": "get_state"})).await?;
+    pi.call("5", prompt("Next prompt.")).await?;
+    pi.wait_event("agent_settled").await?;
+    finish(ctx, pi).await
+}
+
+async fn abort_idle(ctx: &mut Ctx) -> Result<()> {
+    let mut pi = ctx.spawn(&[])?;
+    let response = pi.call("1", json!({"type": "abort"})).await?;
+    ensure_success(&response)?;
+    finish(ctx, pi).await
+}
+
+async fn abort_dialog(ctx: &mut Ctx) -> Result<()> {
+    let mut pi = ctx.spawn(&[])?;
+    pi.call("1", prompt("Run the guarded command.")).await?;
+    let id = wait_dialog(&mut pi, "select").await?;
+    // pi's abort waits for idle, and the open dialog keeps the tool hook
+    // pending: get_state answers while abort does not.
+    pi.send(json!({"id": "2", "type": "abort"})).await?;
+    pi.call("3", json!({"type": "get_state"})).await?;
+    pi.send(json!({"type": "extension_ui_response", "id": id, "value": "Allow"}))
+        .await?;
+    pi.wait_response("2").await?;
     finish(ctx, pi).await
 }
 
@@ -637,6 +744,22 @@ async fn sighup_idle(ctx: &mut Ctx) -> Result<()> {
     pi.wait_exit().await?;
     ctx.keep(&pi);
     Ok(())
+}
+
+async fn sigterm_idle(ctx: &mut Ctx) -> Result<()> {
+    let mut pi = ctx.spawn(&[])?;
+    pi.call("1", json!({"type": "get_state"})).await?;
+    pi.signal("TERM")?;
+    pi.wait_exit().await?;
+    ctx.keep(&pi);
+    Ok(())
+}
+
+async fn stdin_close_running(ctx: &mut Ctx) -> Result<()> {
+    let mut pi = ctx.spawn(&[])?;
+    pi.call("1", prompt("Start streaming.")).await?;
+    wait_text_delta(&mut pi).await?;
+    finish(ctx, pi).await
 }
 
 async fn sighup_running(ctx: &mut Ctx) -> Result<()> {

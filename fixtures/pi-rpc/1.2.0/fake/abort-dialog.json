@@ -1,0 +1,4 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [
+  {"content": [{"type": "tool_call", "id": "call_guarded", "name": "bash", "args": {"command": "echo fixture-guard"},
+    "permission": {"title": "Allow: echo fixture-guard?"}, "progress": [{"update": ""}], "result": "fixture-guard\n"}]}
+]}

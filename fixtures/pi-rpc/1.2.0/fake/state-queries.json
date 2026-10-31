@@ -1,0 +1,17 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "commands": [
+  {"name": "fixture-dialogs", "description": "Exercise every RPC extension UI method", "steps": [
+    {"type": "dialog", "method": "select", "title": "Pick a color", "options": ["red", "green", "blue"]},
+    {"type": "dialog", "method": "confirm", "title": "Proceed?", "message": "This is a fixture dialog."},
+    {"type": "dialog", "method": "input", "title": "Your name", "placeholder": "type a name"},
+    {"type": "dialog", "method": "editor", "title": "Edit notes", "prefill": "line 1\nline 2"},
+    {"type": "ui", "method": "notify", "message": "select=green confirm=true input=alice editor=<none>"},
+    {"type": "ui", "method": "setStatus", "key": "fixture", "text": "dialogs done"},
+    {"type": "ui", "method": "setWidget", "key": "fixture", "lines": ["fixture widget", "color: green"]},
+    {"type": "ui", "method": "setTitle", "title": "fixture title"},
+    {"type": "append_entry", "custom_type": "fixture.answers", "data": {"choice": "green", "confirmed": true, "name": "alice"}}
+  ]},
+  {"name": "fixture-timeout", "description": "A select dialog that times out", "steps": [
+    {"type": "dialog", "method": "select", "title": "Quick!", "options": ["yes", "no"], "timeout_ms": 300},
+    {"type": "ui", "method": "notify", "message": "timed out with <none>", "notify_type": "warning"}
+  ]}
+], "replies": [{"content": [{"type": "text", "text": "Answer for the stats."}]}]}

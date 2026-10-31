@@ -17,7 +17,7 @@ pub const MODEL_B: &str = "mock-model-b";
 pub const MAX_TOKENS: u64 = 4096;
 
 /// The test extension, loaded with `-e`.
-const EXTENSION: &str = include_str!("../extension/fixture-ext.ts");
+const EXTENSION: &str = include_str!("../../../fixtures/pi-rpc/extension/fixture-ext.ts");
 
 /// Files of the scratch project pi works in.
 const PROJECT_FILES: &[(&str, &str)] = &[

@@ -1,0 +1,1 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [{"content": [{"type": "text", "text": "Answer to the idle prompt."}]}, {"content": [{"type": "text", "text": "Answer to the idle follow-up."}]}]}

@@ -1,0 +1,4 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [
+  {"content": [{"type": "tool_call", "id": "call_sleep", "name": "bash", "args": {"command": "sleep 60"},
+    "progress": [{"update": ""}, {"gate": "never"}]}]}
+]}

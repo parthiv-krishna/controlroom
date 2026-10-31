@@ -1,0 +1,5 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [
+  {"content": [{"type": "tool_call", "id": "call_gate", "name": "bash", "args": {"command": "cat fifo"},
+    "progress": [{"update": ""}, {"gate": "tool"}, {"update": "tool output\n"}], "result": "tool output\n"}]},
+  {"content": [{"type": "text", "text": "Saw the steer."}]}
+]}

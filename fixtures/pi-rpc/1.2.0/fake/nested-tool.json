@@ -1,0 +1,6 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [
+  {"content": [{"type": "tool_call", "id": "call_nested", "name": "fixture_nested", "args": {"path": "notes.txt"},
+    "nested": [{"name": "read", "args": {"path": "notes.txt"}, "result": "alpha\nbeta\ngamma\n"}],
+    "result": "nested read: alpha\nbeta\ngamma\n"}]},
+  {"content": [{"type": "text", "text": "Nested read finished."}]}
+]}

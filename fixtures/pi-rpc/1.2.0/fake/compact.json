@@ -1,0 +1,2 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [{"content": [{"type": "text", "text": "Something worth summarizing."}]}, {"content": [{"type": "text", "text": "Something else."}]},
+  {"content": [{"type": "text", "text": "Summary: the user asked for something worth summarizing."}]}]}

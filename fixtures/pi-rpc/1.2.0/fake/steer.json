@@ -1,0 +1,1 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [{"content": [{"type": "text", "text": "Working on it", "chunk": 100}, {"type": "gate", "name": "g1"}, {"type": "text", "text": " and done."}]}, {"content": [{"type": "text", "text": "Steered answer."}]}]}

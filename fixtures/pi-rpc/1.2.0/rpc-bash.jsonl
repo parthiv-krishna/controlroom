@@ -1,0 +1,9 @@
+{"seq":1,"ts":1700000000000,"dir":"meta","raw":"{\"args\":[\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"-e\",\"/home/alice/.pi/fixture-ext/fixture-ext.ts\"],\"baseUrl\":\"http://127.0.0.1:4000/v1\",\"fixture\":\"env\",\"root\":\"/home/alice/.cr-fixture\"}"}
+{"seq":2,"ts":1700000000000,"dir":"in","raw":"{\"command\":\"printf 'one\\\\ntwo\\\\n'\",\"id\":\"1\",\"type\":\"bash\"}"}
+{"seq":3,"ts":1700000000316,"dir":"out","raw":"{\"type\":\"extension_ui_request\",\"id\":\"00000000-0000-4000-8000-000000000001\",\"method\":\"setStatus\",\"statusKey\":\"fixture\",\"statusText\":\"ready\"}"}
+{"seq":4,"ts":1700000000326,"dir":"out","raw":"{\"type\":\"bash_execution_update\",\"id\":\"1\",\"delta\":\"one\\ntwo\\n\"}"}
+{"seq":5,"ts":1700000000329,"dir":"out","raw":"{\"id\":\"1\",\"type\":\"response\",\"command\":\"bash\",\"success\":true,\"data\":{\"output\":\"one\\ntwo\\n\",\"exitCode\":0,\"cancelled\":false,\"truncated\":false}}"}
+{"seq":6,"ts":1700000000329,"dir":"in","raw":"{\"id\":\"2\",\"type\":\"get_messages\"}"}
+{"seq":7,"ts":1700000000329,"dir":"out","raw":"{\"id\":\"2\",\"type\":\"response\",\"command\":\"get_messages\",\"success\":true,\"data\":{\"messages\":[{\"role\":\"bashExecution\",\"command\":\"printf 'one\\\\ntwo\\\\n'\",\"output\":\"one\\ntwo\\n\",\"exitCode\":0,\"cancelled\":false,\"truncated\":false,\"timestamp\":1700000000328}]}}"}
+{"seq":8,"ts":1700000000329,"dir":"meta","raw":"{\"fixture\":\"close_stdin\"}"}
+{"seq":9,"ts":1700000000340,"dir":"exit","raw":"{\"code\":0,\"signal\":null}"}

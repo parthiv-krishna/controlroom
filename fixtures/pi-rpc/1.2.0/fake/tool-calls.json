@@ -1,0 +1,12 @@
+{"session_start": [{"type": "ui", "method": "setStatus", "key": "fixture", "text": "ready"}], "replies": [
+  {"content": [{"type": "tool_call", "id": "call_bash", "name": "bash", "args": {"command": "ls"},
+    "progress": [{"update": ""}, {"update": "notes.txt\nsrc\n"}], "result": "notes.txt\nsrc\n"}]},
+  {"content": [{"type": "tool_call", "id": "call_read", "name": "read", "args": {"path": "notes.txt"},
+    "result": "alpha\nbeta\ngamma\n"}]},
+  {"content": [{"type": "tool_call", "id": "call_edit", "name": "edit",
+    "args": {"path": "notes.txt", "edits": [{"oldText": "beta", "newText": "BETA"}]},
+    "result": "Successfully replaced 1 block(s) in notes.txt."}]},
+  {"content": [{"type": "tool_call", "id": "call_fail", "name": "read", "args": {"path": "missing.txt"},
+    "result": "ENOENT: no such file or directory", "is_error": true}]},
+  {"content": [{"type": "text", "text": "Done with the tools."}]}
+]}

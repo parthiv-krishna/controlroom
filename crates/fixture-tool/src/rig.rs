@@ -197,12 +197,14 @@ impl PiProcess {
 
     /// Close stdin (pi's orderly shutdown) and wait for the exit.
     pub async fn close(&mut self) -> Result<()> {
+        self.meta(serde_json::json!({"fixture": "close_stdin"}));
         self.stdin = None;
         self.wait_exit().await
     }
 
     /// Send a signal to pi itself (not its group).
     pub fn signal(&self, signal: &str) -> Result<()> {
+        self.meta(serde_json::json!({"fixture": "signal", "signal": signal}));
         kill(signal, &self.pid.to_string())
     }
 
