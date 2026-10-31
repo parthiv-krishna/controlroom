@@ -5,6 +5,7 @@
 // in `session.events` are the P4 session-stream store's to consume: it plugs in here, next to
 // `detail`, and renders into the session pane's timeline slot.
 import type { MachineId, SessionDetail, SessionEventsParams, OnMachine, SessionId } from '../protocol';
+import { SvelteMap } from 'svelte/reactivity';
 import { sessionKey } from '../model/projects';
 
 /** The calls the feeds need, so they can be tested without a transport. */
@@ -29,9 +30,15 @@ export class SessionFeed {
 }
 
 export class SessionFeeds {
-  private readonly feeds = new Map<string, SessionFeed>();
+  /** Reactive, so a pane can look up the feed another component holds. */
+  private readonly feeds = new SvelteMap<string, SessionFeed>();
 
   constructor(private readonly rpc: FeedRpc) {}
+
+  /** The held feed of a session, if any. */
+  get(machineId: MachineId, id: SessionId): SessionFeed | undefined {
+    return this.feeds.get(sessionKey(machineId, id));
+  }
 
   /** Holds a subscription for a session; release it with `release`. */
   acquire(machineId: MachineId, id: SessionId, online: boolean): SessionFeed {
