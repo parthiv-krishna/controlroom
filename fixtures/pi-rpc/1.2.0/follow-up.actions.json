@@ -1,0 +1,4 @@
+[
+  {"action":"release_gate","after_seq":21,"gate":"g1"},
+  {"action":"close_stdin","after_seq":52}
+]

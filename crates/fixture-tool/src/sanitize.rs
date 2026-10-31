@@ -1,14 +1,14 @@
 //! Deterministic scrubbing of raw recordings before they are committed.
 //!
-//! Replacements are textual and applied to each record's `raw` line, so
-//! everything that needs no change stays byte-exact (pi's number formatting,
-//! key order). Every replacement is free of quotes and backslashes, so JSON
-//! lines stay valid JSON. The rules:
+//! Replacements are textual and applied to each stdio line's `raw` text (and
+//! to the paths in `meta` records), so everything that needs no change stays
+//! byte-exact (pi's number formatting, key order). Every replacement is free
+//! of quotes and backslashes, so JSON lines stay valid JSON. The rules:
 //!
-//! - the recording temp dir (learned from the `env` meta record) becomes
+//! - the recording temp dir (learned from the `meta` record's labels) becomes
 //!   `/home/alice/...` (`work` → `project`, `agent` → `.pi/agent`), also in
 //!   pi's encoded session dir names (`--home-alice-project--`);
-//! - the mock model port becomes 4000;
+//! - the mock model port becomes 4000; `meta` pids become 0;
 //! - Nix store hashes are zeroed; the real user name, home and host name
 //!   become `alice`, `/home/alice` and `devbox`;
 //! - UUIDs (session ids, dialog ids) and 8-hex entry ids become sequential
@@ -20,10 +20,10 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use controlroom_transcript::{Body, Line, Meta, Record};
 use regex::{Captures, Regex};
-use serde_json::Value;
 
-use crate::record::{Dir, Record};
+use crate::fixture::{LABEL_BASE_URL, LABEL_ROOT};
 
 /// Fixed start of every sanitized scenario (unix ms).
 pub const EPOCH_MS: u64 = 1_700_000_000_000;
@@ -102,18 +102,16 @@ struct Pass<'a> {
 impl<'a> Pass<'a> {
     fn new(sanitizer: &'a Sanitizer, transcripts: &[Vec<Record>]) -> Self {
         let mut env = Vec::new();
-        for record in transcripts.iter().flatten().filter(|r| r.dir == Dir::Meta) {
-            let Ok(meta) = serde_json::from_str::<Value>(&record.raw) else {
+        for record in transcripts.iter().flatten() {
+            let Body::Meta(meta) = &record.body else {
                 continue;
             };
-            if meta["fixture"] != "env" {
-                continue;
-            }
-            if let Some(root) = meta["root"].as_str() {
+            if let Some(root) = meta.labels.get(LABEL_ROOT) {
                 env.extend(root_replacements(root));
             }
-            if let Some(host) = meta["baseUrl"]
-                .as_str()
+            if let Some(host) = meta
+                .labels
+                .get(LABEL_BASE_URL)
                 .and_then(|url| url.strip_prefix("http://"))
                 .and_then(|rest| rest.split('/').next())
             {
@@ -138,11 +136,37 @@ impl<'a> Pass<'a> {
     }
 
     fn record(&mut self, record: &Record) -> Record {
+        let mut line = |line: &Line| Line {
+            raw: self.text(&line.raw),
+            ..line.clone()
+        };
+        let body = match &record.body {
+            Body::In(l) => Body::In(line(l)),
+            Body::Out(l) => Body::Out(line(l)),
+            Body::Stderr(l) => Body::Stderr(line(l)),
+            Body::Meta(meta) => Body::Meta(Box::new(self.meta(meta))),
+            other @ (Body::Exit(_) | Body::Unknown(_)) => other.clone(),
+        };
         Record {
             seq: record.seq,
             ts: self.rebase(record.ts),
-            dir: record.dir,
-            raw: self.text(&record.raw),
+            body,
+        }
+    }
+
+    /// Scrub the paths in a `meta` record and zero the (run-specific) pids.
+    fn meta(&mut self, meta: &Meta) -> Meta {
+        Meta {
+            argv: meta.argv.iter().map(|arg| self.text(arg)).collect(),
+            cwd: self.text(&meta.cwd),
+            labels: meta
+                .labels
+                .iter()
+                .map(|(key, value)| (key.clone(), self.text(value)))
+                .collect(),
+            child_pid: 0,
+            supervisor_pid: 0,
+            ..meta.clone()
         }
     }
 
@@ -255,14 +279,18 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixture::recorder_meta;
 
-    fn rec(seq: u64, ts: u64, dir: Dir, raw: &str) -> Record {
+    fn rec(seq: u64, ts: u64, body: fn(Line) -> Body, raw: &str) -> Record {
         Record {
             seq,
             ts,
-            dir,
-            raw: raw.to_owned(),
+            body: body(Line::new(raw)),
         }
+    }
+
+    fn raw(record: &Record) -> &str {
+        record.raw().unwrap_or_default()
     }
 
     fn sanitizer() -> Sanitizer {
@@ -276,28 +304,39 @@ mod tests {
     }
 
     fn env_meta() -> Record {
-        rec(
-            1,
-            1_800_000_000_000,
-            Dir::Meta,
-            r#"{"fixture":"env","root":"/tmp/cr-fixture-AbC123","baseUrl":"http://127.0.0.1:41234/v1"}"#,
-        )
+        let mut meta = recorder_meta("s", "/tmp/cr-fixture-AbC123", "http://127.0.0.1:41234/v1");
+        meta.argv = vec![
+            "pi".into(),
+            "-e".into(),
+            "/tmp/cr-fixture-AbC123/ext/x.ts".into(),
+        ];
+        meta.cwd = "/tmp/cr-fixture-AbC123/work".into();
+        meta.child_pid = 42;
+        meta.supervisor_pid = 41;
+        Record {
+            seq: 1,
+            ts: 1_800_000_000_000,
+            body: Body::Meta(Box::new(meta)),
+        }
     }
 
     #[test]
     fn scrubs_environment_paths_and_ports() {
         let line = r#"{"sessionFile":"/tmp/cr-fixture-AbC123/agent/sessions/--tmp-cr-fixture-AbC123-work--/x.jsonl","cwd":"/tmp/cr-fixture-AbC123/work","baseUrl":"http://127.0.0.1:41234/v1","p":"/nix/store/0123456789abcdefghijklmnopqrstuv-pi/x","who":"realuser@realhost in /home/realuser"}"#;
         let out =
-            sanitizer().scenario(&[vec![env_meta(), rec(2, 1_800_000_000_005, Dir::Out, line)]]);
-        let raw = &out[0][1].raw;
+            sanitizer().scenario(&[vec![env_meta(), rec(2, 1_800_000_000_005, Body::Out, line)]]);
         assert_eq!(
-            raw,
+            raw(&out[0][1]),
             r#"{"sessionFile":"/home/alice/.pi/agent/sessions/--home-alice-project--/x.jsonl","cwd":"/home/alice/project","baseUrl":"http://127.0.0.1:4000/v1","p":"/nix/store/00000000000000000000000000000000-pi/x","who":"alice@devbox in /home/alice"}"#
         );
-        assert_eq!(
-            out[0][0].raw,
-            r#"{"fixture":"env","root":"/home/alice/.cr-fixture","baseUrl":"http://127.0.0.1:4000/v1"}"#
-        );
+        let Body::Meta(meta) = &out[0][0].body else {
+            panic!("not meta");
+        };
+        assert_eq!(meta.argv, ["pi", "-e", "/home/alice/.pi/fixture-ext/x.ts"]);
+        assert_eq!(meta.cwd, "/home/alice/project");
+        assert_eq!(meta.labels[LABEL_ROOT], "/home/alice/.cr-fixture");
+        assert_eq!(meta.labels[LABEL_BASE_URL], "http://127.0.0.1:4000/v1");
+        assert_eq!((meta.child_pid, meta.supervisor_pid), (0, 0));
         assert_eq!(out[0][0].ts, EPOCH_MS);
         assert_eq!(out[0][1].ts, EPOCH_MS + 5);
     }
@@ -305,8 +344,8 @@ mod tests {
     #[test]
     fn untouched_lines_stay_byte_exact() {
         let line = r#"{"type":"message_update","usage":{"cost":{"input":0.00009999999999999999}}}"#;
-        let out = sanitizer().scenario(&[vec![rec(1, 1, Dir::Out, line)]]);
-        assert_eq!(out[0][0].raw, line);
+        let out = sanitizer().scenario(&[vec![rec(1, 1, Body::Out, line)]]);
+        assert_eq!(raw(&out[0][0]), line);
     }
 
     #[test]
@@ -314,13 +353,13 @@ mod tests {
         let a = r#"{"sessionId":"01a19363-7b62-7513-8bc3-f06e3e6de70c","entries":[{"id":"ab12cd34","parentId":null},{"id":"ffff0000","parentId":"ab12cd34"}]}"#;
         let b = r#"{"type":"get_entries","since":"ffff0000","x":"01a19363-7b62-7513-8bc3-f06e3e6de70c"}"#;
         let out =
-            sanitizer().scenario(&[vec![rec(1, 1, Dir::Out, a)], vec![rec(1, 2, Dir::In, b)]]);
+            sanitizer().scenario(&[vec![rec(1, 1, Body::Out, a)], vec![rec(1, 2, Body::In, b)]]);
         assert_eq!(
-            out[0][0].raw,
+            raw(&out[0][0]),
             r#"{"sessionId":"00000000-0000-4000-8000-000000000001","entries":[{"id":"e0000001","parentId":null},{"id":"e0000002","parentId":"e0000001"}]}"#
         );
         assert_eq!(
-            out[1][0].raw,
+            raw(&out[1][0]),
             r#"{"type":"get_entries","since":"e0000002","x":"00000000-0000-4000-8000-000000000001"}"#
         );
     }
@@ -330,9 +369,9 @@ mod tests {
         // 2027-01-15T08:00:00.000Z
         let start = 1_800_000_000_000;
         let line = r#"{"timestamp":1800000000250,"t":"2027-01-15T08:00:01.500Z","f":"2027-01-15T08-00-01-500Z_x.jsonl"}"#;
-        let out = sanitizer().scenario(&[vec![rec(1, start, Dir::Out, line)]]);
+        let out = sanitizer().scenario(&[vec![rec(1, start, Body::Out, line)]]);
         assert_eq!(
-            out[0][0].raw,
+            raw(&out[0][0]),
             r#"{"timestamp":1700000000250,"t":"2023-11-14T22:13:21.500Z","f":"2023-11-14T22-13-21-500Z_x.jsonl"}"#
         );
     }

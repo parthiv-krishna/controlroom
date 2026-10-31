@@ -356,7 +356,7 @@ async fn wait_text_delta(pi: &mut PiProcess) -> Result<Value> {
 
 async fn finish(ctx: &mut Ctx, mut pi: PiProcess) -> Result<()> {
     pi.close().await?;
-    ctx.keep(&pi);
+    ctx.keep(&pi)?;
     Ok(())
 }
 
@@ -403,7 +403,7 @@ async fn steer_during_tool(ctx: &mut Ctx) -> Result<()> {
         json!({"type": "steer", "message": "Also mention the steer."}),
     )
     .await?;
-    pi.meta(json!({"fixture": "release_gate", "gate": "tool"}));
+    pi.released_gate("tool");
     tokio::fs::write(&fifo, "tool output\n").await?;
     pi.wait_event("agent_settled").await?;
     finish(ctx, pi).await
@@ -737,7 +737,7 @@ async fn crash_sigkill(ctx: &mut Ctx) -> Result<()> {
     wait_text_delta(&mut pi).await?;
     pi.signal("KILL")?;
     pi.wait_exit().await?;
-    ctx.keep(&pi);
+    ctx.keep(&pi)?;
     Ok(())
 }
 
@@ -746,7 +746,7 @@ async fn sighup_idle(ctx: &mut Ctx) -> Result<()> {
     pi.call("1", json!({"type": "get_state"})).await?;
     pi.signal("HUP")?;
     pi.wait_exit().await?;
-    ctx.keep(&pi);
+    ctx.keep(&pi)?;
     Ok(())
 }
 
@@ -755,7 +755,7 @@ async fn sigterm_idle(ctx: &mut Ctx) -> Result<()> {
     pi.call("1", json!({"type": "get_state"})).await?;
     pi.signal("TERM")?;
     pi.wait_exit().await?;
-    ctx.keep(&pi);
+    ctx.keep(&pi)?;
     Ok(())
 }
 
@@ -773,6 +773,6 @@ async fn sighup_running(ctx: &mut Ctx) -> Result<()> {
     wait_text_delta(&mut pi).await?;
     pi.signal("HUP")?;
     pi.wait_exit().await?;
-    ctx.keep(&pi);
+    ctx.keep(&pi)?;
     Ok(())
 }

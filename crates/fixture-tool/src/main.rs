@@ -12,9 +12,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use controlroom_fixture_tool::record::{self, Dir, Record};
+use controlroom_fixture_tool::fixture::{self, Fixture};
 use controlroom_fixture_tool::sanitize::Sanitizer;
 use controlroom_fixture_tool::{scenario, scenarios};
+use controlroom_transcript::Record;
 
 #[derive(Debug, Parser)]
 #[command(name = "controlroom-fixture-tool", version, about)]
@@ -26,7 +27,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Cmd {
     /// Run scenarios against real pi (`$CONTROLROOM_PI` or `pi` on PATH) and
-    /// write raw, unsanitized transcripts.
+    /// write raw, unsanitized fixtures (`<name>.jsonl` + `<name>.actions.json`).
     Record {
         #[arg(long)]
         raw_dir: PathBuf,
@@ -34,7 +35,7 @@ enum Cmd {
         #[arg(long)]
         only: Vec<String>,
     },
-    /// Sanitize every `*.jsonl` in `raw_dir` into `out_dir`. Files of one
+    /// Sanitize every fixture in `raw_dir` into `out_dir`. Files of one
     /// scenario (`name.jsonl`, `name.N.jsonl`) share id maps.
     Sanitize { raw_dir: PathBuf, out_dir: PathBuf },
     /// List the scenarios.
@@ -66,8 +67,8 @@ async fn record_scenarios(raw_dir: &Path, only: &[String]) -> Result<()> {
     }
     for scenario in selected {
         eprintln!("recording {}", scenario.name);
-        for (name, records) in scenario::run(scenario).await? {
-            record::write_jsonl(&raw_dir.join(name), &records)?;
+        for (name, recording) in scenario::run(scenario).await? {
+            fixture::write(&raw_dir.join(name), &recording)?;
         }
     }
     Ok(())
@@ -90,24 +91,32 @@ fn sanitize_dir(raw_dir: &Path, out_dir: &Path) -> Result<()> {
     let sanitizer = Sanitizer::for_this_machine();
     for paths in groups.values_mut() {
         paths.sort();
-        let raw: Vec<Vec<Record>> = paths
+        let raw: Vec<Fixture> = paths
             .iter()
-            .map(|p| record::read_jsonl(p))
+            .map(|p| fixture::read(p))
             .collect::<Result<_>>()?;
-        for (path, (before, after)) in paths.iter().zip(raw.iter().zip(sanitizer.scenario(&raw))) {
-            check_json_preserved(path, before, &after)?;
+        let transcripts: Vec<Vec<Record>> = raw.iter().map(|f| f.records.clone()).collect();
+        let clean = sanitizer.scenario(&transcripts);
+        for ((path, before), records) in paths.iter().zip(&raw).zip(clean) {
+            check_json_preserved(path, &before.records, &records)?;
             let name = path.file_name().context("file name")?;
-            record::write_jsonl(&out_dir.join(name), &after)?;
+            let after = Fixture {
+                records,
+                actions: before.actions.clone(),
+            };
+            fixture::write(&out_dir.join(name), &after)?;
         }
     }
     Ok(())
 }
 
-/// Every `in`/`out`/`meta` line that was JSON must still be JSON.
+/// Every stdio line that was JSON must still be JSON.
 fn check_json_preserved(path: &Path, before: &[Record], after: &[Record]) -> Result<()> {
-    let is_json = |raw: &str| serde_json::from_str::<serde_json::Value>(raw).is_ok();
+    let is_json = |raw: Option<&str>| {
+        raw.is_some_and(|raw| serde_json::from_str::<serde_json::Value>(raw).is_ok())
+    };
     for (b, a) in before.iter().zip(after) {
-        if matches!(b.dir, Dir::In | Dir::Out | Dir::Meta) && is_json(&b.raw) && !is_json(&a.raw) {
+        if is_json(b.raw()) && !is_json(a.raw()) {
             bail!(
                 "{}: seq {} is no longer JSON after sanitizing",
                 path.display(),

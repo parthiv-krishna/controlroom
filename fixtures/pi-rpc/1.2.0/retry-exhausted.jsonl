@@ -1,4 +1,4 @@
-{"seq":1,"ts":1700000000000,"dir":"meta","raw":"{\"args\":[\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"-e\",\"/home/alice/.pi/fixture-ext/fixture-ext.ts\"],\"baseUrl\":\"http://127.0.0.1:4000/v1\",\"fixture\":\"env\",\"root\":\"/home/alice/.cr-fixture\"}"}
+{"seq":1,"ts":1700000000000,"dir":"meta","format":1,"id":"retry-exhausted","kind":"agent","argv":["pi","--mode","rpc","--no-extensions","--no-skills","--no-prompt-templates","--no-themes","-e","/home/alice/.pi/fixture-ext/fixture-ext.ts"],"cwd":"/home/alice/project","stdin":"pipe","max_line_bytes":134217728,"labels":{"fixture.base_url":"http://127.0.0.1:4000/v1","fixture.root":"/home/alice/.cr-fixture"},"child_pid":0,"supervisor_pid":0,"protocol_version":0,"supervisor_version":"controlroom-fixture-tool"}
 {"seq":2,"ts":1700000000001,"dir":"in","raw":"{\"id\":\"1\",\"message\":\"Do the scripted thing.\",\"type\":\"prompt\"}"}
 {"seq":3,"ts":1700000000321,"dir":"out","raw":"{\"type\":\"extension_ui_request\",\"id\":\"00000000-0000-4000-8000-000000000001\",\"method\":\"setStatus\",\"statusKey\":\"fixture\",\"statusText\":\"ready\"}"}
 {"seq":4,"ts":1700000000324,"dir":"out","raw":"{\"id\":\"1\",\"type\":\"response\",\"command\":\"prompt\",\"success\":true,\"data\":{\"disposition\":\"started\"}}"}
@@ -30,5 +30,4 @@
 {"seq":30,"ts":1700000000426,"dir":"out","raw":"{\"type\":\"agent_end\",\"messages\":[{\"role\":\"assistant\",\"content\":[],\"api\":\"openai-completions\",\"provider\":\"mock\",\"model\":\"mock-model\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"stopReason\":\"error\",\"timestamp\":1700000000422,\"errorMessage\":\"503: {\\\"code\\\":503,\\\"message\\\":\\\"service unavailable\\\",\\\"type\\\":\\\"mock_error\\\"}\",\"durationMs\":2,\"thinkingLevel\":\"medium\"}],\"willRetry\":false}"}
 {"seq":31,"ts":1700000000426,"dir":"out","raw":"{\"type\":\"auto_retry_end\",\"success\":false,\"attempt\":2,\"finalError\":\"503: {\\\"code\\\":503,\\\"message\\\":\\\"service unavailable\\\",\\\"type\\\":\\\"mock_error\\\"}\"}"}
 {"seq":32,"ts":1700000000426,"dir":"out","raw":"{\"type\":\"agent_settled\",\"aborted\":false}"}
-{"seq":33,"ts":1700000000427,"dir":"meta","raw":"{\"fixture\":\"close_stdin\"}"}
-{"seq":34,"ts":1700000000437,"dir":"exit","raw":"{\"code\":0,\"signal\":null}"}
+{"seq":33,"ts":1700000000437,"dir":"exit","code":0,"signal":null}

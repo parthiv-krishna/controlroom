@@ -5,24 +5,27 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Result;
-use serde_json::json;
 
 use crate::env::PiEnv;
+use crate::fixture::{Fixture, recorder_meta};
 use crate::mock_model::{MockModel, Reply};
-use crate::record::Record;
 use crate::rig::{PiProcess, WAIT};
 
 /// Context handed to a scenario's driver.
 pub struct Ctx {
     pub env: PiEnv,
     pub mock: MockModel,
+    /// The scenario name, used as the transcripts' `meta.id`.
+    name: &'static str,
+    /// Processes spawned so far.
+    spawned: usize,
     /// Finished recordings, in order (one per pi process).
-    pub recordings: Vec<Vec<Record>>,
+    recordings: Vec<Fixture>,
 }
 
 impl Ctx {
     /// Spawn pi with the standard flags plus `extra`.
-    pub fn spawn(&self, extra: &[&str]) -> Result<PiProcess> {
+    pub fn spawn(&mut self, extra: &[&str]) -> Result<PiProcess> {
         let ext = self.env.extension().display().to_string();
         let mut args: Vec<String> = vec![
             "--no-extensions".into(),
@@ -33,25 +36,27 @@ impl Ctx {
             ext,
         ];
         args.extend(extra.iter().map(|s| (*s).to_owned()));
-        let env = json!({
-            "fixture": "env",
-            "root": self.env.root().display().to_string(),
-            "baseUrl": self.mock.base_url(),
-            "args": args,
-        });
-        PiProcess::spawn(&self.env, &args, &env)
+        self.spawned += 1;
+        let transcript = self
+            .env
+            .root()
+            .join(format!("transcripts/{}.jsonl", self.spawned));
+        let root = self.env.root().display().to_string();
+        let meta = recorder_meta(self.name, &root, &self.mock.base_url());
+        PiProcess::spawn(&self.env, &args, &transcript, meta)
     }
 
-    /// Store a finished process's transcript.
-    pub fn keep(&mut self, pi: &PiProcess) {
-        self.recordings.push(pi.records());
+    /// Store a finished process's recording.
+    pub fn keep(&mut self, pi: &PiProcess) -> Result<()> {
+        self.recordings.push(pi.fixture()?);
+        Ok(())
     }
 
-    /// Wait until the model reaches `gate`, then release it and annotate the
-    /// transcript, so replays know when the gate opened.
+    /// Wait until the model reaches `gate`, then note the release (so replays
+    /// know when the gate opened) and release it.
     pub async fn release(&self, pi: &PiProcess, gate: &str) -> Result<()> {
         self.mock.wait_reached(gate, WAIT).await?;
-        pi.meta(json!({"fixture": "release_gate", "gate": gate}));
+        pi.released_gate(gate);
         self.mock.release(gate);
         Ok(())
     }
@@ -72,12 +77,14 @@ pub struct Scenario {
 }
 
 /// Run `scenario` and return its recordings with their file names.
-pub async fn run(scenario: &Scenario) -> Result<Vec<(String, Vec<Record>)>> {
+pub async fn run(scenario: &Scenario) -> Result<Vec<(String, Fixture)>> {
     let mock = MockModel::start((scenario.replies)()).await?;
     let env = PiEnv::new(&mock.base_url())?;
     let mut ctx = Ctx {
         env,
         mock,
+        name: scenario.name,
+        spawned: 0,
         recordings: Vec::new(),
     };
     (scenario.driver)(&mut ctx).await?;
@@ -93,13 +100,13 @@ pub async fn run(scenario: &Scenario) -> Result<Vec<(String, Vec<Record>)>> {
         .recordings
         .into_iter()
         .enumerate()
-        .map(|(i, records)| {
+        .map(|(i, fixture)| {
             let name = if count == 1 {
                 format!("{}.jsonl", scenario.name)
             } else {
                 format!("{}.{}.jsonl", scenario.name, i + 1)
             };
-            (name, records)
+            (name, fixture)
         })
         .collect())
 }

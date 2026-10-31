@@ -6,8 +6,9 @@
 //! several processes) has a fake scenario `fake/<name>.json` that scripts
 //! the same model replies and extension behavior. The replay sends the
 //! fixture's stdin lines at the same points (after as many stdout records
-//! as pi had produced), releases gates where the recorder released the
-//! mock model, sends the same signals, and finally compares a signature of
+//! as pi had produced), performs the recorder's actions from
+//! `<name>.actions.json` (gate releases, signals, stdin close) at the same
+//! points, and finally compares a signature of
 //! every stdout record (type, the discriminating fields, top-level keys)
 //! and the exit status.
 
@@ -16,6 +17,7 @@ mod support;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
+use controlroom_transcript::{Body, Record, read_all};
 use serde_json::Value;
 use support::{Sandbox, fixtures_dir};
 
@@ -42,25 +44,31 @@ const ID_KEYS: &[&str] = &[
     "sessionFile",
 ];
 
-/// One fixture record.
-struct Record {
-    dir: String,
-    raw: String,
+/// A recorded pi process: its transcript and the recorder's actions.
+struct Fixture {
+    records: Vec<Record>,
+    /// `<name>.actions.json`: `{"action", "after_seq", ...}` objects.
+    actions: Vec<Value>,
 }
 
-fn read_fixture(path: &Path) -> Vec<Record> {
-    std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|line| {
-            let v: Value = serde_json::from_str(line).expect("fixture record");
-            Record {
-                dir: v["dir"].as_str().unwrap_or_default().to_owned(),
-                raw: v["raw"].as_str().unwrap_or_default().to_owned(),
-            }
-        })
-        .collect()
+/// Load a fixture through the transcript crate; bad lines are an error.
+fn read_fixture(path: &Path) -> Fixture {
+    let all = read_all(path, 0).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+    assert!(
+        all.corrupt.is_empty() && all.partial_tail.is_none(),
+        "{}: bad records {:?}",
+        path.display(),
+        all.corrupt
+    );
+    let actions_file = path.with_extension("actions.json");
+    let actions = std::fs::read_to_string(&actions_file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| panic!("{}: missing or bad", actions_file.display()));
+    Fixture {
+        records: all.records,
+        actions,
+    }
 }
 
 /// A comparable summary of one stdout record.
@@ -154,29 +162,46 @@ fn rewrite(ids: &HashMap<String, String>, value: &mut Value) {
     }
 }
 
+/// Learn ids from the aligned stdout records `from..to`; returns `to`.
+fn learn_until(
+    fake: &support::Fake,
+    ids: &mut HashMap<String, String>,
+    pi_out: &[Value],
+    from: usize,
+    to: usize,
+) -> usize {
+    let records = fake.records();
+    for i in from..to.min(records.len()) {
+        learn(ids, &pi_out[i], &records[i]);
+    }
+    to
+}
+
 /// Replay one transcript; returns pi's and the fake's signatures.
 async fn replay(
     sandbox: &Sandbox,
     scenario: &str,
-    records: &[Record],
+    fixture: &Fixture,
     ids: &mut HashMap<String, String>,
 ) -> Result<(Vec<String>, Vec<String>), String> {
-    let pi_out: Vec<Value> = records
+    let json = |raw: &str| serde_json::from_str::<Value>(raw).ok();
+    let pi_out: Vec<Value> = fixture
+        .records
         .iter()
-        .filter(|r| r.dir == "out")
-        .filter_map(|r| serde_json::from_str(&r.raw).ok())
+        .filter_map(|r| match &r.body {
+            Body::Out(line) => json(&line.raw),
+            _ => None,
+        })
         .collect();
-    let env = records
+    let Some(Body::Meta(meta)) = fixture.records.first().map(|r| &r.body) else {
+        return Err("fixture does not start with a meta record".into());
+    };
+    // `argv` is `pi --mode rpc <args>`; the fake gets the same args.
+    let args: Vec<String> = meta
+        .argv
         .iter()
-        .find(|r| r.dir == "meta")
-        .and_then(|r| serde_json::from_str::<Value>(&r.raw).ok())
-        .ok_or("fixture has no env meta record")?;
-    let args: Vec<String> = env["args"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(|a| ids.get(a).cloned().unwrap_or_else(|| a.to_owned()))
+        .skip(3)
+        .map(|a| ids.get(a).cloned().unwrap_or_else(|| a.clone()))
         .collect();
     let gates = sandbox.gates();
     let mut fake = sandbox.spawn(scenario, &args);
@@ -184,60 +209,53 @@ async fn replay(
     let mut expected = 0;
     let mut learned = 0;
     let mut exit = None;
-    for record in records {
-        let sync = |fake: &mut support::Fake, ids: &mut HashMap<String, String>, n: usize| {
-            let records = fake.records();
-            for i in learned..n.min(records.len()) {
-                learn(ids, &pi_out[i], &records[i]);
-            }
-            n
-        };
-        match record.dir.as_str() {
-            "out" if serde_json::from_str::<Value>(&record.raw).is_ok() => expected += 1,
-            "in" => {
+    let mut actions = fixture.actions.iter().peekable();
+    for record in &fixture.records {
+        match &record.body {
+            Body::Out(line) if json(&line.raw).is_some() => expected += 1,
+            Body::In(line) => {
                 fake.wait_count(expected).await?;
-                learned = sync(&mut fake, ids, expected);
-                match serde_json::from_str::<Value>(&record.raw) {
-                    Ok(mut command) => {
+                learned = learn_until(&fake, ids, &pi_out, learned, expected);
+                match json(&line.raw) {
+                    Some(mut command) => {
                         rewrite(ids, &mut command);
                         fake.send(command).await;
                     }
-                    Err(_) => fake.send_raw(&record.raw).await,
+                    None => fake.send_raw(&line.raw).await,
                 }
             }
-            "meta" => {
-                let meta: Value = serde_json::from_str(&record.raw).unwrap_or_default();
-                if meta["fixture"] == "env" {
-                    continue;
-                }
-                fake.wait_count(expected).await?;
-                learned = sync(&mut fake, ids, expected);
-                match meta["fixture"].as_str() {
-                    Some("release_gate") => gates
-                        .release(meta["gate"].as_str().unwrap_or_default())
-                        .map_err(|e| e.to_string())?,
-                    Some("signal") => fake.signal(meta["signal"].as_str().unwrap_or_default()),
-                    Some("close_stdin") => fake.close_stdin(),
-                    other => return Err(format!("unknown meta record {other:?}")),
-                }
-            }
-            "exit" => exit = serde_json::from_str::<Value>(&record.raw).ok(),
+            Body::Exit(info) => exit = Some(*info),
             _ => {}
         }
+        while let Some(action) = actions.next_if(|a| a["after_seq"].as_u64() == Some(record.seq)) {
+            fake.wait_count(expected).await?;
+            learned = learn_until(&fake, ids, &pi_out, learned, expected);
+            let text = |key: &str| action[key].as_str().unwrap_or_default();
+            match text("action") {
+                "release_gate" => gates.release(text("gate")).map_err(|e| e.to_string())?,
+                "signal" => fake.signal(text("signal")),
+                "close_stdin" => fake.close_stdin(),
+                other => return Err(format!("unknown action {other:?}")),
+            }
+        }
+    }
+    if let Some(action) = actions.next() {
+        return Err(format!("action after the last record: {action}"));
     }
     let (code, signal) = fake.wait_exit().await;
     let records = fake.records();
     for i in learned..pi_out.len().min(records.len()) {
         learn(ids, &pi_out[i], &records[i]);
     }
+    let show = |x: Option<i32>| x.map_or("null".to_owned(), |x| x.to_string());
     let mut pi_sigs: Vec<String> = pi_out.iter().map(signature).collect();
     let mut fake_sigs: Vec<String> = records.iter().map(signature).collect();
     if let Some(exit) = exit {
         pi_sigs.push(format!(
             "exit code={} signal={}",
-            exit["code"], exit["signal"]
+            show(exit.code),
+            show(exit.signal)
         ));
-        let show = |x: Option<i32>| x.map_or("null".to_owned(), |x| x.to_string());
         fake_sigs.push(format!("exit code={} signal={}", show(code), show(signal)));
     }
     Ok((pi_sigs, fake_sigs))

@@ -19,27 +19,38 @@ Re-record (needs `pi` 1.2.0 on `PATH` or `$CONTROLROOM_PI`):
 
 ```bash
 nix develop -c cargo run -p controlroom-fixture-tool -- record --raw-dir /tmp/pi-raw
-rm -f fixtures/pi-rpc/1.2.0/*.jsonl
+rm -f fixtures/pi-rpc/1.2.0/*.jsonl fixtures/pi-rpc/1.2.0/*.actions.json
 nix develop -c cargo run -p controlroom-fixture-tool -- sanitize /tmp/pi-raw fixtures/pi-rpc/1.2.0
 nix develop -c cargo test -p controlroom-fixture-tool -p controlroom-fake-agent
 ```
 
+The ignored test `records_every_scenario_against_real_pi`
+(`cargo test -p controlroom-fixture-tool --test fixtures -- --ignored`) records everything again and
+checks it against the committed fixtures, ignoring only timing and pi's known races (parallel tool end
+order, live snapshots in `message_start`/`message_update`, timing-dependent `durationMs` and
+`estimatedTokensAfter`).
+
 ## Format
 
-One record per line, the transcript record shape: `{"seq", "ts", "dir", "raw"}`.
+Each recorded pi process is two files:
 
-| `dir` | `raw` |
-| --- | --- |
-| `in` | a line written to pi's stdin |
-| `out` | a line read from pi's stdout |
-| `stderr` | a line read from pi's stderr |
-| `exit` | `{"code": <i32\|null>, "signal": <i32\|null>}` |
-| `meta` | recorder annotations, never seen by pi: `{"fixture":"env","root","baseUrl","args"}` (first record), `{"fixture":"release_gate","gate"}` (the mock model was let go), `{"fixture":"signal","signal"}`, `{"fixture":"close_stdin"}` |
+- `<name>.jsonl`: the transcript in the **`controlroom-transcript` on-disk format** (`crates/transcript`),
+  exactly what a supervisor logs, written and read through that crate:
+  - first a typed `meta` record (`format`, `id` = scenario name, `kind: "agent"`, `argv` =
+    `pi --mode rpc <flags>`, `cwd`, `stdin: "pipe"`, `max_line_bytes`, pids zeroed,
+    `supervisor_version: "controlroom-fixture-tool"`, and the labels `fixture.root` (the recording
+    temp dir) and `fixture.base_url` (the mock model));
+  - then `in`/`out`/`stderr` lines (`{"raw": ...}`, the line without its LF);
+  - finally `exit` (`{"code", "signal"}`).
+- `<name>.actions.json`: what the recorder did besides writing stdin, each placed after the record
+  `after_seq`: `{"action":"release_gate","gate"}` (the mock model was let go),
+  `{"action":"signal","signal"}`, `{"action":"close_stdin"}`. These are not stdio, so they stay out of
+  the transcript.
 
-The `meta` records let a replay reproduce the run: fake-agent's conformance test
-(`crates/fake-agent/tests/conformance.rs`) sends the `in` lines at the same points, releases fake gates
-of the same name, sends the same signals, and compares event signatures and the exit status.
-`1.2.0/fake/<name>.json` is the fake-agent scenario that scripts the same model replies
+Together they let a replay reproduce the run: fake-agent's conformance test
+(`crates/fake-agent/tests/conformance.rs`) sends the `in` lines at the same points, performs the same
+actions (fake gates of the same name, signals, stdin close), and compares event signatures and the
+exit status. `1.2.0/fake/<name>.json` is the fake-agent scenario that scripts the same model replies
 (`<name>.N.json` for one process of a multi-process scenario).
 
 Sanitizing (`crates/fixture-tool/src/sanitize.rs`) is textual, so untouched bytes stay exact: the temp

@@ -1,4 +1,4 @@
-{"seq":1,"ts":1700000000000,"dir":"meta","raw":"{\"args\":[\"--no-extensions\",\"--no-skills\",\"--no-prompt-templates\",\"--no-themes\",\"-e\",\"/home/alice/.pi/fixture-ext/fixture-ext.ts\"],\"baseUrl\":\"http://127.0.0.1:4000/v1\",\"fixture\":\"env\",\"root\":\"/home/alice/.cr-fixture\"}"}
+{"seq":1,"ts":1700000000000,"dir":"meta","format":1,"id":"extension-dialogs","kind":"agent","argv":["pi","--mode","rpc","--no-extensions","--no-skills","--no-prompt-templates","--no-themes","-e","/home/alice/.pi/fixture-ext/fixture-ext.ts"],"cwd":"/home/alice/project","stdin":"pipe","max_line_bytes":134217728,"labels":{"fixture.base_url":"http://127.0.0.1:4000/v1","fixture.root":"/home/alice/.cr-fixture"},"child_pid":0,"supervisor_pid":0,"protocol_version":0,"supervisor_version":"controlroom-fixture-tool"}
 {"seq":2,"ts":1700000000001,"dir":"in","raw":"{\"id\":\"1\",\"message\":\"/fixture-dialogs\",\"type\":\"prompt\"}"}
 {"seq":3,"ts":1700000000322,"dir":"out","raw":"{\"type\":\"extension_ui_request\",\"id\":\"00000000-0000-4000-8000-000000000001\",\"method\":\"setStatus\",\"statusKey\":\"fixture\",\"statusText\":\"ready\"}"}
 {"seq":4,"ts":1700000000324,"dir":"out","raw":"{\"type\":\"extension_ui_request\",\"id\":\"00000000-0000-4000-8000-000000000002\",\"method\":\"select\",\"title\":\"Pick a color\",\"options\":[\"red\",\"green\",\"blue\"]}"}
@@ -17,5 +17,4 @@
 {"seq":17,"ts":1700000000325,"dir":"out","raw":"{\"id\":\"1\",\"type\":\"response\",\"command\":\"prompt\",\"success\":true,\"data\":{\"disposition\":\"handled\"}}"}
 {"seq":18,"ts":1700000000325,"dir":"in","raw":"{\"id\":\"2\",\"type\":\"get_entries\"}"}
 {"seq":19,"ts":1700000000325,"dir":"out","raw":"{\"id\":\"2\",\"type\":\"response\",\"command\":\"get_entries\",\"success\":true,\"data\":{\"entries\":[{\"type\":\"model_change\",\"id\":\"e0000003\",\"parentId\":null,\"timestamp\":\"2023-11-14T22:13:20.317Z\",\"provider\":\"mock\",\"modelId\":\"mock-model\"},{\"type\":\"thinking_level_change\",\"id\":\"e0000002\",\"parentId\":\"e0000003\",\"timestamp\":\"2023-11-14T22:13:20.317Z\",\"thinkingLevel\":\"medium\"},{\"type\":\"custom\",\"customType\":\"fixture.answers\",\"data\":{\"choice\":\"green\",\"confirmed\":true,\"name\":\"alice\"},\"id\":\"e0000001\",\"parentId\":\"e0000002\",\"timestamp\":\"2023-11-14T22:13:20.325Z\"}],\"leafId\":\"e0000001\"}}"}
-{"seq":20,"ts":1700000000325,"dir":"meta","raw":"{\"fixture\":\"close_stdin\"}"}
-{"seq":21,"ts":1700000000336,"dir":"exit","raw":"{\"code\":0,\"signal\":null}"}
+{"seq":20,"ts":1700000000336,"dir":"exit","code":0,"signal":null}

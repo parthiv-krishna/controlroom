@@ -6,56 +6,81 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
+use controlroom_transcript::{Body, ExitInfo, Line, Meta, Record, Writer};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::watch;
 
 use crate::env::PiEnv;
-use crate::record::{Dir, Record, unix_ms};
+use crate::fixture::{Action, Fixture, read_transcript};
 
 /// How long a single wait may take before the scenario fails.
 pub const WAIT: Duration = Duration::from_secs(30);
 
-/// A thread-safe, append-only list of records with change notification.
+/// The recording state shared by the stdio pumps.
+struct Log {
+    writer: Writer,
+    /// Every record appended, for waits.
+    records: Vec<Record>,
+    actions: Vec<Action>,
+}
+
+/// Appends records through a transcript [`Writer`] and wakes waiters.
 #[derive(Clone)]
-pub struct Recorder {
-    records: Arc<Mutex<Vec<Record>>>,
+struct Recorder {
+    log: Arc<Mutex<Log>>,
     changed: watch::Sender<usize>,
 }
 
-impl Default for Recorder {
-    fn default() -> Self {
-        Self {
-            records: Arc::default(),
-            changed: watch::Sender::new(0),
-        }
-    }
-}
-
 impl Recorder {
-    /// Append a record and wake waiters.
-    pub fn push(&self, dir: Dir, raw: String) {
+    fn open(path: &Path) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let (writer, _) =
+            Writer::open(path).with_context(|| format!("opening {}", path.display()))?;
+        Ok(Self {
+            log: Arc::new(Mutex::new(Log {
+                writer,
+                records: Vec::new(),
+                actions: Vec::new(),
+            })),
+            changed: watch::Sender::new(0),
+        })
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Log> {
+        self.log.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Append a record and wake waiters. A failed append is reported but does
+    /// not stop the recording; the transcript check at the end catches it.
+    fn push(&self, body: Body) {
         let len = {
-            let mut records = self.records.lock().unwrap_or_else(PoisonError::into_inner);
-            let seq = records.len() as u64 + 1;
-            records.push(Record {
-                seq,
-                ts: unix_ms(),
-                dir,
-                raw,
-            });
-            records.len()
+            let mut log = self.lock();
+            match log.writer.append(body) {
+                Ok(record) => log.records.push(record),
+                Err(err) => eprintln!("fixture-tool: appending a record failed: {err}"),
+            }
+            log.records.len()
         };
         self.changed.send_replace(len);
     }
 
-    /// A snapshot of all records.
-    pub fn records(&self) -> Vec<Record> {
-        self.records
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+    /// Note a recorder action after the last record.
+    fn action(&self, make: impl FnOnce(u64) -> Action) {
+        let mut log = self.lock();
+        let after = log.writer.last_seq();
+        log.actions.push(make(after));
+    }
+
+    fn records(&self) -> Vec<Record> {
+        self.lock().records.clone()
+    }
+
+    fn actions(&self) -> Vec<Action> {
+        self.lock().actions.clone()
     }
 
     /// Wait until a record at index `>= from` satisfies `pred`; returns its index.
@@ -63,9 +88,8 @@ impl Recorder {
         let mut rx = self.changed.subscribe();
         loop {
             let found = self
-                .records
                 .lock()
-                .unwrap_or_else(PoisonError::into_inner)
+                .records
                 .iter()
                 .enumerate()
                 .skip(from)
@@ -85,6 +109,7 @@ pub struct PiProcess {
     pid: u32,
     stdin: Option<ChildStdin>,
     recorder: Recorder,
+    transcript: PathBuf,
     /// Records before this index have been consumed by `wait_*`.
     cursor: usize,
     pumps: Vec<tokio::task::JoinHandle<()>>,
@@ -92,16 +117,15 @@ pub struct PiProcess {
 }
 
 impl PiProcess {
-    /// Spawn `pi --mode rpc <args>` in `env` and start recording; `meta`
-    /// (describing the environment) becomes the first record.
-    pub fn spawn(env: &PiEnv, args: &[String], meta: &Value) -> Result<Self> {
-        let recorder = Recorder::default();
-        recorder.push(Dir::Meta, meta.to_string());
+    /// Spawn `pi --mode rpc <args>` in `env`, recording to `transcript`.
+    /// `meta` gets the argv, cwd and pids and becomes the first record.
+    pub fn spawn(env: &PiEnv, args: &[String], transcript: &Path, mut meta: Meta) -> Result<Self> {
+        let recorder = Recorder::open(transcript)?;
         let pi = std::env::var("CONTROLROOM_PI").unwrap_or_else(|_| "pi".into());
+        let mut argv = vec![pi.clone(), "--mode".into(), "rpc".into()];
+        argv.extend(args.iter().cloned());
         let mut cmd = Command::new(&pi);
-        cmd.arg("--mode")
-            .arg("rpc")
-            .args(args)
+        cmd.args(&argv[1..])
             .current_dir(env.work_dir())
             .env_clear()
             .envs(env.vars())
@@ -112,17 +136,23 @@ impl PiProcess {
             .process_group(0);
         let mut child = cmd.spawn().with_context(|| format!("spawning {pi}"))?;
         let pid = child.id().ok_or_else(|| anyhow!("pi exited immediately"))?;
+        meta.argv = argv;
+        meta.cwd = env.work_dir().display().to_string();
+        meta.child_pid = pid;
+        meta.supervisor_pid = std::process::id();
+        recorder.push(Body::Meta(Box::new(meta)));
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
         let stderr = child.stderr.take().ok_or_else(|| anyhow!("no stderr"))?;
         let pumps = vec![
-            tokio::spawn(pump(stdout, Dir::Out, recorder.clone())),
-            tokio::spawn(pump(stderr, Dir::Stderr, recorder.clone())),
+            tokio::spawn(pump(stdout, Body::Out, recorder.clone())),
+            tokio::spawn(pump(stderr, Body::Stderr, recorder.clone())),
         ];
         Ok(Self {
             stdin: child.stdin.take(),
             child,
             pid,
             recorder,
+            transcript: transcript.to_owned(),
             cursor: 0,
             pumps,
             exited: false,
@@ -132,7 +162,7 @@ impl PiProcess {
     /// Record and write one stdin line.
     pub async fn send_raw(&mut self, line: &str) -> Result<()> {
         let stdin = self.stdin.as_mut().ok_or_else(|| anyhow!("stdin closed"))?;
-        self.recorder.push(Dir::In, line.to_owned());
+        self.recorder.push(Body::In(Line::new(line)));
         stdin.write_all(line.as_bytes()).await?;
         stdin.write_all(b"\n").await?;
         stdin.flush().await?;
@@ -144,19 +174,20 @@ impl PiProcess {
         self.send_raw(&command.to_string()).await
     }
 
-    /// Record an annotation (never sent to pi).
-    pub fn meta(&self, meta: Value) {
-        self.recorder.push(Dir::Meta, meta.to_string());
+    /// Note that the mock model released `gate` (never sent to pi).
+    pub fn released_gate(&self, gate: &str) {
+        self.recorder.action(|after_seq| Action::ReleaseGate {
+            after_seq,
+            gate: gate.to_owned(),
+        });
     }
 
     /// Wait for the next stdout record (after earlier waits) matching `pred`
     /// and return its JSON.
     pub async fn wait_out(&mut self, what: &str, pred: impl Fn(&Value) -> bool) -> Result<Value> {
         let matches = |r: &Record| {
-            r.dir == Dir::Out
-                && serde_json::from_str::<Value>(&r.raw)
-                    .ok()
-                    .is_some_and(|v| pred(&v))
+            matches!(&r.body, Body::Out(line)
+                if serde_json::from_str::<Value>(&line.raw).ok().is_some_and(|v| pred(&v)))
         };
         let found = tokio::time::timeout(WAIT, self.recorder.wait_from(self.cursor, matches))
             .await
@@ -167,7 +198,9 @@ impl PiProcess {
         };
         self.cursor = index + 1;
         let records = self.recorder.records();
-        Ok(serde_json::from_str(&records[index].raw)?)
+        Ok(serde_json::from_str(
+            records[index].raw().unwrap_or_default(),
+        )?)
     }
 
     /// Wait for the next event of `event_type`.
@@ -192,14 +225,18 @@ impl PiProcess {
 
     /// Close stdin (pi's orderly shutdown) and wait for the exit.
     pub async fn close(&mut self) -> Result<()> {
-        self.meta(serde_json::json!({"fixture": "close_stdin"}));
+        self.recorder
+            .action(|after_seq| Action::CloseStdin { after_seq });
         self.stdin = None;
         self.wait_exit().await
     }
 
     /// Send a signal to pi itself (not its group).
     pub fn signal(&self, signal: &str) -> Result<()> {
-        self.meta(serde_json::json!({"fixture": "signal", "signal": signal}));
+        self.recorder.action(|after_seq| Action::Signal {
+            after_seq,
+            signal: signal.to_owned(),
+        });
         kill(signal, &self.pid.to_string())
     }
 
@@ -216,15 +253,29 @@ impl PiProcess {
             let _ = tokio::time::timeout(Duration::from_secs(5), pump).await;
         }
         use std::os::unix::process::ExitStatusExt;
-        let exit = serde_json::json!({"code": status.code(), "signal": status.signal()});
-        self.recorder.push(Dir::Exit, exit.to_string());
+        self.recorder.push(Body::Exit(ExitInfo {
+            code: status.code(),
+            signal: status.signal(),
+            cause: None,
+        }));
         self.exited = true;
         Ok(())
     }
 
-    /// All records so far.
-    pub fn records(&self) -> Vec<Record> {
-        self.recorder.records()
+    /// The finished recording, read back from the transcript file, so it is
+    /// exactly what was written.
+    pub fn fixture(&self) -> Result<Fixture> {
+        let records = read_transcript(&self.transcript)?;
+        if records != self.recorder.records() {
+            bail!(
+                "{}: the file differs from the records appended",
+                self.transcript.display()
+            );
+        }
+        Ok(Fixture {
+            records,
+            actions: self.recorder.actions(),
+        })
     }
 
     /// The last few records, for error messages.
@@ -234,8 +285,12 @@ impl PiProcess {
         records[start..]
             .iter()
             .map(|r| {
-                let raw: String = r.raw.chars().take(300).collect();
-                format!("  {:?} {raw}", r.dir)
+                let raw: String = serde_json::to_string(r)
+                    .unwrap_or_default()
+                    .chars()
+                    .take(300)
+                    .collect();
+                format!("  {raw}")
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -250,9 +305,9 @@ impl Drop for PiProcess {
     }
 }
 
-/// Record every LF-terminated line of `reader`. Lines are split on LF only
-/// (never on U+2028/U+2029), and a trailing CR is stripped.
-async fn pump(reader: impl AsyncRead + Unpin, dir: Dir, recorder: Recorder) {
+/// Record every LF-terminated line of `reader` as `body(line)`. Lines are
+/// split on LF only (never on U+2028/U+2029), and a trailing CR is stripped.
+async fn pump(reader: impl AsyncRead + Unpin, body: fn(Line) -> Body, recorder: Recorder) {
     let mut reader = BufReader::new(reader);
     let mut buf = Vec::new();
     loop {
@@ -266,7 +321,13 @@ async fn pump(reader: impl AsyncRead + Unpin, dir: Dir, recorder: Recorder) {
                 if buf.last() == Some(&b'\r') {
                     buf.pop();
                 }
-                recorder.push(dir, String::from_utf8_lossy(&buf).into_owned());
+                let lossy = std::str::from_utf8(&buf).is_err();
+                let raw = String::from_utf8_lossy(&buf).into_owned();
+                recorder.push(body(Line {
+                    raw,
+                    truncated: 0,
+                    lossy,
+                }));
             }
         }
     }

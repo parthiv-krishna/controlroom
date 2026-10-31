@@ -8,6 +8,7 @@ rust-version.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 clap.workspace = true
+controlroom-transcript.workspace = true
 futures.workspace = true
 regex = "1.11"
 serde.workspace = true

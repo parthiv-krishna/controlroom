@@ -504,6 +504,7 @@ name = "controlroom-fake-agent"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "controlroom-transcript",
  "serde",
  "serde_json",
  "tempfile",
@@ -518,6 +519,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "controlroom-transcript",
  "futures",
  "regex",
  "serde",
