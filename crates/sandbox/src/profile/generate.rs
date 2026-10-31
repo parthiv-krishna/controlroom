@@ -87,7 +87,8 @@ pub fn generate_profile(spec: &SessionSandboxSpec) -> Result<NonoProfile, Profil
     })
 }
 
-/// Session-level grants for one access class, split into directories and files.
+/// Path grants of a mediated command sandbox, split by access and kind. Read-write grants
+/// appear in both the read and the write lists (nono's `fs_write` is write-only).
 struct Grants {
     read_dirs: Vec<String>,
     read_files: Vec<String>,
@@ -95,9 +96,8 @@ struct Grants {
     write_files: Vec<String>,
 }
 
-/// Collects the path grants shared by the session sandbox and mediated command sandboxes:
-/// standing grants plus relaxed-level home config. Read-write grants appear in both lists.
-fn path_grants(spec: &SessionSandboxSpec) -> Grants {
+/// Collects standing grants plus relaxed-level home config for a command sandbox.
+fn command_grants(spec: &SessionSandboxSpec) -> Grants {
     let relaxed = spec.active_relaxed_reads();
     let mut g = Grants {
         read_dirs: Vec::new(),
@@ -125,32 +125,17 @@ fn strings(paths: &[AbsPath]) -> Vec<String> {
 
 fn filesystem(spec: &SessionSandboxSpec) -> Filesystem {
     let layout = &spec.layout;
-    let grants = path_grants(spec);
     let mut read = strings(&spec.read_only);
     let mut allow = strings(&layout.sandbox_dirs());
     let mut allow_file = Vec::new();
-    // `read` takes files and directories; read-write grants go to allow/allow_file only.
-    for (path, is_rw) in grants
-        .read_dirs
-        .iter()
-        .map(|p| (p, grants.write_dirs.contains(p)))
-    {
-        if is_rw {
-            allow.push(path.clone());
-        } else {
-            read.push(path.clone());
-        }
-    }
-    for (path, is_rw) in grants
-        .read_files
-        .iter()
-        .map(|p| (p, grants.write_files.contains(p)))
-    {
-        if is_rw {
-            allow_file.push(path.clone());
-        } else {
-            read.push(path.clone());
-        }
+    // `read` takes files and directories; read-write grants go to allow/allow_file.
+    for grant in spec.policy.paths.iter().chain(spec.active_relaxed_reads()) {
+        let target = match (grant.access, grant.kind) {
+            (Access::Read, _) => &mut read,
+            (Access::ReadWrite, PathKind::Dir) => &mut allow,
+            (Access::ReadWrite, PathKind::File) => &mut allow_file,
+        };
+        target.push(grant.path.to_string());
     }
     Filesystem {
         read,
@@ -315,7 +300,7 @@ fn invocation_policy(rules: &CommandRules) -> Option<InvocationPolicy> {
 /// command sandboxes inherit nothing) plus the proxy domains.
 fn command_sandbox(spec: &SessionSandboxSpec, command: &str) -> CommandSandbox {
     let layout = &spec.layout;
-    let grants = path_grants(spec);
+    let grants = command_grants(spec);
     let session_dirs = [spec.cwd.clone(), layout.home(), layout.tmp()];
     let mut fs_read = strings(&spec.read_only);
     fs_read.extend(strings(&session_dirs));
