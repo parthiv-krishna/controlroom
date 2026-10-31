@@ -1,5 +1,6 @@
 //! Spawning the child in its own process group, signaling the group, and reaping.
 
+use crate::diag::diag;
 use std::io;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -123,6 +124,6 @@ fn signal_group(pgid: u32, signal: Signal) {
     if let Err(e) = kill_process_group(pid, signal)
         && e != Errno::SRCH
     {
-        eprintln!("supervise: kill(-{pgid}, {signal:?}): {e}");
+        diag!("kill(-{pgid}, {signal:?}): {e}");
     }
 }

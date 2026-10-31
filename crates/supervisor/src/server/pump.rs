@@ -1,5 +1,6 @@
 //! Logging the child's stdout and stderr, line by line, with a line cap.
 
+use crate::diag::diag;
 use std::io::{ErrorKind, Read};
 use std::sync::Arc;
 use std::time::Duration;
@@ -99,7 +100,7 @@ pub(crate) fn pump(mut src: impl Read, log: Arc<Log>, max: usize, wrap: fn(Line)
             }
             Err(e) if e.kind() == ErrorKind::Interrupted => continue,
             Err(e) => {
-                eprintln!("supervise: reading child output: {e}");
+                diag!("reading child output: {e}");
                 true
             }
         };
@@ -126,7 +127,7 @@ fn append_retrying(log: &Log, body: Body) -> bool {
             Err(AppendError::Closed) => return false,
             Err(e) => {
                 if !reported {
-                    eprintln!("supervise: transcript append failed, retrying: {e}");
+                    diag!("transcript append failed, retrying: {e}");
                     reported = true;
                 }
                 std::thread::sleep(APPEND_RETRY);

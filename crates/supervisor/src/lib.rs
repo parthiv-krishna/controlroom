@@ -103,6 +103,7 @@
 
 pub mod cli;
 mod client;
+mod diag;
 mod launch;
 mod paths;
 mod proto;

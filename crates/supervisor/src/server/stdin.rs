@@ -11,6 +11,7 @@
 //! A barrier queued behind writes is answered after those writes are logged and
 //! fsynced, which is what a daemon in doubt (just after a restart) waits for.
 
+use crate::diag::diag;
 use std::io::Write;
 use std::process::ChildStdin;
 use std::sync::Arc;
@@ -119,7 +120,7 @@ pub(crate) fn stdin_writer(stdin: ChildStdin, lines: Receiver<Vec<u8>>) {
             continue;
         };
         if let Err(e) = pipe.write_all(&line).and_then(|()| pipe.flush()) {
-            eprintln!("supervise: writing child stdin: {e}");
+            diag!("writing child stdin: {e}");
             stdin = None;
         }
     }

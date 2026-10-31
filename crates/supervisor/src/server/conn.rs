@@ -1,5 +1,6 @@
 //! Socket connections: requests, responses and record streams.
 
+use crate::diag::diag;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
@@ -45,7 +46,7 @@ pub(super) async fn accept_loop(
                     tokio::spawn(conn.serve(stream, done_tx.clone()));
                 }
                 Err(e) => {
-                    eprintln!("supervise: accept: {e}");
+                    diag!("accept: {e}");
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             },
@@ -222,8 +223,8 @@ impl Conn {
     fn hello(&mut self, params: HelloParams) -> Result<Value, ErrorBody> {
         if params.protocol_version != PROTOCOL_VERSION {
             // The client adapts (it speaks N and N-1); just note it.
-            eprintln!(
-                "supervise: client speaks protocol {}, answering with {PROTOCOL_VERSION}",
+            diag!(
+                "client speaks protocol {}, answering with {PROTOCOL_VERSION}",
                 params.protocol_version
             );
         }
@@ -488,10 +489,10 @@ fn read_batch(reader: &mut Reader) -> Result<Vec<Record>, ()> {
             Ok(Some(record)) => records.push(record),
             Ok(None) => break,
             Err(ReadError::Io(e)) => {
-                eprintln!("supervise: reading transcript: {e}");
+                diag!("reading transcript: {e}");
                 return Err(());
             }
-            Err(e) => eprintln!("supervise: skipping transcript line: {e}"),
+            Err(e) => diag!("skipping transcript line: {e}"),
         }
     }
     Ok(records)

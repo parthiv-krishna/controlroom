@@ -10,6 +10,7 @@ mod log;
 mod pump;
 mod stdin;
 
+use crate::diag::diag;
 use std::io::Write as _;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::ExitStatusExt;
@@ -192,8 +193,8 @@ async fn start(config: Config) -> anyhow::Result<Running> {
         Err(e) => return Err(e).with_context(|| format!("opening {}", transcript.display())),
     };
     if report.truncated_bytes > 0 {
-        eprintln!(
-            "supervise: dropped {} bytes of an incomplete final transcript line",
+        diag!(
+            "dropped {} bytes of an incomplete final transcript line",
             report.truncated_bytes
         );
     }
@@ -382,7 +383,7 @@ impl Running {
                 cause: None,
             },
             Ok(Err(e)) => {
-                eprintln!("supervise: waiting for child: {e}");
+                diag!("waiting for child: {e}");
                 ExitInfo {
                     code: None,
                     signal: None,
@@ -404,7 +405,7 @@ impl Running {
             .await
             .is_err()
         {
-            eprintln!("supervise: output pipes still open after the child exited; closing");
+            diag!("output pipes still open after the child exited; closing");
         }
 
         let shared = &self.shared;
@@ -414,13 +415,13 @@ impl Running {
         let log = shared.log.clone();
         match tokio::task::spawn_blocking(move || log.sync()).await {
             Ok(Ok(_)) => {}
-            Ok(Err(e)) => eprintln!("supervise: fsync on exit: {e}"),
-            Err(e) => eprintln!("supervise: fsync on exit: {e}"),
+            Ok(Err(e)) => diag!("fsync on exit: {e}"),
+            Err(e) => diag!("fsync on exit: {e}"),
         }
         shared.exit.send_replace(Some(exit));
 
         if let Err(e) = std::fs::remove_file(&self.info.socket) {
-            eprintln!("supervise: removing socket: {e}");
+            diag!("removing socket: {e}");
         }
         shared.shutdown.send_replace(true);
 
@@ -433,7 +434,7 @@ impl Running {
 
 /// The reaper thread always sends unless it panicked.
 fn unreachable_reaper() -> ExitInfo {
-    eprintln!("supervise: reaper thread died");
+    diag!("reaper thread died");
     ExitInfo {
         code: None,
         signal: None,
@@ -450,13 +451,13 @@ async fn append_exit(log: &Arc<Log>, exit: ExitInfo) -> Option<u64> {
             Err(AppendError::Closed) => return None,
             Err(e) => {
                 if attempt == 1 {
-                    eprintln!("supervise: writing exit record failed, retrying: {e}");
+                    diag!("writing exit record failed, retrying: {e}");
                 }
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }
     }
-    eprintln!("supervise: giving up on the exit record");
+    diag!("giving up on the exit record");
     None
 }
 
@@ -483,15 +484,15 @@ async fn handle_signals(shared: Arc<Shared>, mut signals: Signals) {
             _ = signals.term.recv() => {}
             _ = signals.int.recv() => {}
             _ = signals.hup.recv() => {
-                eprintln!("supervise: ignoring SIGHUP");
+                diag!("ignoring SIGHUP");
                 continue;
             }
         }
         if terminating {
-            eprintln!("supervise: second termination signal, killing the child");
+            diag!("second termination signal, killing the child");
             shared.group.signal(Signal::KILL);
         } else {
-            eprintln!("supervise: termination signal, terminating the child");
+            diag!("termination signal, terminating the child");
             terminating = true;
             shared.terminate(DEFAULT_GRACE, StopCause::Signal);
         }
@@ -510,7 +511,7 @@ async fn periodic_sync(shared: Arc<Shared>) {
         if shared.log.last_seq() > shared.log.durable_seq() {
             let log = shared.log.clone();
             if let Ok(Err(e)) = tokio::task::spawn_blocking(move || log.sync()).await {
-                eprintln!("supervise: fsync: {e}");
+                diag!("fsync: {e}");
             }
         }
     }
@@ -520,7 +521,7 @@ async fn enforce_timeout(shared: Arc<Shared>, timeout: Duration) {
     let mut exit = shared.exit.subscribe();
     tokio::select! {
         () = tokio::time::sleep(timeout) => {
-            eprintln!("supervise: timeout of {timeout:?} reached, terminating the child");
+            diag!("timeout of {timeout:?} reached, terminating the child");
             shared.terminate(DEFAULT_GRACE, StopCause::Timeout);
         }
         () = until_exited(&mut exit) => {}

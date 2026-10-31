@@ -103,7 +103,8 @@ pub fn run_foreground(
         .arg("--foreground")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        // Diagnostics go to the test output; an unread pipe could fill up.
+        .stderr(Stdio::inherit())
         .spawn()
         .unwrap();
     let mut line = String::new();
