@@ -1,7 +1,7 @@
 <script lang="ts">
   // The command palette (⌘K / Ctrl-Shift-K, or `:` for ex commands): sessions and commands.
   // Ex commands: :approve, :new, :goto <session>, :task, :settings [tab], :help.
-  import { useApp } from '../app/app.svelte';
+  import { newOpId, useApp } from '../app/app.svelte';
   import type { SettingsTab } from '../app/view.svelte';
   import { displayName } from '../model/filters';
   import { autofocus } from '../ui/actions';
@@ -49,7 +49,7 @@
       const opt = r?.options.find((o) => o.style === 'allow');
       if (!r || !opt) continue;
       const id = r.origin_child ?? s.id;
-      const ok = await app.client.call('request.respond', { machine_id: s.machine_id, op_id: crypto.randomUUID(), id, request_id: r.id, response: { kind: 'choice', option_id: opt.id } });
+      const ok = await app.client.call('request.respond', { machine_id: s.machine_id, op_id: newOpId(), id, request_id: r.id, response: { kind: 'choice', option_id: opt.id } });
       if (ok) app.toasts.show(`${opt.label}: ${r.title}`, 'ok', { machine_id: s.machine_id, id });
       return;
     }

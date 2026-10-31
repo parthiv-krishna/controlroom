@@ -4,7 +4,7 @@
   // questions never block (outlined tier): answer or Dismiss ("declined"). A blocking request with
   // a deny option offers "Reject and steer…": deny, then send the text ahead of the queue.
   // Used in the session pane, the notifications panel and the task detail (compact).
-  import { useApp } from '../app/app.svelte';
+  import { newOpId, useApp } from '../app/app.svelte';
   import { RpcError, describeError } from '../api/errors';
   import { displayName } from '../model/filters';
   import { textContent } from '../model/misc';
@@ -39,7 +39,7 @@
     try {
       await app.client.request('request.respond', {
         machine_id: s.machine_id,
-        op_id: crypto.randomUUID(),
+        op_id: newOpId(),
         id: targetId,
         request_id: req.id,
         response,

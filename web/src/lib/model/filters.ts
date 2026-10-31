@@ -15,7 +15,7 @@ export const STATES: [string, string][] = [
   ['offline', 'Disconnected'], ['notask', 'No task'], ['closed', 'Archived'],
 ];
 
-export function stateTest(ctx: Ctx, key: string, s: MachineSession): boolean {
+function stateTest(ctx: Ctx, key: string, s: MachineSession): boolean {
   const live = !s.stale;
   switch (key) {
     case 'needs': { const a = attentionOf(s); return a === 'approval' || a === 'problem'; }

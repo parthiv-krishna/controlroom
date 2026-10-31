@@ -1,7 +1,7 @@
 <script lang="ts">
   // Machine cards: connection, doctor results, idle stop and retention (daemon settings), key,
   // auto-upgrade, retry/upgrade/remove, "+ Session here"; and the add-machine flow.
-  import { useApp } from '../app/app.svelte';
+  import { newOpId, useApp } from '../app/app.svelte';
   import { ago, connLabel, isLive, upgrading } from '../model/status';
   import type { KeysListResult, Machine } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
@@ -21,7 +21,7 @@
   const IDLE = [1, 12, 24, 48, 168];
   const RETENTION: [string, number | null][] = [['forever', null], ['7 days', 7], ['30 days', 30], ['90 days', 90]];
   const setDaemon = (m: Machine, fields: { idle_timeout_h?: number; retention?: { delete_closed_after_days: number | null } }) =>
-    app.client.call('settings.set', { machine_id: m.id, op_id: crypto.randomUUID(), ...fields });
+    app.client.call('settings.set', { machine_id: m.id, op_id: newOpId(), ...fields });
 
   async function remove(m: Machine) {
     if (await app.dialogs.confirm({ title: `Remove ${m.name}?`, body: 'Its sessions keep running, but disappear from controlroom.', ok: 'Remove', danger: true })) await app.client.call('machines.remove', { machine_id: m.id });

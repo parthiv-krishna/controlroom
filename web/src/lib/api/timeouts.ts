@@ -1,7 +1,7 @@
 // Every call has a client-side timeout (protocol §2.4): 30 s, longer for known slow methods.
 import type { UiMethod } from '../protocol';
 
-export const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 const SLOW: Partial<Record<UiMethod, number>> = {
   'machines.add': 60_000,

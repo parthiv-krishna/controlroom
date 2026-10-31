@@ -3,7 +3,7 @@
   // working directory (browses the machine's directories), name, tasks (incl. "+ New task …"),
   // sandbox level (the defaults, or an explicit choice with the "looser than defaults" badge),
   // first message. Switching machine keeps everything typed.
-  import { useApp } from '../app/app.svelte';
+  import { newOpId, useApp } from '../app/app.svelte';
   import type { NewSessionPreset } from '../app/view.svelte';
   import { normPath, prefixMatch } from '../model/location';
   import { textContent } from '../model/misc';
@@ -83,7 +83,7 @@
     busy = true;
     const r = await app.client.call('session.create', {
       machine_id: machineId,
-      op_id: crypto.randomUUID(),
+      op_id: newOpId(),
       agent,
       cwd: cwd.trim(),
       name: name.trim() || null,
@@ -94,7 +94,7 @@
     const ref = { machine_id: machineId, session_id: id };
     // The protocol has no atomic create-and-link: the first message and the task links follow.
     if (prompt.trim()) {
-      await app.client.call('session.prompt', { machine_id: machineId, op_id: crypto.randomUUID(), id, content: textContent(prompt.trim()), origin: { kind: 'user', device: app.client.deviceRef }, if_busy: 'queue' });
+      await app.client.call('session.prompt', { machine_id: machineId, op_id: newOpId(), id, content: textContent(prompt.trim()), origin: { kind: 'user', device: app.client.deviceRef }, if_busy: 'queue' });
     }
     for (const v of tasks) {
       if (v.startsWith('new:')) {

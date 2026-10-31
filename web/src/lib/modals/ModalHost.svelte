@@ -1,6 +1,6 @@
 <script lang="ts">
   // The open modal: new session, new task, project view, start fresh, link to tasks, task detail.
-  import { useApp } from '../app/app.svelte';
+  import { newOpId, useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
   import { keyOf } from '../model/projects';
   import { TASK_COLUMNS } from '../model/tasks';
@@ -20,7 +20,7 @@
 
   async function startFresh() {
     if (!session) return;
-    const r = await app.client.call('session.start_fresh', { machine_id: session.machine_id, op_id: crypto.randomUUID(), id: session.id, include_history: includeHistory });
+    const r = await app.client.call('session.start_fresh', { machine_id: session.machine_id, op_id: newOpId(), id: session.id, include_history: includeHistory });
     if (r) close();
   }
 </script>

@@ -35,8 +35,6 @@ export const ICONS = {
   collapse: [stroke('M13.5 6.5h-4v-4M2.5 9.5h4v4M9.5 6.5 14 2M6.5 9.5 2 14')],
   shield: [stroke('M8 1.6 13.2 3.6v4.1c0 3.2-2.2 5.6-5.2 6.7-3-1.1-5.2-3.5-5.2-6.7V3.6z')],
   shieldOff: [stroke('M8 1.6 13.2 3.6v4.1c0 3.2-2.2 5.6-5.2 6.7-3-1.1-5.2-3.5-5.2-6.7V3.6z'), stroke('M2.5 2.5l11 11', 1.6)],
-  link: [stroke('M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.8.8M9.2 6.8a2.6 2.6 0 0 0-3.7 0L3.3 9a2.6 2.6 0 0 0 3.7 3.7l.8-.8')],
-  trash: [stroke('M3 4.5h10M6 4.5V2.8h4v1.7M4.5 4.5l.7 9h5.6l.7-9')],
   close: [stroke('M4 4l8 8M12 4l-8 8', 1.6)],
 } satisfies Record<string, IconPath[]>;
 
