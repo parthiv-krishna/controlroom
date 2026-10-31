@@ -395,7 +395,9 @@ async fn steer_during_tool(ctx: &mut Ctx) -> Result<()> {
     ensure!(status.success(), "mkfifo failed");
     let mut pi = ctx.spawn(&[])?;
     pi.call("1", prompt("Run the tool.")).await?;
-    pi.wait_event("tool_execution_start").await?;
+    // bash reports an empty update once its process runs; waiting for it
+    // pins the order of that update and the next command.
+    pi.wait_event("tool_execution_update").await?;
     pi.call(
         "2",
         json!({"type": "steer", "message": "Also mention the steer."}),
@@ -523,7 +525,9 @@ async fn abort_text(ctx: &mut Ctx) -> Result<()> {
 async fn abort_tool(ctx: &mut Ctx) -> Result<()> {
     let mut pi = ctx.spawn(&[])?;
     pi.call("1", prompt("Run a slow command.")).await?;
-    pi.wait_event("tool_execution_start").await?;
+    // bash reports an empty update once its process runs; waiting for it
+    // pins the order of that update and the next command.
+    pi.wait_event("tool_execution_update").await?;
     let response = pi.call("2", json!({"type": "abort"})).await?;
     ensure_success(&response)?;
     finish(ctx, pi).await

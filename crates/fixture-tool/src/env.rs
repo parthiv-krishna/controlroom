@@ -44,7 +44,7 @@ impl PiEnv {
             std::fs::create_dir_all(env.root().join(sub))?;
         }
         env.write_agent_dir(base_url)?;
-        env.reset_project()?;
+        env.write_project()?;
         Ok(env)
     }
 
@@ -93,12 +93,9 @@ impl PiEnv {
         ]
     }
 
-    /// Restore the scratch project to its initial files.
-    pub fn reset_project(&self) -> Result<()> {
+    /// Write the scratch project.
+    fn write_project(&self) -> Result<()> {
         let work = self.work_dir();
-        if work.exists() {
-            std::fs::remove_dir_all(&work)?;
-        }
         for (name, text) in PROJECT_FILES {
             write(&work.join(name), text)?;
         }

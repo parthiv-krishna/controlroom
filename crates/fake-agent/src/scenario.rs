@@ -228,7 +228,8 @@ pub enum Step {
     /// A tool call, executed after the response streams (replies only).
     ToolCall(ToolCallStep),
     /// Block until the test releases the gate (see [`crate::gates`]).
-    /// Abort interrupts it.
+    /// Abort interrupts it. Without a gate directory the agent exits with
+    /// code 2.
     Gate { name: String },
     /// Wait; abort interrupts it.
     Sleep { ms: u64 },

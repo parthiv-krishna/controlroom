@@ -129,11 +129,6 @@ impl PiProcess {
         })
     }
 
-    /// pi's process id.
-    pub fn pid(&self) -> u32 {
-        self.pid
-    }
-
     /// Record and write one stdin line.
     pub async fn send_raw(&mut self, line: &str) -> Result<()> {
         let stdin = self.stdin.as_mut().ok_or_else(|| anyhow!("stdin closed"))?;

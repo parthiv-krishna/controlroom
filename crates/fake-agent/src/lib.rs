@@ -108,8 +108,17 @@ pub async fn serve(config: Config) -> Result<i32> {
     let mut terminate = signal(SignalKind::terminate()).context("installing SIGTERM")?;
     let mut interrupt = signal(SignalKind::interrupt()).context("installing SIGINT")?;
 
-    let startup = agent.clone();
-    tokio::spawn(async move { startup.side_steps(&startup.scenario.session_start).await });
+    // Like pi, finish the extensions' start-up before serving commands; only
+    // steps that wait (dialogs, gates) continue in the background.
+    let ran = agent.instant_steps(&agent.scenario.session_start);
+    if ran < agent.scenario.session_start.len() {
+        let startup = agent.clone();
+        tokio::spawn(async move {
+            startup
+                .side_steps(&startup.scenario.session_start[ran..])
+                .await
+        });
+    }
 
     let mut stdin = BufReader::new(tokio::io::stdin());
     let mut buf = Vec::new();

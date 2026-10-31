@@ -190,9 +190,6 @@ impl Agent {
             eprintln!("fake-agent: gate {name} reached but no gate dir is configured");
             std::process::exit(2);
         };
-        if let Err(err) = std::fs::create_dir_all(gates.dir()) {
-            eprintln!("fake-agent: gate dir: {err}");
-        }
         abortable(abort, async {
             if let Err(err) = gates.pass(name).await {
                 eprintln!("fake-agent: gate {name}: {err:#}");
@@ -213,11 +210,7 @@ impl Agent {
             Step::Dialog(dialog) => {
                 self.dialog(dialog).await;
             }
-            Step::AppendEntry { custom_type, data } => {
-                let entry = self
-                    .persist(json!({"type": "custom", "customType": custom_type, "data": data}));
-                self.emit(&json!({"type": "entry_appended", "entry": entry}));
-            }
+            Step::AppendEntry { custom_type, data } => self.append_entry(custom_type, data),
             Step::Crash { code } => std::process::exit(*code),
             Step::Text(_) | Step::Thinking(_) | Step::ToolCall(_) => {
                 eprintln!("fake-agent: ignoring a content step outside a reply");
@@ -226,12 +219,34 @@ impl Agent {
         Waited::Done(())
     }
 
+    /// Run the leading steps that never wait (UI requests, entries) right
+    /// away; returns how many ran.
+    pub fn instant_steps(&self, steps: &[Step]) -> usize {
+        let mut ran = 0;
+        for step in steps {
+            match step {
+                Step::Ui(ui) => self.ui(ui),
+                Step::AppendEntry { custom_type, data } => self.append_entry(custom_type, data),
+                _ => break,
+            }
+            ran += 1;
+        }
+        ran
+    }
+
     /// Run side steps in order (session start, commands).
     pub async fn side_steps(&self, steps: &[Step]) {
         let (_keep, mut never) = watch::channel(false);
         for step in steps {
             self.side_step(step, &mut never).await;
         }
+    }
+
+    /// `pi.appendEntry`: a persisted `custom` entry plus `entry_appended`.
+    pub fn append_entry(&self, custom_type: &str, data: &Value) {
+        let entry =
+            self.persist(json!({"type": "custom", "customType": custom_type, "data": data}));
+        self.emit(&json!({"type": "entry_appended", "entry": entry}));
     }
 
     /// A fire-and-forget extension UI request.
