@@ -20,6 +20,7 @@ id: SessionId,
  */
 include_history: boolean, 
 /**
- * A new sandbox profile to start with; absent keeps the current one.
+ * Refreshed sandbox defaults to start with; absent keeps the current ones. An explicit
+ * level stays in force.
  */
 sandbox?: SandboxSpec | null, };

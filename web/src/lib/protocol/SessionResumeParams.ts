@@ -16,6 +16,7 @@ op_id: OpId,
  */
 id: SessionId, 
 /**
- * A new sandbox profile to restart with; absent keeps the current one.
+ * Refreshed sandbox defaults to restart with; absent keeps the current ones. An explicit
+ * level stays in force.
  */
 sandbox?: SandboxSpec | null, };

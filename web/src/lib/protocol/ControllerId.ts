@@ -2,7 +2,7 @@
 
 /**
  * One controller installation, sent in the daemon `hello` so the daemon can record which
- * controller holds the mailbox broker claim.
+ * controller is connected (a daemon serves one controller at a time).
  *
  * A ULID, serialized as its 26-character canonical string.
  */

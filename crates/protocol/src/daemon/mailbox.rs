@@ -1,14 +1,19 @@
-//! The mailbox channel between a daemon and the broker (the controller holding the broker
-//! claim). The daemon never calls the controller:
+//! The mailbox channel between a daemon and its connected controller, which brokers messages
+//! between machines. Only the controller (not debug clients) may use it. The daemon never calls
+//! the controller:
 //!
 //! 1. The daemon appends what its agents send (messages, cross-machine spawns, answers to
-//!    broker-raised requests) to a durable outbox. The broker reads it with `outbox.subscribe`.
-//! 2. The broker applies the contact policy, delivers, and reports each item's outcome with
+//!    controller-raised requests) to a durable outbox. The controller reads it with
+//!    `outbox.subscribe`.
+//! 2. The controller applies the contact policy, delivers, and reports each item's outcome with
 //!    `outbox.ack`. A `queued` ack is interim; any other outcome is final and removes the item.
 //! 3. Everything addressed to a session comes back as `inbox.deliver` (with an `op_id`, so a
-//!    retried delivery is applied once): inbound messages and replies, requests the broker
+//!    retried delivery is applied once): inbound messages and replies, requests the controller
 //!    needs the user to answer (contact, spawn), the session's peer directory, and updates from
 //!    remote children.
+//!
+//! Unacknowledged items survive disconnects: after a reconnect the controller resubscribes with
+//! the last rev it saw.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -18,7 +23,7 @@ use crate::ids::{
 };
 use crate::session::{ContentPart, Peer, PeerRef, Request, Response, RunOutcome, SessionState};
 
-/// What an outbox item asks the broker to do.
+/// What an outbox item asks the controller to do.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OutboxBody {
@@ -51,7 +56,7 @@ pub enum OutboxBody {
         /// The child's first prompt.
         prompt: Vec<ContentPart>,
     },
-    /// The user's answer to a request the broker raised with `inbox.deliver`.
+    /// The user's answer to a request the controller raised with `inbox.deliver`.
     Resolved {
         /// The request.
         request_id: RequestId,
@@ -80,7 +85,8 @@ pub struct OutboxItem {
     pub body: OutboxBody,
 }
 
-/// Params of `outbox.subscribe`. Only the broker may subscribe (`not_broker` otherwise).
+/// Params of `outbox.subscribe`. Only the controller may subscribe (`unsupported` for debug
+/// clients).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct OutboxSubscribeParams {
     /// Skip items up to this rev (already seen); `null` for every unacknowledged item.
@@ -109,9 +115,9 @@ pub struct OutboxItemsParams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkScope {
-    /// The daemon can't reach the broker.
-    Broker,
-    /// The broker can't reach the peer's machine.
+    /// The daemon can't reach the controller.
+    Controller,
+    /// The controller can't reach the peer's machine.
     Peer,
     /// A scope this build doesn't know.
     #[serde(other)]
@@ -162,7 +168,7 @@ pub struct OutboxAckParams {
     pub outcome: OutboxOutcome,
 }
 
-/// What the broker delivers to a session.
+/// What the controller delivers to a session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InboxDelivery {

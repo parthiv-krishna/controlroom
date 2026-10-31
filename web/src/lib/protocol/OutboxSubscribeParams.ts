@@ -2,7 +2,8 @@
 import type { Rev } from "./Rev";
 
 /**
- * Params of `outbox.subscribe`. Only the broker may subscribe (`not_broker` otherwise).
+ * Params of `outbox.subscribe`. Only the controller may subscribe (`unsupported` for debug
+ * clients).
  */
 export type OutboxSubscribeParams = { 
 /**

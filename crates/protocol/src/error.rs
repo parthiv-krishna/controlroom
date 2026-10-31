@@ -13,7 +13,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::ids::{ControllerId, MachineId, RemotePath, SessionId};
+use crate::ids::{ControllerId, MachineId, RemotePath, SessionId, UnixMillis};
 use crate::session::{Request, SessionState};
 use crate::ui::Connectivity;
 use crate::version::ProtocolVersion;
@@ -200,10 +200,13 @@ pub enum ErrorData {
         /// The OS error description.
         detail: String,
     },
-    /// `outbox.*` from a controller that doesn't hold the broker claim.
-    NotBroker {
-        /// The controller holding the claim, if any.
-        broker: Option<ControllerId>,
+    /// A `hello` from a controller while a *different* controller is connected: a daemon serves
+    /// one controller at a time. (The same `controller_id` replaces its old connection.)
+    ControllerConflict {
+        /// The connected controller.
+        controller_id: ControllerId,
+        /// When it connected.
+        connected_since: UnixMillis,
     },
     /// UI API: the request was not authenticated (or the login session was revoked).
     Unauthenticated,
@@ -269,7 +272,7 @@ impl ErrorData {
             ErrorData::AgentUnavailable { .. } => -32016,
             ErrorData::SandboxUnavailable { .. } => -32017,
             ErrorData::FsError { .. } => -32018,
-            ErrorData::NotBroker { .. } => -32019,
+            ErrorData::ControllerConflict { .. } => -32019,
             ErrorData::Unauthenticated => -32100,
             ErrorData::MachineUnavailable { .. } => -32101,
             ErrorData::HostKeyMismatch { .. } => -32102,

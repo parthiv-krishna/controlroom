@@ -25,6 +25,7 @@ export type * from "./ChecklistItemId";
 export type * from "./ChecklistRemoveParams";
 export type * from "./ChecklistUpdateParams";
 export type * from "./ClientFocusParams";
+export type * from "./ClientRole";
 export type * from "./CompactionPhase";
 export type * from "./CompactionReason";
 export type * from "./Connectivity";

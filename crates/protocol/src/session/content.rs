@@ -82,7 +82,7 @@ pub enum PeerRelation {
     Unknown,
 }
 
-/// One entry of a session's contact directory, maintained by the broker.
+/// One entry of a session's contact directory, maintained by the controller.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Peer {
     /// The peer session.

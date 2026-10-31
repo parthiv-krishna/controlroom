@@ -2,6 +2,7 @@
 import type { OpId } from "./OpId";
 import type { PeerRef } from "./PeerRef";
 import type { RemotePath } from "./RemotePath";
+import type { SandboxLevel } from "./SandboxLevel";
 import type { SandboxSpec } from "./SandboxSpec";
 import type { SessionId } from "./SessionId";
 
@@ -34,7 +35,13 @@ parent_id?: SessionId | null,
  */
 spawned_by?: PeerRef | null, 
 /**
- * The sandbox profile. Absent: the daemon's default (`strict`, no extra grants). The UI
- * API's controller replaces it with the effective profile of the machine and projects.
+ * An explicit level chosen by the user (new-session dialog or template). Honored in either
+ * direction, and kept for the session's life; absent: the default level applies.
+ */
+sandbox_level?: SandboxLevel | null, 
+/**
+ * The sandbox defaults. Absent: the daemon's own (`strict`, no extra grants). In the UI
+ * API, the controller always fills it with the defaults of the machine and matching
+ * projects, replacing any value a client sent.
  */
 sandbox?: SandboxSpec | null, };

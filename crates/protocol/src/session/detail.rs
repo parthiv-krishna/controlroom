@@ -80,6 +80,6 @@ pub struct SessionDetail {
     pub auto_continue: AutoContinueInfo,
     /// Background jobs, newest first: running ones and recently finished ones.
     pub jobs: Vec<Job>,
-    /// Sessions this one may contact (the broker's last `peers` delivery).
+    /// Sessions this one may contact (the controller's last `peers` delivery).
     pub peers: Vec<Peer>,
 }

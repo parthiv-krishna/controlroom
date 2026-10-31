@@ -208,15 +208,15 @@ export type DaemonMethods = {
    */
   "settings.set": { params: SettingsSetParams, result: DaemonSettings },
   /**
-   * Read the outbox (broker only).
+   * Read the outbox (controller only).
    */
   "outbox.subscribe": { params: OutboxSubscribeParams, result: OutboxSubscribeResult },
   /**
-   * Report an outbox item's outcome (broker only).
+   * Report an outbox item's outcome (controller only).
    */
   "outbox.ack": { params: OutboxAckParams, result: Ack },
   /**
-   * Deliver something to a session (broker only).
+   * Deliver something to a session (controller only).
    */
   "inbox.deliver": { params: InboxDeliverParams, result: Ack },
 };

@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ids::{OpId, QueueId, RemotePath, Seq, SessionId};
-use crate::session::{ContentPart, PeerRef, PromptOrigin, SandboxSpec, SessionSummary};
+use crate::session::{
+    ContentPart, PeerRef, PromptOrigin, SandboxLevel, SandboxSpec, SessionSummary,
+};
 
 /// Params of commands that only name a session: `session.cancel`, `session.close`,
 /// `session.reopen`, `session.delete`, `session.mark_unread`, `queue.resume`.
@@ -35,8 +37,13 @@ pub struct SessionCreateParams {
     /// The spawning session on another machine, for cross-machine subagents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spawned_by: Option<PeerRef>,
-    /// The sandbox profile. Absent: the daemon's default (`strict`, no extra grants). The UI
-    /// API's controller replaces it with the effective profile of the machine and projects.
+    /// An explicit level chosen by the user (new-session dialog or template). Honored in either
+    /// direction, and kept for the session's life; absent: the default level applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox_level: Option<SandboxLevel>,
+    /// The sandbox defaults. Absent: the daemon's own (`strict`, no extra grants). In the UI
+    /// API, the controller always fills it with the defaults of the machine and matching
+    /// projects, replacing any value a client sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<SandboxSpec>,
 }
@@ -107,7 +114,8 @@ pub struct SessionResumeParams {
     pub op_id: OpId,
     /// The session.
     pub id: SessionId,
-    /// A new sandbox profile to restart with; absent keeps the current one.
+    /// Refreshed sandbox defaults to restart with; absent keeps the current ones. An explicit
+    /// level stays in force.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<SandboxSpec>,
 }
@@ -121,7 +129,8 @@ pub struct SessionStartFreshParams {
     pub id: SessionId,
     /// Export the previous conversation to a file and point the next prompt at it.
     pub include_history: bool,
-    /// A new sandbox profile to start with; absent keeps the current one.
+    /// Refreshed sandbox defaults to start with; absent keeps the current ones. An explicit
+    /// level stays in force.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<SandboxSpec>,
 }

@@ -8,6 +8,7 @@ import type { Request } from "./Request";
 import type { Resource } from "./Resource";
 import type { SessionId } from "./SessionId";
 import type { SessionState } from "./SessionState";
+import type { UnixMillis } from "./UnixMillis";
 
 /**
  * The typed error kinds, serialized with a `kind` tag. Kinds marked "UI API" are only produced
@@ -65,11 +66,15 @@ path: RemotePath,
 /**
  * The OS error description.
  */
-detail: string, } | { "kind": "not_broker", 
+detail: string, } | { "kind": "controller_conflict", 
 /**
- * The controller holding the claim, if any.
+ * The connected controller.
  */
-broker: ControllerId | null, } | { "kind": "unauthenticated" } | { "kind": "machine_unavailable", 
+controller_id: ControllerId, 
+/**
+ * When it connected.
+ */
+connected_since: UnixMillis, } | { "kind": "unauthenticated" } | { "kind": "machine_unavailable", 
 /**
  * The machine.
  */

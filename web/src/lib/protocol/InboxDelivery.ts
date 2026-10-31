@@ -7,7 +7,7 @@ import type { RunOutcome } from "./RunOutcome";
 import type { SessionState } from "./SessionState";
 
 /**
- * What the broker delivers to a session.
+ * What the controller delivers to a session.
  */
 export type InboxDelivery = { "kind": "message", 
 /**

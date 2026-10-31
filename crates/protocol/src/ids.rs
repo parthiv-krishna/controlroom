@@ -144,7 +144,7 @@ ulid_id! {
 
 ulid_id! {
     /// One controller installation, sent in the daemon `hello` so the daemon can record which
-    /// controller holds the mailbox broker claim.
+    /// controller is connected (a daemon serves one controller at a time).
     ControllerId
 }
 ulid_id! {

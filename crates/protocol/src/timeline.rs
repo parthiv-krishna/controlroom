@@ -238,7 +238,7 @@ pub enum MessageOutcome {
     Delivered,
     /// Held for delivery until its expiry (only with `queue_if_offline`).
     Queued,
-    /// The broker or the peer's machine is unreachable; nothing was delivered.
+    /// The controller or the peer's machine is unreachable; nothing was delivered.
     ConnectionLost,
     /// Refused by the contact policy or the user.
     Denied,

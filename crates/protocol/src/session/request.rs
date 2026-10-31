@@ -22,9 +22,9 @@ pub enum RequestKind {
     Dialog,
     /// A sandbox approval: a command, a path or an endpoint (blocking).
     Sandbox,
-    /// Contact with a session outside the policy (blocking; raised by the broker).
+    /// Contact with a session outside the policy (blocking; raised by the controller).
     Contact,
-    /// Spawning a subagent on another machine (blocking; raised by the broker).
+    /// Spawning a subagent on another machine (blocking; raised by the controller).
     Spawn,
     /// A request kind this build doesn't know.
     #[serde(other)]

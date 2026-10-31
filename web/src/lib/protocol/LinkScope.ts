@@ -3,4 +3,4 @@
 /**
  * Which link was lost.
  */
-export type LinkScope = "broker" | "peer" | "unknown";
+export type LinkScope = "controller" | "peer" | "unknown";

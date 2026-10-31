@@ -12,7 +12,7 @@
 //!    it applied and receives exactly what it missed.
 //! 3. Mutating commands carry a client-generated `op_id`; repeating one returns the original
 //!    result instead of applying it twice.
-//! 4. The broker controller additionally reads the outbox and delivers to inboxes (see
+//! 4. The controller additionally reads the outbox and delivers to inboxes (see
 //!    [`OutboxItem`] and [`InboxDelivery`]).
 //!
 //! Methods that belong to an optional feature need the matching `hello` capability: `job.*`
@@ -126,11 +126,11 @@ pub mod methods {
         /// Change the daemon settings.
         SettingsSet = "settings.set" (SettingsSetParams) -> DaemonSettings;
 
-        /// Read the outbox (broker only).
+        /// Read the outbox (controller only).
         OutboxSubscribe = "outbox.subscribe" (OutboxSubscribeParams) -> OutboxSubscribeResult;
-        /// Report an outbox item's outcome (broker only).
+        /// Report an outbox item's outcome (controller only).
         OutboxAck = "outbox.ack" (OutboxAckParams) -> Ack;
-        /// Deliver something to a session (broker only).
+        /// Deliver something to a session (controller only).
         InboxDeliver = "inbox.deliver" (InboxDeliverParams) -> Ack;
     }
 }

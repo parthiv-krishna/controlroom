@@ -31,6 +31,6 @@ auto_continue: AutoContinueInfo,
  */
 jobs: Array<Job>, 
 /**
- * Sessions this one may contact (the broker's last `peers` delivery).
+ * Sessions this one may contact (the controller's last `peers` delivery).
  */
 peers: Array<Peer>, };

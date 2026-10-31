@@ -4,12 +4,13 @@ import type { SandboxGrant } from "./SandboxGrant";
 import type { SandboxLevel } from "./SandboxLevel";
 
 /**
- * The effective sandbox profile of a session, computed by the controller from the machine and
- * project defaults and passed to the daemon when the session is created or (re)started.
+ * A session's sandbox defaults, computed by the controller from the machine and project
+ * defaults and passed to the daemon when the session is created or (re)started.
  */
 export type SandboxSpec = { 
 /**
- * The level.
+ * The default level: the strictest of the matching scopes. Used unless the session has an
+ * explicit level.
  */
 level: SandboxLevel, 
 /**

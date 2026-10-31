@@ -7,9 +7,23 @@ import type { SandboxLevel } from "./SandboxLevel";
  */
 export type SandboxInfo = { 
 /**
- * The level the agent runs at.
+ * The level the agent runs at: the explicit level if one was chosen, else the default.
  */
 level: SandboxLevel, 
+/**
+ * The level of the session's defaults (machine and projects).
+ */
+default_level: SandboxLevel, 
+/**
+ * `level` was chosen explicitly for this session (new-session dialog or template). It
+ * stays across restarts; otherwise a restart picks up changed defaults.
+ */
+explicit: boolean, 
+/**
+ * `level` confines less than `default_level`: show the "looser than defaults" badge (`off`
+ * always shows the warning badge).
+ */
+looser_than_default: boolean, 
 /**
  * The session's grants (once, session and standing).
  */

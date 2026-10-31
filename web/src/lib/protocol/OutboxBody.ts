@@ -7,7 +7,7 @@ import type { RequestId } from "./RequestId";
 import type { Response } from "./Response";
 
 /**
- * What an outbox item asks the broker to do.
+ * What an outbox item asks the controller to do.
  */
 export type OutboxBody = { "kind": "message", 
 /**

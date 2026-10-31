@@ -129,7 +129,10 @@ fn summary() -> SessionSummary {
             },
         }],
         sandbox: SandboxInfo {
-            level: SandboxLevel::Strict,
+            level: SandboxLevel::Relaxed,
+            default_level: SandboxLevel::Strict,
+            explicit: true,
+            looser_than_default: true,
             grants: vec![],
         },
         resumable: true,
@@ -185,7 +188,13 @@ fn summary_json() -> Value {
             "value": "medium",
             "choices": [{"value": "medium", "label": "Medium"}]
         }],
-        "sandbox": {"level": "strict", "grants": []},
+        "sandbox": {
+            "level": "relaxed",
+            "default_level": "strict",
+            "explicit": true,
+            "looser_than_default": true,
+            "grants": []
+        },
         "resumable": true
     })
 }
@@ -201,8 +210,9 @@ fn golden_daemon_hello_request() {
         HelloParams {
             protocol_version: DAEMON_PROTOCOL_VERSION,
             client_name: "controlroom-web 0.1.0".into(),
-            controller_id: CID.parse().unwrap(),
-            claim_broker: true,
+            role: ClientRole::Controller {
+                controller_id: CID.parse().unwrap(),
+            },
         },
     );
     golden(
@@ -214,11 +224,73 @@ fn golden_daemon_hello_request() {
             "params": {
                 "protocol_version": {"major": 1, "minor": 0},
                 "client_name": "controlroom-web 0.1.0",
-                "controller_id": CID,
-                "claim_broker": true
+                "role": {"kind": "controller", "controller_id": CID}
             }
         }),
     );
+    let debug: HelloParams = serde_json::from_value(json!({
+        "protocol_version": {"major": 1, "minor": 0},
+        "client_name": "controlroomd ctl",
+        "role": {"kind": "debug"}
+    }))
+    .unwrap();
+    assert_eq!(debug.role, ClientRole::Debug);
+}
+
+#[test]
+fn golden_controller_conflict_error() {
+    let line = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"error":{{"code":-32019,"message":"another controller is connected","data":{{"kind":"controller_conflict","controller_id":"{CID}","connected_since":1700000000000}}}}}}"#
+    );
+    let Ok(Message::Response(response)) = Message::parse(&line) else {
+        panic!("expected a response");
+    };
+    let err = response.into_typed::<dm::Hello>().unwrap_err();
+    let expected = ErrorData::ControllerConflict {
+        controller_id: CID.parse().unwrap(),
+        connected_since: UnixMillis(1_700_000_000_000),
+    };
+    assert_eq!(err.code, expected.code());
+    assert_eq!(err.data, Some(expected));
+
+    // A conflict without its fields (or from a different build) still fails only this call.
+    let malformed = r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32019,"message":"x","data":{"kind":"controller_conflict"}}}"#;
+    let Ok(Message::Response(response)) = Message::parse(malformed) else {
+        panic!("expected a response");
+    };
+    assert_eq!(response.id, Some(RpcId::Number(2)));
+    assert_eq!(
+        response.into_result().unwrap_err().data,
+        Some(ErrorData::Unknown)
+    );
+}
+
+#[test]
+fn sandbox_override_fields() {
+    let create: SessionCreateParams = serde_json::from_value(json!({
+        "op_id": "op-9",
+        "agent": "pi",
+        "cwd": "~/src/legacy",
+        "sandbox_level": "off",
+        "sandbox": {"level": "strict", "grants": [], "domains": ["example.com"], "mediated": []}
+    }))
+    .unwrap();
+    assert_eq!(create.sandbox_level, Some(SandboxLevel::Off));
+    assert_eq!(
+        create.sandbox.as_ref().map(|s| s.level),
+        Some(SandboxLevel::Strict)
+    );
+    let plain: SessionCreateParams =
+        serde_json::from_value(json!({"op_id": "op-10", "agent": "pi", "cwd": "~"})).unwrap();
+    assert_eq!((plain.sandbox_level, plain.sandbox), (None, None));
+
+    use SandboxLevel::*;
+    assert!(Off.is_looser_than(Strict) && Off.is_looser_than(Relaxed));
+    assert!(Relaxed.is_looser_than(Strict));
+    assert!(!Strict.is_looser_than(Relaxed) && !Strict.is_looser_than(Strict));
+    // An unknown level counts as the strictest.
+    assert!(!Strict.is_looser_than(Unknown) && Relaxed.is_looser_than(Unknown));
+    assert!(!Unknown.is_looser_than(Strict));
 }
 
 #[test]
@@ -591,7 +663,6 @@ fn newer_result_variants_and_fields_still_decode() {
         "protocol_version": {"major": 1, "minor": 4},
         "daemon_id": DID,
         "capabilities": ["jobs", "terminals"],
-        "broker": null,
         "uptime_s": 12
     }))
     .unwrap();
@@ -635,7 +706,7 @@ fn method_names_are_unique() {
 
 #[test]
 fn ui_passes_through_every_session_scoped_daemon_method() {
-    // Daemon methods that are connection- or broker-level and never passed through.
+    // Daemon methods that are connection- or controller-level and never passed through.
     let daemon_only = [
         "hello",
         "machine.subscribe",

@@ -59,7 +59,7 @@ A client calls a feature's methods only when the peer advertised it.
 - `requests[]`: pending requests, including descendants' (`origin_child`).
 - `todo`: `{done, total (excl. skipped), auto_continue: on|off|paused|stalled|budget}`. `live_work`: `{jobs, children, asks}`.
 - `options[]`: neutral agent settings (`SessionOption {id, label, kind: select{value, choices} | bool{value}}`), e.g. model and thinking level.
-- `sandbox`: `{level: strict|relaxed|off, grants[]}`. `context`: `{used, size?, cost?}`.
+- `sandbox`: `{level: strict|relaxed|off, default_level, explicit, looser_than_default, grants[]}`. `level` is the explicit level when one was chosen, else the default; `looser_than_default` drives the badge (`off` gets the warning badge). `context`: `{used, size?, cost?}`.
 
 **`SessionDetail`** (one open session, from `session.subscribe`, replaced whole on change): `agent_sessions[]` (`{driver: pi|fake, native_id, started_at, ended_at?, started_by: new|resume|fresh}`), `queue[]` (`QueueItem {id, content, origin, sending, queued_at}`), `todos[]`, `auto_continue {status, reason?, runs_used, budget}`, `jobs[]`, `peers[]` (`Peer {peer, relation: task|parent|child|grant, task?}`: whom the session may contact).
 
@@ -96,16 +96,23 @@ Answers are `Response`: `choice {option_id, reason?}` · `answers {answers[]}` �
 
 Lifecycle: `hello` first (else `hello_required`), then subscriptions. Disconnecting never triggers anything. Every mutating command carries `op_id`; a repeat returns the original result, a reuse for a different command is `op_id_conflict`.
 
+**One controller per daemon.** `hello.role` is `{kind: "controller", controller_id}` or `{kind: "debug"}`.
+
+- A daemon serves exactly one controller at a time. A controller `hello` with a *different* `controller_id` while one is connected fails with `controller_conflict {controller_id, connected_since}`.
+- A controller `hello` with the *same* `controller_id` replaces the old connection: the daemon closes it (ending its subscriptions), so stale or half-open connections never block a reconnect.
+- Debug clients (`controlroomd ctl`) don't count as the controller. Any number may connect alongside it; they may subscribe and issue every command, but `outbox.*` and `inbox.deliver` answer them with `unsupported`.
+- The connected controller is the mailbox broker. Unacknowledged outbox items survive disconnects; after a reconnect the controller resubscribes with the last rev it saw.
+
 | Method | Purpose |
 | --- | --- |
-| `hello` | versions, `controller_id`, `claim_broker` → `daemon_id`, capabilities, current `broker` |
+| `hello {protocol_version, client_name, role}` | → `daemon_version`, `protocol_version`, `daemon_id`, capabilities |
 | `machine.subscribe {since_rev}` | every summary + settings; incremental from a persisted rev log, else `snapshot` |
 | `session.subscribe {id, since_seq, raw_since?}` | backlog = upsert of each item changed after `since_seq` (from the materialized timeline), then live ops; result carries `head_seq` and `detail` |
 | `unsubscribe {subscription_id}` | end any subscription |
-| `session.create {agent, cwd, name?, parent_id?, spawned_by?, sandbox?}` | create and start a session |
+| `session.create {agent, cwd, name?, parent_id?, spawned_by?, sandbox_level?, sandbox?}` | create and start a session (`sandbox_level`: explicit user choice; `sandbox`: the controller-computed defaults) |
 | `session.prompt {id, content, origin?, if_busy?}` | send, steer or queue → `sent · steered · queued{queue_id} · skipped` |
 | `session.cancel` · `close` · `reopen` · `delete` | lifecycle |
-| `session.resume {id, sandbox?}` · `session.start_fresh {id, include_history, sandbox?}` | reattach / new agent session (→ `history_path?`) |
+| `session.resume {id, sandbox?}` · `session.start_fresh {id, include_history, sandbox?}` | reattach / new agent session (→ `history_path?`); `sandbox` refreshes the defaults, an explicit level stays |
 | `session.update {name?, auto_send?, auto_continue?, auto_continue_budget?}` | session settings |
 | `session.mark_read {seq}` · `session.mark_unread` | shared read cursor → `{read_seq, unread}` |
 | `session.set_option {option_id, value}` | model, thinking level, … |
@@ -115,15 +122,15 @@ Lifecycle: `hello` first (else `hello_required`), then subscriptions. Disconnect
 | `job.list` · `job.logs {from_line?, max_lines?}` · `job.kill` · `job.follow {buffer_seconds?, pattern?, from?}` · `job.unfollow` | jobs (`jobs`) |
 | `sandbox.revoke {grant_id}` | remove a session grant ("Remove · restarts agent") |
 | `agents.list` · `fs.list {path, include_files?}` · `doctor.report` · `settings.get` · `settings.set` | machine queries and settings |
-| `outbox.subscribe {since}` · `outbox.ack {item, outcome}` · `inbox.deliver {op_id, id, delivery}` | durable mailbox, broker only (`mailbox`) |
+| `outbox.subscribe {since}` · `outbox.ack {item, outcome}` · `inbox.deliver {op_id, id, delivery}` | durable mailbox, controller only (`mailbox`) |
 
 Notifications: `machine.events {changes[{rev, kind: session_upserted|session_removed|settings_changed}]}`, `session.events {head_seq, ops[], raw[], detail?}`, `outbox.items {items[]}`.
 
-**Mailbox.** The daemon never calls the controller. Outbox items: `message` · `spawn` · `resolved` (the user's answer to a broker-raised request).
-`outbox.ack` outcomes: `delivered · spawned{child} · queued{expires_at}` (interim) `· denied · connection_lost{scope: broker|peer, since} · expired`.
+**Mailbox.** The daemon never calls the controller. Outbox items: `message` · `spawn` · `resolved` (the user's answer to a controller-raised request).
+`outbox.ack` outcomes: `delivered · spawned{child} · queued{expires_at}` (interim) `· denied · connection_lost{scope: controller|peer, since} · expired`.
 Inbox deliveries: `message` (incl. replies, `late`) · `request` (contact or spawn approval to show on the session) · `peers` (the session's contact directory, shown as `SessionDetail.peers`) · `child_update` (remote child state).
 
-**Errors** (`ErrorData`, by `kind`, plus `code`/`message`): `parse_error · invalid_request · method_not_found · invalid_params · internal_error · incompatible_version · hello_required · op_id_conflict · timeout · invalid_response · unsupported · not_found{resource, id} · unknown_session · deleted · already_resolved · busy · invalid_state{state} · not_resumable · agent_unavailable · sandbox_unavailable · fs_error · not_broker · unknown`.
+**Errors** (`ErrorData`, by `kind`, plus `code`/`message`): `parse_error · invalid_request · method_not_found · invalid_params · internal_error · incompatible_version · hello_required · op_id_conflict · timeout · invalid_response · unsupported · not_found{resource, id} · unknown_session · deleted · already_resolved · busy · invalid_state{state} · not_resumable · agent_unavailable · sandbox_unavailable · fs_error · controller_conflict{controller_id, connected_since} · unknown`.
 
 ## 6. UI API (`ui`)
 
@@ -166,10 +173,10 @@ Regenerate: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --test t
 6. **`actor`** is `"root"` or a same-machine child session id. Remote children appear only through `subagent` items and `child_update` deliveries.
 7. **Cross-machine references** use `DaemonId` (`PeerRef`) on the daemon side, because machine ids are per controller. The UI resolves them via `Machine.daemon_id`.
 8. **`parent_id` vs. `spawned_by`**: `parent_id` is a same-machine parent; `spawned_by` is a parent on another machine. Is that the intended reading of §5.2?
-9. **Broker claim**: the latest `hello {claim_broker: true}` wins and ends the previous holder's outbox subscription; others get `not_broker`. Last-writer-wins vs. first-claim-wins?
-10. **Mailbox flow (provisional, P7)**: the broker raises contact/spawn requests on the session via `inbox.deliver {request}`; the user's answer returns as an outbox `resolved` item; `queued` is the only interim ack. Peer directories are pushed (`peers`), not pulled.
+9. **Resolved: one controller per daemon** (replaces the broker claim). A daemon serves exactly one controller; a different `controller_id` gets `controller_conflict`, the same one replaces its old connection, and `debug`-role clients (`ctl`) connect alongside without consuming the mailbox. See §5.
+10. **Mailbox flow (provisional, P7)**: the controller raises contact/spawn requests on the session via `inbox.deliver {request}`; the user's answer returns as an outbox `resolved` item; `queued` is the only interim ack. Peer directories are pushed (`peers`), not pulled.
 11. **Attention roll-ups** are computed by the daemon over same-machine descendants only; cross-machine roll-ups would need controller support.
-12. **Sandbox spec on create/resume**: the controller replaces any client `sandbox` with the effective profile (strictest level, union of grants, domains and mediated commands). Should a UI-chosen level (e.g. from a template) be honored when stricter?
+12. **Resolved: explicit levels win in either direction.** The controller computes the defaults (strictest level among the machine and matching projects; union of grants, domains and mediated commands) and always fills `session.create.sandbox` with them. An explicit `sandbox_level` (new-session dialog or template) is an affirmative user choice, honored whether stricter or looser, and kept across restarts. Session grants add on top. `SandboxInfo` reports `level`, `default_level`, `explicit` and `looser_than_default` (badge; `off` gets the warning badge).
 13. **Mediated commands** are in profiles (`set_mediated` / `remove_mediated` changes), beyond the §11.6 change list, because §11.5b makes them configurable per machine and project.
 14. **Removed list methods**: no `machines.list`, `projects.list`, `tasks.list`, `grants.list`, `devices.list`, `schedules.list`; the state feed carries all of them (devices and schedules were added to it).
 15. **`DriverKind::Fake`** is on the wire so FakeDriver sessions are representable in tests.
