@@ -51,10 +51,11 @@ pub fn handle_line(agent: &Arc<Agent>, line: &str) {
             respond(Some(json!({"disposition": "queued"})));
         }
         "abort" => {
+            let aborting = request_abort(agent);
             let agent = agent.clone();
             let id = id.map(str::to_owned);
             tokio::spawn(async move {
-                abort_and_wait(&agent).await;
+                settled(aborting).await;
                 agent.emit(&wire::ok(id.as_deref(), "abort", None));
             });
         }
@@ -242,15 +243,18 @@ fn prompt(agent: &Arc<Agent>, id: Option<&str>, text: &str, behavior: Option<&st
     ));
 }
 
-/// Abort the active run (if any) and wait until it settled.
-async fn abort_and_wait(agent: &Agent) {
-    let done = {
-        let state = agent.state();
-        state.run.as_ref().map(|run| {
-            run.abort.send_replace(true);
-            run.done.clone()
-        })
-    };
+/// Signal the active run (if any) to abort. This happens while the command
+/// is handled, so later commands already see the run as aborting.
+fn request_abort(agent: &Agent) -> Option<watch::Receiver<bool>> {
+    let state = agent.state();
+    state.run.as_ref().map(|run| {
+        run.abort.send_replace(true);
+        run.done.clone()
+    })
+}
+
+/// Wait until an aborted run settled.
+async fn settled(done: Option<watch::Receiver<bool>>) {
     if let Some(mut done) = done {
         let _ = done.wait_for(|done| *done).await;
     }
@@ -377,11 +381,12 @@ fn commands(agent: &Agent) -> Value {
 }
 
 fn new_session(agent: &Arc<Agent>, id: Option<&str>, parent: Option<&str>) {
+    let aborting = request_abort(agent);
     let agent = agent.clone();
     let id = id.map(str::to_owned);
     let parent = parent.map(str::to_owned);
     tokio::spawn(async move {
-        abort_and_wait(&agent).await;
+        settled(aborting).await;
         let model = agent.model();
         let session = {
             let state = agent.state();
@@ -405,10 +410,11 @@ fn new_session(agent: &Arc<Agent>, id: Option<&str>, parent: Option<&str>) {
 const NOTHING_TO_COMPACT: &str = "Nothing to compact (session too small)";
 
 fn compact(agent: &Arc<Agent>, id: Option<&str>) {
+    let aborting = request_abort(agent);
     let agent = agent.clone();
     let id = id.map(str::to_owned);
     tokio::spawn(async move {
-        abort_and_wait(&agent).await;
+        settled(aborting).await;
         let id = id.as_deref();
         agent.state().compacting = true;
         agent.emit(&json!({"type": "compaction_start", "reason": "manual"}));
