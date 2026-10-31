@@ -134,9 +134,11 @@ impl Reaper {
 
 impl Drop for Reaper {
     fn drop(&mut self) {
-        for pid in self.pids() {
-            let _ = std::process::Command::new("kill")
-                .args(["-9", &pid.to_string()])
+        let pids: Vec<String> = self.pids().iter().map(u32::to_string).collect();
+        if !pids.is_empty() {
+            // The shell's builtin `kill`: coreutils may not ship a binary.
+            let _ = std::process::Command::new("sh")
+                .args(["-c", &format!("kill -9 {}", pids.join(" "))])
                 .status();
         }
     }
