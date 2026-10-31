@@ -28,6 +28,8 @@ pub struct Writer {
     index: Option<IndexWriter>,
     /// Set if a failed append could not be rolled back; appends are refused.
     poisoned: bool,
+    /// Longest line accepted ([`MAX_RECORD_BYTES`]; lowered in tests).
+    max_record_bytes: usize,
 }
 
 /// What [`Writer::open`] found in an existing transcript.
@@ -94,6 +96,7 @@ impl Writer {
                 last_seq,
                 index,
                 poisoned: false,
+                max_record_bytes: MAX_RECORD_BYTES,
             },
             OpenReport {
                 last_seq,
@@ -119,12 +122,13 @@ impl Writer {
         };
         let mut line = serde_json::to_vec(&record).map_err(io::Error::other)?;
         line.push(b'\n');
-        if line.len() > MAX_RECORD_BYTES {
+        if line.len() > self.max_record_bytes {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!(
-                    "record of {} bytes exceeds the {MAX_RECORD_BYTES}-byte limit",
-                    line.len()
+                    "record of {} bytes exceeds the {}-byte limit",
+                    line.len(),
+                    self.max_record_bytes
                 ),
             ));
         }
@@ -377,8 +381,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("t.jsonl");
         let (mut w, _) = Writer::open(&path).unwrap();
-        let huge = "x".repeat(MAX_RECORD_BYTES);
-        let err = w.append(out(&huge)).unwrap_err();
+        w.max_record_bytes = 64;
+        let err = w.append(out(&"x".repeat(64))).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
         assert_eq!(w.append(out("ok")).unwrap().seq, 1);
     }
