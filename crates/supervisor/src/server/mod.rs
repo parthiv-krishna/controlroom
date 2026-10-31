@@ -375,24 +375,22 @@ fn write_info_file(paths: &Paths, info: &SupervisorInfo) -> anyhow::Result<()> {
 impl Running {
     /// Waits for the child to exit, records it, and shuts down.
     async fn wait(mut self) {
-        let status = (&mut self.reaped).await;
-        let mut exit = match status {
-            Ok(Ok(status)) => ExitInfo {
-                code: status.code(),
-                signal: status.signal(),
-                cause: None,
-            },
+        let status = match (&mut self.reaped).await {
+            Ok(Ok(status)) => Some(status),
             Ok(Err(e)) => {
                 diag!("waiting for child: {e}");
-                ExitInfo {
-                    code: None,
-                    signal: None,
-                    cause: None,
-                }
+                None
             }
-            Err(_) => unreachable_reaper(),
+            Err(_) => {
+                diag!("reaper thread died");
+                None
+            }
         };
-        exit.cause = self.shared.stop_cause();
+        let exit = ExitInfo {
+            code: status.and_then(|s| s.code()),
+            signal: status.and_then(|s| s.signal()),
+            cause: self.shared.stop_cause(),
+        };
 
         // Log everything the child wrote before the exit record.
         let pumps = std::mem::take(&mut self.pumps_done);
@@ -429,16 +427,6 @@ impl Running {
         drop(self.conns_done_tx);
         let _ = tokio::time::timeout(READER_DRAIN_TIMEOUT, self.conns_done.recv()).await;
         remove_own_info_file(&self.paths, &self.info);
-    }
-}
-
-/// The reaper thread always sends unless it panicked.
-fn unreachable_reaper() -> ExitInfo {
-    diag!("reaper thread died");
-    ExitInfo {
-        code: None,
-        signal: None,
-        cause: None,
     }
 }
 
