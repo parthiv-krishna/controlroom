@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "name": "cr-01HZY3K4M5N6P7Q8R9S0T1V2W3"
+  },
+  "workdir": {
+    "access": "readwrite"
+  },
+  "filesystem": {
+    "read": [
+      "/nix/store"
+    ],
+    "allow": [
+      "/home/alice/.local/share/controlroom/sessions/01HZY3K4M5N6P7Q8R9S0T1V2W3/agent",
+      "/home/alice/.local/share/controlroom/sessions/01HZY3K4M5N6P7Q8R9S0T1V2W3/home",
+      "/home/alice/.local/share/controlroom/sessions/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
+    ],
+    "unix_socket_subtree_bind": [
+      "/home/alice/.local/share/controlroom/sessions/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
+    ]
+  },
+  "groups": {
+    "include": [
+      "linux_sysfs_read"
+    ],
+    "exclude": [
+      "dangerous_commands",
+      "dangerous_commands_linux",
+      "dangerous_commands_macos"
+    ]
+  },
+  "linux": {
+    "af_unix_mediation": "pathname"
+  },
+  "environment": {
+    "deny_vars": [
+      "*_API_KEY",
+      "*_SECRET",
+      "*_SECRET_KEY",
+      "*_PASSWORD",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+      "SSH_AUTH_SOCK"
+    ],
+    "set_vars": {
+      "HOME": "/home/alice/.local/share/controlroom/sessions/01HZY3K4M5N6P7Q8R9S0T1V2W3/home",
+      "PI_CODING_AGENT_DIR": "/home/alice/.local/share/controlroom/sessions/01HZY3K4M5N6P7Q8R9S0T1V2W3/agent",
+      "TMPDIR": "/home/alice/.local/share/controlroom/sessions/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
+    }
+  },
+  "network": {
+    "block": true
+  }
+}

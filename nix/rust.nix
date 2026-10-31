@@ -14,7 +14,10 @@ let
 
   # Cargo sources plus test data that crates read at test time.
   # Workstreams add their data directories here (e.g. ../fixtures).
-  testDataDirs = lib.filter builtins.pathExists [ ../fixtures ];
+  testDataDirs = lib.filter builtins.pathExists [
+    ../fixtures
+    ../crates/sandbox/tests/golden
+  ];
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.unions ([ (craneLib.fileset.commonCargoSources ../.) ] ++ testDataDirs);
