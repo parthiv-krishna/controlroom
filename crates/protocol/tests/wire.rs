@@ -254,7 +254,6 @@ fn golden_machine_events_notification() {
     );
 }
 
-
 #[test]
 fn golden_session_events_with_timeline_ops() {
     let params = SessionEventsParams {
@@ -439,8 +438,14 @@ fn summaries_round_trip_inside_ui_machine_sessions() {
 #[test]
 fn actors_are_root_or_a_child_id() {
     assert_eq!(serde_json::to_value(Actor::Root).unwrap(), json!("root"));
-    assert_eq!(serde_json::to_value(Actor::Child(sid())).unwrap(), json!(SID));
-    assert_eq!(serde_json::from_value::<Actor>(json!(SID)).unwrap(), Actor::Child(sid()));
+    assert_eq!(
+        serde_json::to_value(Actor::Child(sid())).unwrap(),
+        json!(SID)
+    );
+    assert_eq!(
+        serde_json::from_value::<Actor>(json!(SID)).unwrap(),
+        Actor::Child(sid())
+    );
     assert!(serde_json::from_value::<Actor>(json!("nobody")).is_err());
 }
 
@@ -590,7 +595,11 @@ fn newer_result_variants_and_fields_still_decode() {
         "uptime_s": 12
     }))
     .unwrap();
-    assert!(hello.protocol_version.is_compatible_with(DAEMON_PROTOCOL_VERSION));
+    assert!(
+        hello
+            .protocol_version
+            .is_compatible_with(DAEMON_PROTOCOL_VERSION)
+    );
     assert!(hello.capabilities.contains(&Capability::JOBS));
     assert!(hello.capabilities.contains(&Capability::new("terminals")));
 }
@@ -638,7 +647,10 @@ fn ui_passes_through_every_session_scoped_daemon_method() {
     let ui: BTreeSet<_> = UiRequest::METHODS.iter().copied().collect();
     for method in DaemonRequest::METHODS {
         if !daemon_only.contains(method) {
-            assert!(ui.contains(method), "{method} is not passed through by the UI API");
+            assert!(
+                ui.contains(method),
+                "{method} is not passed through by the UI API"
+            );
         }
     }
 }

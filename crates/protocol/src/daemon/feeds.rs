@@ -126,7 +126,7 @@ pub struct SessionEventsParams {
     pub raw: Vec<RawFrame>,
     /// The new session detail, when it changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detail: Option<SessionDetail>,
+    pub detail: Option<Box<SessionDetail>>,
 }
 
 /// Params of `unsubscribe`, which ends any subscription on the connection.

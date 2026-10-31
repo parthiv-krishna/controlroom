@@ -65,6 +65,34 @@ pub struct PeerRef {
     pub name: String,
 }
 
+/// A session's relation to a peer it may contact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum PeerRelation {
+    /// Linked to the same task.
+    Task,
+    /// The parent session.
+    Parent,
+    /// A child session.
+    Child,
+    /// A user-approved contact grant.
+    Grant,
+    /// A relation this build doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
+/// One entry of a session's contact directory, maintained by the broker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Peer {
+    /// The peer session.
+    pub peer: PeerRef,
+    /// Why it may be contacted.
+    pub relation: PeerRelation,
+    /// The shared task's title, for `task` peers.
+    pub task: Option<String>,
+}
+
 /// Who changed something that both the agent and the user can edit (todos, for example).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]

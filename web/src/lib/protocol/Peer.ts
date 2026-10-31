@@ -3,7 +3,7 @@ import type { PeerRef } from "./PeerRef";
 import type { PeerRelation } from "./PeerRelation";
 
 /**
- * One entry of a session's contact directory.
+ * One entry of a session's contact directory, maintained by the broker.
  */
 export type Peer = { 
 /**

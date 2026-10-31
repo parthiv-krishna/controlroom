@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ids::{QueueId, UnixMillis};
-use crate::session::{AutoContinueInfo, ContentPart, Job, PromptOrigin, Todo};
+use crate::session::{AutoContinueInfo, ContentPart, Job, Peer, PromptOrigin, Todo};
 
 /// The driver that folds an agent's raw stdio into the timeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -80,4 +80,6 @@ pub struct SessionDetail {
     pub auto_continue: AutoContinueInfo,
     /// Background jobs, newest first: running ones and recently finished ones.
     pub jobs: Vec<Job>,
+    /// Sessions this one may contact (the broker's last `peers` delivery).
+    pub peers: Vec<Peer>,
 }

@@ -16,7 +16,7 @@ use ts_rs::TS;
 use crate::ids::{
     MessageId, OpId, OutboxId, RemotePath, RequestId, Rev, SessionId, SubscriptionId, UnixMillis,
 };
-use crate::session::{ContentPart, PeerRef, Request, Response, RunOutcome, SessionState};
+use crate::session::{ContentPart, Peer, PeerRef, Request, Response, RunOutcome, SessionState};
 
 /// What an outbox item asks the broker to do.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -160,34 +160,6 @@ pub struct OutboxAckParams {
     pub item: OutboxId,
     /// What happened.
     pub outcome: OutboxOutcome,
-}
-
-/// A session's relation to a peer it may contact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum PeerRelation {
-    /// Linked to the same task.
-    Task,
-    /// The parent session.
-    Parent,
-    /// A child session.
-    Child,
-    /// A user-approved contact grant.
-    Grant,
-    /// A relation this build doesn't know.
-    #[serde(other)]
-    Unknown,
-}
-
-/// One entry of a session's contact directory.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct Peer {
-    /// The peer session.
-    pub peer: PeerRef,
-    /// Why it may be contacted.
-    pub relation: PeerRelation,
-    /// The shared task's title, for `task` peers.
-    pub task: Option<String>,
 }
 
 /// What the broker delivers to a session.

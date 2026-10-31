@@ -2,6 +2,7 @@
 import type { AgentSession } from "./AgentSession";
 import type { AutoContinueInfo } from "./AutoContinueInfo";
 import type { Job } from "./Job";
+import type { Peer } from "./Peer";
 import type { QueueItem } from "./QueueItem";
 import type { Todo } from "./Todo";
 
@@ -28,4 +29,8 @@ auto_continue: AutoContinueInfo,
 /**
  * Background jobs, newest first: running ones and recently finished ones.
  */
-jobs: Array<Job>, };
+jobs: Array<Job>, 
+/**
+ * Sessions this one may contact (the broker's last `peers` delivery).
+ */
+peers: Array<Peer>, };
