@@ -451,6 +451,12 @@ version = "0.0.1"
 [[package]]
 name = "controlroom-transcript"
 version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
 
 [[package]]
 name = "controlroom-web"
