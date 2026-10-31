@@ -4,8 +4,10 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{DeviceId, Epoch, GrantId, MachineId, ProjectId, Rev, ScheduleId, SessionId};
-use crate::ids::{SubscriptionId, TaskId};
+use crate::ids::{
+    DeviceId, Epoch, GrantId, MachineId, ProjectId, Rev, ScheduleId, SessionId, SubscriptionId,
+    TaskId,
+};
 use crate::session::SessionSummary;
 use crate::ui::{ContactGrant, Device, Machine, Project, Schedule, Task};
 

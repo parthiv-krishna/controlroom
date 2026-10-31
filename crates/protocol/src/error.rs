@@ -13,8 +13,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::ids::ControllerId;
-use crate::ids::{MachineId, RemotePath, SessionId};
+use crate::ids::{ControllerId, MachineId, RemotePath, SessionId};
 use crate::session::{Request, SessionState};
 use crate::ui::Connectivity;
 use crate::version::ProtocolVersion;
