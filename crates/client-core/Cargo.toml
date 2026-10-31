@@ -4,7 +4,31 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# An in-process SSH server whose exec requests run locally, for tests here and
+# in dependent crates (Unix only).
+test-support = ["dep:tempfile"]
+
 [dependencies]
+bytes = "1.7"
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+data-encoding = "2.6"
+getrandom = "0.4"
+russh.workspace = true
+semver = "1.0"
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.11"
+tempfile = { workspace = true, optional = true }
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zeroize = "1.8"
+
+[dev-dependencies]
+# Enables the test harness for this crate's own integration tests.
+controlroom-client-core = { path = ".", features = ["test-support"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true
