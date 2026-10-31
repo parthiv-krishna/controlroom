@@ -1,0 +1,4615 @@
+{
+ "hello": {
+  "server_version": "0.1.0",
+  "protocol_version": {
+   "major": 1,
+   "minor": 0
+  },
+  "auth": "dev_token",
+  "user": {
+   "id": "alice",
+   "name": "Alice",
+   "email": "alice@example.com"
+  },
+  "push": {
+   "vapid_public_key": "BFixtureVapidPublicKey000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "capabilities": [
+   "schedules"
+  ]
+ },
+ "cursor": {
+  "epoch": "01JAE000000000000000000001",
+  "rev": 100
+ },
+ "snapshot": {
+  "machines": [
+   {
+    "id": "01JAM000000000000000000001",
+    "name": "devbox",
+    "host": "devbox.example.com",
+    "port": 22,
+    "user": "alice",
+    "key_id": null,
+    "host_key": {
+     "algorithm": "ssh-ed25519",
+     "fingerprint": "SHA256:devboxFixtureHostKeyFingerprint0000000000"
+    },
+    "daemon_id": "01JAA000000000000000000001",
+    "connectivity": {
+     "state": "connected"
+    },
+    "update_available": false,
+    "auto_upgrade": true,
+    "last_seen": 1767600000000,
+    "version": "0.1.0",
+    "arch": "x86_64",
+    "last_error": null,
+    "capabilities": [
+     "jobs",
+     "todos",
+     "subagents",
+     "mailbox"
+    ],
+    "settings": {
+     "idle_timeout_h": 48,
+     "retention": {
+      "delete_closed_after_days": null
+     }
+    },
+    "doctor": {
+     "daemon_version": "0.1.0",
+     "user": "alice",
+     "persistence": {
+      "status": "ok",
+      "value": "yes",
+      "detail": "linger enabled; processes survive logout"
+     },
+     "boot_start": "systemd_user",
+     "boot_start_check": {
+      "status": "ok",
+      "value": "systemd_user",
+      "detail": "systemd user unit installed"
+     },
+     "nono": {
+      "status": "ok",
+      "value": "0.80.0",
+      "detail": "nono 0.80.0"
+     },
+     "landlock_abi": 6,
+     "agents_config": "/home/alice/.config/controlroom/agents.toml",
+     "agents_config_error": null,
+     "agents": [
+      {
+       "agent": "pi",
+       "driver": "pi",
+       "command": "pi",
+       "status": "ok",
+       "path": "/home/alice/.nix-profile/bin/pi",
+       "detail": ""
+      }
+     ],
+     "checked_at": 1767592800000
+    },
+    "bootstrap": null
+   },
+   {
+    "id": "01JAM000000000000000000002",
+    "name": "buildbox",
+    "host": "buildbox.example.com",
+    "port": 22,
+    "user": "alice",
+    "key_id": null,
+    "host_key": {
+     "algorithm": "ssh-ed25519",
+     "fingerprint": "SHA256:buildboxFixtureHostKeyFingerprint0000000000"
+    },
+    "daemon_id": "01JAA000000000000000000002",
+    "connectivity": {
+     "state": "connected"
+    },
+    "update_available": true,
+    "auto_upgrade": true,
+    "last_seen": 1767600000000,
+    "version": "0.0.9",
+    "arch": "x86_64",
+    "last_error": null,
+    "capabilities": [
+     "jobs",
+     "todos",
+     "subagents",
+     "mailbox"
+    ],
+    "settings": {
+     "idle_timeout_h": 48,
+     "retention": {
+      "delete_closed_after_days": null
+     }
+    },
+    "doctor": {
+     "daemon_version": "0.0.9",
+     "user": "alice",
+     "persistence": {
+      "status": "ok",
+      "value": "yes",
+      "detail": "linger enabled; processes survive logout"
+     },
+     "boot_start": "systemd_user",
+     "boot_start_check": {
+      "status": "ok",
+      "value": "systemd_user",
+      "detail": "systemd user unit installed"
+     },
+     "nono": {
+      "status": "ok",
+      "value": "0.80.0",
+      "detail": "nono 0.80.0"
+     },
+     "landlock_abi": 6,
+     "agents_config": "/home/alice/.config/controlroom/agents.toml",
+     "agents_config_error": null,
+     "agents": [
+      {
+       "agent": "pi",
+       "driver": "pi",
+       "command": "pi",
+       "status": "ok",
+       "path": "/home/alice/.nix-profile/bin/pi",
+       "detail": ""
+      }
+     ],
+     "checked_at": 1767592800000
+    },
+    "bootstrap": null
+   },
+   {
+    "id": "01JAM000000000000000000003",
+    "name": "gpubox",
+    "host": "gpubox.example.com",
+    "port": 22,
+    "user": "alice",
+    "key_id": null,
+    "host_key": {
+     "algorithm": "ssh-ed25519",
+     "fingerprint": "SHA256:gpuboxFixtureHostKeyFingerprint0000000000"
+    },
+    "daemon_id": "01JAA000000000000000000003",
+    "connectivity": {
+     "state": "unreachable"
+    },
+    "update_available": false,
+    "auto_upgrade": true,
+    "last_seen": 1767589200000,
+    "version": "0.1.0",
+    "arch": "x86_64",
+    "last_error": "connection timed out",
+    "capabilities": [
+     "jobs",
+     "todos",
+     "subagents",
+     "mailbox"
+    ],
+    "settings": null,
+    "doctor": {
+     "daemon_version": "0.1.0",
+     "user": "alice",
+     "persistence": {
+      "status": "ok",
+      "value": "yes",
+      "detail": "linger enabled; processes survive logout"
+     },
+     "boot_start": "systemd_user",
+     "boot_start_check": {
+      "status": "ok",
+      "value": "systemd_user",
+      "detail": "systemd user unit installed"
+     },
+     "nono": {
+      "status": "ok",
+      "value": "0.80.0",
+      "detail": "nono 0.80.0"
+     },
+     "landlock_abi": 6,
+     "agents_config": "/home/alice/.config/controlroom/agents.toml",
+     "agents_config_error": null,
+     "agents": [
+      {
+       "agent": "pi",
+       "driver": "pi",
+       "command": "pi",
+       "status": "ok",
+       "path": "/home/alice/.nix-profile/bin/pi",
+       "detail": ""
+      }
+     ],
+     "checked_at": 1767592800000
+    },
+    "bootstrap": null
+   },
+   {
+    "id": "01JAM000000000000000000004",
+    "name": "armbox",
+    "host": "armbox.example.com",
+    "port": 22,
+    "user": "alice",
+    "key_id": null,
+    "host_key": {
+     "algorithm": "ssh-ed25519",
+     "fingerprint": "SHA256:armboxFixtureHostKeyFingerprint0000000000"
+    },
+    "daemon_id": "01JAA000000000000000000004",
+    "connectivity": {
+     "state": "action_required",
+     "reason": "host_key_changed",
+     "presented_host_key": {
+      "algorithm": "ssh-ed25519",
+      "fingerprint": "SHA256:armboxNewHostKeyFingerprint00000000000"
+     }
+    },
+    "update_available": false,
+    "auto_upgrade": true,
+    "last_seen": 1767513600000,
+    "version": "0.1.0",
+    "arch": "aarch64",
+    "last_error": null,
+    "capabilities": [
+     "jobs",
+     "todos",
+     "subagents",
+     "mailbox"
+    ],
+    "settings": null,
+    "doctor": {
+     "daemon_version": "0.1.0",
+     "user": "alice",
+     "persistence": {
+      "status": "ok",
+      "value": "yes",
+      "detail": "linger enabled; processes survive logout"
+     },
+     "boot_start": "systemd_user",
+     "boot_start_check": {
+      "status": "ok",
+      "value": "systemd_user",
+      "detail": "systemd user unit installed"
+     },
+     "nono": {
+      "status": "ok",
+      "value": "0.80.0",
+      "detail": "nono 0.80.0"
+     },
+     "landlock_abi": 6,
+     "agents_config": "/home/alice/.config/controlroom/agents.toml",
+     "agents_config_error": null,
+     "agents": [
+      {
+       "agent": "pi",
+       "driver": "pi",
+       "command": "pi",
+       "status": "ok",
+       "path": "/home/alice/.nix-profile/bin/pi",
+       "detail": ""
+      }
+     ],
+     "checked_at": 1767592800000
+    },
+    "bootstrap": null
+   },
+   {
+    "id": "01JAM000000000000000000005",
+    "name": "legacy",
+    "host": "legacy.example.com",
+    "port": 22,
+    "user": "alice",
+    "key_id": null,
+    "host_key": {
+     "algorithm": "ssh-ed25519",
+     "fingerprint": "SHA256:legacyFixtureHostKeyFingerprint0000000000"
+    },
+    "daemon_id": "01JAA000000000000000000005",
+    "connectivity": {
+     "state": "incompatible"
+    },
+    "update_available": false,
+    "auto_upgrade": false,
+    "last_seen": 1767599700000,
+    "version": "0.0.3",
+    "arch": "x86_64",
+    "last_error": null,
+    "capabilities": [
+     "jobs",
+     "todos",
+     "subagents",
+     "mailbox"
+    ],
+    "settings": null,
+    "doctor": null,
+    "bootstrap": null
+   }
+  ],
+  "sessions": [
+   {
+    "machine_id": "01JAM000000000000000000002",
+    "stale": false,
+    "id": "01JAS000000000000000000001",
+    "name": null,
+    "title": "auth token refresh race",
+    "cwd": "/home/alice/src/acme-api",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599880000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "awaiting_permission",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Edit src/auth/refresh.rs",
+    "attention": "approval",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 150000,
+     "size": 200000,
+     "cost": 1.56
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [
+     {
+      "id": "req-2",
+      "blocking": true,
+      "state": "pending",
+      "detail": "Wrap rotation in a single-flight per session.",
+      "body": {
+       "kind": "diff",
+       "path": "/home/alice/src/acme-api/src/auth/refresh.rs",
+       "old": "pub async fn refresh(db: &Db, old: &Token) -> Result<Token> {\n    let new = rotate_refresh(&db, &old).await?;\n    Ok(new)\n}",
+       "new": "pub async fn refresh(db: &Db, old: &Token) -> Result<Token> {\n    let key = old.session_id();\n    INFLIGHT.run(key, || async {\n        rotate_refresh(db, old).await\n    }).await\n}"
+      },
+      "options": [
+       {
+        "id": "allow_once",
+        "label": "Allow once",
+        "style": "allow"
+       },
+       {
+        "id": "allow_always",
+        "label": "Always allow",
+        "style": "allow_always"
+       },
+       {
+        "id": "reject",
+        "label": "Reject",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599880000,
+      "kind": "permission",
+      "title": "Edit src/auth/refresh.rs"
+     }
+    ],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": [
+      {
+       "id": "01JAG000000000000000000011",
+       "kind": "domain",
+       "value": "crates.io",
+       "access": null,
+       "scope": "session",
+       "granted_at": 1767596400000,
+       "by": {
+        "device_id": "device-laptop",
+        "label": "Laptop (Firefox on Linux)"
+       }
+      },
+      {
+       "id": "01JAG000000000000000000012",
+       "kind": "path",
+       "value": "/home/alice/.cargo",
+       "access": "read",
+       "scope": "standing",
+       "granted_at": 1767513600000,
+       "by": null
+      }
+     ]
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000002",
+    "name": "flaky e2e tests",
+    "title": null,
+    "cwd": "/home/alice/src/controlroom/web",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599940000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "working",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Running pnpm e2e",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 3,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 1,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000002",
+    "stale": false,
+    "id": "01JAS000000000000000000003",
+    "name": "e2e flake hunt",
+    "title": null,
+    "cwd": "/home/alice/src/controlroom",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599760000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "idle",
+    "last_outcome": "completed",
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Waiting for the test job",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": {
+     "done": 1,
+     "total": 3,
+     "auto_continue": "on"
+    },
+    "live_work": {
+     "jobs": 1,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000004",
+    "name": "release 0.2 checklist",
+    "title": null,
+    "cwd": "/home/alice/src/controlroom",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599820000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "working",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Updating the changelog",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": {
+     "done": 3,
+     "total": 6,
+     "auto_continue": "on"
+    },
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000005",
+    "name": null,
+    "title": "docs site refresh",
+    "cwd": "/home/alice/src/docs",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599640000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "awaiting_permission",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Contact “settings redesign: API”?",
+    "attention": "approval",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [
+     {
+      "id": "req-6",
+      "blocking": true,
+      "state": "pending",
+      "detail": null,
+      "body": {
+       "kind": "contact",
+       "peer": {
+        "daemon_id": "01JAA000000000000000000002",
+        "session_id": "01JAS000000000000000000017",
+        "name": "settings redesign: API"
+       },
+       "reason": "Need the new endpoint names for the docs."
+      },
+      "options": [
+       {
+        "id": "allow_once",
+        "label": "Allow once",
+        "style": "allow"
+       },
+       {
+        "id": "allow_pair",
+        "label": "Allow this pair",
+        "style": "allow_always"
+       },
+       {
+        "id": "deny",
+        "label": "Deny",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599640000,
+      "kind": "contact",
+      "title": "Contact “settings redesign: API”?"
+     }
+    ],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000006",
+    "name": "blog: deep dive",
+    "title": null,
+    "cwd": "/home/alice/src/docs/blog",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599280000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "idle",
+    "last_outcome": "completed",
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Which audience should the post target?",
+    "attention": "question",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [
+     {
+      "id": "req-12",
+      "blocking": false,
+      "state": "pending",
+      "detail": null,
+      "body": null,
+      "options": [],
+      "questions": [
+       {
+        "id": "q1",
+        "text": "Which audience should the post target?",
+        "options": [
+         {
+          "label": "Developers",
+          "description": null
+         },
+         {
+          "label": "Operators",
+          "description": null
+         }
+        ],
+        "multi": false,
+        "free_text": true
+       }
+      ],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599280000,
+      "kind": "question",
+      "title": "Which audience should the post target?"
+     }
+    ],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000007",
+    "name": "NixOS module hardening",
+    "title": null,
+    "cwd": "/home/alice/src/controlroom/nix",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767598500000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "failed",
+    "last_outcome": "failed",
+    "last_error": "Provider error after 3 retries",
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": true,
+    "preview": "Provider error after 3 retries",
+    "attention": "problem",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000002",
+    "stale": false,
+    "id": "01JAS000000000000000000008",
+    "name": "nightly data pipeline",
+    "title": null,
+    "cwd": "/home/alice/data/pipeline",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767597600000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "interrupted",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": true,
+    "preview": "The agent stopped mid-turn",
+    "attention": "problem",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000009",
+    "name": "migrate UI to Svelte 5 runes",
+    "title": null,
+    "cwd": "/home/alice/src/controlroom/web",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599520000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "idle",
+    "last_outcome": "completed",
+    "last_error": null,
+    "read_seq": 30,
+    "last_turn_end_seq": 52,
+    "unread": true,
+    "preview": "Done: 14 components migrated, tests pass.",
+    "attention": "unread",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000010",
+    "name": "lint cleanup",
+    "title": null,
+    "cwd": "/home/alice/src/controlroom",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767340800000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "dormant",
+    "last_outcome": "completed",
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Fixed 23 warnings.",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000011",
+    "name": "benchmark coordinator",
+    "title": null,
+    "cwd": "/home/alice/src/bench",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599880000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "working",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Waiting for the sweeps",
+    "attention": null,
+    "rollup": {
+     "approvals": 1,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [
+     {
+      "id": "req-3",
+      "blocking": true,
+      "state": "pending",
+      "detail": null,
+      "body": {
+       "kind": "command",
+       "command": "./sweep.sh --ctx 64k..128k",
+       "cwd": "/home/alice/src/bench/sweep-64k"
+      },
+      "options": [
+       {
+        "id": "allow_once",
+        "label": "Allow once",
+        "style": "allow"
+       },
+       {
+        "id": "allow_always",
+        "label": "Always allow",
+        "style": "allow_always"
+       },
+       {
+        "id": "reject",
+        "label": "Reject",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": "01JAS000000000000000000012",
+      "created_at": 1767599820000,
+      "kind": "permission",
+      "title": "Run ./sweep.sh --ctx 64k..128k?"
+     },
+     {
+      "id": "req-5",
+      "blocking": true,
+      "state": "pending",
+      "detail": null,
+      "body": {
+       "kind": "spawn",
+       "machine": "gpubox",
+       "agent": "pi",
+       "cwd": "/home/alice/src/bench/sweep-256k",
+       "title": "sweep: 256k"
+      },
+      "options": [
+       {
+        "id": "allow",
+        "label": "Allow",
+        "style": "allow"
+       },
+       {
+        "id": "deny",
+        "label": "Deny",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599700000,
+      "kind": "spawn",
+      "title": "Spawn “sweep: 256k” on gpubox?"
+     }
+    ],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 2,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000012",
+    "name": "sweep: 64k–128k",
+    "title": null,
+    "cwd": "/home/alice/src/bench/sweep-64k",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599820000,
+    "closed_at": null,
+    "parent_id": "01JAS000000000000000000011",
+    "spawned_by": null,
+    "state": "awaiting_permission",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Run ./sweep.sh --ctx 64k..128k?",
+    "attention": "approval",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [
+     {
+      "id": "req-3",
+      "blocking": true,
+      "state": "pending",
+      "detail": null,
+      "body": {
+       "kind": "command",
+       "command": "./sweep.sh --ctx 64k..128k",
+       "cwd": "/home/alice/src/bench/sweep-64k"
+      },
+      "options": [
+       {
+        "id": "allow_once",
+        "label": "Allow once",
+        "style": "allow"
+       },
+       {
+        "id": "allow_always",
+        "label": "Always allow",
+        "style": "allow_always"
+       },
+       {
+        "id": "reject",
+        "label": "Reject",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599820000,
+      "kind": "permission",
+      "title": "Run ./sweep.sh --ctx 64k..128k?"
+     }
+    ],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000013",
+    "name": "sweep: 8k–32k",
+    "title": null,
+    "cwd": "/home/alice/src/bench/sweep-8k",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599940000,
+    "closed_at": null,
+    "parent_id": "01JAS000000000000000000011",
+    "spawned_by": null,
+    "state": "working",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Measuring 16k",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000003",
+    "stale": true,
+    "id": "01JAS000000000000000000014",
+    "name": "dataset dedupe",
+    "title": null,
+    "cwd": "/home/alice/data/dedupe",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767589200000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "awaiting_permission",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Delete 1,204 duplicate files?",
+    "attention": "approval",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [
+     {
+      "id": "req-50",
+      "blocking": true,
+      "state": "pending",
+      "detail": null,
+      "body": {
+       "kind": "command",
+       "command": "xargs rm < dupes.txt",
+       "cwd": null
+      },
+      "options": [
+       {
+        "id": "allow_once",
+        "label": "Allow once",
+        "style": "allow"
+       },
+       {
+        "id": "allow_always",
+        "label": "Always allow",
+        "style": "allow_always"
+       },
+       {
+        "id": "reject",
+        "label": "Reject",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767597000000,
+      "kind": "permission",
+      "title": "Delete 1,204 duplicate files?"
+     }
+    ],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000015",
+    "name": "legacy deploy scripts",
+    "title": null,
+    "cwd": "/home/alice/src/legacy-deploy",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767582000000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "idle",
+    "last_outcome": "completed",
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Scripts updated.",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "off",
+     "default_level": "strict",
+     "explicit": true,
+     "looser_than_default": true,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000016",
+    "name": "rotate secrets",
+    "title": null,
+    "cwd": "/home/alice/src/ops",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767427200000,
+    "closed_at": 1767427200000,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "closed",
+    "last_outcome": "completed",
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Rotated.",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000002",
+    "stale": false,
+    "id": "01JAS000000000000000000017",
+    "name": "upgrade tokio to 1.47",
+    "title": null,
+    "cwd": "/home/alice/src/acme-api",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767599100000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "awaiting_permission",
+    "last_outcome": null,
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "git push --force origin tokio-1.47",
+    "attention": "approval",
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [
+     {
+      "id": "req-15",
+      "blocking": true,
+      "state": "pending",
+      "detail": null,
+      "body": {
+       "kind": "git_push",
+       "command": "git push --force origin tokio-1.47",
+       "remote": "origin",
+       "branch": "tokio-1.47",
+       "force": true
+      },
+      "options": [
+       {
+        "id": "allow_once",
+        "label": "Allow once",
+        "style": "allow"
+       },
+       {
+        "id": "allow_always",
+        "label": "Always allow",
+        "style": "allow_always"
+       },
+       {
+        "id": "reject",
+        "label": "Reject",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599100000,
+      "kind": "permission",
+      "title": "Run git push --force origin tokio-1.47?"
+     }
+    ],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "relaxed",
+     "default_level": "strict",
+     "explicit": true,
+     "looser_than_default": true,
+     "grants": []
+    },
+    "resumable": true
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "stale": false,
+    "id": "01JAS000000000000000000018",
+    "name": "inbox triage",
+    "title": null,
+    "cwd": "/home/alice/notes",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767528000000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "idle",
+    "last_outcome": "completed",
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Nothing new in inbox/.",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   }
+  ],
+  "projects": [
+   {
+    "id": "01JAP000000000000000000001",
+    "name": "Acme API",
+    "color": "#f97316",
+    "location_prefixes": [
+     {
+      "machine_id": null,
+      "path_prefix": "~/src/acme-api"
+     }
+    ]
+   },
+   {
+    "id": "01JAP000000000000000000002",
+    "name": "Controlroom",
+    "color": "#a78bfa",
+    "location_prefixes": [
+     {
+      "machine_id": "01JAM000000000000000000001",
+      "path_prefix": "/home/alice/src/controlroom"
+     },
+     {
+      "machine_id": null,
+      "path_prefix": "~/src/bench"
+     }
+    ]
+   },
+   {
+    "id": "01JAP000000000000000000003",
+    "name": "Docs",
+    "color": "#22d3ee",
+    "location_prefixes": [
+     {
+      "machine_id": null,
+      "path_prefix": "~/src/docs"
+     }
+    ]
+   }
+  ],
+  "tasks": [
+   {
+    "id": "01JAT000000000000000000001",
+    "status": "doing",
+    "order": 1,
+    "priority": "p0",
+    "project_ids": [
+     "01JAP000000000000000000001"
+    ],
+    "notes": "Users get logged out when two tabs refresh at once.",
+    "checklist": [
+     {
+      "id": "01JAR000000000000000000001",
+      "text": "Reproduce",
+      "done": true
+     },
+     {
+      "id": "01JAR000000000000000000002",
+      "text": "Single-flight rotation",
+      "done": false
+     },
+     {
+      "id": "01JAR000000000000000000003",
+      "text": "Regression test",
+      "done": false
+     }
+    ],
+    "links": [
+     {
+      "machine_id": "01JAM000000000000000000002",
+      "session_id": "01JAS000000000000000000001"
+     },
+     {
+      "machine_id": "01JAM000000000000000000002",
+      "session_id": "01JAS000000000000000000017"
+     }
+    ],
+    "created_at": 1767168000000,
+    "updated_at": 1767513600000,
+    "title": "Fix random logouts"
+   },
+   {
+    "id": "01JAT000000000000000000002",
+    "status": "doing",
+    "order": 2,
+    "priority": "p1",
+    "project_ids": [
+     "01JAP000000000000000000002"
+    ],
+    "notes": "",
+    "checklist": [],
+    "links": [
+     {
+      "machine_id": "01JAM000000000000000000001",
+      "session_id": "01JAS000000000000000000002"
+     },
+     {
+      "machine_id": "01JAM000000000000000000002",
+      "session_id": "01JAS000000000000000000003"
+     }
+    ],
+    "created_at": 1767168000000,
+    "updated_at": 1767513600000,
+    "title": "Stabilize CI"
+   },
+   {
+    "id": "01JAT000000000000000000003",
+    "status": "review",
+    "order": 3,
+    "priority": "p1",
+    "project_ids": [
+     "01JAP000000000000000000002"
+    ],
+    "notes": "",
+    "checklist": [
+     {
+      "id": "01JAR000000000000000000004",
+      "text": "Changelog",
+      "done": true
+     },
+     {
+      "id": "01JAR000000000000000000005",
+      "text": "Tag",
+      "done": false
+     }
+    ],
+    "links": [
+     {
+      "machine_id": "01JAM000000000000000000001",
+      "session_id": "01JAS000000000000000000004"
+     },
+     {
+      "machine_id": "01JAM000000000000000000001",
+      "session_id": "01JAS000000000000000000010"
+     }
+    ],
+    "created_at": 1767168000000,
+    "updated_at": 1767513600000,
+    "title": "Release v0.2"
+   },
+   {
+    "id": "01JAT000000000000000000004",
+    "status": "todo",
+    "order": 4,
+    "priority": "p2",
+    "project_ids": [
+     "01JAP000000000000000000003"
+    ],
+    "notes": "",
+    "checklist": [],
+    "links": [
+     {
+      "machine_id": "01JAM000000000000000000001",
+      "session_id": "01JAS000000000000000000005"
+     },
+     {
+      "machine_id": "01JAM000000000000000000001",
+      "session_id": "01JAS000000000000000000006"
+     }
+    ],
+    "created_at": 1767168000000,
+    "updated_at": 1767513600000,
+    "title": "Docs refresh"
+   },
+   {
+    "id": "01JAT000000000000000000005",
+    "status": "doing",
+    "order": 5,
+    "priority": "p2",
+    "project_ids": [
+     "01JAP000000000000000000002"
+    ],
+    "notes": "",
+    "checklist": [],
+    "links": [
+     {
+      "machine_id": "01JAM000000000000000000001",
+      "session_id": "01JAS000000000000000000011"
+     }
+    ],
+    "created_at": 1767168000000,
+    "updated_at": 1767513600000,
+    "title": "Benchmark sweep"
+   },
+   {
+    "id": "01JAT000000000000000000006",
+    "status": "todo",
+    "order": 6,
+    "priority": "p3",
+    "project_ids": [
+     "01JAP000000000000000000003"
+    ],
+    "notes": "",
+    "checklist": [],
+    "links": [],
+    "created_at": 1767168000000,
+    "updated_at": 1767513600000,
+    "title": "Write onboarding guide"
+   },
+   {
+    "id": "01JAT000000000000000000007",
+    "status": "backlog",
+    "order": 7,
+    "priority": "p3",
+    "project_ids": [
+     "01JAP000000000000000000002",
+     "01JAP000000000000000000001"
+    ],
+    "notes": "",
+    "checklist": [],
+    "links": [],
+    "created_at": 1767168000000,
+    "updated_at": 1767513600000,
+    "title": "Evaluate new CI runners"
+   },
+   {
+    "id": "01JAT000000000000000000008",
+    "status": "done",
+    "order": 8,
+    "priority": "p2",
+    "project_ids": [],
+    "notes": "",
+    "checklist": [],
+    "links": [
+     {
+      "machine_id": "01JAM000000000000000000001",
+      "session_id": "01JAS000000000000000000016"
+     },
+     {
+      "machine_id": "01JAM000000000000000000003",
+      "session_id": "01JAS000000000000000000099"
+     }
+    ],
+    "created_at": 1767168000000,
+    "updated_at": 1767513600000,
+    "title": "Rotate secrets"
+   }
+  ],
+  "grants": [
+   {
+    "id": "01JAG000000000000000000001",
+    "from": {
+     "machine_id": "01JAM000000000000000000001",
+     "session_id": "01JAS000000000000000000009"
+    },
+    "to": {
+     "machine_id": "01JAM000000000000000000001",
+     "session_id": "01JAS000000000000000000002"
+    },
+    "scope": "pair",
+    "granted_at": 1767513600000,
+    "by": {
+     "device_id": "device-laptop",
+     "label": "Laptop (Firefox on Linux)"
+    }
+   }
+  ],
+  "schedules": [
+   {
+    "id": "01JAC000000000000000000001",
+    "machine_id": "01JAM000000000000000000001",
+    "session_id": "01JAS000000000000000000018",
+    "name": "Inbox triage",
+    "spec": {
+     "kind": "cron",
+     "expr": "0 9 * * 1-5"
+    },
+    "timezone": "Europe/Berlin",
+    "message": "Check inbox/ and process anything new.",
+    "enabled": true,
+    "if_busy": "queue",
+    "missed": "skip",
+    "next_run": 1767650400000,
+    "recent_runs": [
+     {
+      "at": 1767564000000,
+      "outcome": "fired",
+      "detail": null,
+      "count": 1
+     },
+     {
+      "at": 1767340800000,
+      "outcome": "missed",
+      "detail": "devbox unreachable",
+      "count": 3
+     }
+    ],
+    "created_at": 1765872000000
+   },
+   {
+    "id": "01JAC000000000000000000002",
+    "machine_id": "01JAM000000000000000000001",
+    "session_id": "01JAS000000000000000000002",
+    "name": "Nightly CI check",
+    "spec": {
+     "kind": "interval",
+     "every_s": 21600
+    },
+    "timezone": "UTC",
+    "message": "Re-run the e2e suite and report flakes.",
+    "enabled": false,
+    "if_busy": "skip",
+    "missed": "run_once",
+    "next_run": null,
+    "recent_runs": [],
+    "created_at": 1766822400000
+   }
+  ],
+  "devices": [
+   {
+    "device_id": "device-laptop",
+    "label": "Laptop (Firefox on Linux)",
+    "created_at": 1765008000000,
+    "last_seen": 1767596400000,
+    "push": true
+   },
+   {
+    "device_id": "device-phone",
+    "label": "Phone",
+    "created_at": 1765872000000,
+    "last_seen": 1767427200000,
+    "push": true
+   }
+  ]
+ },
+ "details": {
+  "01JAM000000000000000000001/01JAS000000000000000000002": {
+   "agent_sessions": [
+    {
+     "driver": "pi",
+     "native_id": "native-1",
+     "started_at": 1767427200000,
+     "ended_at": null,
+     "started_by": "new"
+    }
+   ],
+   "queue": [
+    {
+     "id": "01JAQ000000000000000000001",
+     "content": [
+      {
+       "kind": "text",
+       "text": "Re-run only the failing spec"
+      }
+     ],
+     "origin": {
+      "kind": "user",
+      "device": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "sending": true,
+     "queued_at": 1767599940000
+    },
+    {
+     "id": "01JAQ000000000000000000002",
+     "content": [
+      {
+       "kind": "text",
+       "text": "Then bisect the last 5 commits"
+      }
+     ],
+     "origin": {
+      "kind": "user",
+      "device": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "sending": false,
+     "queued_at": 1767599880000
+    },
+    {
+     "id": "01JAQ000000000000000000003",
+     "content": [
+      {
+       "kind": "text",
+       "text": "Summarize the flake rate"
+      }
+     ],
+     "origin": {
+      "kind": "user",
+      "device": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "sending": false,
+     "queued_at": 1767599820000
+    }
+   ],
+   "todos": [],
+   "auto_continue": {
+    "status": "off",
+    "reason": null,
+    "runs_used": 0,
+    "budget": 10
+   },
+   "jobs": [
+    {
+     "id": "01JAJ000000000000000000001",
+     "name": "dev server",
+     "command": "pnpm dev --port 5173",
+     "cwd": "/home/alice/src/controlroom/web",
+     "status": "running",
+     "exit": null,
+     "signal": null,
+     "started_at": 1767599400000,
+     "ended_at": null,
+     "timeout_s": null,
+     "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000001.log",
+     "lines": 120,
+     "follow": null
+    }
+   ],
+   "peers": [
+    {
+     "peer": {
+      "daemon_id": "01JAA000000000000000000002",
+      "session_id": "01JAS000000000000000000003",
+      "name": "e2e flake hunt"
+     },
+     "relation": "task",
+     "task": "Stabilize CI"
+    },
+    {
+     "peer": {
+      "daemon_id": "01JAA000000000000000000001",
+      "session_id": "01JAS000000000000000000009",
+      "name": "migrate UI to Svelte 5 runes"
+     },
+     "relation": "grant",
+     "task": null
+    }
+   ]
+  },
+  "01JAM000000000000000000002/01JAS000000000000000000003": {
+   "agent_sessions": [
+    {
+     "driver": "pi",
+     "native_id": "native-1",
+     "started_at": 1767427200000,
+     "ended_at": null,
+     "started_by": "new"
+    }
+   ],
+   "queue": [],
+   "todos": [
+    {
+     "id": "01JAD000000000000000000001",
+     "text": "Reproduce the flake locally",
+     "status": "done",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599940000
+    },
+    {
+     "id": "01JAD000000000000000000002",
+     "text": "Run the suite 20 times",
+     "status": "in_progress",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599880000
+    },
+    {
+     "id": "01JAD000000000000000000003",
+     "text": "Fix the race",
+     "status": "pending",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599820000
+    }
+   ],
+   "auto_continue": {
+    "status": "on",
+    "reason": "waiting on job tests",
+    "runs_used": 2,
+    "budget": 10
+   },
+   "jobs": [
+    {
+     "id": "01JAJ000000000000000000002",
+     "name": "tests",
+     "command": "pnpm e2e --repeat-each 20",
+     "cwd": "/home/alice/src/controlroom",
+     "status": "running",
+     "exit": null,
+     "signal": null,
+     "started_at": 1767599400000,
+     "ended_at": null,
+     "timeout_s": null,
+     "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000002.log",
+     "lines": 4210,
+     "follow": {
+      "buffer_seconds": 15,
+      "pattern": "FAIL|Error",
+      "next_wake_at": 1767600012000
+     }
+    },
+    {
+     "id": "01JAJ000000000000000000003",
+     "name": "typecheck",
+     "command": "pnpm check",
+     "cwd": "/home/alice/src/controlroom",
+     "status": "succeeded",
+     "exit": 0,
+     "signal": null,
+     "started_at": 1767599400000,
+     "ended_at": 1767599520000,
+     "timeout_s": null,
+     "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000003.log",
+     "lines": 12,
+     "follow": null
+    },
+    {
+     "id": "01JAJ000000000000000000004",
+     "name": "lint",
+     "command": "pnpm lint",
+     "cwd": "/home/alice/src/controlroom",
+     "status": "failed",
+     "exit": 1,
+     "signal": null,
+     "started_at": 1767599400000,
+     "ended_at": 1767599460000,
+     "timeout_s": null,
+     "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000004.log",
+     "lines": 40,
+     "follow": null
+    }
+   ],
+   "peers": [
+    {
+     "peer": {
+      "daemon_id": "01JAA000000000000000000001",
+      "session_id": "01JAS000000000000000000002",
+      "name": "flaky e2e tests"
+     },
+     "relation": "task",
+     "task": "Stabilize CI"
+    }
+   ]
+  },
+  "01JAM000000000000000000001/01JAS000000000000000000004": {
+   "agent_sessions": [
+    {
+     "driver": "pi",
+     "native_id": "native-1",
+     "started_at": 1767427200000,
+     "ended_at": null,
+     "started_by": "new"
+    }
+   ],
+   "queue": [],
+   "todos": [
+    {
+     "id": "01JAD000000000000000000004",
+     "text": "Bump the version",
+     "status": "done",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599760000
+    },
+    {
+     "id": "01JAD000000000000000000005",
+     "text": "Update the changelog",
+     "status": "in_progress",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599700000
+    },
+    {
+     "id": "01JAD000000000000000000006",
+     "text": "Run the full test suite",
+     "status": "done",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599640000
+    },
+    {
+     "id": "01JAD000000000000000000007",
+     "text": "Tag the release",
+     "status": "pending",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599580000
+    },
+    {
+     "id": "01JAD000000000000000000008",
+     "text": "Publish the release notes",
+     "status": "blocked",
+     "reason": "waiting for the docs",
+     "updated_by": {
+      "kind": "user",
+      "device": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "updated_at": 1767599520000
+    },
+    {
+     "id": "01JAD000000000000000000009",
+     "text": "Announce",
+     "status": "skipped",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599460000
+    },
+    {
+     "id": "01JAD000000000000000000010",
+     "text": "Write the upgrade guide",
+     "status": "done",
+     "reason": null,
+     "updated_by": {
+      "kind": "user",
+      "device": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "updated_at": 1767599400000
+    }
+   ],
+   "auto_continue": {
+    "status": "on",
+    "reason": null,
+    "runs_used": 2,
+    "budget": 10
+   },
+   "jobs": [],
+   "peers": [
+    {
+     "peer": {
+      "daemon_id": "01JAA000000000000000000001",
+      "session_id": "01JAS000000000000000000010",
+      "name": "lint cleanup"
+     },
+     "relation": "task",
+     "task": "Release v0.2"
+    }
+   ]
+  },
+  "01JAM000000000000000000001/01JAS000000000000000000011": {
+   "agent_sessions": [
+    {
+     "driver": "pi",
+     "native_id": "native-1",
+     "started_at": 1767427200000,
+     "ended_at": null,
+     "started_by": "new"
+    }
+   ],
+   "queue": [],
+   "todos": [],
+   "auto_continue": {
+    "status": "off",
+    "reason": null,
+    "runs_used": 0,
+    "budget": 10
+   },
+   "jobs": [],
+   "peers": [
+    {
+     "peer": {
+      "daemon_id": "01JAA000000000000000000001",
+      "session_id": "01JAS000000000000000000012",
+      "name": "sweep: 64k–128k"
+     },
+     "relation": "child",
+     "task": null
+    },
+    {
+     "peer": {
+      "daemon_id": "01JAA000000000000000000001",
+      "session_id": "01JAS000000000000000000013",
+      "name": "sweep: 8k–32k"
+     },
+     "relation": "child",
+     "task": null
+    }
+   ]
+  },
+  "01JAM000000000000000000002/01JAS000000000000000000001": {
+   "agent_sessions": [
+    {
+     "driver": "pi",
+     "native_id": "native-1",
+     "started_at": 1767427200000,
+     "ended_at": null,
+     "started_by": "new"
+    }
+   ],
+   "queue": [],
+   "todos": [],
+   "auto_continue": {
+    "status": "off",
+    "reason": null,
+    "runs_used": 0,
+    "budget": 10
+   },
+   "jobs": [],
+   "peers": [
+    {
+     "peer": {
+      "daemon_id": "01JAA000000000000000000002",
+      "session_id": "01JAS000000000000000000017",
+      "name": "upgrade tokio to 1.47"
+     },
+     "relation": "task",
+     "task": "Fix random logouts"
+    }
+   ]
+  },
+  "01JAM000000000000000000001/01JAS000000000000000000009": {
+   "agent_sessions": [
+    {
+     "driver": "pi",
+     "native_id": "native-1",
+     "started_at": 1767427200000,
+     "ended_at": null,
+     "started_by": "new"
+    }
+   ],
+   "queue": [],
+   "todos": [
+    {
+     "id": "01JAD000000000000000000011",
+     "text": "Migrate stores",
+     "status": "done",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599340000
+    },
+    {
+     "id": "01JAD000000000000000000012",
+     "text": "Migrate components",
+     "status": "done",
+     "reason": null,
+     "updated_by": {
+      "kind": "agent"
+     },
+     "updated_at": 1767599280000
+    }
+   ],
+   "auto_continue": {
+    "status": "budget",
+    "reason": "Used 10 of 10 runs",
+    "runs_used": 10,
+    "budget": 10
+   },
+   "jobs": [],
+   "peers": []
+  }
+ },
+ "responses": {
+  "devices.register": {
+   "device_id": "device-laptop",
+   "label": "Laptop (Firefox on Linux)",
+   "created_at": 1765008000000,
+   "last_seen": 1767596400000,
+   "push": true
+  },
+  "devices.rename": {
+   "device_id": "device-laptop",
+   "label": "Laptop (Firefox on Linux)",
+   "created_at": 1765008000000,
+   "last_seen": 1767596400000,
+   "push": true
+  },
+  "agents.list": {
+   "agents": [
+    {
+     "agent": "pi",
+     "driver": "pi",
+     "command": "pi",
+     "status": "ok",
+     "path": "/home/alice/.nix-profile/bin/pi",
+     "detail": ""
+    }
+   ]
+  },
+  "fs.list": {
+   "path": "/home/alice",
+   "entries": [
+    {
+     "name": "data",
+     "kind": "dir",
+     "size": null,
+     "mtime": 1767513600000
+    },
+    {
+     "name": "notes",
+     "kind": "dir",
+     "size": null,
+     "mtime": 1767513600000
+    },
+    {
+     "name": "src",
+     "kind": "dir",
+     "size": null,
+     "mtime": 1767513600000
+    }
+   ]
+  },
+  "doctor.report": {
+   "daemon_version": "0.1.0",
+   "user": "alice",
+   "persistence": {
+    "status": "ok",
+    "value": "yes",
+    "detail": "linger enabled; processes survive logout"
+   },
+   "boot_start": "systemd_user",
+   "boot_start_check": {
+    "status": "ok",
+    "value": "systemd_user",
+    "detail": "systemd user unit installed"
+   },
+   "nono": {
+    "status": "ok",
+    "value": "0.80.0",
+    "detail": "nono 0.80.0"
+   },
+   "landlock_abi": 6,
+   "agents_config": "/home/alice/.config/controlroom/agents.toml",
+   "agents_config_error": null,
+   "agents": [
+    {
+     "agent": "pi",
+     "driver": "pi",
+     "command": "pi",
+     "status": "ok",
+     "path": "/home/alice/.nix-profile/bin/pi",
+     "detail": ""
+    }
+   ],
+   "checked_at": 1767592800000
+  },
+  "settings.set": {
+   "idle_timeout_h": 48,
+   "retention": {
+    "delete_closed_after_days": null
+   }
+  },
+  "keys.list": {
+   "controlroom": {
+    "fingerprint": "SHA256:ControlroomFixtureKeyFingerprint000000000",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixturePublicKey000000000000000000000000 controlroom",
+    "created_at": 1762416000000,
+    "install_command": "mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixturePublicKey000000000000000000000000 controlroom' >> ~/.ssh/authorized_keys",
+    "retiring_machines": 0
+   },
+   "additional": [
+    {
+     "id": "01JAK000000000000000000001",
+     "name": "legacy host key",
+     "imported": true,
+     "fingerprint": "SHA256:AdditionalFixtureKeyFingerprint00000000",
+     "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAdditionalFixtureKey00000000000000000000 legacy",
+     "created_at": 1764144000000
+    }
+   ]
+  },
+  "keys.rotate": {
+   "key": {
+    "fingerprint": "SHA256:ControlroomFixtureKeyFingerprint000000000",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixturePublicKey000000000000000000000000 controlroom",
+    "created_at": 1762416000000,
+    "install_command": "mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixturePublicKey000000000000000000000000 controlroom' >> ~/.ssh/authorized_keys",
+    "retiring_machines": 0
+   },
+   "migrated": 2,
+   "pending": 1
+  },
+  "keys.generate": {
+   "id": "01JAK000000000000000000001",
+   "name": "legacy host key",
+   "imported": true,
+   "fingerprint": "SHA256:AdditionalFixtureKeyFingerprint00000000",
+   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAdditionalFixtureKey00000000000000000000 legacy",
+   "created_at": 1764144000000
+  },
+  "keys.import": {
+   "id": "01JAK000000000000000000001",
+   "name": "legacy host key",
+   "imported": true,
+   "fingerprint": "SHA256:AdditionalFixtureKeyFingerprint00000000",
+   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAdditionalFixtureKey00000000000000000000 legacy",
+   "created_at": 1764144000000
+  },
+  "machines.add": {
+   "host_key": {
+    "algorithm": "ssh-ed25519",
+    "fingerprint": "SHA256:NewMachineFixtureHostKey0000000000000000"
+   }
+  },
+  "machines.add_confirm": {
+   "outcome": "permission_denied",
+   "install_command": "mkdir -p ~/.ssh && echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixturePublicKey000000000000000000000000 controlroom' >> ~/.ssh/authorized_keys",
+   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixturePublicKey000000000000000000000000 controlroom"
+  },
+  "machines.set_settings": {
+   "id": "01JAM000000000000000000001",
+   "name": "devbox",
+   "host": "devbox.example.com",
+   "port": 22,
+   "user": "alice",
+   "key_id": null,
+   "host_key": {
+    "algorithm": "ssh-ed25519",
+    "fingerprint": "SHA256:devboxFixtureHostKeyFingerprint0000000000"
+   },
+   "daemon_id": "01JAA000000000000000000001",
+   "connectivity": {
+    "state": "connected"
+   },
+   "update_available": false,
+   "auto_upgrade": true,
+   "last_seen": 1767600000000,
+   "version": "0.1.0",
+   "arch": "x86_64",
+   "last_error": null,
+   "capabilities": [
+    "jobs",
+    "todos",
+    "subagents",
+    "mailbox"
+   ],
+   "settings": {
+    "idle_timeout_h": 48,
+    "retention": {
+     "delete_closed_after_days": null
+    }
+   },
+   "doctor": {
+    "daemon_version": "0.1.0",
+    "user": "alice",
+    "persistence": {
+     "status": "ok",
+     "value": "yes",
+     "detail": "linger enabled; processes survive logout"
+    },
+    "boot_start": "systemd_user",
+    "boot_start_check": {
+     "status": "ok",
+     "value": "systemd_user",
+     "detail": "systemd user unit installed"
+    },
+    "nono": {
+     "status": "ok",
+     "value": "0.80.0",
+     "detail": "nono 0.80.0"
+    },
+    "landlock_abi": 6,
+    "agents_config": "/home/alice/.config/controlroom/agents.toml",
+    "agents_config_error": null,
+    "agents": [
+     {
+      "agent": "pi",
+      "driver": "pi",
+      "command": "pi",
+      "status": "ok",
+      "path": "/home/alice/.nix-profile/bin/pi",
+      "detail": ""
+     }
+    ],
+    "checked_at": 1767592800000
+   },
+   "bootstrap": null
+  },
+  "machines.confirm_host_key": {
+   "id": "01JAM000000000000000000004",
+   "name": "armbox",
+   "host": "armbox.example.com",
+   "port": 22,
+   "user": "alice",
+   "key_id": null,
+   "host_key": {
+    "algorithm": "ssh-ed25519",
+    "fingerprint": "SHA256:armboxFixtureHostKeyFingerprint0000000000"
+   },
+   "daemon_id": "01JAA000000000000000000004",
+   "connectivity": {
+    "state": "action_required",
+    "reason": "host_key_changed",
+    "presented_host_key": {
+     "algorithm": "ssh-ed25519",
+     "fingerprint": "SHA256:armboxNewHostKeyFingerprint00000000000"
+    }
+   },
+   "update_available": false,
+   "auto_upgrade": true,
+   "last_seen": 1767513600000,
+   "version": "0.1.0",
+   "arch": "aarch64",
+   "last_error": null,
+   "capabilities": [
+    "jobs",
+    "todos",
+    "subagents",
+    "mailbox"
+   ],
+   "settings": null,
+   "doctor": {
+    "daemon_version": "0.1.0",
+    "user": "alice",
+    "persistence": {
+     "status": "ok",
+     "value": "yes",
+     "detail": "linger enabled; processes survive logout"
+    },
+    "boot_start": "systemd_user",
+    "boot_start_check": {
+     "status": "ok",
+     "value": "systemd_user",
+     "detail": "systemd user unit installed"
+    },
+    "nono": {
+     "status": "ok",
+     "value": "0.80.0",
+     "detail": "nono 0.80.0"
+    },
+    "landlock_abi": 6,
+    "agents_config": "/home/alice/.config/controlroom/agents.toml",
+    "agents_config_error": null,
+    "agents": [
+     {
+      "agent": "pi",
+      "driver": "pi",
+      "command": "pi",
+      "status": "ok",
+      "path": "/home/alice/.nix-profile/bin/pi",
+      "detail": ""
+     }
+    ],
+    "checked_at": 1767592800000
+   },
+   "bootstrap": null
+  },
+  "notifications.preferences": {
+   "attention": true,
+   "questions": false,
+   "turn_end": false
+  },
+  "notifications.set_preferences": {
+   "attention": true,
+   "questions": false,
+   "turn_end": false
+  },
+  "notifications.subscribe": {
+   "device_id": "device-laptop",
+   "label": "Laptop (Firefox on Linux)",
+   "created_at": 1765008000000,
+   "last_seen": 1767596400000,
+   "push": true
+  },
+  "notifications.unsubscribe": {
+   "device_id": "device-laptop",
+   "label": "Laptop (Firefox on Linux)",
+   "created_at": 1765008000000,
+   "last_seen": 1767596400000,
+   "push": true
+  },
+  "sandbox.profiles": {
+   "profiles": [
+    {
+     "scope": {
+      "kind": "machine",
+      "machine_id": "01JAM000000000000000000001"
+     },
+     "level": "strict",
+     "grants": [],
+     "domains": [
+      "registry.npmjs.org"
+     ],
+     "mediated": [
+      {
+       "command": "kubectl apply",
+       "action": "approve"
+      }
+     ]
+    },
+    {
+     "scope": {
+      "kind": "machine",
+      "machine_id": "01JAM000000000000000000002"
+     },
+     "level": "relaxed",
+     "grants": [
+      {
+       "id": "01JAG000000000000000000021",
+       "kind": "path",
+       "value": "/home/alice/.cache/cargo",
+       "access": "read_write",
+       "scope": "standing",
+       "granted_at": 1766736000000,
+       "by": {
+        "device_id": "device-laptop",
+        "label": "Laptop (Firefox on Linux)"
+       }
+      }
+     ],
+     "domains": [],
+     "mediated": []
+    },
+    {
+     "scope": {
+      "kind": "project",
+      "project_id": "01JAP000000000000000000001"
+     },
+     "level": "strict",
+     "grants": [],
+     "domains": [
+      "crates.io"
+     ],
+     "mediated": []
+    }
+   ]
+  },
+  "sandbox.set_profile": {
+   "profiles": [
+    {
+     "scope": {
+      "kind": "machine",
+      "machine_id": "01JAM000000000000000000001"
+     },
+     "level": "strict",
+     "grants": [],
+     "domains": [
+      "registry.npmjs.org"
+     ],
+     "mediated": [
+      {
+       "command": "kubectl apply",
+       "action": "approve"
+      }
+     ]
+    },
+    {
+     "scope": {
+      "kind": "machine",
+      "machine_id": "01JAM000000000000000000002"
+     },
+     "level": "relaxed",
+     "grants": [
+      {
+       "id": "01JAG000000000000000000021",
+       "kind": "path",
+       "value": "/home/alice/.cache/cargo",
+       "access": "read_write",
+       "scope": "standing",
+       "granted_at": 1766736000000,
+       "by": {
+        "device_id": "device-laptop",
+        "label": "Laptop (Firefox on Linux)"
+       }
+      }
+     ],
+     "domains": [],
+     "mediated": []
+    },
+    {
+     "scope": {
+      "kind": "project",
+      "project_id": "01JAP000000000000000000001"
+     },
+     "level": "strict",
+     "grants": [],
+     "domains": [
+      "crates.io"
+     ],
+     "mediated": []
+    }
+   ]
+  },
+  "session.create": {
+   "session": {
+    "id": "01JAS000000000000000000050",
+    "name": "new session",
+    "title": null,
+    "cwd": "/home/alice/src/controlroom",
+    "agent": "pi",
+    "created_at": 1767427200000,
+    "updated_at": 1767340800000,
+    "closed_at": null,
+    "parent_id": null,
+    "spawned_by": null,
+    "state": "starting",
+    "last_outcome": "completed",
+    "last_error": null,
+    "read_seq": 40,
+    "last_turn_end_seq": 40,
+    "unread": false,
+    "preview": "Fixed 23 warnings.",
+    "attention": null,
+    "rollup": {
+     "approvals": 0,
+     "questions": 0,
+     "problems": 0,
+     "unread": 0
+    },
+    "context": {
+     "used": 42000,
+     "size": 200000,
+     "cost": 0.42
+    },
+    "queue": {
+     "len": 0,
+     "paused": false,
+     "auto_send": true,
+     "send_now_pending": false
+    },
+    "requests": [],
+    "todo": null,
+    "live_work": {
+     "jobs": 0,
+     "children": 0,
+     "asks": 0
+    },
+    "options": [
+     {
+      "id": "model",
+      "label": "Model",
+      "kind": "select",
+      "value": "large",
+      "choices": [
+       {
+        "value": "large",
+        "label": "Large"
+       },
+       {
+        "value": "small",
+        "label": "Small"
+       }
+      ]
+     },
+     {
+      "id": "thinking",
+      "label": "Thinking",
+      "kind": "select",
+      "value": "medium",
+      "choices": [
+       {
+        "value": "off",
+        "label": "Off"
+       },
+       {
+        "value": "low",
+        "label": "Low"
+       },
+       {
+        "value": "medium",
+        "label": "Medium"
+       },
+       {
+        "value": "high",
+        "label": "High"
+       }
+      ]
+     }
+    ],
+    "sandbox": {
+     "level": "strict",
+     "default_level": "strict",
+     "explicit": false,
+     "looser_than_default": false,
+     "grants": []
+    },
+    "resumable": true
+   }
+  },
+  "session.prompt": {
+   "outcome": "sent"
+  },
+  "session.start_fresh": {
+   "history_path": null
+  },
+  "session.mark_read": {
+   "read_seq": 52,
+   "unread": false
+  },
+  "session.mark_unread": {
+   "read_seq": 30,
+   "unread": true
+  },
+  "queue.send_now": {
+   "outcome": "steered"
+  },
+  "request.respond": {
+   "request": {
+    "id": "req-2",
+    "blocking": true,
+    "state": "answered",
+    "detail": "Wrap rotation in a single-flight per session.",
+    "body": {
+     "kind": "diff",
+     "path": "/home/alice/src/acme-api/src/auth/refresh.rs",
+     "old": "pub async fn refresh(db: &Db, old: &Token) -> Result<Token> {\n    let new = rotate_refresh(&db, &old).await?;\n    Ok(new)\n}",
+     "new": "pub async fn refresh(db: &Db, old: &Token) -> Result<Token> {\n    let key = old.session_id();\n    INFLIGHT.run(key, || async {\n        rotate_refresh(db, old).await\n    }).await\n}"
+    },
+    "options": [
+     {
+      "id": "allow_once",
+      "label": "Allow once",
+      "style": "allow"
+     },
+     {
+      "id": "allow_always",
+      "label": "Always allow",
+      "style": "allow_always"
+     },
+     {
+      "id": "reject",
+      "label": "Reject",
+      "style": "deny"
+     }
+    ],
+    "questions": [],
+    "answer": {
+     "response": {
+      "kind": "choice",
+      "option_id": "allow_once"
+     },
+     "label": "Allowed once",
+     "by": {
+      "device_id": "device-laptop",
+      "label": "Laptop (Firefox on Linux)"
+     },
+     "at": 1767600000000
+    },
+    "origin_child": null,
+    "created_at": 1767599880000,
+    "kind": "permission",
+    "title": "Edit src/auth/refresh.rs"
+   },
+   "then": null
+  },
+  "todo.add": {
+   "todos": []
+  },
+  "todo.update": {
+   "id": "01JAD000000000000000000001",
+   "text": "Reproduce the flake locally",
+   "status": "done",
+   "reason": null,
+   "updated_by": {
+    "kind": "agent"
+   },
+   "updated_at": 1767599940000
+  },
+  "job.list": {
+   "jobs": [
+    {
+     "id": "01JAJ000000000000000000002",
+     "name": "tests",
+     "command": "pnpm e2e --repeat-each 20",
+     "cwd": "/home/alice/src/controlroom",
+     "status": "running",
+     "exit": null,
+     "signal": null,
+     "started_at": 1767599400000,
+     "ended_at": null,
+     "timeout_s": null,
+     "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000002.log",
+     "lines": 4210,
+     "follow": {
+      "buffer_seconds": 15,
+      "pattern": "FAIL|Error",
+      "next_wake_at": 1767600012000
+     }
+    },
+    {
+     "id": "01JAJ000000000000000000003",
+     "name": "typecheck",
+     "command": "pnpm check",
+     "cwd": "/home/alice/src/controlroom",
+     "status": "succeeded",
+     "exit": 0,
+     "signal": null,
+     "started_at": 1767599400000,
+     "ended_at": 1767599520000,
+     "timeout_s": null,
+     "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000003.log",
+     "lines": 12,
+     "follow": null
+    },
+    {
+     "id": "01JAJ000000000000000000004",
+     "name": "lint",
+     "command": "pnpm lint",
+     "cwd": "/home/alice/src/controlroom",
+     "status": "failed",
+     "exit": 1,
+     "signal": null,
+     "started_at": 1767599400000,
+     "ended_at": 1767599460000,
+     "timeout_s": null,
+     "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000004.log",
+     "lines": 40,
+     "follow": null
+    }
+   ]
+  },
+  "job.logs": {
+   "from_line": 4201,
+   "lines": [
+    "PASS e2e/core.spec.ts",
+    "FAIL e2e/queue.spec.ts:44 send now",
+    "Error: timed out waiting for \"sending\"",
+    "PASS e2e/tasks.spec.ts"
+   ],
+   "total_lines": 4210
+  },
+  "job.kill": {
+   "id": "01JAJ000000000000000000002",
+   "name": "tests",
+   "command": "pnpm e2e --repeat-each 20",
+   "cwd": "/home/alice/src/controlroom",
+   "status": "running",
+   "exit": null,
+   "signal": null,
+   "started_at": 1767599400000,
+   "ended_at": null,
+   "timeout_s": null,
+   "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000002.log",
+   "lines": 4210,
+   "follow": {
+    "buffer_seconds": 15,
+    "pattern": "FAIL|Error",
+    "next_wake_at": 1767600012000
+   }
+  },
+  "job.follow": {
+   "id": "01JAJ000000000000000000002",
+   "name": "tests",
+   "command": "pnpm e2e --repeat-each 20",
+   "cwd": "/home/alice/src/controlroom",
+   "status": "running",
+   "exit": null,
+   "signal": null,
+   "started_at": 1767599400000,
+   "ended_at": null,
+   "timeout_s": null,
+   "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000002.log",
+   "lines": 4210,
+   "follow": {
+    "buffer_seconds": 15,
+    "pattern": "FAIL|Error",
+    "next_wake_at": 1767600012000
+   }
+  },
+  "job.unfollow": {
+   "id": "01JAJ000000000000000000002",
+   "name": "tests",
+   "command": "pnpm e2e --repeat-each 20",
+   "cwd": "/home/alice/src/controlroom",
+   "status": "running",
+   "exit": null,
+   "signal": null,
+   "started_at": 1767599400000,
+   "ended_at": null,
+   "timeout_s": null,
+   "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000002.log",
+   "lines": 4210,
+   "follow": {
+    "buffer_seconds": 15,
+    "pattern": "FAIL|Error",
+    "next_wake_at": 1767600012000
+   }
+  },
+  "projects.create": {
+   "id": "01JAP000000000000000000001",
+   "name": "Acme API",
+   "color": "#f97316",
+   "location_prefixes": [
+    {
+     "machine_id": null,
+     "path_prefix": "~/src/acme-api"
+    }
+   ]
+  },
+  "projects.update": {
+   "id": "01JAP000000000000000000001",
+   "name": "Acme API",
+   "color": "#f97316",
+   "location_prefixes": [
+    {
+     "machine_id": null,
+     "path_prefix": "~/src/acme-api"
+    }
+   ]
+  },
+  "tasks.create": {
+   "id": "01JAT000000000000000000001",
+   "status": "doing",
+   "order": 1,
+   "priority": "p0",
+   "project_ids": [
+    "01JAP000000000000000000001"
+   ],
+   "notes": "Users get logged out when two tabs refresh at once.",
+   "checklist": [
+    {
+     "id": "01JAR000000000000000000001",
+     "text": "Reproduce",
+     "done": true
+    },
+    {
+     "id": "01JAR000000000000000000002",
+     "text": "Single-flight rotation",
+     "done": false
+    },
+    {
+     "id": "01JAR000000000000000000003",
+     "text": "Regression test",
+     "done": false
+    }
+   ],
+   "links": [
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000001"
+    },
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000017"
+    }
+   ],
+   "created_at": 1767168000000,
+   "updated_at": 1767513600000,
+   "title": "Fix random logouts"
+  },
+  "tasks.update": {
+   "id": "01JAT000000000000000000001",
+   "status": "doing",
+   "order": 1,
+   "priority": "p0",
+   "project_ids": [
+    "01JAP000000000000000000001"
+   ],
+   "notes": "Users get logged out when two tabs refresh at once.",
+   "checklist": [
+    {
+     "id": "01JAR000000000000000000001",
+     "text": "Reproduce",
+     "done": true
+    },
+    {
+     "id": "01JAR000000000000000000002",
+     "text": "Single-flight rotation",
+     "done": false
+    },
+    {
+     "id": "01JAR000000000000000000003",
+     "text": "Regression test",
+     "done": false
+    }
+   ],
+   "links": [
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000001"
+    },
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000017"
+    }
+   ],
+   "created_at": 1767168000000,
+   "updated_at": 1767513600000,
+   "title": "Fix random logouts"
+  },
+  "tasks.move": {
+   "id": "01JAT000000000000000000001",
+   "status": "doing",
+   "order": 1,
+   "priority": "p0",
+   "project_ids": [
+    "01JAP000000000000000000001"
+   ],
+   "notes": "Users get logged out when two tabs refresh at once.",
+   "checklist": [
+    {
+     "id": "01JAR000000000000000000001",
+     "text": "Reproduce",
+     "done": true
+    },
+    {
+     "id": "01JAR000000000000000000002",
+     "text": "Single-flight rotation",
+     "done": false
+    },
+    {
+     "id": "01JAR000000000000000000003",
+     "text": "Regression test",
+     "done": false
+    }
+   ],
+   "links": [
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000001"
+    },
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000017"
+    }
+   ],
+   "created_at": 1767168000000,
+   "updated_at": 1767513600000,
+   "title": "Fix random logouts"
+  },
+  "tasks.link": {
+   "id": "01JAT000000000000000000001",
+   "status": "doing",
+   "order": 1,
+   "priority": "p0",
+   "project_ids": [
+    "01JAP000000000000000000001"
+   ],
+   "notes": "Users get logged out when two tabs refresh at once.",
+   "checklist": [
+    {
+     "id": "01JAR000000000000000000001",
+     "text": "Reproduce",
+     "done": true
+    },
+    {
+     "id": "01JAR000000000000000000002",
+     "text": "Single-flight rotation",
+     "done": false
+    },
+    {
+     "id": "01JAR000000000000000000003",
+     "text": "Regression test",
+     "done": false
+    }
+   ],
+   "links": [
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000001"
+    },
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000017"
+    }
+   ],
+   "created_at": 1767168000000,
+   "updated_at": 1767513600000,
+   "title": "Fix random logouts"
+  },
+  "tasks.unlink": {
+   "id": "01JAT000000000000000000001",
+   "status": "doing",
+   "order": 1,
+   "priority": "p0",
+   "project_ids": [
+    "01JAP000000000000000000001"
+   ],
+   "notes": "Users get logged out when two tabs refresh at once.",
+   "checklist": [
+    {
+     "id": "01JAR000000000000000000001",
+     "text": "Reproduce",
+     "done": true
+    },
+    {
+     "id": "01JAR000000000000000000002",
+     "text": "Single-flight rotation",
+     "done": false
+    },
+    {
+     "id": "01JAR000000000000000000003",
+     "text": "Regression test",
+     "done": false
+    }
+   ],
+   "links": [
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000001"
+    },
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000017"
+    }
+   ],
+   "created_at": 1767168000000,
+   "updated_at": 1767513600000,
+   "title": "Fix random logouts"
+  },
+  "tasks.checklist_add": {
+   "id": "01JAT000000000000000000001",
+   "status": "doing",
+   "order": 1,
+   "priority": "p0",
+   "project_ids": [
+    "01JAP000000000000000000001"
+   ],
+   "notes": "Users get logged out when two tabs refresh at once.",
+   "checklist": [
+    {
+     "id": "01JAR000000000000000000001",
+     "text": "Reproduce",
+     "done": true
+    },
+    {
+     "id": "01JAR000000000000000000002",
+     "text": "Single-flight rotation",
+     "done": false
+    },
+    {
+     "id": "01JAR000000000000000000003",
+     "text": "Regression test",
+     "done": false
+    }
+   ],
+   "links": [
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000001"
+    },
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000017"
+    }
+   ],
+   "created_at": 1767168000000,
+   "updated_at": 1767513600000,
+   "title": "Fix random logouts"
+  },
+  "tasks.checklist_update": {
+   "id": "01JAT000000000000000000001",
+   "status": "doing",
+   "order": 1,
+   "priority": "p0",
+   "project_ids": [
+    "01JAP000000000000000000001"
+   ],
+   "notes": "Users get logged out when two tabs refresh at once.",
+   "checklist": [
+    {
+     "id": "01JAR000000000000000000001",
+     "text": "Reproduce",
+     "done": true
+    },
+    {
+     "id": "01JAR000000000000000000002",
+     "text": "Single-flight rotation",
+     "done": false
+    },
+    {
+     "id": "01JAR000000000000000000003",
+     "text": "Regression test",
+     "done": false
+    }
+   ],
+   "links": [
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000001"
+    },
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000017"
+    }
+   ],
+   "created_at": 1767168000000,
+   "updated_at": 1767513600000,
+   "title": "Fix random logouts"
+  },
+  "tasks.checklist_remove": {
+   "id": "01JAT000000000000000000001",
+   "status": "doing",
+   "order": 1,
+   "priority": "p0",
+   "project_ids": [
+    "01JAP000000000000000000001"
+   ],
+   "notes": "Users get logged out when two tabs refresh at once.",
+   "checklist": [
+    {
+     "id": "01JAR000000000000000000001",
+     "text": "Reproduce",
+     "done": true
+    },
+    {
+     "id": "01JAR000000000000000000002",
+     "text": "Single-flight rotation",
+     "done": false
+    },
+    {
+     "id": "01JAR000000000000000000003",
+     "text": "Regression test",
+     "done": false
+    }
+   ],
+   "links": [
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000001"
+    },
+    {
+     "machine_id": "01JAM000000000000000000002",
+     "session_id": "01JAS000000000000000000017"
+    }
+   ],
+   "created_at": 1767168000000,
+   "updated_at": 1767513600000,
+   "title": "Fix random logouts"
+  },
+  "schedules.create": {
+   "id": "01JAC000000000000000000001",
+   "machine_id": "01JAM000000000000000000001",
+   "session_id": "01JAS000000000000000000018",
+   "name": "Inbox triage",
+   "spec": {
+    "kind": "cron",
+    "expr": "0 9 * * 1-5"
+   },
+   "timezone": "Europe/Berlin",
+   "message": "Check inbox/ and process anything new.",
+   "enabled": true,
+   "if_busy": "queue",
+   "missed": "skip",
+   "next_run": 1767650400000,
+   "recent_runs": [
+    {
+     "at": 1767564000000,
+     "outcome": "fired",
+     "detail": null,
+     "count": 1
+    },
+    {
+     "at": 1767340800000,
+     "outcome": "missed",
+     "detail": "devbox unreachable",
+     "count": 3
+    }
+   ],
+   "created_at": 1765872000000
+  },
+  "schedules.update": {
+   "id": "01JAC000000000000000000001",
+   "machine_id": "01JAM000000000000000000001",
+   "session_id": "01JAS000000000000000000018",
+   "name": "Inbox triage",
+   "spec": {
+    "kind": "cron",
+    "expr": "0 9 * * 1-5"
+   },
+   "timezone": "Europe/Berlin",
+   "message": "Check inbox/ and process anything new.",
+   "enabled": true,
+   "if_busy": "queue",
+   "missed": "skip",
+   "next_run": 1767650400000,
+   "recent_runs": [
+    {
+     "at": 1767564000000,
+     "outcome": "fired",
+     "detail": null,
+     "count": 1
+    },
+    {
+     "at": 1767340800000,
+     "outcome": "missed",
+     "detail": "devbox unreachable",
+     "count": 3
+    }
+   ],
+   "created_at": 1765872000000
+  },
+  "schedules.run_now": {
+   "id": "01JAC000000000000000000001",
+   "machine_id": "01JAM000000000000000000001",
+   "session_id": "01JAS000000000000000000018",
+   "name": "Inbox triage",
+   "spec": {
+    "kind": "cron",
+    "expr": "0 9 * * 1-5"
+   },
+   "timezone": "Europe/Berlin",
+   "message": "Check inbox/ and process anything new.",
+   "enabled": true,
+   "if_busy": "queue",
+   "missed": "skip",
+   "next_run": 1767650400000,
+   "recent_runs": [
+    {
+     "at": 1767564000000,
+     "outcome": "fired",
+     "detail": null,
+     "count": 1
+    },
+    {
+     "at": 1767340800000,
+     "outcome": "missed",
+     "detail": "devbox unreachable",
+     "count": 3
+    }
+   ],
+   "created_at": 1765872000000
+  }
+ },
+ "script": [
+  {
+   "delay_ms": 4000,
+   "notification": "state.events",
+   "params": {
+    "changes": [
+     {
+      "rev": 101,
+      "kind": "session_upserted",
+      "session": {
+       "machine_id": "01JAM000000000000000000001",
+       "stale": false,
+       "id": "01JAS000000000000000000002",
+       "name": "flaky e2e tests",
+       "title": null,
+       "cwd": "/home/alice/src/controlroom/web",
+       "agent": "pi",
+       "created_at": 1767427200000,
+       "updated_at": 1767600000000,
+       "closed_at": null,
+       "parent_id": null,
+       "spawned_by": null,
+       "state": "working",
+       "last_outcome": null,
+       "last_error": null,
+       "read_seq": 40,
+       "last_turn_end_seq": 40,
+       "unread": false,
+       "preview": "Re-running the failing spec",
+       "attention": null,
+       "rollup": {
+        "approvals": 0,
+        "questions": 0,
+        "problems": 0,
+        "unread": 0
+       },
+       "context": {
+        "used": 42000,
+        "size": 200000,
+        "cost": 0.42
+       },
+       "queue": {
+        "len": 2,
+        "paused": false,
+        "auto_send": true,
+        "send_now_pending": false
+       },
+       "requests": [],
+       "todo": null,
+       "live_work": {
+        "jobs": 1,
+        "children": 0,
+        "asks": 0
+       },
+       "options": [
+        {
+         "id": "model",
+         "label": "Model",
+         "kind": "select",
+         "value": "large",
+         "choices": [
+          {
+           "value": "large",
+           "label": "Large"
+          },
+          {
+           "value": "small",
+           "label": "Small"
+          }
+         ]
+        },
+        {
+         "id": "thinking",
+         "label": "Thinking",
+         "kind": "select",
+         "value": "medium",
+         "choices": [
+          {
+           "value": "off",
+           "label": "Off"
+          },
+          {
+           "value": "low",
+           "label": "Low"
+          },
+          {
+           "value": "medium",
+           "label": "Medium"
+          },
+          {
+           "value": "high",
+           "label": "High"
+          }
+         ]
+        }
+       ],
+       "sandbox": {
+        "level": "strict",
+        "default_level": "strict",
+        "explicit": false,
+        "looser_than_default": false,
+        "grants": []
+       },
+       "resumable": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "delay_ms": 100,
+   "notification": "session.events",
+   "params": {
+    "machine_id": "01JAM000000000000000000001",
+    "id": "01JAS000000000000000000002",
+    "head_seq": 120,
+    "ops": [],
+    "detail": {
+     "agent_sessions": [
+      {
+       "driver": "pi",
+       "native_id": "native-1",
+       "started_at": 1767427200000,
+       "ended_at": null,
+       "started_by": "new"
+      }
+     ],
+     "queue": [
+      {
+       "id": "01JAQ000000000000000000002",
+       "content": [
+        {
+         "kind": "text",
+         "text": "Then bisect the last 5 commits"
+        }
+       ],
+       "origin": {
+        "kind": "user",
+        "device": {
+         "device_id": "device-laptop",
+         "label": "Laptop (Firefox on Linux)"
+        }
+       },
+       "sending": false,
+       "queued_at": 1767599880000
+      },
+      {
+       "id": "01JAQ000000000000000000003",
+       "content": [
+        {
+         "kind": "text",
+         "text": "Summarize the flake rate"
+        }
+       ],
+       "origin": {
+        "kind": "user",
+        "device": {
+         "device_id": "device-laptop",
+         "label": "Laptop (Firefox on Linux)"
+        }
+       },
+       "sending": false,
+       "queued_at": 1767599820000
+      }
+     ],
+     "todos": [],
+     "auto_continue": {
+      "status": "off",
+      "reason": null,
+      "runs_used": 0,
+      "budget": 10
+     },
+     "jobs": [
+      {
+       "id": "01JAJ000000000000000000001",
+       "name": "dev server",
+       "command": "pnpm dev --port 5173",
+       "cwd": "/home/alice/src/controlroom/web",
+       "status": "running",
+       "exit": null,
+       "signal": null,
+       "started_at": 1767599400000,
+       "ended_at": null,
+       "timeout_s": null,
+       "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000001.log",
+       "lines": 120,
+       "follow": null
+      }
+     ],
+     "peers": [
+      {
+       "peer": {
+        "daemon_id": "01JAA000000000000000000002",
+        "session_id": "01JAS000000000000000000003",
+        "name": "e2e flake hunt"
+       },
+       "relation": "task",
+       "task": "Stabilize CI"
+      },
+      {
+       "peer": {
+        "daemon_id": "01JAA000000000000000000001",
+        "session_id": "01JAS000000000000000000009",
+        "name": "migrate UI to Svelte 5 runes"
+       },
+       "relation": "grant",
+       "task": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "delay_ms": 6000,
+   "notification": "state.events",
+   "params": {
+    "changes": [
+     {
+      "rev": 102,
+      "kind": "session_upserted",
+      "session": {
+       "machine_id": "01JAM000000000000000000001",
+       "stale": false,
+       "id": "01JAS000000000000000000013",
+       "name": "sweep: 8k–32k",
+       "title": null,
+       "cwd": "/home/alice/src/bench/sweep-8k",
+       "agent": "pi",
+       "created_at": 1767427200000,
+       "updated_at": 1767600000000,
+       "closed_at": null,
+       "parent_id": "01JAS000000000000000000011",
+       "spawned_by": null,
+       "state": "idle",
+       "last_outcome": "completed",
+       "last_error": null,
+       "read_seq": 40,
+       "last_turn_end_seq": 40,
+       "unread": true,
+       "preview": "8k–32k: p50 41 ms, p99 180 ms",
+       "attention": "unread",
+       "rollup": {
+        "approvals": 0,
+        "questions": 0,
+        "problems": 0,
+        "unread": 0
+       },
+       "context": {
+        "used": 42000,
+        "size": 200000,
+        "cost": 0.42
+       },
+       "queue": {
+        "len": 0,
+        "paused": false,
+        "auto_send": true,
+        "send_now_pending": false
+       },
+       "requests": [],
+       "todo": null,
+       "live_work": {
+        "jobs": 0,
+        "children": 0,
+        "asks": 0
+       },
+       "options": [
+        {
+         "id": "model",
+         "label": "Model",
+         "kind": "select",
+         "value": "large",
+         "choices": [
+          {
+           "value": "large",
+           "label": "Large"
+          },
+          {
+           "value": "small",
+           "label": "Small"
+          }
+         ]
+        },
+        {
+         "id": "thinking",
+         "label": "Thinking",
+         "kind": "select",
+         "value": "medium",
+         "choices": [
+          {
+           "value": "off",
+           "label": "Off"
+          },
+          {
+           "value": "low",
+           "label": "Low"
+          },
+          {
+           "value": "medium",
+           "label": "Medium"
+          },
+          {
+           "value": "high",
+           "label": "High"
+          }
+         ]
+        }
+       ],
+       "sandbox": {
+        "level": "strict",
+        "default_level": "strict",
+        "explicit": false,
+        "looser_than_default": false,
+        "grants": []
+       },
+       "resumable": true
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

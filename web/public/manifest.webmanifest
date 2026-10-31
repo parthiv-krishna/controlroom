@@ -1,0 +1,10 @@
+{
+  "name": "controlroom",
+  "short_name": "controlroom",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111113",
+  "theme_color": "#111113",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
