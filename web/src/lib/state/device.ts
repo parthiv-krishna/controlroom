@@ -1,6 +1,7 @@
 // This browser's device (spec §13 "Device names"): a persistent device_id in localStorage and a
 // user-chosen label. Until the user names it (or skips), the session list shows the naming prompt.
 import { guessDeviceName } from '../model/misc';
+import { randomUuid } from '../model/uuid';
 
 const ID = 'cr-device-id';
 const LABEL = 'cr-device-label';
@@ -30,7 +31,7 @@ function write(key: string, value: string): void {
 
 export function loadDevice(): LocalDevice {
   let id = read(ID);
-  if (!id) write(ID, (id = crypto.randomUUID()));
+  if (!id) write(ID, (id = randomUuid()));
   const guess = guessDeviceName(typeof navigator === 'undefined' ? '' : navigator.userAgent);
   return { id, label: read(LABEL) ?? guess, named: read(NAMED) === '1' };
 }

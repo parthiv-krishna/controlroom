@@ -8,6 +8,7 @@ import { deepLinkHash } from '../model/misc';
 import { keyOf, type Ctx } from '../model/projects';
 import { busy } from '../model/status';
 import { taskPrompt } from '../model/tasks';
+import { randomUuid } from '../model/uuid';
 import { leadsToMatch, treeIndex, treeRoots, type TreeIndex } from '../model/tree';
 import type { MachineSession, OpId, Project, SessionDetail, Task, TaskStatus } from '../protocol';
 import type { Client } from '../state/client.svelte';
@@ -16,7 +17,7 @@ import { Prefs } from './prefs.svelte';
 import { View, type NewSessionPreset, type SessionRef, type SettingsTab } from './view.svelte';
 
 /** A fresh idempotency key for one user action. */
-export const newOpId = (): OpId => crypto.randomUUID();
+export const newOpId = (): OpId => randomUuid();
 
 /** The common params of a pass-through command on a session. */
 export const onSession = (s: SessionRef) => ({ machine_id: s.machine_id, op_id: newOpId(), id: s.id });
