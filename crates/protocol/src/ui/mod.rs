@@ -18,6 +18,7 @@ mod people;
 mod projects;
 mod sandbox;
 mod schedules;
+mod sessions;
 mod state;
 
 pub use hello::*;
@@ -27,6 +28,7 @@ pub use people::*;
 pub use projects::*;
 pub use sandbox::*;
 pub use schedules::*;
+pub use sessions::*;
 pub use state::*;
 
 use serde::{Deserialize, Serialize};
@@ -65,6 +67,8 @@ pub mod methods {
 
         /// Handshake; must be the first call.
         Hello = "hello" (UiHelloParams) -> UiHelloResult;
+        /// Heartbeat: answers at once, so a client can tell a live connection from a dead one.
+        Ping = "ping" (NoParams) -> Ack;
         /// Subscribe to the aggregated state feed.
         StateSubscribe = "state.subscribe" (StateSubscribeParams) -> StateSubscribeResult;
         /// Subscribe to one session's timeline and detail.
@@ -160,8 +164,8 @@ pub mod methods {
         /// Report what this client shows, for push deduplication.
         ClientFocus = "client.focus" (ClientFocusParams) -> Ack;
 
-        /// Pass-through: create a session.
-        SessionCreate = "session.create" (OnMachine<SessionCreateParams>) -> SessionCreateResult;
+        /// Create a session with its first prompt and link it to tasks.
+        SessionCreate = "session.create" (UiSessionCreateParams) -> SessionCreateResult;
         /// Pass-through: send or queue a prompt.
         SessionPrompt = "session.prompt" (OnMachine<SessionPromptParams>) -> PromptResult;
         /// Pass-through: cancel the active run.

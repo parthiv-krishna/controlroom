@@ -18,6 +18,9 @@ pub enum ActionRequiredReason {
     AuthFailed,
     /// No host key is pinned yet. Confirm it with `machines.confirm_host_key`.
     HostKeyUnconfirmed,
+    /// Another controller is connected to the daemon (a daemon serves one controller at a
+    /// time). Stop the other controller, then `machines.reconnect`.
+    ControllerConflict,
     /// A reason this build doesn't know.
     #[serde(other)]
     Unknown,

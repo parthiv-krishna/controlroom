@@ -3,4 +3,4 @@
 /**
  * Why reconnecting stopped until the user acts.
  */
-export type ActionRequiredReason = "host_key_changed" | "auth_failed" | "host_key_unconfirmed" | "unknown";
+export type ActionRequiredReason = "host_key_changed" | "auth_failed" | "host_key_unconfirmed" | "controller_conflict" | "unknown";

@@ -147,9 +147,11 @@ Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.
 | Method | Purpose |
 | --- | --- |
 | `hello` | → server version, protocol, `auth` (oidc · dev_token), `user`, `push {vapid_public_key}?`, capabilities |
+| `ping` | heartbeat; answers at once |
 | `state.subscribe {since: {epoch, rev}?}` | aggregated feed: machines, sessions (`MachineSession`: summary + `machine_id` + `stale`), projects, tasks, contact grants, schedules, devices |
 | `session.subscribe` · `unsubscribe` | as in the daemon API, with `machine_id` |
-| *pass-through* | every session, queue, request, todo, job, `sandbox.revoke`, `agents.list`, `fs.list`, `doctor.report`, `settings.*` method, params wrapped in `OnMachine` (`machine_id` next to the daemon fields); unreachable machine → `machine_unavailable` |
+| `session.create {machine_id, …daemon create incl. prompt?, task_ids?}` | create with the first prompt (atomic on the daemon; the controller fills `sandbox` and the prompt `origin`), then link to tasks (moving `backlog`/`todo` tasks to `doing`); idempotent under one `op_id` → the daemon result |
+| *pass-through* | every other session, queue, request, todo, job, `sandbox.revoke`, `agents.list`, `fs.list`, `doctor.report`, `settings.*` method, params wrapped in `OnMachine` (`machine_id` next to the daemon fields); unreachable machine → `machine_unavailable` |
 | `machines.add` → `add_confirm` · `confirm_host_key` · `remove` · `reconnect` · `upgrade` · `set_settings {name?, key?, auto_upgrade?}` | machines |
 | `keys.list` · `rotate` · `generate` · `import` · `delete` | SSH keys |
 | `projects.create` · `update` · `delete` | projects (location prefixes) |
@@ -163,7 +165,7 @@ Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.
 
 Notifications: `state.events {changes[{rev, kind}]}` (machine/session/project/task/grant/schedule/device `_upserted` / `_removed`), `session.events` (with `machine_id`).
 
-**Connectivity** (`Machine.connectivity`, by `state`): `connected · connecting · unreachable · incompatible · action_required {reason: host_key_changed|auth_failed|host_key_unconfirmed, presented_host_key?}`, plus `Machine.update_available`.
+**Connectivity** (`Machine.connectivity`, by `state`): `connected · connecting · unreachable · incompatible · action_required {reason: host_key_changed|auth_failed|host_key_unconfirmed|controller_conflict, presented_host_key?}`, plus `Machine.update_available`.
 UI-only errors: `unauthenticated · machine_unavailable{machine_id, connectivity} · host_key_mismatch · unsupported_platform · key_in_use · invalid_key`.
 
 ## 7. TypeScript

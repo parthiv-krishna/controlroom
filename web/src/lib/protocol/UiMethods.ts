@@ -60,7 +60,6 @@ import type { ScheduleRef } from "./ScheduleRef";
 import type { SchedulesCreateParams } from "./SchedulesCreateParams";
 import type { SchedulesUpdateParams } from "./SchedulesUpdateParams";
 import type { SendNowResult } from "./SendNowResult";
-import type { SessionCreateParams } from "./SessionCreateParams";
 import type { SessionCreateResult } from "./SessionCreateResult";
 import type { SessionEventsParams } from "./SessionEventsParams";
 import type { SessionMarkReadParams } from "./SessionMarkReadParams";
@@ -91,6 +90,7 @@ import type { TodoReorderParams } from "./TodoReorderParams";
 import type { TodoUpdateParams } from "./TodoUpdateParams";
 import type { UiHelloParams } from "./UiHelloParams";
 import type { UiHelloResult } from "./UiHelloResult";
+import type { UiSessionCreateParams } from "./UiSessionCreateParams";
 import type { UnsubscribeParams } from "./UnsubscribeParams";
 
 /**
@@ -101,6 +101,10 @@ export type UiMethods = {
    * Handshake; must be the first call.
    */
   "hello": { params: UiHelloParams, result: UiHelloResult },
+  /**
+   * Heartbeat: answers at once, so a client can tell a live connection from a dead one.
+   */
+  "ping": { params: NoParams, result: Ack },
   /**
    * Subscribe to the aggregated state feed.
    */
@@ -270,9 +274,9 @@ export type UiMethods = {
    */
   "client.focus": { params: ClientFocusParams, result: Ack },
   /**
-   * Pass-through: create a session.
+   * Create a session with its first prompt and link it to tasks.
    */
-  "session.create": { params: OnMachine<SessionCreateParams>, result: SessionCreateResult },
+  "session.create": { params: UiSessionCreateParams, result: SessionCreateResult },
   /**
    * Pass-through: send or queue a prompt.
    */

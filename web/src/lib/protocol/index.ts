@@ -251,6 +251,7 @@ export type * from "./ToolStatus";
 export type * from "./UiHelloParams";
 export type * from "./UiHelloResult";
 export type * from "./UiMethods";
+export type * from "./UiSessionCreateParams";
 export type * from "./UnixMillis";
 export type * from "./UnsubscribeParams";
 export type * from "./UsageScope";
