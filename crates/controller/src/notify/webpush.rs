@@ -2,6 +2,7 @@
 //! via `web-push-native`), sent with reqwest over rustls.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use data_encoding::BASE64URL_NOPAD;
@@ -9,6 +10,7 @@ use futures::future::BoxFuture;
 use web_push_native::jwt_simple::algorithms::{ECDSAP256PublicKeyLike, ES256KeyPair};
 use web_push_native::{Auth, WebPushBuilder, p256};
 
+use super::endpoint::{self, PublicResolver};
 use super::{PushOutcome, PushSender};
 use crate::store::PushSubscriptionRow;
 
@@ -83,12 +85,18 @@ pub struct WebPushSender {
 }
 
 impl WebPushSender {
-    /// A sender authenticating as `vapid`, with contact `subject`.
+    /// A sender authenticating as `vapid`, with contact `subject`. It never follows redirects
+    /// and only connects to public addresses.
     pub fn new(vapid: VapidKey, subject: String) -> Self {
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .dns_resolver(Arc::new(PublicResolver))
+            .build()
+            .expect("a rustls reqwest client builds");
         Self {
             vapid,
             subject,
-            http: reqwest::Client::new(),
+            http,
         }
     }
 
@@ -97,6 +105,7 @@ impl WebPushSender {
         sub: &PushSubscriptionRow,
         payload: &[u8],
     ) -> Result<reqwest::Request, String> {
+        endpoint::check(&sub.endpoint)?;
         let endpoint = sub.endpoint.parse().map_err(|e| format!("endpoint: {e}"))?;
         let decode = |s: &str| {
             BASE64URL_NOPAD
@@ -180,5 +189,9 @@ mod tests {
         let mut bad = sub.clone();
         bad.auth = BASE64URL_NOPAD.encode(&[1u8; 3]);
         assert!(sender.request(&bad, b"x").is_err());
+        // A stored endpoint that points inside is refused at send time too.
+        let mut inside = sub.clone();
+        inside.endpoint = "https://169.254.169.254/latest".into();
+        assert!(sender.request(&inside, b"x").is_err());
     }
 }

@@ -7,10 +7,13 @@
 //! - **Payloads** carry metadata only: session and machine ids and names, the attention kind,
 //!   and a deep link. Never code, prompts or tool output.
 //! - Subscriptions the push service reports gone (404/410) are deleted.
+//! - **SSRF guard:** endpoints must be public `https` host names, are checked again at send
+//!   time, must resolve to public addresses, and redirects aren't followed (`endpoint`).
 //!
 //! In-app notifications need nothing extra: the state feed carries each session's
 //! server-owned `attention`, which open tabs show.
 
+mod endpoint;
 mod webpush;
 
 use std::sync::{Arc, Weak};
@@ -259,8 +262,8 @@ async fn deliver(
     Ok(())
 }
 
-/// Parses a browser's `PushSubscription.toJSON()` for `device`. Only https endpoints are
-/// accepted.
+/// Parses a browser's `PushSubscription.toJSON()` for `device`. Only public https endpoints
+/// are accepted (`endpoint::check`).
 pub(crate) fn parse_subscription(
     device: &DeviceId,
     subscription: &serde_json::Value,
@@ -275,10 +278,10 @@ pub(crate) fn parse_subscription(
             "subscription must be a PushSubscription with endpoint and keys",
         ));
     };
-    if !endpoint.starts_with("https://") {
-        return Err(crate::errors::invalid_params(
-            "push endpoints must be https URLs",
-        ));
+    if let Err(why) = endpoint::check(&endpoint) {
+        return Err(crate::errors::invalid_params(format!(
+            "invalid push endpoint: {why}"
+        )));
     }
     Ok(PushSubscriptionRow {
         device_id: device.clone(),
