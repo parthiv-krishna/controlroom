@@ -134,10 +134,7 @@ fn connect_starts_a_detached_daemon_that_outlives_the_connection() {
     let mut bridge = Bridge::start(&home);
     let response = bridge.hello();
     assert_eq!(response["id"], 7);
-    assert!(
-        response["result"]["daemon_id"].is_string(),
-        "{response}"
-    );
+    assert!(response["result"]["daemon_id"].is_string(), "{response}");
     let out = bridge.close();
     assert!(
         out.status.success(),
@@ -207,7 +204,11 @@ fn concurrent_connects_share_one_daemon() {
 fn ctl_hello_starts_the_daemon() {
     let home = Home::new();
     let out = home.command(&["ctl", "hello"]).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let hello: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(hello["protocol_version"]["major"], 1);
     assert_eq!(home.daemons().len(), 1);

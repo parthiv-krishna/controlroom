@@ -26,7 +26,12 @@ fn create_prompt_reply_idle() {
     let texts: Vec<String> = ops
         .iter()
         .filter(|op| op["item"]["kind"] == "message")
-        .map(|op| op["item"]["content"][0]["text"].as_str().unwrap_or("").to_owned())
+        .map(|op| {
+            op["item"]["content"][0]["text"]
+                .as_str()
+                .unwrap_or("")
+                .to_owned()
+        })
         .collect();
     assert_eq!(texts, ["hi", "Hello there."]);
 
@@ -42,7 +47,8 @@ fn op_id_replay_applies_once() {
     let env = Env::with(json!({}));
     let client = env.client();
     client.watch_machine();
-    let create = json!({"op_id": "create-1", "agent": "fake", "cwd": env.work(), "sandbox_level": "off"});
+    let create =
+        json!({"op_id": "create-1", "agent": "fake", "cwd": env.work(), "sandbox_level": "off"});
     let first = client.call("session.create", create.clone());
     let again = client.call("session.create", create);
     assert_eq!(first["session"]["id"], again["session"]["id"]);
@@ -64,7 +70,10 @@ fn op_id_replay_applies_once() {
         "op_id_conflict",
     );
     let snapshot = env.client().watch_machine();
-    assert_eq!(snapshot["snapshot"]["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        snapshot["snapshot"]["sessions"].as_array().unwrap().len(),
+        1
+    );
 }
 
 fn option_value(summary: &Value, id: &str) -> Value {
@@ -156,7 +165,11 @@ fn start_fresh_with_history() {
         json!({"op_id": op(), "id": id, "include_history": true}),
     );
     let path = result["history_path"].as_str().unwrap().to_owned();
-    assert!(std::fs::read_to_string(&path).unwrap().contains("Remember 42."));
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("Remember 42.")
+    );
     client.wait_idle(&id);
     client.prompt(&id, "again");
     client.wait_session(&id, "the second turn", |s| {
@@ -165,7 +178,10 @@ fn start_fresh_with_history() {
     // The first prompt of the new agent session points at the export.
     let sent = env.prompts_sent(&id);
     assert_eq!(sent.len(), 2, "{sent:?}");
-    assert!(sent[1].contains(&path) && sent[1].contains("again"), "{sent:?}");
+    assert!(
+        sent[1].contains(&path) && sent[1].contains("again"),
+        "{sent:?}"
+    );
     let (sub, _) = client.session_ops(&id, 0);
     assert_eq!(sub["detail"]["agent_sessions"].as_array().unwrap().len(), 2);
 }
@@ -193,9 +209,10 @@ fn close_reopen_delete() {
 
     client.call("session.delete", json!({"op_id": op(), "id": id}));
     client.wait_notification("session_removed", |n| {
-        n["params"]["changes"]
-            .as_array()
-            .is_some_and(|c| c.iter().any(|c| c["kind"] == "session_removed" && c["id"] == id))
+        n["params"]["changes"].as_array().is_some_and(|c| {
+            c.iter()
+                .any(|c| c["kind"] == "session_removed" && c["id"] == id)
+        })
     });
     let dir = env.state().join("sessions").join(&id);
     wait_until("the session files to go", || !dir.exists());

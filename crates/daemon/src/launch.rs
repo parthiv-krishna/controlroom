@@ -221,7 +221,10 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
 /// supervisor files) and the short socket path `<state>/run/<id>.sock`.
 pub fn supervisor_paths(dirs: &Dirs, id: &SessionId) -> Paths {
     Paths {
-        dir: SessionLayout::new(dirs.state(), id).root().as_path().to_owned(),
+        dir: SessionLayout::new(dirs.state(), id)
+            .root()
+            .as_path()
+            .to_owned(),
         socket: dirs.supervisor_socket(id.as_str()).as_path().to_owned(),
     }
 }

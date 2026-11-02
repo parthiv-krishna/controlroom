@@ -203,7 +203,7 @@ impl SandboxConfig {
                 })
                 .collect::<Result<_, SettingsError>>()?,
             approval_timeout_secs: self.approval_timeout_secs,
-            nono_tmp: path("nono_tmp", &self.nono_tmp)?,
+            nono_tmp: short_nono_tmp(path("nono_tmp", &self.nono_tmp)?)?,
             routes: self
                 .routes
                 .iter()
@@ -247,6 +247,20 @@ impl RouteConfig {
             cache_ttl_secs: self.cache_ttl_secs,
         })
     }
+}
+
+/// Longest usable `nono_tmp`: nono 0.80 binds
+/// `<TMPDIR>/nono-tool-sandbox-<pid>-<19 digits>-<16 hex>/supervisor.sock` (78 bytes after the
+/// directory) and fails beyond the 107-byte `sun_path` limit.
+pub const NONO_TMP_MAX: usize = 28;
+
+fn short_nono_tmp(dir: AbsPath) -> Result<AbsPath, SettingsError> {
+    if dir.as_str().len() > NONO_TMP_MAX {
+        return Err(SettingsError(format!(
+            "nono_tmp {dir:?} is longer than {NONO_TMP_MAX} bytes; nono binds unix sockets in it"
+        )));
+    }
+    Ok(dir)
 }
 
 /// Loads `sandbox.toml`.
@@ -331,6 +345,7 @@ approve = ["GET /model/info"]
         };
         bad("read_only = [\"relative\"]");
         bad("nono_tmp = \"tmp\"");
+        bad("nono_tmp = \"/var/tmp/a-rather-long-directory-name\"");
         bad("[[routes]]\nprovider = \"x\"\nupstream = \"http://example.com\"\n");
         bad(
             "[[routes]]\nprovider = \"x\"\nupstream = \"https://example.com\"\nallow = [\"POST\"]\n",

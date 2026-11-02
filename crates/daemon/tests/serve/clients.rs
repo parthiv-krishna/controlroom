@@ -24,7 +24,11 @@ fn hello_required_and_errors() {
     assert_eq!(hello["protocol_version"]["major"], 1);
     assert!(hello["daemon_id"].is_string());
     // The bad lines failed on their own; the one with a readable id got its answer.
-    raw.call_err("hello", hello_params(json!({"kind": "debug"})), "invalid_request");
+    raw.call_err(
+        "hello",
+        hello_params(json!({"kind": "debug"})),
+        "invalid_request",
+    );
 
     raw.call_err(
         "session.create",
@@ -38,7 +42,11 @@ fn hello_required_and_errors() {
     );
     raw.call_err("session.nope", json!({}), "method_not_found");
     raw.call_err("session.prompt", json!({"id": 3}), "invalid_params");
-    raw.call_err("job.list", json!({"id": ulid::Ulid::generate().to_string()}), "unsupported");
+    raw.call_err(
+        "job.list",
+        json!({"id": ulid::Ulid::generate().to_string()}),
+        "unsupported",
+    );
     raw.call_err(
         "unsubscribe",
         json!({"subscription_id": ulid::Ulid::generate().to_string()}),
@@ -53,9 +61,18 @@ fn hello_required_and_errors() {
         .find(|a| a["agent"] == "fake")
         .unwrap()
         .clone();
-    assert_eq!((fake["status"].as_str(), fake["driver"].as_str()), (Some("ok"), Some("pi")));
+    assert_eq!(
+        (fake["status"].as_str(), fake["driver"].as_str()),
+        (Some("ok"), Some("pi"))
+    );
     let fs = raw.call("fs.list", json!({"path": "~"}));
-    assert!(fs["entries"].as_array().unwrap().iter().any(|e| e["name"] == "work"));
+    assert!(
+        fs["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["name"] == "work")
+    );
     let settings = raw.call("settings.set", json!({"op_id": op(), "idle_timeout_h": 12}));
     assert_eq!(settings["idle_timeout_h"], 12);
     assert_eq!(raw.call("settings.get", json!({}))["idle_timeout_h"], 12);
@@ -97,7 +114,10 @@ fn one_controller_per_daemon() {
         match next.try_call("hello", controller(&b)) {
             Ok(_) => break,
             Err(e) if e["data"]["kind"] == "controller_conflict" => {
-                assert!(std::time::Instant::now() < deadline, "the old controller stayed");
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the old controller stayed"
+                );
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
             Err(e) => panic!("{e}"),
@@ -117,9 +137,15 @@ fn subscriptions_resume_from_since_seq_and_since_rev() {
 
     let (first, ops) = client.session_ops(&id, 0);
     let head = first["head_seq"].as_u64().unwrap();
-    assert!(ops.iter().any(|op| op["item"]["content"][0]["text"] == "One."));
+    assert!(
+        ops.iter()
+            .any(|op| op["item"]["content"][0]["text"] == "One.")
+    );
     let rev = client.call("machine.subscribe", json!({"since_rev": machine["rev"]}));
-    assert!(rev["snapshot"].is_null(), "a known rev resumes without a snapshot");
+    assert!(
+        rev["snapshot"].is_null(),
+        "a known rev resumes without a snapshot"
+    );
 
     let later = env.client();
     later.watch_machine();
@@ -132,7 +158,11 @@ fn subscriptions_resume_from_since_seq_and_since_rev() {
         .iter()
         .filter_map(|op| op["item"]["content"][0]["text"].as_str())
         .collect();
-    assert_eq!(texts, ["second", "Two."], "only items changed after since_seq");
+    assert_eq!(
+        texts,
+        ["second", "Two."],
+        "only items changed after since_seq"
+    );
 
     // Raw frames only for subscriptions that ask for them.
     let raw = later.call(
@@ -143,7 +173,10 @@ fn subscriptions_resume_from_since_seq_and_since_rev() {
         n["params"]["subscription_id"] == raw["subscription_id"]
     });
     assert!(!events["params"]["raw"].as_array().unwrap().is_empty());
-    let unsub = later.call("unsubscribe", json!({"subscription_id": raw["subscription_id"]}));
+    let unsub = later.call(
+        "unsubscribe",
+        json!({"subscription_id": raw["subscription_id"]}),
+    );
     assert_eq!(unsub, json!({}));
 }
 
@@ -189,11 +222,23 @@ fn ctl_round_trip() {
     let env = Env::with(texts(&["From ctl."]));
     let ctl = |args: &[&str]| {
         let out = env.command().arg("ctl").args(args).output().unwrap();
-        assert!(out.status.success(), "ctl {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "ctl {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         String::from_utf8(out.stdout).unwrap()
     };
     let work = env.work();
-    let created = ctl(&["create", "--agent", "fake", "--cwd", &work, "--sandbox", "off"]);
+    let created = ctl(&[
+        "create",
+        "--agent",
+        "fake",
+        "--cwd",
+        &work,
+        "--sandbox",
+        "off",
+    ]);
     let summary: Value = serde_json::from_str(&created).unwrap();
     let id = summary["id"].as_str().unwrap().to_owned();
     let watcher = env.client();
@@ -205,7 +250,13 @@ fn ctl_round_trip() {
     });
     assert_eq!(env.prompts_sent(&id), ["hello ctl"]);
     let agents: Value = serde_json::from_str(&ctl(&["call", "agents.list"])).unwrap();
-    assert!(agents["agents"].as_array().unwrap().iter().any(|a| a["agent"] == "fake"));
+    assert!(
+        agents["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["agent"] == "fake")
+    );
 
     // `ctl watch` renders the timeline until the daemon goes away.
     let mut watch = env

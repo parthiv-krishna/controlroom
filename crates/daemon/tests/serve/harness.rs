@@ -30,8 +30,7 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A stand-in `$SHELL`: runs `-lc <command>` with a plain `/bin/sh`, so host profile scripts
 /// can't print into transcripts.
-const LOGIN_SHELL: &str =
-    "#!/bin/sh\n[ \"$1\" = -lc ] || { echo \"bad shell args: $*\" >&2; exit 99; }\nexec /bin/sh -c \"$2\"\n";
+const LOGIN_SHELL: &str = "#!/bin/sh\n[ \"$1\" = -lc ] || { echo \"bad shell args: $*\" >&2; exit 99; }\nexec /bin/sh -c \"$2\"\n";
 
 /// The fake agent binary; see the module docs.
 pub fn fake_agent() -> &'static Path {
@@ -52,7 +51,13 @@ pub fn fake_agent() -> &'static Path {
             };
             let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
             let status = Command::new(cargo)
-                .args(["build", "-p", "controlroom-fake-agent", "--profile", &profile])
+                .args([
+                    "build",
+                    "-p",
+                    "controlroom-fake-agent",
+                    "--profile",
+                    &profile,
+                ])
                 .status()
                 .expect("building controlroom-fake-agent");
             assert!(status.success(), "building controlroom-fake-agent failed");
@@ -91,7 +96,15 @@ pub struct Env {
 impl Env {
     /// An empty environment (no daemon yet).
     pub fn new() -> Self {
-        let dir = tempfile::Builder::new().prefix("cr").tempdir().unwrap();
+        Self::new_in(&std::env::temp_dir())
+    }
+
+    /// An empty environment in a scratch directory under `parent`.
+    pub fn new_in(parent: &Path) -> Self {
+        let dir = tempfile::Builder::new()
+            .prefix("cr")
+            .tempdir_in(parent)
+            .unwrap();
         let shell = dir.path().join("login-shell");
         write_executable(&shell, LOGIN_SHELL);
         std::fs::create_dir_all(dir.path().join("work")).unwrap();
@@ -128,7 +141,10 @@ impl Env {
     }
 
     pub fn transcript_path(&self, session: &str) -> PathBuf {
-        self.state().join("sessions").join(session).join("transcript.jsonl")
+        self.state()
+            .join("sessions")
+            .join(session)
+            .join("transcript.jsonl")
     }
 
     /// Registers agent `name` as the fake agent running `scenario` (pi driver).
@@ -249,8 +265,13 @@ impl Env {
     /// The pid of the session's running supervisor and agent.
     pub fn supervisor_pids(&self, session: &str) -> (u32, u32) {
         let info: Value = serde_json::from_slice(
-            &std::fs::read(self.state().join("sessions").join(session).join("supervisor.json"))
-                .unwrap(),
+            &std::fs::read(
+                self.state()
+                    .join("sessions")
+                    .join(session)
+                    .join("supervisor.json"),
+            )
+            .unwrap(),
         )
         .unwrap();
         (
@@ -285,10 +306,19 @@ impl Drop for Env {
             let _ = child.kill();
             let _ = child.wait();
         }
-        for pid in self.processes() {
-            if let Some(pid) = Pid::from_raw(pid) {
-                let _ = kill_process(pid, Signal::KILL);
+        // A supervisor launcher killed mid-launch may already have forked its detached child:
+        // scan until two scans in a row find nothing.
+        let mut quiet = 0;
+        let deadline = Instant::now() + TIMEOUT;
+        while quiet < 2 && Instant::now() < deadline {
+            let pids = self.processes();
+            quiet = if pids.is_empty() { quiet + 1 } else { 0 };
+            for pid in pids {
+                if let Some(pid) = Pid::from_raw(pid) {
+                    let _ = kill_process(pid, Signal::KILL);
+                }
             }
+            std::thread::sleep(Duration::from_millis(10));
         }
         if std::thread::panicking() {
             let log = std::fs::read_to_string(self.path().join("daemon.log")).unwrap_or_default();
@@ -296,6 +326,17 @@ impl Drop for Env {
             eprintln!("--- daemon.log (last lines, newest first) ---");
             for line in tail {
                 eprintln!("{line}");
+            }
+            let sessions = std::fs::read_dir(self.state().join("sessions"));
+            for session in sessions.into_iter().flatten().flatten() {
+                for file in ["supervisor.log", "transcript.jsonl"] {
+                    let text =
+                        std::fs::read_to_string(session.path().join(file)).unwrap_or_default();
+                    eprintln!("--- {} ---", session.path().join(file).display());
+                    for line in text.lines().rev().take(25).collect::<Vec<_>>().iter().rev() {
+                        eprintln!("{}", line.chars().take(400).collect::<String>());
+                    }
+                }
             }
         }
     }
@@ -417,7 +458,9 @@ impl Client {
 
     /// The response to request `id` (the whole message).
     pub fn response(&self, id: i64) -> Value {
-        self.wait(&format!("response {id}"), |inbox| inbox.responses.remove(&id))
+        self.wait(&format!("response {id}"), |inbox| {
+            inbox.responses.remove(&id)
+        })
     }
 
     /// Calls `method`: `Ok(result)` or `Err(error)`.
@@ -453,7 +496,11 @@ impl Client {
     pub fn watch_machine(&self) -> Value {
         let result = self.call("machine.subscribe", json!({"since_rev": null}));
         let mut inbox = self.lock();
-        for session in result["snapshot"]["sessions"].as_array().into_iter().flatten() {
+        for session in result["snapshot"]["sessions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
             inbox
                 .summaries
                 .entry(session["id"].as_str().unwrap().to_owned())
@@ -467,11 +514,6 @@ impl Client {
         self.wait(&format!("session {what}"), |inbox| {
             inbox.summaries.get(session).filter(|s| pred(s)).cloned()
         })
-    }
-
-    /// The latest summary of `session` seen so far.
-    pub fn summary(&self, session: &str) -> Value {
-        self.lock().summaries.get(session).cloned().unwrap_or(Value::Null)
     }
 
     /// Every notification received so far.
@@ -489,7 +531,9 @@ impl Client {
 
     /// Waits until the daemon closes the connection.
     pub fn wait_closed(&self) {
-        self.wait("the connection to close", |inbox| inbox.closed.then_some(()));
+        self.wait("the connection to close", |inbox| {
+            inbox.closed.then_some(())
+        });
     }
 
     /// Creates a session of `agent` (sandbox off) in `cwd`; returns its id.
@@ -548,7 +592,10 @@ impl Client {
     /// Subscribes to `session` from `since` and collects its ops until `until` holds for the
     /// collected text; returns the subscription id and the ops.
     pub fn session_ops(&self, session: &str, since: u64) -> (Value, Vec<Value>) {
-        let result = self.call("session.subscribe", json!({"id": session, "since_seq": since}));
+        let result = self.call(
+            "session.subscribe",
+            json!({"id": session, "since_seq": since}),
+        );
         let sub = result["subscription_id"].clone();
         let ops = self.wait("the session backlog", |inbox| {
             let index = inbox.notifications.iter().position(|n| {

@@ -62,7 +62,8 @@ impl Host for DaemonHost {
     fn resolve_cwd(&self, cwd: &RemotePath) -> BoxFuture<'_, Result<RemotePath, RpcError>> {
         let cwd = cwd.clone();
         Box::pin(async move {
-            let path = expand_home(cwd.as_str(), self.dirs.home()).map_err(|e| fs_error(&cwd, e))?;
+            let path =
+                expand_home(cwd.as_str(), self.dirs.home()).map_err(|e| fs_error(&cwd, e))?;
             match tokio::fs::metadata(path.as_path()).await {
                 Ok(meta) if meta.is_dir() => Ok(RemotePath::from(path.as_str())),
                 Ok(_) => Err(fs_error(&cwd, "not a directory")),
@@ -124,7 +125,9 @@ impl Host for DaemonHost {
     ) -> BoxFuture<'_, Result<Box<dyn RecordStream>, HostError>> {
         Box::pin(async move {
             let id = Self::session_id(session)?;
-            let path = supervisor_paths(&self.dirs, &id).dir.join("transcript.jsonl");
+            let path = supervisor_paths(&self.dirs, &id)
+                .dir
+                .join("transcript.jsonl");
             Ok(Box::new(read_file(path, from.0)) as Box<dyn RecordStream>)
         })
     }
@@ -143,7 +146,9 @@ impl Host for DaemonHost {
             let dir = supervisor_paths(&self.dirs, &id).dir;
             tokio::fs::create_dir_all(&dir).await.map_err(host_error)?;
             let path = dir.join(&name);
-            tokio::fs::write(&path, contents).await.map_err(host_error)?;
+            tokio::fs::write(&path, contents)
+                .await
+                .map_err(host_error)?;
             Ok(RemotePath::from(path.to_string_lossy().as_ref()))
         })
     }

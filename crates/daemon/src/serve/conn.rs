@@ -18,8 +18,7 @@ use controlroom_protocol::daemon::{ClientRole, HelloParams, HelloResult, methods
 use controlroom_protocol::ids::SubscriptionId;
 use controlroom_protocol::jsonrpc::encode_line;
 use controlroom_protocol::{
-    DAEMON_PROTOCOL_VERSION, ErrorData, Message, Method, RpcError, RpcId, RpcRequest,
-    RpcResponse,
+    DAEMON_PROTOCOL_VERSION, ErrorData, Message, Method, RpcError, RpcId, RpcRequest, RpcResponse,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -139,7 +138,8 @@ pub async fn serve(shared: Arc<Shared>, id: u64, stream: UnixStream) {
             Ok(Message::Request(request)) => request,
             Ok(Message::Notification(_) | Message::Response(_)) => continue,
             Err(e) => {
-                conn.send(&RpcResponse::<Value>::error(e.id, *e.error)).await;
+                conn.send(&RpcResponse::<Value>::error(e.id, *e.error))
+                    .await;
                 continue;
             }
         };

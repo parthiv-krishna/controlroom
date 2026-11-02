@@ -95,9 +95,8 @@ impl DaemonAgents {
         if let Some(path) = cached.as_ref() {
             return Ok(path.clone());
         }
-        let path = launch::find_nono(shell, setting, self.dirs.home()).map_err(|e| {
-            sandbox_unavailable(format!("nono: {e} (see `controlroomd doctor`)"))
-        })?;
+        let path = launch::find_nono(shell, setting, self.dirs.home())
+            .map_err(|e| sandbox_unavailable(format!("nono: {e} (see `controlroomd doctor`)")))?;
         *cached = Some(path.clone());
         Ok(path)
     }
@@ -130,7 +129,8 @@ impl Agents for DaemonAgents {
         let host = self.host(policy.level != SandboxLevel::Off)?;
         let session = controlroom_sandbox::SessionId::new(&start.session.to_string())
             .map_err(|e| sandbox_unavailable(e.to_string()))?;
-        let cwd = AbsPath::new(start.cwd.as_str()).map_err(|e| sandbox_unavailable(e.to_string()))?;
+        let cwd =
+            AbsPath::new(start.cwd.as_str()).map_err(|e| sandbox_unavailable(e.to_string()))?;
         let launch = launch::AgentLaunch {
             session,
             cwd,
@@ -218,9 +218,9 @@ pub fn policy(level: WireLevel, spec: &SandboxSpec) -> Result<EffectivePolicy, R
 
 #[cfg(test)]
 mod tests {
+    use controlroom_protocol::UnixMillis;
     use controlroom_protocol::ids::GrantId;
     use controlroom_protocol::session::{MediatedCommand, SandboxGrant};
-    use controlroom_protocol::UnixMillis;
 
     use super::*;
 
@@ -244,7 +244,11 @@ mod tests {
                 grant(GrantKind::Path, "/srv/data", GrantScope::Standing),
                 grant(GrantKind::Path, "/srv/once", GrantScope::Once),
                 grant(GrantKind::Path, "relative", GrantScope::Standing),
-                grant(GrantKind::Domain, "registry.example.com", GrantScope::Session),
+                grant(
+                    GrantKind::Domain,
+                    "registry.example.com",
+                    GrantScope::Session,
+                ),
             ],
             domains: vec!["git.example.com".into(), "*.bad".into()],
             mediated: vec![MediatedCommand {
@@ -272,12 +276,15 @@ mod tests {
         };
         assert!(policy(WireLevel::Strict, &bad).is_err());
         assert_eq!(
-            policy(WireLevel::Unknown, &SandboxSpec {
-                level: WireLevel::Off,
-                grants: vec![],
-                domains: vec![],
-                mediated: vec![],
-            })
+            policy(
+                WireLevel::Unknown,
+                &SandboxSpec {
+                    level: WireLevel::Off,
+                    grants: vec![],
+                    domains: vec![],
+                    mediated: vec![],
+                }
+            )
             .unwrap()
             .level,
             SandboxLevel::Strict

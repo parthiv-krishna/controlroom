@@ -132,7 +132,10 @@ fn dormant_session_resumes_lazily_on_prompt() {
     // SIGTERM leaves the agent running; then the agent goes away while no daemon runs.
     let (supervisor, agent) = env.supervisor_pids(&id);
     assert!(env.stop_daemon().success());
-    assert!(alive(supervisor) && alive(agent), "agents outlive the daemon");
+    assert!(
+        alive(supervisor) && alive(agent),
+        "agents outlive the daemon"
+    );
     kill(supervisor);
     kill(agent);
     wait_until("the agent to exit", || !alive(supervisor) && !alive(agent));
@@ -159,5 +162,8 @@ fn dormant_session_resumes_lazily_on_prompt() {
         })
         .collect();
     assert_eq!(metas.len(), 2);
-    assert!(metas[1].iter().any(|a| a.contains("--session ")), "{metas:?}");
+    assert!(
+        metas[1].iter().any(|a| a.contains("--session ")),
+        "{metas:?}"
+    );
 }

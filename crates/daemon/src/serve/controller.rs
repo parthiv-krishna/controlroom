@@ -72,7 +72,9 @@ mod tests {
         controllers.claim(a, 1, close1).unwrap();
         let (close2, _) = watch::channel(false);
         let err = controllers.claim(b, 2, close2).unwrap_err();
-        assert!(matches!(err.data, Some(ErrorData::ControllerConflict { controller_id, .. }) if controller_id == a));
+        assert!(
+            matches!(err.data, Some(ErrorData::ControllerConflict { controller_id, .. }) if controller_id == a)
+        );
         assert!(!*closed1.borrow());
 
         let (close3, closed3) = watch::channel(false);

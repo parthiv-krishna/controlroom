@@ -123,11 +123,7 @@ pub async fn subscribe_session(conn: &Arc<Conn>, id: RpcId, params: SessionSubsc
         raw: params.raw_since.is_some(),
         head_seq: subscription.head_seq,
     };
-    let task = tokio::spawn(feed.run(
-        subscription.backlog,
-        subscription.raw,
-        subscription.updates,
-    ));
+    let task = tokio::spawn(feed.run(subscription.backlog, subscription.raw, subscription.updates));
     conn.add_subscription(subscription_id, task.abort_handle());
 }
 
@@ -156,7 +152,10 @@ impl SessionFeed {
                     let runtime = &self.conn.shared.runtime;
                     let since = self.head_seq;
                     let raw_since = self.raw.then_some(since);
-                    match runtime.subscribe_session(self.session, since, raw_since).await {
+                    match runtime
+                        .subscribe_session(self.session, since, raw_since)
+                        .await
+                    {
                         Ok(again) => {
                             self.head_seq = again.head_seq;
                             updates = again.updates;

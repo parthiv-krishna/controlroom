@@ -70,7 +70,11 @@ fn dialog_approve_and_deny() {
         .filter(|op| op["item"]["kind"] == "tool_call")
         .filter_map(|op| op["item"]["status"].as_str())
         .collect();
-    assert_eq!(statuses, ["completed", "cancelled"], "allowed, then blocked");
+    assert_eq!(
+        statuses,
+        ["completed", "cancelled"],
+        "allowed, then blocked"
+    );
     let values: Vec<String> = answers(&env, &id)
         .iter()
         .filter_map(|a| a["value"].as_str().map(str::to_owned))
@@ -116,7 +120,11 @@ fn two_clients_race_a_decision() {
     setup.wait_session(&id, "the turn end", |s| {
         s["state"] == "idle" && s["last_turn_end_seq"].as_u64() > Some(0)
     });
-    assert_eq!(answers(&env, &id).len(), 1, "the agent got exactly one answer");
+    assert_eq!(
+        answers(&env, &id).len(),
+        1,
+        "the agent got exactly one answer"
+    );
     // A late answer learns the winner too.
     let late = respond(&setup, &id, &request, "0").unwrap_err();
     assert_eq!(late["data"]["kind"], "already_resolved");

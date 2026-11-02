@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Acceptance for the agent launch glue (spec §11): a real `pi --mode rpc` under the pinned nono,
-# fake credentials only, a local mock model, driven by raw RPC lines through its supervisor.
+# Acceptance (spec §11): a real `pi --mode rpc` under the pinned nono, fake credentials only, a
+# local mock model. `acceptance_pi_nono` drives it through the launch glue and raw RPC lines;
+# `acceptance_serve` drives it through `controlroomd serve`, SIGKILLs the daemon mid-run and
+# checks the run completes with no duplicate prompt.
 # Needs Nix, Landlock and pi:
 #
 #   crates/daemon/scripts/acceptance-pi-nono.sh             # pi from PATH
@@ -28,8 +30,9 @@ version=$("$CR_TEST_NONO" --version)
 
 cd "$repo"
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-cargo test -q -p controlroomd --test acceptance_pi_nono --no-run
+cargo test -q -p controlroomd --test acceptance_pi_nono --test acceptance_serve --no-run
+cargo build -q -p controlroom-fake-agent
 mkdir -p "$work/home" "$work/xdg"/{config,data,state,cache}
 HOME="$work/home" XDG_CONFIG_HOME="$work/xdg/config" XDG_DATA_HOME="$work/xdg/data" \
   XDG_STATE_HOME="$work/xdg/state" XDG_CACHE_HOME="$work/xdg/cache" PI_CODING_AGENT_DIR="" \
-  cargo test -p controlroomd --test acceptance_pi_nono -- --ignored --nocapture "$@"
+  cargo test -p controlroomd --test acceptance_pi_nono --test acceptance_serve -- --ignored --nocapture "$@"

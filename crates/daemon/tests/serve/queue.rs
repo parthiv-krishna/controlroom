@@ -49,7 +49,10 @@ fn queue_auto_advances_and_pauses_on_failure() {
     let mark = client.turn_mark(&id);
     client.call("queue.resume", json!({"op_id": op(), "id": id}));
     client.wait_turn(&id, mark);
-    assert_eq!(env.prompts_sent(&id), ["first", "second", "third", "fourth"]);
+    assert_eq!(
+        env.prompts_sent(&id),
+        ["first", "second", "third", "fourth"]
+    );
 }
 
 /// Prompts `first` (held at gate `hold` inside `reply`) and queues `second`; returns the
@@ -119,9 +122,10 @@ fn send_now_during_a_tool_steers_after_the_tool() {
         .expect("the tool end");
     assert!(steer_seq < tool_end_seq);
     let (_, ops) = client.session_ops(&id, 0);
-    assert!(ops.iter().any(|op| {
-        op["item"]["kind"] == "tool_call" && op["item"]["status"] == "completed"
-    }));
+    assert!(
+        ops.iter()
+            .any(|op| { op["item"]["kind"] == "tool_call" && op["item"]["status"] == "completed" })
+    );
     assert_eq!(env.prompts_sent(&id), ["first", "second"]);
 }
 
