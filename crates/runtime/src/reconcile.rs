@@ -140,8 +140,10 @@ impl Core {
                 }
                 return;
             }
-            let safe_point =
-                view.open_tools == 0 || !view.open_requests.is_empty() || head.interrupt;
+            let safe_point = view.open_tools == 0
+                || !view.open_requests.is_empty()
+                || session.pending_raised().next().is_some()
+                || head.interrupt;
             let tag = internal_tag(format!("{SEND_NOW_CANCEL}{}", head.id));
             if safe_point
                 && !session.live.cancel_sent
@@ -177,8 +179,11 @@ impl Core {
     }
 
     /// A cancel was handed over: the run's undecided requests become moot, so a late answer
-    /// learns that instead of being sent.
+    /// learns that instead of being sent. Raised requests are withdrawn (their waiters deny).
     fn cancelled(&mut self, id: SessionId) {
+        if let Err(e) = self.end_pending_raised(id, RequestState::Withdrawn) {
+            tracing::warn!("session {id}: withdrawing raised requests: {e}");
+        }
         let Ok(session) = self.session_mut(id) else {
             return;
         };

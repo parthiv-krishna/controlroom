@@ -113,6 +113,16 @@ impl Decision {
     }
 }
 
+/// A request the daemon raised for the session itself (e.g. a sandbox approval), outside the
+/// agent's transcript. Its resolution goes back to whoever raised it, never to the agent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Raised {
+    /// The request with its current state and answer.
+    pub request: Request,
+    /// The transcript head when it was raised; its timeline item sits there.
+    pub seq: Seq,
+}
+
 /// One agent session, with the native file needed to resume it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AgentSessionRow {
@@ -166,6 +176,8 @@ pub(crate) struct SessionData {
     pub agent_sessions: Vec<AgentSessionRow>,
     pub queue: Vec<QueueEntry>,
     pub decisions: BTreeMap<RequestId, Decision>,
+    /// Requests the daemon raised, pending or resolved.
+    pub raised: BTreeMap<RequestId, Raised>,
 }
 
 impl SessionData {

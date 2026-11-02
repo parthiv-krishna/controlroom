@@ -25,6 +25,7 @@ fn allow(id: SessionId, request_id: controlroom_protocol::ids::RequestId) -> Req
             reason: None,
         },
         then: None,
+        by: None,
     }
 }
 
@@ -197,7 +198,7 @@ async fn dormant_session_resumes_lazily_on_prompt() {
     })
     .await;
     let detail =
-        h.rt.subscribe_session(id, Seq(0), None)
+        h.rt.subscribe_session(id, Some(Seq(0)), None)
             .await
             .unwrap()
             .detail;

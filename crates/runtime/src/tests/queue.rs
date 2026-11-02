@@ -27,6 +27,7 @@ fn send_now(id: SessionId, queue_id: QueueId) -> QueueSendNowParams {
         op_id: OpId::generate(),
         id,
         queue_id,
+        interrupt: false,
     }
 }
 
@@ -205,17 +206,27 @@ async fn send_now_during_tool_waits_for_the_tool() {
     assert_eq!(h.host.prompts(id), ["run the tool", "urgent"]);
     assert!(!h.summary(id).queue.send_now_pending);
 
-    // "Interrupt now" (send-now pressed again) cancels without waiting.
+    // "Interrupt now" escalates a send-now that waits for the tool: it cancels at once (the
+    // tool's gate is never released). Pressing send-now again without it changes nothing.
     h.prompt(id, "run the tool again").await;
     h.wait(id, "tool running", |s| s.preview == "make test")
         .await;
+    let before = cancels(&h, id);
     let now = queued(h.prompt(id, "now!").await);
+    for _ in 0..2 {
+        assert_eq!(
+            h.rt.send_now(send_now(id, now)).await.unwrap(),
+            SendNowResult::Interrupting
+        );
+    }
+    assert!(h.summary(id).queue.send_now_pending);
+    assert_eq!(cancels(&h, id), before);
+    let interrupt = QueueSendNowParams {
+        interrupt: true,
+        ..send_now(id, now)
+    };
     assert_eq!(
-        h.rt.send_now(send_now(id, now)).await.unwrap(),
-        SendNowResult::Interrupting
-    );
-    assert_eq!(
-        h.rt.send_now(send_now(id, now)).await.unwrap(),
+        h.rt.send_now(interrupt).await.unwrap(),
         SendNowResult::Interrupting
     );
     h.wait(id, "the interrupting run", |s| {
@@ -223,6 +234,57 @@ async fn send_now_during_tool_waits_for_the_tool() {
     })
     .await;
     assert_eq!(h.host.prompts(id).len(), 4);
+    assert_eq!(cancels(&h, id), before + 1);
+}
+
+#[tokio::test]
+async fn interrupt_now_cancels_instead_of_steering() {
+    let caps = Capabilities {
+        steer: true,
+        ..caps()
+    };
+    let mut h = Harness::with(send_now_script(), caps).await;
+    let id = h.create().await;
+    h.prompt(id, "run the tool").await;
+    h.wait(id, "tool running", |s| s.preview == "make test")
+        .await;
+    let now = queued(h.prompt(id, "stop and do this").await);
+    let result =
+        h.rt.send_now(QueueSendNowParams {
+            interrupt: true,
+            ..send_now(id, now)
+        })
+        .await
+        .unwrap();
+    assert_eq!(result, SendNowResult::Interrupting);
+    h.wait(id, "the new run", |s| {
+        s.preview == "next one handled" && s.state == SessionState::Idle
+    })
+    .await;
+    assert_eq!(h.host.prompts(id), ["run the tool", "stop and do this"]);
+    assert_eq!(cancels(&h, id), 1);
+}
+
+#[tokio::test]
+async fn send_now_on_a_stopped_session_is_queued_until_the_agent_is_up() {
+    let mut h = Harness::new(send_now_script()).await;
+    let id = h.create().await;
+    h.prompt(id, "stream please").await;
+    h.wait(id, "streaming", |s| s.preview == "partial").await;
+    let later = queued(h.prompt(id, "later").await);
+    // The agent dies mid-run: the item waits in a paused queue of a stopped session.
+    h.host.kill_agent(id);
+    let s = h.wait_state(id, SessionState::Interrupted).await;
+    assert!(s.queue.paused && s.queue.len == 1);
+    assert_eq!(
+        h.rt.send_now(send_now(id, later)).await.unwrap(),
+        SendNowResult::Queued
+    );
+    h.wait(id, "the item's run", |s| {
+        s.preview == "next one handled" && s.state == SessionState::Idle
+    })
+    .await;
+    assert_eq!(h.host.prompts(id), ["stream please", "later"]);
 }
 
 #[tokio::test]
@@ -251,6 +313,7 @@ async fn send_now_during_permission_withdraws_the_request() {
                 reason: None,
             },
             then: None,
+            by: None,
         })
         .await
         .unwrap_err();

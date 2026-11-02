@@ -3,21 +3,132 @@
 use controlroom_drivers::fake::wire::Command;
 use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::daemon::{
-    IfBusy, MachineEvent, OptionValue, PromptResult, SessionCreateParams, SessionMarkReadParams,
-    SessionOpParams, SessionPromptParams, SessionSetOptionParams,
+    IfBusy, InitialPrompt, MachineEvent, OptionValue, PromptResult, SessionCreateParams,
+    SessionMarkReadParams, SessionOpParams, SessionPromptParams, SessionSetOptionParams,
 };
 use controlroom_protocol::ids::{OpId, RemotePath, Rev, Seq, SessionId};
 use controlroom_protocol::session::{
     ContextUsage, OptionChoice, OptionControl, PromptOrigin, RunOutcome, SessionOption,
     SessionState, StartedBy,
 };
-use controlroom_protocol::timeline::{ItemBody, MessageRole, TimelineOp};
-use controlroom_protocol::{ErrorData, RpcError};
+use controlroom_protocol::timeline::{ItemBody, MessageRole, RunTrigger, TimelineOp};
+use controlroom_protocol::{ErrorData, Resource, RpcError};
 
 use super::{Harness, text};
 
 fn kind(e: &RpcError) -> &ErrorData {
     e.data.as_ref().unwrap()
+}
+
+#[tokio::test]
+async fn create_with_a_first_prompt_is_one_command() {
+    let script = FakeScript::default().default_turn([FakeStep::Text("on it".into())]);
+    let mut h = Harness::new(script).await;
+    let create = SessionCreateParams {
+        op_id: OpId::new("create-with-prompt"),
+        agent: "fake".into(),
+        cwd: RemotePath::new("~/src/app"),
+        name: None,
+        parent_id: None,
+        spawned_by: None,
+        sandbox_level: None,
+        sandbox: None,
+        prompt: Some(InitialPrompt {
+            content: text("fix the flaky test"),
+            origin: PromptOrigin::default(),
+        }),
+    };
+    let created = h.rt.create(create.clone()).await.unwrap();
+    let id = created.session.id;
+    assert!(matches!(created.prompt, Some(PromptResult::Queued { .. })));
+    assert_eq!(
+        created.session.queue.len, 1,
+        "the prompt is queued with the session"
+    );
+    assert_eq!(created.session.state, SessionState::Starting);
+    // A retried create returns the same session and prompt; nothing is created twice.
+    assert_eq!(h.rt.create(create.clone()).await.unwrap(), created);
+
+    let s = h
+        .wait(id, "the first run", |s| {
+            s.last_outcome == Some(RunOutcome::Completed) && s.queue.len == 0
+        })
+        .await;
+    assert_eq!(s.preview, "on it");
+    assert_eq!(h.host.prompts(id), ["fix the flaky test"]);
+    // It ran as the user's prompt, not as a queued one.
+    let sub =
+        h.rt.subscribe_session(id, Some(Seq(0)), None)
+            .await
+            .unwrap();
+    let triggers: Vec<RunTrigger> = sub
+        .backlog
+        .iter()
+        .filter_map(|item| match &item.body {
+            ItemBody::Run { trigger, .. } => Some(trigger.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(triggers, [RunTrigger::User { device: None }]);
+    let machine = h.rt.subscribe_machine(None).unwrap();
+    assert_eq!(machine.snapshot.unwrap().sessions.len(), 1);
+
+    // After a restart the replay still finds the stored result; the prompt isn't resent.
+    let mut h = h.restart().await;
+    assert_eq!(h.rt.create(create).await.unwrap(), created);
+    h.wait_state(id, SessionState::Idle).await;
+    assert_eq!(h.host.prompts(id), ["fix the flaky test"]);
+
+    // An empty first prompt is refused, and nothing is created.
+    let err =
+        h.rt.create(SessionCreateParams {
+            op_id: OpId::generate(),
+            prompt: Some(InitialPrompt {
+                content: Vec::new(),
+                origin: PromptOrigin::default(),
+            }),
+            ..plain_create()
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(kind(&err), &ErrorData::InvalidParams);
+    let machine = h.rt.subscribe_machine(None).unwrap();
+    assert_eq!(machine.snapshot.unwrap().sessions.len(), 1);
+}
+
+fn plain_create() -> SessionCreateParams {
+    SessionCreateParams {
+        op_id: OpId::generate(),
+        agent: "fake".into(),
+        cwd: RemotePath::new("~/src/app"),
+        name: None,
+        parent_id: None,
+        spawned_by: None,
+        sandbox_level: None,
+        sandbox: None,
+        prompt: None,
+    }
+}
+
+#[tokio::test]
+async fn a_detail_only_subscription_has_no_timeline() {
+    let script = FakeScript::default().default_turn([FakeStep::Text("hello".into())]);
+    let mut h = Harness::new(script).await;
+    let id = h.create().await;
+    h.prompt(id, "hi").await;
+    h.wait(id, "the reply", |s| {
+        s.preview == "hello" && s.state == SessionState::Idle
+    })
+    .await;
+    let full =
+        h.rt.subscribe_session(id, Some(Seq(0)), None)
+            .await
+            .unwrap();
+    let detail = h.rt.subscribe_session(id, None, None).await.unwrap();
+    assert!(!full.backlog.is_empty());
+    assert!(detail.backlog.is_empty());
+    assert_eq!(detail.head_seq, full.head_seq);
+    assert_eq!(detail.detail, full.detail);
 }
 
 #[tokio::test]
@@ -66,7 +177,10 @@ async fn create_prompt_reply_idle() {
     let unread = h.rt.mark_unread(h.op(id)).await.unwrap();
     assert_eq!((unread.read_seq, unread.unread), (Seq(end.0 - 1), true));
 
-    let detail = h.rt.subscribe_session(id, Seq(0), None).await.unwrap();
+    let detail =
+        h.rt.subscribe_session(id, Some(Seq(0)), None)
+            .await
+            .unwrap();
     assert_eq!(detail.detail.agent_sessions.len(), 1);
     assert_eq!(detail.detail.agent_sessions[0].started_by, StartedBy::New);
     // The run's prompt and reply are in the materialized timeline.
@@ -102,6 +216,7 @@ async fn unknown_agents_and_sessions() {
             spawned_by: None,
             sandbox_level: None,
             sandbox: None,
+            prompt: None,
         })
         .await
         .unwrap_err();
@@ -122,6 +237,7 @@ async fn op_id_replay_applies_once() {
         spawned_by: None,
         sandbox_level: None,
         sandbox: None,
+        prompt: None,
     };
     let first = h.rt.create(create.clone()).await.unwrap();
     let again = h.rt.create(create).await.unwrap();
@@ -216,6 +332,7 @@ async fn set_option_reaches_the_agent_once() {
     let mut h = Harness::new(options_script()).await;
     let id = h.create().await;
     assert_eq!(model(&h.summary(id)), "model-1");
+    assert!(h.summary(id).agent_live);
 
     let params = set(id, "model", OptionValue::Choice("model-2".into()));
     h.rt.set_option(params.clone()).await.unwrap();
@@ -230,8 +347,18 @@ async fn set_option_reaches_the_agent_once() {
     };
     assert_eq!(sets(&h), 1);
 
+    let err =
+        h.rt.set_option(set(id, "nope", OptionValue::Choice("x".into())))
+            .await
+            .unwrap_err();
+    assert_eq!(
+        kind(&err),
+        &ErrorData::NotFound {
+            resource: Resource::Option,
+            id: "nope".into()
+        }
+    );
     for (option, value) in [
-        ("nope", OptionValue::Choice("x".into())),
         ("model", OptionValue::Choice("model-9".into())),
         ("model", OptionValue::Bool(true)),
         ("fast", OptionValue::Choice("true".into())),
@@ -243,7 +370,8 @@ async fn set_option_reaches_the_agent_once() {
 
     // A stopped agent isn't started for it.
     h.host.kill_agent(id);
-    h.wait_state(id, SessionState::Dormant).await;
+    let s = h.wait_state(id, SessionState::Dormant).await;
+    assert!(!s.agent_live);
     let err =
         h.rt.set_option(set(id, "fast", OptionValue::Bool(true)))
             .await
@@ -345,9 +473,12 @@ async fn subscriptions_resume_from_since_seq_and_since_rev() {
     assert!(after.rev >= rev);
 
     // The timeline: everything from 0, and from the middle only what changed after it.
-    let all = h.rt.subscribe_session(id, Seq(0), None).await.unwrap();
+    let all =
+        h.rt.subscribe_session(id, Some(Seq(0)), None)
+            .await
+            .unwrap();
     let mid = Seq(all.head_seq.0 / 2);
-    let rest = h.rt.subscribe_session(id, mid, None).await.unwrap();
+    let rest = h.rt.subscribe_session(id, Some(mid), None).await.unwrap();
     assert!(rest.backlog.len() < all.backlog.len());
     assert!(rest.backlog.iter().all(|item| item.seq_to > mid));
     assert!(
@@ -357,7 +488,7 @@ async fn subscriptions_resume_from_since_seq_and_since_rev() {
     );
     // Raw frames on request.
     let raw =
-        h.rt.subscribe_session(id, all.head_seq, Some(mid))
+        h.rt.subscribe_session(id, Some(all.head_seq), Some(mid))
             .await
             .unwrap();
     assert!(raw.backlog.is_empty());
@@ -376,7 +507,10 @@ async fn live_updates_follow_the_backlog_without_gaps() {
     let id = h.create().await;
     h.prompt(id, "go").await;
     h.wait(id, "first text", |s| s.preview == "one").await;
-    let mut sub = h.rt.subscribe_session(id, Seq(0), None).await.unwrap();
+    let mut sub =
+        h.rt.subscribe_session(id, Some(Seq(0)), None)
+            .await
+            .unwrap();
     h.host.release(id, "go");
     let mut appended = String::new();
     let mut head = sub.head_seq;

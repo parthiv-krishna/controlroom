@@ -21,7 +21,8 @@
 //! **Modules:** `core` (state and transactions), `ingest` (folding records), `reconcile`,
 //! `commands`, `lifecycle` and `io` (agent processes and supervisor attachments),
 //! `policy` (the tick: idle-stop, retention, pruning), `timeline` (materialization), `store`
-//! (SQLite with versioned migrations), `preview`, `history` (start-fresh export).
+//! (SQLite with versioned migrations), `preview`, `history` (start-fresh export), `raised`
+//! (requests the daemon raises itself, such as sandbox approvals).
 //!
 //! **Not yet here** (later phases add them as new modules and migrations): injection beyond
 //! the intent, jobs, todos and auto-continue, children, the mailbox and contact policy.
@@ -37,6 +38,7 @@ mod model;
 mod policy;
 pub mod ports;
 mod preview;
+mod raised;
 mod reconcile;
 mod runtime;
 mod session;
@@ -46,5 +48,6 @@ mod timeline;
 #[cfg(test)]
 mod tests;
 
+pub use raised::{RaiseRequest, RaisedRequest};
 pub use runtime::{MachineSubscription, OpenError, Runtime, RuntimeConfig, SessionSubscription};
 pub use session::SessionUpdate;

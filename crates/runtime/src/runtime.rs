@@ -14,7 +14,7 @@ use controlroom_protocol::daemon::{
     StartFreshResult,
 };
 use controlroom_protocol::ids::{DaemonId, Rev, Seq, SessionId};
-use controlroom_protocol::session::{SessionDetail, SessionSummary};
+use controlroom_protocol::session::{RequestState, SessionDetail, SessionSummary};
 use controlroom_protocol::timeline::{RawFrame, TimelineItem};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -26,6 +26,7 @@ use crate::core::Core;
 use crate::errors::{busy, internal};
 use crate::io;
 use crate::ports::{Agents, Clock, Host};
+use crate::raised::{RaiseRequest, RaisedRequest};
 use crate::session::{Session, SessionUpdate, raw_frame};
 use crate::store::{MigrateError, Store};
 
@@ -170,7 +171,8 @@ impl Runtime {
 
     /// Startup recovery (spec §6.6): re-folds every transcript and reattaches live
     /// supervisors, concurrently. Sessions whose supervisor is gone become `interrupted` or
-    /// `dormant`; a start that never finished is retried.
+    /// `dormant`; a start that never finished is retried. Requests the previous daemon raised
+    /// and nobody answered expire: whoever waited for them is gone.
     pub async fn recover(&self) {
         let ids: Vec<SessionId> = self
             .inner
@@ -179,13 +181,17 @@ impl Runtime {
             .into_iter()
             .map(|id| io::recover_session(self.inner.clone(), id));
         futures::future::join_all(recoveries).await;
-        let _ = self.inner.transact(|core| {
+        let finished = self.inner.transact(|core| {
             let ids: Vec<SessionId> = core.sessions.keys().copied().collect();
             for id in ids {
+                core.end_pending_raised(id, RequestState::Expired)?;
                 core.touch(id);
             }
             Ok(())
         });
+        if let Err(e) = finished {
+            tracing::warn!("finishing recovery: {e}");
+        }
         self.inner.recovered.send_replace(true);
     }
 
@@ -281,11 +287,12 @@ impl Runtime {
         })
     }
 
-    /// `session.subscribe`, served from the materialized timeline.
+    /// `session.subscribe`, served from the materialized timeline. `since: None` asks for the
+    /// detail only (no timeline backlog).
     pub async fn subscribe_session(
         &self,
         id: SessionId,
-        since: Seq,
+        since: Option<Seq>,
         raw_since: Option<Seq>,
     ) -> Result<SessionSubscription, RpcError> {
         self.recovered().await;
@@ -294,10 +301,15 @@ impl Runtime {
             if session.live.loading {
                 return Err(busy("the session is loading; try again"));
             }
-            core.flush_timeline(id)?;
             let head = core.head(id);
-            let since = if since > head { Seq(0) } else { since };
-            let backlog = core.store.timeline_since(id, since).map_err(internal)?;
+            let backlog = match since {
+                Some(since) => {
+                    core.flush_timeline(id)?;
+                    let since = if since > head { Seq(0) } else { since };
+                    core.store.timeline_since(id, since).map_err(internal)?
+                }
+                None => Vec::new(),
+            };
             let session = core.session(id)?;
             Ok((head, session.detail(), backlog, session.updates.subscribe()))
         })?;
@@ -328,6 +340,17 @@ impl Runtime {
     /// `settings.get`.
     pub fn settings(&self) -> DaemonSettings {
         self.inner.with_core(|core| core.settings.clone())
+    }
+
+    /// Raises a blocking request on the session for the daemon itself (e.g. a sandbox
+    /// approval) and returns its handle; see [`RaisedRequest`].
+    pub async fn raise(
+        &self,
+        id: SessionId,
+        request: RaiseRequest,
+    ) -> Result<RaisedRequest, RpcError> {
+        self.recovered().await;
+        crate::raised::raise(&self.inner, id, request)
     }
 
     // -----------------------------------------------------------------------------------------

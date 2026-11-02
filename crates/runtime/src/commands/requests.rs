@@ -13,8 +13,9 @@ use crate::errors::{invalid_params, not_found};
 use crate::model::{Decision, QueueEntry, Via};
 
 impl Core {
-    /// Records the decision (the reconcile loop writes the answer) and applies `then` as a
-    /// send-now prompt.
+    /// Records the decision and applies `then` as a send-now prompt. An agent's request is
+    /// answered by the reconcile loop; a raised one goes back to whoever raised it. The
+    /// answer records the deciding device (`by`).
     pub(crate) fn respond(
         &mut self,
         params: &RequestRespondParams,
@@ -23,46 +24,24 @@ impl Core {
             validate_content(then)?;
         }
         let id = params.id;
-        let session = self.session(id)?;
-        if let Some(decision) = session.data.decisions.get(&params.request_id) {
-            return Err(already_resolved(decision.request.clone()));
-        }
-        let mut request = session
-            .derived
-            .requests
-            .get(&params.request_id)
-            .cloned()
-            .ok_or_else(|| not_found(Resource::Request, &params.request_id))?;
-        let open =
-            session.derived.process.live && session.view().open_requests.contains(&request.id);
-        if request.state != RequestState::Pending || !open {
-            if request.state == RequestState::Pending {
-                request.state = RequestState::Withdrawn;
-            }
-            return Err(already_resolved(request));
-        }
-        check_response(&request, &params.response)?;
-        request.state = RequestState::Answered;
-        request.answer = Some(RequestAnswer {
-            label: answer_label(&request, &params.response),
-            response: params.response.clone(),
-            by: None,
-            at: self.clock.now(),
-        });
-        let decision = Decision {
-            request: request.clone(),
-            op_id: Some(params.op_id.clone()),
-        };
-        self.session_mut(id)?
+        let request = if self
+            .session(id)?
             .data
-            .decisions
-            .insert(request.id.clone(), decision);
+            .raised
+            .contains_key(&params.request_id)
+        {
+            self.answer_raised(params)?
+        } else {
+            self.answer_agent(params)?
+        };
         let then = match &params.then {
             Some(content) => {
                 let entry = QueueEntry {
                     id: QueueId::generate(),
                     content: content.clone(),
-                    origin: PromptOrigin::default(),
+                    origin: PromptOrigin::User {
+                        device: params.by.clone(),
+                    },
                     op_id: params.op_id.clone(),
                     queued_at: self.clock.now(),
                     direct: false,
@@ -86,6 +65,67 @@ impl Core {
             }
         };
         Ok(RequestRespondResult { request, then })
+    }
+
+    /// Answers a request the daemon raised: the first resolution wins.
+    fn answer_raised(&mut self, params: &RequestRespondParams) -> Result<Request, RpcError> {
+        let session = self.session(params.id)?;
+        let Some(raised) = session.data.raised.get(&params.request_id) else {
+            return Err(not_found(Resource::Request, &params.request_id));
+        };
+        let mut request = raised.request.clone();
+        if request.state != RequestState::Pending {
+            return Err(already_resolved(request));
+        }
+        check_response(&request, &params.response)?;
+        request.state = RequestState::Answered;
+        request.answer = Some(self.answer(&request, params));
+        self.settle_raised(params.id, request.clone())?;
+        Ok(request)
+    }
+
+    fn answer(&self, request: &Request, params: &RequestRespondParams) -> RequestAnswer {
+        RequestAnswer {
+            label: answer_label(request, &params.response),
+            response: params.response.clone(),
+            by: params.by.clone(),
+            at: self.clock.now(),
+        }
+    }
+
+    /// Records the decision on one of the agent's requests (the reconcile loop writes it).
+    fn answer_agent(&mut self, params: &RequestRespondParams) -> Result<Request, RpcError> {
+        let id = params.id;
+        let session = self.session(id)?;
+        if let Some(decision) = session.data.decisions.get(&params.request_id) {
+            return Err(already_resolved(decision.request.clone()));
+        }
+        let mut request = session
+            .derived
+            .requests
+            .get(&params.request_id)
+            .cloned()
+            .ok_or_else(|| not_found(Resource::Request, &params.request_id))?;
+        let open =
+            session.derived.process.live && session.view().open_requests.contains(&request.id);
+        if request.state != RequestState::Pending || !open {
+            if request.state == RequestState::Pending {
+                request.state = RequestState::Withdrawn;
+            }
+            return Err(already_resolved(request));
+        }
+        check_response(&request, &params.response)?;
+        request.state = RequestState::Answered;
+        request.answer = Some(self.answer(&request, params));
+        let decision = Decision {
+            request: request.clone(),
+            op_id: Some(params.op_id.clone()),
+        };
+        self.session_mut(id)?
+            .data
+            .decisions
+            .insert(request.id.clone(), decision);
+        Ok(request)
     }
 }
 

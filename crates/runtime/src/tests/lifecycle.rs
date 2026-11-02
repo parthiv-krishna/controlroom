@@ -26,6 +26,7 @@ fn create_params() -> SessionCreateParams {
         spawned_by: None,
         sandbox_level: None,
         sandbox: None,
+        prompt: None,
     }
 }
 
@@ -42,7 +43,7 @@ async fn agent_sessions(
     h: &Harness,
     id: SessionId,
 ) -> Vec<controlroom_protocol::session::AgentSession> {
-    h.rt.subscribe_session(id, Seq(0), None)
+    h.rt.subscribe_session(id, Some(Seq(0)), None)
         .await
         .unwrap()
         .detail

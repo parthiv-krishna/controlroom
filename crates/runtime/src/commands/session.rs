@@ -10,14 +10,14 @@ use controlroom_protocol::daemon::{
 };
 use controlroom_protocol::ids::{QueueId, RemotePath, Seq, SessionId};
 use controlroom_protocol::session::{
-    DriverKind, OptionControl, SandboxLevel, SandboxSpec, SessionState, StartedBy,
+    DriverKind, OptionControl, RequestState, SandboxLevel, SandboxSpec, SessionState, StartedBy,
 };
-use controlroom_protocol::{ErrorData, RpcError};
+use controlroom_protocol::{ErrorData, Resource, RpcError};
 use std::collections::BTreeMap;
 
 use super::validate_content;
 use crate::core::{Core, Task};
-use crate::errors::{busy, internal, invalid_params, invalid_state, unsupported};
+use crate::errors::{busy, internal, invalid_params, invalid_state, not_found, unsupported};
 use crate::model::{Delivery, QueueEntry, SessionData, Via};
 use crate::session::Session;
 
@@ -26,6 +26,8 @@ const STOP_GRACE: Duration = Duration::from_secs(5);
 
 impl Core {
     /// `session.create`, with the agent's driver and the expanded cwd resolved by the caller.
+    /// A first prompt is queued in the same transaction, tagged with the create's op id, so
+    /// it reaches the agent exactly once, as a user prompt.
     pub(crate) fn create(
         &mut self,
         params: &SessionCreateParams,
@@ -34,6 +36,9 @@ impl Core {
     ) -> Result<controlroom_protocol::daemon::SessionCreateResult, RpcError> {
         if let Some(parent) = params.parent_id {
             self.session(parent)?;
+        }
+        if let Some(prompt) = &params.prompt {
+            validate_content(&prompt.content)?;
         }
         let id = SessionId::generate();
         let data = SessionData {
@@ -67,12 +72,34 @@ impl Core {
             agent_sessions: Vec::new(),
             queue: Vec::new(),
             decisions: BTreeMap::new(),
+            raised: BTreeMap::new(),
         };
         let driver = self.agents.driver(driver);
         self.insert_session(Session::new(data, driver));
+        let prompt = match &params.prompt {
+            Some(prompt) => {
+                let entry = QueueEntry {
+                    id: QueueId::generate(),
+                    content: prompt.content.clone(),
+                    origin: prompt.origin.clone(),
+                    op_id: params.op_id.clone(),
+                    queued_at: self.clock.now(),
+                    direct: true,
+                    send_now: true,
+                    interrupt: false,
+                    no_steer: false,
+                    delivery: None,
+                };
+                let queue_id = entry.id;
+                self.enqueue(id, entry, true)?;
+                Some(PromptResult::Queued { queue_id })
+            }
+            None => None,
+        };
         self.request_start(id, StartedBy::New)?;
         Ok(controlroom_protocol::daemon::SessionCreateResult {
             session: self.summary(id),
+            prompt,
         })
     }
 
@@ -178,7 +205,7 @@ impl Core {
             let conn = attachment.conn.clone();
             self.task(Task::Terminate(conn, STOP_GRACE));
         }
-        Ok(())
+        self.end_pending_raised(params.id, RequestState::Withdrawn)
     }
 
     /// `session.reopen`: a closed session becomes dormant.
@@ -334,7 +361,7 @@ impl Core {
         let option = options
             .iter()
             .find(|o| o.id == params.option_id)
-            .ok_or_else(|| invalid_params(format!("no option {:?}", params.option_id)))?;
+            .ok_or_else(|| not_found(Resource::Option, &params.option_id))?;
         let valid = match (&option.control, &params.value) {
             (OptionControl::Select { choices, .. }, OptionValue::Choice(value)) => {
                 choices.iter().any(|c| c.value == *value)

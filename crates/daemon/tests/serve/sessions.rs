@@ -127,9 +127,15 @@ fn set_option_model_and_thinking_including_during_a_turn() {
         .filter(|t| t.starts_with("set_"))
         .collect();
     assert_eq!(commands, ["set_model", "set_thinking_level"]);
-    client.call_err(
+    let err = client.call_err(
         "session.set_option",
         json!({"op_id": op(), "id": id, "option_id": "nope", "value": "x"}),
+        "not_found",
+    );
+    assert_eq!(err["data"]["resource"], "option");
+    client.call_err(
+        "session.set_option",
+        json!({"op_id": op(), "id": id, "option_id": "model", "value": "nope/none"}),
         "invalid_params",
     );
 }

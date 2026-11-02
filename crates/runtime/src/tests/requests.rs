@@ -5,9 +5,9 @@ use controlroom_drivers::fake::wire::{Command, Output};
 use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::ErrorData;
 use controlroom_protocol::daemon::{PromptResult, RequestRespondParams, SessionCreateParams};
-use controlroom_protocol::ids::{OpId, RemotePath, RequestId, SessionId};
+use controlroom_protocol::ids::{DeviceId, OpId, RemotePath, RequestId, SessionId};
 use controlroom_protocol::session::{
-    Attention, RequestKind, RequestState, Response, RunOutcome, SessionState,
+    Attention, DeviceRef, RequestKind, RequestState, Response, RunOutcome, SessionState,
 };
 use controlroom_transcript::Body;
 
@@ -38,6 +38,7 @@ fn respond(id: SessionId, request_id: RequestId, option: &str) -> RequestRespond
             reason: None,
         },
         then: None,
+        by: None,
     }
 }
 
@@ -73,12 +74,22 @@ async fn permission_approve_and_deny() {
     let s = h.wait_state(id, SessionState::AwaitingPermission).await;
     assert_eq!(s.preview, "rm -rf build");
     assert_eq!(s.attention, Some(Attention::Approval));
+    // The deciding device is recorded with the answer.
+    let laptop = DeviceRef {
+        device_id: DeviceId::new("laptop-1"),
+        label: "Laptop".into(),
+    };
     let result =
-        h.rt.respond(respond(id, s.requests[0].id.clone(), "allow-once"))
-            .await
-            .unwrap();
+        h.rt.respond(RequestRespondParams {
+            by: Some(laptop.clone()),
+            ..respond(id, s.requests[0].id.clone(), "allow-once")
+        })
+        .await
+        .unwrap();
     assert_eq!(result.request.state, RequestState::Answered);
-    assert_eq!(result.request.answer.unwrap().label, "Allow once");
+    let answer = result.request.answer.unwrap();
+    assert_eq!(answer.label, "Allow once");
+    assert_eq!(answer.by, Some(laptop));
     assert_eq!(result.then, None);
     let s = h
         .wait(id, "first run", |s| {
@@ -244,6 +255,7 @@ async fn child_attention_rolls_up_to_the_parent() {
             spawned_by: None,
             sandbox_level: None,
             sandbox: None,
+            prompt: None,
         })
         .await
         .unwrap()

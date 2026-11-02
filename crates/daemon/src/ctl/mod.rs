@@ -25,8 +25,8 @@ use std::process::ExitCode;
 use anyhow::{Context, bail};
 use controlroom_protocol::daemon::notifications::SessionEvents;
 use controlroom_protocol::daemon::{
-    PromptResult, RequestRespondParams, SessionCreateParams, SessionEventsParams, SessionOpParams,
-    SessionPromptParams, SessionSubscribeParams, methods,
+    InitialPrompt, PromptResult, RequestRespondParams, SessionCreateParams, SessionEventsParams,
+    SessionOpParams, SessionPromptParams, SessionSubscribeParams, methods,
 };
 use controlroom_protocol::ids::{OpId, RequestId, SessionId};
 use controlroom_protocol::session::{ContentPart, Response, SandboxLevel};
@@ -175,6 +175,7 @@ fn online(dirs: &Dirs, command: Cmd) -> anyhow::Result<()> {
                     reason: None,
                 },
                 then: None,
+                by: None,
             })?;
             print_json(&serde_json::to_value(result)?)
         }
@@ -211,11 +212,14 @@ fn create(
         spawned_by: None,
         sandbox_level,
         sandbox: None,
+        prompt: (!first_prompt.is_empty()).then(|| InitialPrompt {
+            content: vec![ContentPart::text(first_prompt.join(" "))],
+            origin: Default::default(),
+        }),
     })?;
-    let id = created.session.id;
     print_json(&serde_json::to_value(&created.session)?)?;
-    if !first_prompt.is_empty() {
-        print_json(&serde_json::to_value(prompt(client, id, first_prompt)?)?)?;
+    if let Some(prompt) = created.prompt {
+        print_json(&serde_json::to_value(prompt)?)?;
     }
     Ok(())
 }
@@ -244,6 +248,7 @@ fn watch(client: &mut DaemonClient, session: SessionId, since: u64) -> anyhow::R
         id: session,
         since_seq: Seq(since),
         raw_since: None,
+        timeline: true,
     })?;
     let mut renderer = Renderer::new();
     let mut stdout = std::io::stdout().lock();

@@ -89,6 +89,15 @@ const MIGRATIONS: &[&str] = &[
         purged_at INTEGER NOT NULL
     );
     "#,
+    // 2: requests the daemon raised itself (sandbox approvals).
+    r#"
+    CREATE TABLE raised_requests (
+        session_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        raised TEXT NOT NULL,
+        PRIMARY KEY (session_id, request_id)
+    );
+    "#,
 ];
 
 /// The schema version this build writes.

@@ -123,8 +123,9 @@ async fn machine_feed(
 /// `session.subscribe`.
 pub async fn subscribe_session(conn: &Arc<Conn>, id: RpcId, params: SessionSubscribeParams) {
     let runtime = &conn.shared.runtime;
+    let since = params.timeline.then_some(params.since_seq);
     let subscription = match runtime
-        .subscribe_session(params.id, params.since_seq, params.raw_since)
+        .subscribe_session(params.id, since, params.raw_since)
         .await
     {
         Ok(s) => s,
@@ -141,6 +142,7 @@ pub async fn subscribe_session(conn: &Arc<Conn>, id: RpcId, params: SessionSubsc
         subscription_id,
         session: params.id,
         raw: params.raw_since.is_some(),
+        timeline: params.timeline,
         head_seq: subscription.head_seq,
     };
     let run = feed.run(subscription.backlog, subscription.raw, subscription.updates);
@@ -153,6 +155,8 @@ struct SessionFeed {
     session: SessionId,
     /// The client asked for raw frames.
     raw: bool,
+    /// The client asked for timeline ops (`false`: detail only).
+    timeline: bool,
     /// The last `head_seq` sent.
     head_seq: Seq,
 }
@@ -173,7 +177,7 @@ impl SessionFeed {
                     let since = self.head_seq;
                     let raw_since = self.raw.then_some(since);
                     match runtime
-                        .subscribe_session(self.session, since, raw_since)
+                        .subscribe_session(self.session, self.timeline.then_some(since), raw_since)
                         .await
                     {
                         Ok(again) => {
@@ -221,7 +225,9 @@ impl SessionFeed {
 
     fn add(&self, events: &mut SessionEventsParams, update: SessionUpdate) {
         events.head_seq = events.head_seq.max(update.head_seq);
-        events.ops.extend(update.ops);
+        if self.timeline {
+            events.ops.extend(update.ops);
+        }
         if self.raw {
             events.raw.extend(update.raw);
         }

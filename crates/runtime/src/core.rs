@@ -16,9 +16,11 @@ use std::time::Duration;
 use controlroom_protocol::RpcError;
 use controlroom_protocol::Seq;
 use controlroom_protocol::daemon::{DaemonSettings, MachineChange, MachineEvent};
-use controlroom_protocol::ids::{DaemonId, Rev, SessionId};
-use controlroom_protocol::session::{AttentionRollup, SessionDetail, SessionSummary, TodoRollup};
-use tokio::sync::broadcast;
+use controlroom_protocol::ids::{DaemonId, RequestId, Rev, SessionId};
+use controlroom_protocol::session::{
+    AttentionRollup, Request, SessionDetail, SessionSummary, TodoRollup,
+};
+use tokio::sync::{broadcast, oneshot};
 
 use crate::errors::{internal, unknown_session};
 use crate::model::SessionData;
@@ -57,6 +59,8 @@ struct Effects {
     updates: Vec<(SessionId, SessionUpdate)>,
     /// What the feeds will have seen: (session, new summary, new detail).
     emitted: Vec<(SessionId, Option<SessionSummary>, Option<SessionDetail>)>,
+    /// Raised requests resolved in this transaction, for their waiters.
+    resolved: Vec<(SessionId, Request)>,
     tasks: Vec<Task>,
 }
 
@@ -72,8 +76,13 @@ struct TxState {
     touched: BTreeSet<SessionId>,
     /// Write the timeline cache of these sessions.
     checkpoint: BTreeSet<SessionId>,
+    /// Waiters registered in this transaction (forgotten on rollback).
+    waiters: Vec<WaiterKey>,
     fx: Effects,
 }
+
+/// A raised request's waiter: (session, request).
+pub(crate) type WaiterKey = (SessionId, RequestId);
 
 /// The runtime's state.
 pub(crate) struct Core {
@@ -85,6 +94,8 @@ pub(crate) struct Core {
     pub machine_tx: broadcast::Sender<MachineChange>,
     pub clock: Arc<dyn Clock>,
     pub agents: Arc<dyn Agents>,
+    /// Whoever raised a pending request learns its resolution here (after the commit).
+    waiters: HashMap<WaiterKey, oneshot::Sender<Request>>,
     next_generation: u64,
     tx: TxState,
 }
@@ -107,6 +118,7 @@ impl Core {
             machine_tx: broadcast::channel(MACHINE_CAPACITY).0,
             clock,
             agents,
+            waiters: HashMap::new(),
             next_generation: 1,
             tx: TxState::default(),
         }
@@ -208,6 +220,17 @@ impl Core {
 
     pub(crate) fn task(&mut self, task: Task) {
         self.tx.fx.tasks.push(task);
+    }
+
+    /// Registers the waiter of a request raised in this transaction.
+    pub(crate) fn add_waiter(&mut self, key: WaiterKey, waiter: oneshot::Sender<Request>) {
+        self.tx.waiters.push(key.clone());
+        self.waiters.insert(key, waiter);
+    }
+
+    /// Tells the raised request's waiter, once committed, how it was resolved.
+    pub(crate) fn resolved(&mut self, id: SessionId, request: Request) {
+        self.tx.fx.resolved.push((id, request));
     }
 
     /// Publishes one record's timeline ops and raw frame.
@@ -398,6 +421,14 @@ impl Core {
                 let _ = session.updates.send(update);
             }
         }
+        for (id, request) in fx.resolved {
+            if let Some(waiter) = self.waiters.remove(&(id, request.id.clone())) {
+                let _ = waiter.send(request);
+            }
+        }
+        // Waiters of deleted sessions learn it from their closed channel.
+        let sessions = &self.sessions;
+        self.waiters.retain(|(id, _), _| sessions.contains_key(id));
         for (id, summary, detail) in fx.emitted {
             let Some(session) = self.sessions.get_mut(&id) else {
                 continue;
@@ -417,6 +448,9 @@ impl Core {
     fn abort(&mut self) -> Vec<Task> {
         self.store.rollback();
         let tx = std::mem::take(&mut self.tx);
+        for key in &tx.waiters {
+            self.waiters.remove(key);
+        }
         for id in tx.created {
             if let Some(mut session) = self.sessions.remove(&id) {
                 session.abort_tasks();
@@ -516,6 +550,7 @@ impl Core {
             todo: None::<TodoRollup>,
             live_work: Default::default(),
             options: view.options.clone(),
+            agent_live: session.agent_live(),
             sandbox: data.sandbox_info(),
             resumable: session.resumable(),
         }

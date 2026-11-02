@@ -5,6 +5,7 @@
 mod host;
 mod lifecycle;
 mod queue;
+mod raised;
 mod recovery;
 mod requests;
 mod sessions;
@@ -117,6 +118,7 @@ impl Harness {
                 spawned_by: None,
                 sandbox_level: None,
                 sandbox: None,
+                prompt: None,
             })
             .await
             .unwrap();
@@ -159,7 +161,7 @@ impl Harness {
         if !self.sessions.contains_key(&id) {
             let sub = self
                 .rt
-                .subscribe_session(id, controlroom_protocol::Seq(u64::MAX), None)
+                .subscribe_session(id, Some(controlroom_protocol::Seq(u64::MAX)), None)
                 .await
                 .unwrap();
             self.sessions.insert(id, sub.updates);
@@ -223,7 +225,7 @@ impl Harness {
         id: SessionId,
     ) -> Vec<controlroom_protocol::session::QueueItem> {
         self.rt
-            .subscribe_session(id, controlroom_protocol::Seq(u64::MAX), None)
+            .subscribe_session(id, Some(controlroom_protocol::Seq(u64::MAX)), None)
             .await
             .unwrap()
             .detail

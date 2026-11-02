@@ -14,8 +14,9 @@ use crate::model::{QueueEntry, Via};
 
 impl Core {
     /// `queue.send_now`: the item goes ahead of everything. While the agent is busy it is
-    /// steered in when the driver can, otherwise the run is cancelled at a safe point. Pressing
-    /// it again for an item that is still waiting for the safe point interrupts now.
+    /// steered in when the driver can, otherwise the run is cancelled at a safe point. With
+    /// `interrupt` the run is cancelled at once and the item goes next as a prompt (also to
+    /// escalate an earlier send-now that is still waiting for its safe point).
     pub(crate) fn send_now(
         &mut self,
         params: &QueueSendNowParams,
@@ -43,15 +44,16 @@ impl Core {
             return Err(not_found(Resource::QueueItem, params.queue_id));
         };
         let mut entry = data.queue.remove(pos);
-        if entry.send_now && pos == data.front() {
-            entry.interrupt = true;
-        }
         entry.send_now = true;
+        if params.interrupt {
+            entry.interrupt = true;
+            entry.no_steer = true;
+        }
         let front = data.front();
         data.queue.insert(front, entry);
         if let Some(by) = start {
             self.request_start(id, by)?;
-            return Ok(SendNowResult::Sent);
+            return Ok(SendNowResult::Queued);
         }
         self.reconcile(id);
         let busy = self.session(id)?.busy();
@@ -111,11 +113,13 @@ impl Core {
     }
 }
 
+/// What happened to a send-now item: handed over, waiting for the run to stop, or waiting for
+/// the agent to be ready.
 fn result_for(delivery: Option<Via>, busy: bool) -> SendNowResult {
     match delivery {
         Some(Via::Prompt) => SendNowResult::Sent,
         Some(Via::Steer) => SendNowResult::Steered,
         None if busy => SendNowResult::Interrupting,
-        None => SendNowResult::Sent,
+        None => SendNowResult::Queued,
     }
 }

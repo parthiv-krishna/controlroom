@@ -209,6 +209,15 @@ impl Session {
             && self.derived.process.live
     }
 
+    /// A live, ready agent is attached: it can take options and answers (`agent_live`).
+    pub(crate) fn agent_live(&self) -> bool {
+        !self.data.closed()
+            && !self.live.loading
+            && self.live.attachment.is_some()
+            && self.derived.process.live
+            && self.view().ready
+    }
+
     /// A run is active or a prompt is on its way.
     pub(crate) fn busy(&self) -> bool {
         self.view().run_active || self.data.delivering()
@@ -221,22 +230,35 @@ impl Session {
             && !self.data.resume_failed
     }
 
-    /// Pending requests: raised, still open in the agent, and undecided.
+    /// Pending requests: the agent's (raised, still open in the agent, and undecided), then
+    /// the daemon's own.
     pub(crate) fn pending_requests(&self) -> Vec<Request> {
-        if !self.derived.process.live {
-            return Vec::new();
+        let mut pending = Vec::new();
+        if self.derived.process.live {
+            let open = &self.view().open_requests;
+            pending.extend(
+                self.derived
+                    .requests
+                    .values()
+                    .filter(|r| {
+                        r.state == RequestState::Pending
+                            && open.contains(&r.id)
+                            && !self.data.decisions.contains_key(&r.id)
+                    })
+                    .cloned(),
+            );
         }
-        let open = &self.view().open_requests;
-        self.derived
-            .requests
+        pending.extend(self.pending_raised().cloned());
+        pending
+    }
+
+    /// Pending requests the daemon raised.
+    pub(crate) fn pending_raised(&self) -> impl Iterator<Item = &Request> {
+        self.data
+            .raised
             .values()
-            .filter(|r| {
-                r.state == RequestState::Pending
-                    && open.contains(&r.id)
-                    && !self.data.decisions.contains_key(&r.id)
-            })
-            .cloned()
-            .collect()
+            .map(|r| &r.request)
+            .filter(|r| r.state == RequestState::Pending)
     }
 
     pub(crate) fn state(&self) -> SessionState {

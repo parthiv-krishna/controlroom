@@ -11,7 +11,7 @@ use serde::de::DeserializeOwned;
 
 use super::{Store, json};
 use super::{int, int_usize, uint};
-use crate::model::{AgentSessionRow, Decision, SessionData};
+use crate::model::{AgentSessionRow, Decision, Raised, SessionData};
 
 const SESSION_COLUMNS: &str = "id, agent, driver, cwd, name, created_at, closed_at, parent_id,
     spawned_by, sandbox_level, sandbox, read_seq, last_turn_end_seq, last_outcome, last_error,
@@ -66,6 +66,7 @@ fn session_row(row: &Row<'_>) -> rusqlite::Result<SessionData> {
         agent_sessions: Vec::new(),
         queue: Vec::new(),
         decisions: BTreeMap::new(),
+        raised: BTreeMap::new(),
     })
 }
 
@@ -129,6 +130,13 @@ impl Store {
             let decision: Decision = decode(&raw?)?;
             data.decisions.insert(decision.request.id.clone(), decision);
         }
+        let mut stmt = self
+            .conn
+            .prepare("SELECT raised FROM raised_requests WHERE session_id = ?1")?;
+        for raw in stmt.query_map([&id], |r| r.get::<_, String>(0))? {
+            let raised: Raised = decode(&raw?)?;
+            data.raised.insert(raised.request.id.clone(), raised);
+        }
         Ok(data)
     }
 
@@ -144,6 +152,7 @@ impl Store {
             b.agent_sessions.clone_from(&after.agent_sessions);
             b.queue.clone_from(&after.queue);
             b.decisions.clone_from(&after.decisions);
+            b.raised.clone_from(&after.raised);
             b != *after
         });
         if row_changed {
@@ -188,6 +197,16 @@ impl Store {
                 "INSERT OR REPLACE INTO decisions (session_id, request_id, decision)
                  VALUES (?1, ?2, ?3)",
                 params![id, request_id.as_str(), json(decision)],
+            )?;
+        }
+        for (request_id, raised) in &after.raised {
+            if before.is_some_and(|b| b.raised.get(request_id) == Some(raised)) {
+                continue;
+            }
+            self.conn.execute(
+                "INSERT OR REPLACE INTO raised_requests (session_id, request_id, raised)
+                 VALUES (?1, ?2, ?3)",
+                params![id, request_id.as_str(), json(raised)],
             )?;
         }
         Ok(())
@@ -236,6 +255,7 @@ impl Store {
             "agent_sessions",
             "queue",
             "decisions",
+            "raised_requests",
             "timeline_items",
         ] {
             let column = if table == "sessions" {
