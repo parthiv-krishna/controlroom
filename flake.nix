@@ -68,7 +68,7 @@
           # The sandbox, pinned to the version the profiles are validated against.
           nono = nonoFor pkgs;
           # The Playwright runner of the VM test and the VM test run ($out has its logs).
-          e2e-vm = web.e2eVm;
+          vm-e2e-runner = web.e2eVm;
         }
         // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
           vm-e2e-run = (e2eFor pkgs).run;

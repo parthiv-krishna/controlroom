@@ -7,6 +7,11 @@
 # `run` always succeeds: its $out holds `status` plus, on failure, the Playwright traces and the
 # server, daemon and mock-model logs. `check` fails unless the run passed, pointing at them. A
 # failed run is cached like any build; re-run it with `nix build --rebuild <run>`.
+#
+#   nix build .#checks.x86_64-linux.vm-e2e     # the gate
+#   nix build .#vm-e2e-run --rebuild -L        # run again; see result/
+#   nix build .#vm-e2e-driver -o driver && TMPDIR=$(mktemp -d) driver/bin/nixos-test-driver -o out
+#                                              # outside the sandbox (faster to iterate)
 {
   pkgs,
   rust,
