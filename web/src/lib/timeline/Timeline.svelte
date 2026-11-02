@@ -4,7 +4,7 @@
   // stuck to the bottom unless the user scrolled up. Pending requests that have no timeline item
   // (a subagent's, rolled up from the summary) follow the last row. The raw view replaces the list
   // while it is open.
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { useApp } from '../app/app.svelte';
   import { HeightIndex, visibleRange } from '../model/heights';
   import { keyOf } from '../model/projects';
@@ -38,6 +38,10 @@
     showRaw: (item: TimelineItem) => (app.view.raw[key] = { from: item.seq_from, to: item.seq_to, item: item.id }),
   });
 
+  // A raw view belongs to the pane that opened it.
+  const opened = untrack(() => key);
+  onDestroy(() => delete app.view.raw[opened]);
+
   const orphans = $derived(s.requests.filter((r) => r.state === 'pending' && !timeline.requestIds.has(r.id)));
 
   // ------------------------------------------------------------------------------- windowing
@@ -58,8 +62,8 @@
   /** Measured heights by item id; kept for rows scrolled out of the window. */
   const measured = new Map<string, number>();
 
-  const index = $derived(new HeightIndex(rows.map((c) => untrack(() => measured.get(c.item.id)) ?? ESTIMATE)));
-  const position = $derived(new Map(rows.map((c, i) => [c.item.id, i])));
+  const index = $derived(new HeightIndex(rows.map((c) => measured.get(c.id) ?? ESTIMATE)));
+  const position = $derived(new Map(rows.map((c, i) => [c.id, i])));
   const range = $derived.by(() => {
     void layout;
     return visibleRange(index, scrollTop, viewport, OVERSCAN);
@@ -123,7 +127,7 @@
     const target = app.view.focusItem;
     if (!target || target.key !== key || !scroller || raw) return;
     const row = timeline.rowOf(target.id);
-    const i = row ? position.get(row.item.id) : undefined;
+    const i = row ? position.get(row.id) : undefined;
     if (i === undefined) return;
     untrack(() => {
       app.view.focusItem = null;
@@ -158,8 +162,8 @@
         </div>
       {/if}
       <div style:height="{padTop}px" aria-hidden="true"></div>
-      {#each shown as cell (cell.item.id)}
-        <div class="row" data-row={cell.item.id} use:measure>
+      {#each shown as cell (cell.id)}
+        <div class="row" data-row={cell.id} use:measure>
           <ItemView {cell} />
         </div>
       {/each}

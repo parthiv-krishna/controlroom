@@ -1,4 +1,4 @@
-// Number formatting for compact displays.
+// Number and duration formatting for compact displays (the context meter, timeline items).
 
 /** A token count as `950`, `12k` or `1.2M`. */
 export const compact = (n: number): string => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));

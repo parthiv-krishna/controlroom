@@ -15,16 +15,19 @@ export const MAX_ITEMS = 5000;
 /** Raw frames kept per timeline. */
 export const MAX_RAW = 2000;
 
-/** The item of one kind. */
+/** The item of one kind (the props of its component). */
 export type ItemOf<K extends TimelineItem['kind']> = Extract<TimelineItem, { kind: K }>;
 
 /** One item's reactive state. */
 export class ItemCell {
   item = $state.raw() as TimelineItem;
+  /** The item's id (stable; reading it doesn't subscribe to the item). */
+  readonly id: string;
   /** Breaks `seq_from` ties: renewed when the item moves. */
   arrival: number;
 
   constructor(item: TimelineItem, arrival: number) {
+    this.id = item.id;
     this.item = item;
     this.arrival = arrival;
   }
@@ -159,7 +162,7 @@ export class Timeline {
   private restructure(): void {
     const excess = this.order.length - MAX_ITEMS;
     if (excess > 0) {
-      for (const cell of this.order.splice(0, excess)) this.cells.delete(cell.item.id);
+      for (const cell of this.order.splice(0, excess)) this.cells.delete(cell.id);
       this.trimmed += excess;
     }
     const tools = new Map<string, ItemCell>();

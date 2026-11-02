@@ -2,7 +2,7 @@
   // The raw view: the session's transcript records (opt-in raw frames, streamed while this view is
   // open). Opened from an item's `#seq` link it loads the records around the item and highlights
   // its range; each record links back to the innermost timeline item it was folded into.
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { useApp } from '../app/app.svelte';
   import type { RawFocus } from '../app/view.svelte';
   import { keyOf } from '../model/projects';
@@ -14,7 +14,11 @@
   const key = $derived(keyOf(s));
   const raw = $derived(feed.timeline.raw);
 
-  $effect(() => app.client.sessions.showRaw(feed, focus.from));
+  // Re-runs only when the target moves, not on every frame that arrives.
+  $effect(() => {
+    const from = focus.from;
+    untrack(() => app.client.sessions.showRaw(feed, from));
+  });
   onDestroy(() => app.client.sessions.hideRaw(feed));
 
   type Filter = 'all' | RawStream;

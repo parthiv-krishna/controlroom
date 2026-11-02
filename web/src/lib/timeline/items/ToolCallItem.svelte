@@ -33,7 +33,7 @@
   {/if}
   {#if children.length && (open || running || depth === 0)}
     <div class="children">
-      {#each children as cell (cell.item.id)}<ItemView {cell} depth={depth + 1} />{/each}
+      {#each children as cell (cell.id)}<ItemView {cell} depth={depth + 1} />{/each}
     </div>
   {/if}
 </div>

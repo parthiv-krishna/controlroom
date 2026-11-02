@@ -35,7 +35,7 @@
 </script>
 
 <div class="tail" aria-label="Subagent activity">
-  {#each tail as cell (cell.item.id)}<ItemView {cell} depth={1} />{:else}<span class="muted small">No activity yet</span>{/each}
+  {#each tail as cell (cell.id)}<ItemView {cell} depth={1} />{:else}<span class="muted small">No activity yet</span>{/each}
 </div>
 
 <style>
