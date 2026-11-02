@@ -42,7 +42,7 @@ use controlroom_transcript::{ProcessKind, StdinMode};
 
 use crate::config::agents::AgentEntry;
 use crate::config::sandbox::SandboxSettings;
-use crate::dirs::Dirs;
+use crate::dirs::{Dirs, create_private_dir};
 
 /// Machine-level inputs of every launch.
 #[derive(Debug, Clone)]
@@ -119,7 +119,7 @@ pub enum LaunchError {
     /// Generating the webhook secret failed.
     #[error("webhook secret: {0}")]
     Secret(String),
-    /// Writing the env file failed.
+    /// Writing the env file or creating the run dir failed.
     #[error("writing {path}: {source}")]
     Io {
         /// The file.
@@ -180,6 +180,11 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
         };
         (argv(&cmd), Some(env_file), Some(sandbox))
     };
+    let run = host.dirs.run();
+    create_private_dir(&run).map_err(|source| LaunchError::Io {
+        path: run.to_string(),
+        source,
+    })?;
     let id = launch.session.as_str().to_owned();
     let labels = BTreeMap::from([
         ("agent".to_owned(), launch.agent_name.clone()),

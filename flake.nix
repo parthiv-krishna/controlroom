@@ -34,6 +34,7 @@
           )
         );
       webFor = pkgs: import ./nix/web.nix { inherit pkgs; };
+      nonoFor = pkgs: import ./nix/nono.nix { inherit pkgs; };
       rustFor =
         pkgs:
         import ./nix/rust.nix {
@@ -56,6 +57,8 @@
           # Static musl daemon binaries, deployed to execution machines over SSH.
           controlroomd-x86_64-linux = rust.controlroomdStatic.x86_64;
           controlroomd-aarch64-linux = rust.controlroomdStatic.aarch64;
+          # The sandbox, pinned to the version the profiles are validated against.
+          nono = nonoFor pkgs;
         }
       );
 
@@ -77,6 +80,8 @@
           controlroom-web = rust.controlroomWeb;
           protocol-ts-drift = rust.protocolTsDrift;
           web-check = web.check;
+          # Builds the pinned nono; its install check asserts `nono --version`.
+          nono = nonoFor pkgs;
         }
       );
 
