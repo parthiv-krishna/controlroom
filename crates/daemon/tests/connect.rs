@@ -134,8 +134,8 @@ fn connect_starts_a_detached_daemon_that_outlives_the_connection() {
     let mut bridge = Bridge::start(&home);
     let response = bridge.hello();
     assert_eq!(response["id"], 7);
-    assert_eq!(
-        response["error"]["data"]["kind"], "unsupported",
+    assert!(
+        response["result"]["daemon_id"].is_string(),
         "{response}"
     );
     let out = bridge.close();
@@ -178,7 +178,7 @@ fn connect_starts_a_detached_daemon_that_outlives_the_connection() {
     kill_process(Pid::from_raw(*pid).unwrap(), Signal::TERM).unwrap();
     home.wait_no_daemon();
     let mut restarted = Bridge::start(&home);
-    assert_eq!(restarted.hello()["error"]["data"]["kind"], "unsupported");
+    assert!(restarted.hello()["result"]["daemon_id"].is_string());
     restarted.close();
     let after = home.daemons();
     assert_eq!(after.len(), 1);
@@ -204,13 +204,13 @@ fn concurrent_connects_share_one_daemon() {
 }
 
 #[test]
-fn ctl_reports_the_placeholder_cleanly() {
+fn ctl_hello_starts_the_daemon() {
     let home = Home::new();
     let out = home.command(&["ctl", "hello"]).output().unwrap();
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("hello: unsupported:"), "{stderr}");
-    assert!(out.stdout.is_empty());
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let hello: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(hello["protocol_version"]["major"], 1);
+    assert_eq!(home.daemons().len(), 1);
 }
 
 #[test]

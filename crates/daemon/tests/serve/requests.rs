@@ -121,3 +121,25 @@ fn two_clients_race_a_decision() {
     let late = respond(&setup, &id, &request, "0").unwrap_err();
     assert_eq!(late["data"]["kind"], "already_resolved");
 }
+
+#[test]
+fn an_answer_is_sent_once_across_a_daemon_restart() {
+    let mut env = Env::with(permission_scenario());
+    let client = env.client();
+    client.watch_machine();
+    let id = client.create("fake", &env.work());
+    client.wait_idle(&id);
+    client.prompt(&id, "go");
+    let request = pending_request(&client, &id);
+    respond(&client, &id, &request, "0").unwrap();
+    // Killed right after the decision commits: the answer may or may not have been written.
+    env.kill_daemon();
+    env.start();
+    let client = env.client();
+    client.watch_machine();
+    client.wait_session(&id, "the turn end", |s| {
+        s["state"] == "idle" && s["last_outcome"] == "completed"
+    });
+    assert_eq!(answers(&env, &id).len(), 1, "no duplicate answer");
+    assert_eq!(env.prompts_sent(&id), ["go"], "no duplicate prompt");
+}
