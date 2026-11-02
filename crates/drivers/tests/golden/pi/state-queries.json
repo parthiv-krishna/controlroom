@@ -1,0 +1,115 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000329},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]},
+     {"event":"native_session","id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-197Z_00000000-0000-4000-8000-000000000002.jsonl"}
+   ]},
+  {"seq": 8,
+   "ops": [],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"},{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]}
+   ]},
+  {"seq": 10,
+   "ops": [],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"},{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"off","value":"off"},{"label":"minimal","value":"minimal"},{"label":"low","value":"low"},{"label":"medium","value":"medium"},{"label":"high","value":"high"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]}
+   ]},
+  {"seq": 12,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Answer something."}],"id":"user-11","kind":"message","role":"user","seq_from":11,"seq_to":12,"streaming":false,"ts":1700000000331},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 13,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-13","kind":"run","outcome":null,"seq_from":13,"seq_to":13,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000333},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 20,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-19.0","kind":"message","role":"agent","seq_from":20,"seq_to":20,"streaming":true,"ts":1700000000360},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 21,
+   "ops": [
+     {"id":"msg-19.0","op":"append_text","seq_from":21,"seq_to":21,"text":"Answer f"}
+   ],
+   "events": []},
+  {"seq": 22,
+   "ops": [
+     {"id":"msg-19.0","op":"append_text","seq_from":22,"seq_to":22,"text":"or the s"}
+   ],
+   "events": []},
+  {"seq": 23,
+   "ops": [
+     {"id":"msg-19.0","op":"append_text","seq_from":23,"seq_to":23,"text":"tats."}
+   ],
+   "events": []},
+  {"seq": 24,
+   "ops": [
+     {"id":"msg-19.0","op":"end","seq_from":24,"seq_to":24}
+   ],
+   "events": []},
+  {"seq": 25,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-25","kind":"usage","scope":"turn","seq_from":25,"seq_to":25,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000364},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00012399999999999998,"size":128000,"used":112},"event":"context"}
+   ]},
+  {"seq": 28,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-13","kind":"run","outcome":"completed","seq_from":13,"seq_to":28,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000333},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 30,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-30","kind":"usage","scope":"session","seq_from":30,"seq_to":30,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000367},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00012399999999999998,"size":128000,"used":112},"event":"context"}
+   ]},
+  {"seq": 38,
+   "ops": [
+     {"item":{"actor":"root","id":"error-38","kind":"error","seq_from":38,"seq_to":38,"streaming":false,"text":"pi rejected get_entries: Entry not found: no-such-entry","ts":1700000000373},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 42,
+   "ops": [
+     {"item":{"actor":"root","id":"error-42","kind":"error","seq_from":42,"seq_to":42,"streaming":false,"text":"pi rejected no_such_command: Unknown command: no_such_command","ts":1700000000373},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 44,
+   "ops": [
+     {"item":{"actor":"root","id":"error-44","kind":"error","seq_from":44,"seq_to":44,"streaming":false,"text":"pi rejected parse: Failed to parse command: Expected property name or '}' in JSON at position 1 (line 1 column 2)","ts":1700000000374},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 45,
+   "ops": [],
+   "events": [
+     {"code":0,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000329},
+  {"actor":"root","content":[{"kind":"text","text":"Answer something."}],"id":"user-11","kind":"message","role":"user","seq_from":11,"seq_to":12,"streaming":false,"ts":1700000000331},
+  {"actor":"root","error":null,"id":"run-13","kind":"run","outcome":"completed","seq_from":13,"seq_to":28,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000333},
+  {"actor":"root","content":[{"kind":"text","text":"Answer for the stats."}],"id":"msg-19.0","kind":"message","role":"agent","seq_from":20,"seq_to":24,"streaming":false,"ts":1700000000360},
+  {"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-25","kind":"usage","scope":"turn","seq_from":25,"seq_to":25,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000364},
+  {"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-30","kind":"usage","scope":"session","seq_from":30,"seq_to":30,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000367},
+  {"actor":"root","id":"error-38","kind":"error","seq_from":38,"seq_to":38,"streaming":false,"text":"pi rejected get_entries: Entry not found: no-such-entry","ts":1700000000373},
+  {"actor":"root","id":"error-42","kind":"error","seq_from":42,"seq_to":42,"streaming":false,"text":"pi rejected no_such_command: Unknown command: no_such_command","ts":1700000000373},
+  {"actor":"root","id":"error-44","kind":"error","seq_from":44,"seq_to":44,"streaming":false,"text":"pi rejected parse: Failed to parse command: Expected property name or '}' in JSON at position 1 (line 1 column 2)","ts":1700000000374}
+],
+"view": {"last_outcome":"completed","last_seq":45,"last_ts":1700000000384,"native":{"id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-197Z_00000000-0000-4000-8000-000000000002.jsonl"},"open_requests":[],"open_tools":0,"options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"},{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"off","value":"off"},{"label":"minimal","value":"minimal"},{"label":"low","value":"low"},{"label":"medium","value":"medium"},{"label":"high","value":"high"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}],"ready":false,"run_active":false,"unanswered":[]}}

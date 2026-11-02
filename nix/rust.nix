@@ -18,6 +18,7 @@ let
     ../fixtures
     ../crates/sandbox/tests/golden
     ../crates/daemon/tests/golden
+    ../crates/drivers/tests/golden
   ];
   src = lib.fileset.toSource {
     root = ../.;

@@ -1,0 +1,151 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000329},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"First session prompt."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 5,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000333},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 12,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-11.0","kind":"message","role":"agent","seq_from":12,"seq_to":12,"streaming":true,"ts":1700000000362},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 13,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":13,"seq_to":13,"text":"Old sess"}
+   ],
+   "events": []},
+  {"seq": 14,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":14,"seq_to":14,"text":"ion answ"}
+   ],
+   "events": []},
+  {"seq": 15,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":15,"seq_to":15,"text":"er."}
+   ],
+   "events": []},
+  {"seq": 16,
+   "ops": [
+     {"id":"msg-11.0","op":"end","seq_from":16,"seq_to":16}
+   ],
+   "events": []},
+  {"seq": 17,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-17","kind":"usage","scope":"turn","seq_from":17,"seq_to":17,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000366},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
+   ]},
+  {"seq": 20,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":20,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000333},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 22,
+   "ops": [],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]},
+     {"event":"native_session","id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-187Z_00000000-0000-4000-8000-000000000002.jsonl"}
+   ]},
+  {"seq": 24,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-24","kind":"notice","level":"info","seq_from":24,"seq_to":24,"streaming":false,"text":"fixture: ready","ts":1700000000383},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 25,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-25","kind":"notice","level":"info","seq_from":25,"seq_to":25,"streaming":false,"text":"fixture: ready","ts":1700000000383},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 28,
+   "ops": [],
+   "events": [
+     {"event":"native_session","id":"00000000-0000-4000-8000-000000000005","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-368Z_00000000-0000-4000-8000-000000000005.jsonl"}
+   ]},
+  {"seq": 30,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Second session prompt."}],"id":"user-29","kind":"message","role":"user","seq_from":29,"seq_to":30,"streaming":false,"ts":1700000000383},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 31,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-31","kind":"run","outcome":null,"seq_from":31,"seq_to":31,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000384},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 38,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-37.0","kind":"message","role":"agent","seq_from":38,"seq_to":38,"streaming":true,"ts":1700000000428},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 39,
+   "ops": [
+     {"id":"msg-37.0","op":"append_text","seq_from":39,"seq_to":39,"text":"New sess"}
+   ],
+   "events": []},
+  {"seq": 40,
+   "ops": [
+     {"id":"msg-37.0","op":"append_text","seq_from":40,"seq_to":40,"text":"ion answ"}
+   ],
+   "events": []},
+  {"seq": 41,
+   "ops": [
+     {"id":"msg-37.0","op":"append_text","seq_from":41,"seq_to":41,"text":"er."}
+   ],
+   "events": []},
+  {"seq": 42,
+   "ops": [
+     {"id":"msg-37.0","op":"end","seq_from":42,"seq_to":42}
+   ],
+   "events": []},
+  {"seq": 43,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00024799999999999996,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-43","kind":"usage","scope":"turn","seq_from":43,"seq_to":43,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000429},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00024799999999999996,"size":128000,"used":112},"event":"context"}
+   ]},
+  {"seq": 46,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-31","kind":"run","outcome":"completed","seq_from":31,"seq_to":46,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000384},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 49,
+   "ops": [],
+   "events": [
+     {"code":0,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","content":[{"kind":"text","text":"First session prompt."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000329},
+  {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":20,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000333},
+  {"actor":"root","content":[{"kind":"text","text":"Old session answer."}],"id":"msg-11.0","kind":"message","role":"agent","seq_from":12,"seq_to":16,"streaming":false,"ts":1700000000362},
+  {"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-17","kind":"usage","scope":"turn","seq_from":17,"seq_to":17,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000366},
+  {"actor":"root","id":"notice-24","kind":"notice","level":"info","seq_from":24,"seq_to":24,"streaming":false,"text":"fixture: ready","ts":1700000000383},
+  {"actor":"root","id":"notice-25","kind":"notice","level":"info","seq_from":25,"seq_to":25,"streaming":false,"text":"fixture: ready","ts":1700000000383},
+  {"actor":"root","content":[{"kind":"text","text":"Second session prompt."}],"id":"user-29","kind":"message","role":"user","seq_from":29,"seq_to":30,"streaming":false,"ts":1700000000383},
+  {"actor":"root","error":null,"id":"run-31","kind":"run","outcome":"completed","seq_from":31,"seq_to":46,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000384},
+  {"actor":"root","content":[{"kind":"text","text":"New session answer."}],"id":"msg-37.0","kind":"message","role":"agent","seq_from":38,"seq_to":42,"streaming":false,"ts":1700000000428},
+  {"actor":"root","context":{"cost":0.00024799999999999996,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-43","kind":"usage","scope":"turn","seq_from":43,"seq_to":43,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000429}
+],
+"view": {"last_outcome":"completed","last_seq":49,"last_ts":1700000000466,"native":{"id":"00000000-0000-4000-8000-000000000005","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-368Z_00000000-0000-4000-8000-000000000005.jsonl"},"open_requests":[],"open_tools":0,"options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}],"ready":false,"run_active":false,"unanswered":[]}}

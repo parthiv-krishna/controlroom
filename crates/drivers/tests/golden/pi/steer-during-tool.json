@@ -1,0 +1,113 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000320},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Run the tool."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 5,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000323},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 12,
+   "ops": [
+     {"item":{"actor":"root","duration_ms":null,"exit":null,"id":"msg-11.0","input":null,"kind":"tool_call","name":"bash","output":null,"parent_tool_call_id":null,"seq_from":12,"seq_to":12,"status":"pending","streaming":true,"title":"bash","tool_call_id":"call_gate","tool_kind":"execute","ts":1700000000355},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 15,
+   "ops": [
+     {"item":{"actor":"root","duration_ms":null,"exit":null,"id":"msg-11.0","input":"cat fifo","kind":"tool_call","name":"bash","output":null,"parent_tool_call_id":null,"seq_from":12,"seq_to":15,"status":"pending","streaming":true,"title":"cat fifo","tool_call_id":"call_gate","tool_kind":"execute","ts":1700000000355},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 16,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-16","kind":"usage","scope":"turn","seq_from":16,"seq_to":16,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000358},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
+   ]},
+  {"seq": 17,
+   "ops": [
+     {"item":{"actor":"root","duration_ms":null,"exit":null,"id":"msg-11.0","input":"cat fifo","kind":"tool_call","name":"bash","output":null,"parent_tool_call_id":null,"seq_from":12,"seq_to":17,"status":"running","streaming":true,"title":"cat fifo","tool_call_id":"call_gate","tool_kind":"execute","ts":1700000000355},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 21,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Also mention the steer."}],"id":"user-19","kind":"message","role":"user","seq_from":19,"seq_to":21,"streaming":false,"ts":1700000000364},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 22,
+   "ops": [
+     {"item":{"actor":"root","duration_ms":null,"exit":null,"id":"msg-11.0","input":"cat fifo","kind":"tool_call","name":"bash","output":{"kind":"terminal","text":"tool output\n"},"parent_tool_call_id":null,"seq_from":12,"seq_to":22,"status":"running","streaming":true,"title":"cat fifo","tool_call_id":"call_gate","tool_kind":"execute","ts":1700000000355},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 23,
+   "ops": [
+     {"item":{"actor":"root","duration_ms":13,"exit":0,"id":"msg-11.0","input":"cat fifo","kind":"tool_call","name":"bash","output":{"kind":"terminal","text":"tool output\n"},"parent_tool_call_id":null,"seq_from":12,"seq_to":23,"status":"completed","streaming":false,"title":"cat fifo","tool_call_id":"call_gate","tool_kind":"execute","ts":1700000000355},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 29,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Also mention the steer."}],"id":"user-19","kind":"message","role":"user","seq_from":29,"seq_to":29,"streaming":false,"ts":1700000000364},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 32,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-31.0","kind":"message","role":"agent","seq_from":32,"seq_to":32,"streaming":true,"ts":1700000000422},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 33,
+   "ops": [
+     {"id":"msg-31.0","op":"append_text","seq_from":33,"seq_to":33,"text":"Saw the "}
+   ],
+   "events": []},
+  {"seq": 34,
+   "ops": [
+     {"id":"msg-31.0","op":"append_text","seq_from":34,"seq_to":34,"text":"steer."}
+   ],
+   "events": []},
+  {"seq": 35,
+   "ops": [
+     {"id":"msg-31.0","op":"end","seq_from":35,"seq_to":35}
+   ],
+   "events": []},
+  {"seq": 36,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00024799999999999996,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-36","kind":"usage","scope":"turn","seq_from":36,"seq_to":36,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000424},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00024799999999999996,"size":null,"used":112},"event":"context"}
+   ]},
+  {"seq": 39,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":39,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000323},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 40,
+   "ops": [],
+   "events": [
+     {"code":0,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","content":[{"kind":"text","text":"Run the tool."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000320},
+  {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":39,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000323},
+  {"actor":"root","duration_ms":13,"exit":0,"id":"msg-11.0","input":"cat fifo","kind":"tool_call","name":"bash","output":{"kind":"terminal","text":"tool output\n"},"parent_tool_call_id":null,"seq_from":12,"seq_to":23,"status":"completed","streaming":false,"title":"cat fifo","tool_call_id":"call_gate","tool_kind":"execute","ts":1700000000355},
+  {"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-16","kind":"usage","scope":"turn","seq_from":16,"seq_to":16,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000358},
+  {"actor":"root","content":[{"kind":"text","text":"Also mention the steer."}],"id":"user-19","kind":"message","role":"user","seq_from":29,"seq_to":29,"streaming":false,"ts":1700000000364},
+  {"actor":"root","content":[{"kind":"text","text":"Saw the steer."}],"id":"msg-31.0","kind":"message","role":"agent","seq_from":32,"seq_to":35,"streaming":false,"ts":1700000000422},
+  {"actor":"root","context":{"cost":0.00024799999999999996,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-36","kind":"usage","scope":"turn","seq_from":36,"seq_to":36,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000424}
+],
+"view": {"last_outcome":"completed","last_seq":40,"last_ts":1700000000471,"native":null,"open_requests":[],"open_tools":0,"options":[],"ready":false,"run_active":false,"unanswered":[]}}

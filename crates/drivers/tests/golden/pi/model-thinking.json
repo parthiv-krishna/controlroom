@@ -1,0 +1,116 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000319},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [
+     {"item":{"actor":"root","id":"info-4","kind":"session_info","model":"Mock Model B","seq_from":4,"seq_to":4,"streaming":false,"thinking":null,"title":null,"ts":1700000000320},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model-b"}]}
+   ]},
+  {"seq": 6,
+   "ops": [
+     {"item":{"actor":"root","id":"info-6","kind":"session_info","model":null,"seq_from":6,"seq_to":6,"streaming":false,"thinking":"high","title":null,"ts":1700000000321},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model-b"},{"choices":[{"label":"high","value":"high"}],"id":"thinking","kind":"select","label":"Thinking","value":"high"}]}
+   ]},
+  {"seq": 9,
+   "ops": [
+     {"item":{"actor":"root","id":"info-9","kind":"session_info","model":null,"seq_from":9,"seq_to":9,"streaming":false,"thinking":"off","title":null,"ts":1700000000321},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model-b"},{"choices":[{"label":"off","value":"off"}],"id":"thinking","kind":"select","label":"Thinking","value":"off"}]}
+   ]},
+  {"seq": 12,
+   "ops": [
+     {"item":{"actor":"root","id":"info-12","kind":"session_info","model":null,"seq_from":12,"seq_to":12,"streaming":false,"thinking":null,"title":"fixture session","ts":1700000000321},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"title","title":"fixture session"}
+   ]},
+  {"seq": 15,
+   "ops": [
+     {"item":{"actor":"root","id":"error-15","kind":"error","seq_from":15,"seq_to":15,"streaming":false,"text":"pi rejected set_model: Model not found: mock/no-such-model","ts":1700000000321},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 17,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Which model are you?"}],"id":"user-16","kind":"message","role":"user","seq_from":16,"seq_to":17,"streaming":false,"ts":1700000000321},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 18,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-18","kind":"run","outcome":null,"seq_from":18,"seq_to":18,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000323},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 25,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-24.0","kind":"message","role":"agent","seq_from":25,"seq_to":25,"streaming":true,"ts":1700000000351},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 26,
+   "ops": [
+     {"id":"msg-24.0","op":"append_text","seq_from":26,"seq_to":26,"text":"Answer f"}
+   ],
+   "events": []},
+  {"seq": 27,
+   "ops": [
+     {"id":"msg-24.0","op":"append_text","seq_from":27,"seq_to":27,"text":"rom mode"}
+   ],
+   "events": []},
+  {"seq": 28,
+   "ops": [
+     {"id":"msg-24.0","op":"append_text","seq_from":28,"seq_to":28,"text":"l b."}
+   ],
+   "events": []},
+  {"seq": 29,
+   "ops": [
+     {"id":"msg-24.0","op":"end","seq_from":29,"seq_to":29}
+   ],
+   "events": []},
+  {"seq": 30,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-30","kind":"usage","scope":"turn","seq_from":30,"seq_to":30,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000355},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00012399999999999998,"size":128000,"used":112},"event":"context"}
+   ]},
+  {"seq": 33,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-18","kind":"run","outcome":"completed","seq_from":18,"seq_to":33,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000323},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 35,
+   "ops": [],
+   "events": [
+     {"event":"native_session","id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-187Z_00000000-0000-4000-8000-000000000002.jsonl"}
+   ]},
+  {"seq": 36,
+   "ops": [],
+   "events": [
+     {"code":0,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000319},
+  {"actor":"root","id":"info-4","kind":"session_info","model":"Mock Model B","seq_from":4,"seq_to":4,"streaming":false,"thinking":null,"title":null,"ts":1700000000320},
+  {"actor":"root","id":"info-6","kind":"session_info","model":null,"seq_from":6,"seq_to":6,"streaming":false,"thinking":"high","title":null,"ts":1700000000321},
+  {"actor":"root","id":"info-9","kind":"session_info","model":null,"seq_from":9,"seq_to":9,"streaming":false,"thinking":"off","title":null,"ts":1700000000321},
+  {"actor":"root","id":"info-12","kind":"session_info","model":null,"seq_from":12,"seq_to":12,"streaming":false,"thinking":null,"title":"fixture session","ts":1700000000321},
+  {"actor":"root","id":"error-15","kind":"error","seq_from":15,"seq_to":15,"streaming":false,"text":"pi rejected set_model: Model not found: mock/no-such-model","ts":1700000000321},
+  {"actor":"root","content":[{"kind":"text","text":"Which model are you?"}],"id":"user-16","kind":"message","role":"user","seq_from":16,"seq_to":17,"streaming":false,"ts":1700000000321},
+  {"actor":"root","error":null,"id":"run-18","kind":"run","outcome":"completed","seq_from":18,"seq_to":33,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000323},
+  {"actor":"root","content":[{"kind":"text","text":"Answer from model b."}],"id":"msg-24.0","kind":"message","role":"agent","seq_from":25,"seq_to":29,"streaming":false,"ts":1700000000351},
+  {"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-30","kind":"usage","scope":"turn","seq_from":30,"seq_to":30,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000355}
+],
+"view": {"last_outcome":"completed","last_seq":36,"last_ts":1700000000363,"native":{"id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-187Z_00000000-0000-4000-8000-000000000002.jsonl"},"open_requests":[],"open_tools":0,"options":[{"choices":[{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model-b"},{"choices":[{"label":"off","value":"off"}],"id":"thinking","kind":"select","label":"Thinking","value":"off"}],"ready":false,"run_active":false,"unanswered":[]}}

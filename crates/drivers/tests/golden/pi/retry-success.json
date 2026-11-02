@@ -1,0 +1,89 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000322},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000002},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 5,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000325},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 15,
+   "ops": [
+     {"item":{"actor":"root","attempt":1,"delay_ms":20,"error":"503: {\"code\":503,\"message\":\"service unavailable\",\"type\":\"mock_error\"}","id":"retry-15","kind":"retry","max_attempts":2,"phase":"waiting","seq_from":15,"seq_to":15,"streaming":false,"ts":1700000000361},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 17,
+   "ops": [
+     {"item":{"actor":"root","attempt":1,"delay_ms":20,"error":"503: {\"code\":503,\"message\":\"service unavailable\",\"type\":\"mock_error\"}","id":"retry-15","kind":"retry","max_attempts":2,"phase":"retrying","seq_from":15,"seq_to":17,"streaming":false,"ts":1700000000361},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 20,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-19.0","kind":"message","role":"agent","seq_from":20,"seq_to":20,"streaming":true,"ts":1700000000428},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 21,
+   "ops": [
+     {"id":"msg-19.0","op":"append_text","seq_from":21,"seq_to":21,"text":"Recovere"}
+   ],
+   "events": []},
+  {"seq": 22,
+   "ops": [
+     {"id":"msg-19.0","op":"append_text","seq_from":22,"seq_to":22,"text":"d after "}
+   ],
+   "events": []},
+  {"seq": 23,
+   "ops": [
+     {"id":"msg-19.0","op":"append_text","seq_from":23,"seq_to":23,"text":"a retry."}
+   ],
+   "events": []},
+  {"seq": 24,
+   "ops": [
+     {"id":"msg-19.0","op":"end","seq_from":24,"seq_to":24}
+   ],
+   "events": []},
+  {"seq": 25,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-25","kind":"usage","scope":"turn","seq_from":25,"seq_to":25,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000432},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
+   ]},
+  {"seq": 26,
+   "ops": [
+     {"item":{"actor":"root","attempt":1,"delay_ms":20,"error":"503: {\"code\":503,\"message\":\"service unavailable\",\"type\":\"mock_error\"}","id":"retry-15","kind":"retry","max_attempts":2,"phase":"succeeded","seq_from":15,"seq_to":26,"streaming":false,"ts":1700000000361},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 29,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":29,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000325},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 30,
+   "ops": [],
+   "events": [
+     {"code":0,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000002},
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000322},
+  {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":29,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000325},
+  {"actor":"root","attempt":1,"delay_ms":20,"error":"503: {\"code\":503,\"message\":\"service unavailable\",\"type\":\"mock_error\"}","id":"retry-15","kind":"retry","max_attempts":2,"phase":"succeeded","seq_from":15,"seq_to":26,"streaming":false,"ts":1700000000361},
+  {"actor":"root","content":[{"kind":"text","text":"Recovered after a retry."}],"id":"msg-19.0","kind":"message","role":"agent","seq_from":20,"seq_to":24,"streaming":false,"ts":1700000000428},
+  {"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-25","kind":"usage","scope":"turn","seq_from":25,"seq_to":25,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000432}
+],
+"view": {"last_outcome":"completed","last_seq":30,"last_ts":1700000000452,"native":null,"open_requests":[],"open_tools":0,"options":[],"ready":false,"run_active":false,"unanswered":[]}}

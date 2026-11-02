@@ -1,0 +1,73 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000312},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 5,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000315},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 12,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-11.0","kind":"message","role":"agent","seq_from":12,"seq_to":12,"streaming":true,"ts":1700000000347},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 13,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":13,"seq_to":13,"text":"This ans"}
+   ],
+   "events": []},
+  {"seq": 14,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":14,"seq_to":14,"text":"wer is c"}
+   ],
+   "events": []},
+  {"seq": 15,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":15,"seq_to":15,"text":"ut"}
+   ],
+   "events": []},
+  {"seq": 16,
+   "ops": [
+     {"id":"msg-11.0","op":"end","seq_from":16,"seq_to":16}
+   ],
+   "events": []},
+  {"seq": 17,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.008291999999999999,"size":null,"used":4196},"cost":0.008291999999999999,"id":"usage-17","kind":"usage","scope":"turn","seq_from":17,"seq_to":17,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":4096},"ts":1700000000351},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.008291999999999999,"size":null,"used":4196},"event":"context"}
+   ]},
+  {"seq": 20,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"max_tokens","seq_from":5,"seq_to":20,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000315},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"max_tokens"}
+   ]},
+  {"seq": 21,
+   "ops": [],
+   "events": [
+     {"code":0,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000312},
+  {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"max_tokens","seq_from":5,"seq_to":20,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000315},
+  {"actor":"root","content":[{"kind":"text","text":"This answer is cut"}],"id":"msg-11.0","kind":"message","role":"agent","seq_from":12,"seq_to":16,"streaming":false,"ts":1700000000347},
+  {"actor":"root","context":{"cost":0.008291999999999999,"size":null,"used":4196},"cost":0.008291999999999999,"id":"usage-17","kind":"usage","scope":"turn","seq_from":17,"seq_to":17,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":4096},"ts":1700000000351}
+],
+"view": {"last_outcome":"max_tokens","last_seq":21,"last_ts":1700000000365,"native":null,"open_requests":[],"open_tools":0,"options":[],"ready":false,"run_active":false,"unanswered":[]}}

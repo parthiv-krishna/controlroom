@@ -1,0 +1,24 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000320},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]},
+     {"event":"native_session","id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-190Z_00000000-0000-4000-8000-000000000002.jsonl"}
+   ]},
+  {"seq": 5,
+   "ops": [],
+   "events": [
+     {"code":143,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000320}
+],
+"view": {"last_outcome":null,"last_seq":5,"last_ts":1700000000330,"native":{"id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-190Z_00000000-0000-4000-8000-000000000002.jsonl"},"open_requests":[],"open_tools":0,"options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}],"ready":false,"run_active":false,"unanswered":[]}}

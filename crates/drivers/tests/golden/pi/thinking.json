@@ -1,0 +1,99 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000371},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 5,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000375},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 12,
+   "ops": [
+     {"item":{"actor":"root","id":"msg-11.0","kind":"thinking","seq_from":12,"seq_to":12,"streaming":true,"text":"","ts":1700000000404},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 13,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":13,"seq_to":13,"text":"Let me t"}
+   ],
+   "events": []},
+  {"seq": 14,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":14,"seq_to":14,"text":"hink abo"}
+   ],
+   "events": []},
+  {"seq": 15,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":15,"seq_to":15,"text":"ut it."}
+   ],
+   "events": []},
+  {"seq": 16,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-11.1","kind":"message","role":"agent","seq_from":16,"seq_to":16,"streaming":true,"ts":1700000000408},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 17,
+   "ops": [
+     {"id":"msg-11.1","op":"append_text","seq_from":17,"seq_to":17,"text":"The answ"}
+   ],
+   "events": []},
+  {"seq": 18,
+   "ops": [
+     {"id":"msg-11.1","op":"append_text","seq_from":18,"seq_to":18,"text":"er is 42"}
+   ],
+   "events": []},
+  {"seq": 19,
+   "ops": [
+     {"id":"msg-11.1","op":"append_text","seq_from":19,"seq_to":19,"text":"."}
+   ],
+   "events": []},
+  {"seq": 20,
+   "ops": [
+     {"id":"msg-11.0","op":"end","seq_from":20,"seq_to":20}
+   ],
+   "events": []},
+  {"seq": 21,
+   "ops": [
+     {"id":"msg-11.1","op":"end","seq_from":21,"seq_to":21}
+   ],
+   "events": []},
+  {"seq": 22,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-22","kind":"usage","scope":"turn","seq_from":22,"seq_to":22,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000409},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
+   ]},
+  {"seq": 25,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":25,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000375},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 26,
+   "ops": [],
+   "events": [
+     {"code":0,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000371},
+  {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":25,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000375},
+  {"actor":"root","id":"msg-11.0","kind":"thinking","seq_from":12,"seq_to":20,"streaming":false,"text":"Let me think about it.","ts":1700000000404},
+  {"actor":"root","content":[{"kind":"text","text":"The answer is 42."}],"id":"msg-11.1","kind":"message","role":"agent","seq_from":16,"seq_to":21,"streaming":false,"ts":1700000000408},
+  {"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-22","kind":"usage","scope":"turn","seq_from":22,"seq_to":22,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000409}
+],
+"view": {"last_outcome":"completed","last_seq":26,"last_ts":1700000000420,"native":null,"open_requests":[],"open_tools":0,"options":[],"ready":false,"run_active":false,"unanswered":[]}}

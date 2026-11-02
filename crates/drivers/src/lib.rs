@@ -20,6 +20,10 @@
 //! tests). This module is the contract between the drivers and the runtime; change it only with
 //! a reason recorded in the workstream report.
 
+mod pi;
+
+pub use pi::PiDriver;
+
 use controlroom_protocol::daemon::OptionValue;
 use controlroom_protocol::ids::{OpId, QueueId, RequestId};
 use controlroom_protocol::session::{

@@ -1,0 +1,171 @@
+{"folded": [
+  {"seq": 3,
+   "ops": [
+     {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000317},"op":"upsert"}
+   ],
+   "events": [
+     {"event":"ready"}
+   ]},
+  {"seq": 4,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Long task."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 5,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000320},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 12,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-11.0","kind":"message","role":"agent","seq_from":12,"seq_to":12,"streaming":true,"ts":1700000000352},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 13,
+   "ops": [
+     {"id":"msg-11.0","op":"append_text","seq_from":13,"seq_to":13,"text":"Partial"}
+   ],
+   "events": []},
+  {"seq": 16,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Queued follow-up."}],"id":"user-14","kind":"message","role":"user","seq_from":14,"seq_to":16,"streaming":false,"ts":1700000000353},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 18,
+   "ops": [
+     {"id":"msg-11.0","op":"end","seq_from":18,"seq_to":18}
+   ],
+   "events": []},
+  {"seq": 22,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"cancelled","seq_from":5,"seq_to":22,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000320},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"cancelled"}
+   ]},
+  {"seq": 25,
+   "ops": [],
+   "events": [
+     {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]},
+     {"event":"native_session","id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-184Z_00000000-0000-4000-8000-000000000002.jsonl"}
+   ]},
+  {"seq": 27,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Next prompt."}],"id":"user-26","kind":"message","role":"user","seq_from":26,"seq_to":27,"streaming":false,"ts":1700000000358},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 28,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-28","kind":"run","outcome":null,"seq_from":28,"seq_to":28,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000359},"op":"upsert"}
+   ],
+   "events": [
+     {"cause":null,"event":"run_started"}
+   ]},
+  {"seq": 33,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-32.0","kind":"message","role":"agent","seq_from":33,"seq_to":33,"streaming":true,"ts":1700000000362},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 34,
+   "ops": [
+     {"id":"msg-32.0","op":"append_text","seq_from":34,"seq_to":34,"text":"Answer t"}
+   ],
+   "events": []},
+  {"seq": 35,
+   "ops": [
+     {"id":"msg-32.0","op":"append_text","seq_from":35,"seq_to":35,"text":"o the ne"}
+   ],
+   "events": []},
+  {"seq": 36,
+   "ops": [
+     {"id":"msg-32.0","op":"append_text","seq_from":36,"seq_to":36,"text":"xt promp"}
+   ],
+   "events": []},
+  {"seq": 37,
+   "ops": [
+     {"id":"msg-32.0","op":"append_text","seq_from":37,"seq_to":37,"text":"t."}
+   ],
+   "events": []},
+  {"seq": 38,
+   "ops": [
+     {"id":"msg-32.0","op":"end","seq_from":38,"seq_to":38}
+   ],
+   "events": []},
+  {"seq": 39,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-39","kind":"usage","scope":"turn","seq_from":39,"seq_to":39,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000363},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00012399999999999998,"size":128000,"used":112},"event":"context"}
+   ]},
+  {"seq": 43,
+   "ops": [
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Queued follow-up."}],"id":"user-14","kind":"message","role":"user","seq_from":43,"seq_to":43,"streaming":false,"ts":1700000000353},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 46,
+   "ops": [
+     {"item":{"actor":"root","content":[],"id":"msg-45.0","kind":"message","role":"agent","seq_from":46,"seq_to":46,"streaming":true,"ts":1700000000366},"op":"upsert"}
+   ],
+   "events": []},
+  {"seq": 47,
+   "ops": [
+     {"id":"msg-45.0","op":"append_text","seq_from":47,"seq_to":47,"text":"Answer t"}
+   ],
+   "events": []},
+  {"seq": 48,
+   "ops": [
+     {"id":"msg-45.0","op":"append_text","seq_from":48,"seq_to":48,"text":"o the qu"}
+   ],
+   "events": []},
+  {"seq": 49,
+   "ops": [
+     {"id":"msg-45.0","op":"append_text","seq_from":49,"seq_to":49,"text":"eued fol"}
+   ],
+   "events": []},
+  {"seq": 50,
+   "ops": [
+     {"id":"msg-45.0","op":"append_text","seq_from":50,"seq_to":50,"text":"low-up."}
+   ],
+   "events": []},
+  {"seq": 51,
+   "ops": [
+     {"id":"msg-45.0","op":"end","seq_from":51,"seq_to":51}
+   ],
+   "events": []},
+  {"seq": 52,
+   "ops": [
+     {"item":{"actor":"root","context":{"cost":0.00024799999999999996,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-52","kind":"usage","scope":"turn","seq_from":52,"seq_to":52,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000367},"op":"upsert"}
+   ],
+   "events": [
+     {"context":{"cost":0.00024799999999999996,"size":128000,"used":112},"event":"context"}
+   ]},
+  {"seq": 55,
+   "ops": [
+     {"item":{"actor":"root","error":null,"id":"run-28","kind":"run","outcome":"completed","seq_from":28,"seq_to":55,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000359},"op":"upsert"}
+   ],
+   "events": [
+     {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 56,
+   "ops": [],
+   "events": [
+     {"code":0,"during_run":false,"event":"exited","signal":null}
+   ]}
+],
+"timeline": [
+  {"actor":"root","content":[{"kind":"text","text":"Long task."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},
+  {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000317},
+  {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"cancelled","seq_from":5,"seq_to":22,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000320},
+  {"actor":"root","content":[{"kind":"text","text":"Partial"}],"id":"msg-11.0","kind":"message","role":"agent","seq_from":12,"seq_to":18,"streaming":false,"ts":1700000000352},
+  {"actor":"root","content":[{"kind":"text","text":"Next prompt."}],"id":"user-26","kind":"message","role":"user","seq_from":26,"seq_to":27,"streaming":false,"ts":1700000000358},
+  {"actor":"root","error":null,"id":"run-28","kind":"run","outcome":"completed","seq_from":28,"seq_to":55,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000359},
+  {"actor":"root","content":[{"kind":"text","text":"Answer to the next prompt."}],"id":"msg-32.0","kind":"message","role":"agent","seq_from":33,"seq_to":38,"streaming":false,"ts":1700000000362},
+  {"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-39","kind":"usage","scope":"turn","seq_from":39,"seq_to":39,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000363},
+  {"actor":"root","content":[{"kind":"text","text":"Queued follow-up."}],"id":"user-14","kind":"message","role":"user","seq_from":43,"seq_to":43,"streaming":false,"ts":1700000000353},
+  {"actor":"root","content":[{"kind":"text","text":"Answer to the queued follow-up."}],"id":"msg-45.0","kind":"message","role":"agent","seq_from":46,"seq_to":51,"streaming":false,"ts":1700000000366},
+  {"actor":"root","context":{"cost":0.00024799999999999996,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-52","kind":"usage","scope":"turn","seq_from":52,"seq_to":52,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000367}
+],
+"view": {"last_outcome":"completed","last_seq":56,"last_ts":1700000000404,"native":{"id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-184Z_00000000-0000-4000-8000-000000000002.jsonl"},"open_requests":[],"open_tools":0,"options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}],"ready":false,"run_active":false,"unanswered":[]}}
