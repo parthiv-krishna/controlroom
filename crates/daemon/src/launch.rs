@@ -23,8 +23,6 @@
 //! from the environment.
 
 use std::collections::BTreeMap;
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 
 use controlroom_protocol::session::DriverKind;
 use controlroom_sandbox::agent_dir::{
@@ -43,7 +41,7 @@ use controlroom_transcript::{ProcessKind, StdinMode};
 
 use crate::config::agents::AgentEntry;
 use crate::config::sandbox::SandboxSettings;
-use crate::dirs::{Dirs, create_private_dir};
+use crate::dirs::{Dirs, create_private_dir, write_private_file};
 
 /// Machine-level inputs of every launch.
 #[derive(Debug, Clone)]
@@ -146,6 +144,7 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
     let command = agent_command(&launch.agent, &launch.args);
     let layout = SessionLayout::new(host.dirs.state(), &launch.session);
     let (exec, env_file, sandbox) = if launch.policy.level == SandboxLevel::Off {
+        store_hook_secret(&host.dirs, None, &launch.session)?;
         let cmd = LaunchCommand::new(None, &host.shell, &launch.cwd, &command);
         (argv(&cmd), None, None)
     } else {
@@ -164,6 +163,7 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
         };
         let spec = sandbox_spec(host, launch, &layout, &built, hook.clone());
         write_profile(&layout, &generate_profile(&spec)?)?;
+        store_hook_secret(&host.dirs, hook.as_ref(), &launch.session)?;
         let cmd = LaunchCommand::new(
             Some((&nono, &layout.profile())),
             &host.shell,
@@ -347,26 +347,42 @@ fn sandbox_spec(
 
 /// Writes `KEY=VALUE` lines with mode 0600, replacing the file atomically.
 fn write_env_file(path: &AbsPath, vars: &[(String, String)]) -> Result<(), LaunchError> {
-    let io = |source| LaunchError::Io {
+    let text: String = vars
+        .iter()
+        .map(|(key, value)| format!("{key}={value}\n"))
+        .collect();
+    write_private_file(path, text.as_bytes()).map_err(|source| LaunchError::Io {
         path: path.to_string(),
         source,
+    })
+}
+
+/// Records the launch's webhook secret for the listener (`<session>/hook.secret`), or removes
+/// a previous launch's when this one has no webhook. It must be in place before the agent
+/// starts.
+fn store_hook_secret(
+    dirs: &Dirs,
+    hook: Option<&HookUrl>,
+    session: &SessionId,
+) -> Result<(), LaunchError> {
+    let path = dirs.hook_secret(session.as_str());
+    let result = match hook {
+        Some(hook) => write_private_file(&path, hook.secret.as_str().as_bytes()),
+        None => match std::fs::remove_file(path.as_path()) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        },
     };
-    let tmp = path
-        .parent()
-        .expect("the env file has a parent")
-        .join(".launch.env.tmp");
-    let _ = std::fs::remove_file(tmp.as_path());
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(tmp.as_path())
-        .map_err(io)?;
-    for (key, value) in vars {
-        writeln!(file, "{key}={value}").map_err(io)?;
-    }
-    file.sync_all().map_err(io)?;
-    std::fs::rename(tmp.as_path(), path.as_path()).map_err(io)
+    result.map_err(|source| LaunchError::Io {
+        path: path.to_string(),
+        source,
+    })
+}
+
+/// The webhook secret of the session's current launch, if it has one.
+pub fn load_hook_secret(dirs: &Dirs, session: &str) -> Option<HookSecret> {
+    let text = std::fs::read_to_string(dirs.hook_secret(session).as_path()).ok()?;
+    HookSecret::parse(text.trim())
 }
 
 #[cfg(test)]

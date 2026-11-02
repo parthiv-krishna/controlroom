@@ -6,7 +6,8 @@
 //! from the controller (grants, domains, mediated commands), and the session's level. Entries
 //! that can't be expressed are dropped when dropping only narrows access (paths, domains);
 //! an unusable mediated command fails the launch, because dropping it would widen access.
-//! There is no approval webhook listener in P3, so `approve` rules fail closed to `deny`.
+//! Launches get the approval webhook's port when its listener runs; without it, `approve` rules
+//! fail closed to `deny`.
 
 use std::sync::Mutex;
 
@@ -33,16 +34,19 @@ use crate::shell::login_shell;
 pub struct DaemonAgents {
     dirs: Dirs,
     controlroomd: AbsPath,
+    /// The approval webhook listener's port, if it runs.
+    webhook_port: Option<u16>,
     /// nono, once found (looked up again while missing).
     nono: Mutex<Option<AbsPath>>,
 }
 
 impl DaemonAgents {
-    /// Agents of `dirs`, launched by `controlroomd`.
-    pub fn new(dirs: Dirs, controlroomd: AbsPath) -> Self {
+    /// Agents of `dirs`, launched by `controlroomd`, with approvals sent to `webhook_port`.
+    pub fn new(dirs: Dirs, controlroomd: AbsPath, webhook_port: Option<u16>) -> Self {
         Self {
             dirs,
             controlroomd,
+            webhook_port,
             nono: Mutex::new(None),
         }
     }
@@ -138,8 +142,7 @@ impl Agents for DaemonAgents {
             agent,
             args: start.args.clone(),
             policy,
-            // Approvals arrive with the webhook listener (after P3); approve rules deny.
-            webhook_port: None,
+            webhook_port: self.webhook_port,
         };
         let prepared =
             launch::prepare(&host, &launch).map_err(|e| sandbox_unavailable(e.to_string()))?;

@@ -43,6 +43,47 @@ fn create_prompt_reply_idle() {
 }
 
 #[test]
+fn create_with_a_first_prompt_and_a_detail_only_subscription() {
+    let env = Env::with(texts(&["Started on it."]));
+    let client = env.client();
+    client.watch_machine();
+    let create = json!({"op_id": op(), "agent": "fake", "cwd": env.work(), "sandbox_level": "off",
+                        "prompt": {"content": text("fix the flaky test")}});
+    let created = client.call("session.create", create.clone());
+    assert_eq!(created["prompt"]["outcome"], "queued");
+    assert_eq!(created["session"]["queue"]["len"], 1);
+    assert_eq!(created["session"]["agent_live"], false);
+    // A retry (e.g. after a lost response) is the same command.
+    assert_eq!(client.call("session.create", create), created);
+    let id = created["session"]["id"].as_str().unwrap().to_owned();
+    let s = client.wait_turn(&id, 0);
+    assert!(s["preview"].as_str().unwrap().contains("Started on it"));
+    assert_eq!(s["agent_live"], true);
+    assert_eq!(env.prompts_sent(&id), ["fix the flaky test"]);
+
+    // Detail only: the result and later events carry no timeline ops.
+    let result = client.call(
+        "session.subscribe",
+        json!({"id": id, "since_seq": 0, "timeline": false}),
+    );
+    let sub = result["subscription_id"].clone();
+    assert_eq!(result["detail"]["queue"], json!([]));
+    let mark = client.turn_mark(&id);
+    client.prompt(&id, "again");
+    client.wait_turn(&id, mark);
+    // A full subscription after it sees the new turn; the detail-only one got no ops.
+    let (_, ops) = client.session_ops(&id, mark);
+    assert!(!ops.is_empty());
+    assert!(
+        client
+            .notifications()
+            .iter()
+            .filter(|n| n["params"]["subscription_id"] == sub)
+            .all(|n| n["params"]["ops"].as_array().is_none_or(Vec::is_empty)),
+    );
+}
+
+#[test]
 fn op_id_replay_applies_once() {
     let env = Env::with(json!({}));
     let client = env.client();

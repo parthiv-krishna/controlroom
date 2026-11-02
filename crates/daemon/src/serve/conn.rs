@@ -215,7 +215,7 @@ fn hello(conn: &Conn, request: RpcRequest<Value>) -> Result<Value, RpcError> {
         daemon_version: VERSION.to_owned(),
         protocol_version: DAEMON_PROTOCOL_VERSION,
         daemon_id: conn.shared.runtime.daemon_id(),
-        capabilities: Vec::new(),
+        capabilities: conn.shared.capabilities.clone(),
     };
     serde_json::to_value(result).map_err(|e| RpcError::new(ErrorData::InternalError, e.to_string()))
 }

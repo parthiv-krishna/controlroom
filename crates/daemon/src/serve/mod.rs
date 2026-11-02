@@ -11,7 +11,10 @@
 //! connection and exit 0; agents keep running under their supervisors. SIGHUP is ignored.
 //!
 //! - [`host`], [`agents`]: the runtime's ports on this machine;
-//! - [`conn`], [`controller`], [`dispatch`], [`feeds`], [`fs_list`]: the daemon API.
+//! - [`conn`], [`controller`], [`dispatch`], [`feeds`], [`fs_list`]: the daemon API;
+//! - [`webhook`]: nono's approval requests, raised as `sandbox` requests on the session. It is
+//!   bound before the runtime opens (launches need its port); if it can't bind, approvals
+//!   fail closed (`approve` rules deny) and `hello` doesn't advertise `sandbox_approvals`.
 
 mod agents;
 mod conn;
@@ -20,6 +23,7 @@ mod dispatch;
 mod feeds;
 mod fs_list;
 mod host;
+mod webhook;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -27,6 +31,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
+use controlroom_protocol::Capability;
 use controlroom_runtime::ports::SystemClock;
 use controlroom_runtime::{Runtime, RuntimeConfig};
 use controlroom_sandbox::AbsPath;
@@ -62,6 +67,8 @@ pub struct Shared {
     pub dirs: Dirs,
     /// The connected controller.
     pub controllers: controller::Controllers,
+    /// Optional features this daemon serves (`hello.capabilities`).
+    pub capabilities: Vec<Capability>,
 }
 
 /// Runs the subcommand.
@@ -125,10 +132,25 @@ async fn serve_async(
 ) -> anyhow::Result<()> {
     let exe = std::env::current_exe().context("resolving the controlroomd path")?;
     let controlroomd = AbsPath::from_path(&exe).context("the controlroomd path")?;
+    let hooks = match webhook::bind(&dirs).await {
+        Ok(listener) => Some(listener),
+        Err(e) => {
+            tracing::error!("the approval webhook can't listen ({e}); approvals will deny");
+            None
+        }
+    };
+    let webhook_port = hooks
+        .as_ref()
+        .and_then(|l| l.local_addr().ok())
+        .map(|a| a.port());
     let runtime = Runtime::open(RuntimeConfig {
         db_path: dirs.state().join("daemon.sqlite").as_path().to_owned(),
         host: Arc::new(host::DaemonHost::new(dirs.clone(), exe)),
-        agents: Arc::new(agents::DaemonAgents::new(dirs.clone(), controlroomd)),
+        agents: Arc::new(agents::DaemonAgents::new(
+            dirs.clone(),
+            controlroomd,
+            webhook_port,
+        )),
         clock: Arc::new(SystemClock),
     })?;
     instance.listener.set_nonblocking(true)?;
@@ -160,10 +182,16 @@ async fn serve_async(
         }
     });
 
+    let mut capabilities = Vec::new();
+    let hooks = hooks.map(|listener| {
+        capabilities.push(Capability::SANDBOX_APPROVALS);
+        tokio::spawn(webhook::serve(listener, runtime.clone(), dirs.clone()))
+    });
     let shared = Arc::new(Shared {
         runtime: runtime.clone(),
         dirs,
         controllers: controller::Controllers::default(),
+        capabilities,
     });
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
@@ -185,6 +213,9 @@ async fn serve_async(
     }
     tracing::info!("shutting down; agents keep running");
     ticker.abort();
+    if let Some(hooks) = hooks {
+        hooks.abort();
+    }
     runtime.shutdown().await;
     Ok(())
 }

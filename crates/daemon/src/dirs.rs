@@ -7,7 +7,9 @@
 //!     daemon.log                                            stderr of a detached daemon
 //!     run/daemon.sock, run/daemon.lock                      the daemon socket and instance lock
 //!     run/<id>.sock                                         supervisor sockets
+//!     run/webhook.port                                      the approval webhook's loopback port
 //!     sessions/<id>/                                        transcript, supervisor files, sandbox dirs
+//!     sessions/<id>/hook.secret                             the running launch's webhook secret
 //!     nono/{state,config}/                                  nono's own XDG dirs
 //! ~/.config/controlroom/{agents.toml,sandbox.toml}          configuration
 //! ```
@@ -119,6 +121,40 @@ impl Dirs {
     pub fn supervisor_socket(&self, id: &str) -> AbsPath {
         self.run().join(&format!("{id}.sock"))
     }
+
+    /// `<state>/run/webhook.port`: the approval webhook's port, reused across restarts so
+    /// running agents' profiles keep pointing at it.
+    pub fn webhook_port(&self) -> AbsPath {
+        self.run().join("webhook.port")
+    }
+
+    /// `<state>/sessions/<id>/hook.secret`: the webhook secret of the session's current
+    /// launch.
+    pub fn hook_secret(&self, id: &str) -> AbsPath {
+        self.state.join("sessions").join(id).join("hook.secret")
+    }
+}
+
+/// Writes `bytes` to `path` with mode 0600, replacing the file atomically (a temporary file
+/// next to it, fsynced, then renamed).
+pub fn write_private_file(path: &AbsPath, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let name = path
+        .as_path()
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let tmp = path.as_path().with_file_name(format!(".{name}.tmp"));
+    let _ = std::fs::remove_file(&tmp);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&tmp)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    std::fs::rename(&tmp, path.as_path())
 }
 
 /// Creates `dir` and its missing parents with mode 0700.

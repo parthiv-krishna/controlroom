@@ -1,3 +1,5 @@
+use std::os::unix::fs::PermissionsExt;
+
 use controlroom_protocol::session::DriverKind;
 use controlroom_sandbox::policy::{CommandRule, ScopePolicy, default_command_rules};
 use controlroom_sandbox::{Name, effective_policy};
@@ -177,6 +179,27 @@ fn webhook_port_enables_approvals() {
     .unwrap();
     assert!(profile.contains(&hook.url()));
     assert!(profile.contains("\"capability_elevation\": true"));
+
+    // The listener finds this launch's secret, private to the user; each launch gets a new
+    // one, and a launch without a webhook leaves none behind.
+    let stored = load_hook_secret(&f.host.dirs, SESSION).unwrap();
+    assert!(stored.matches(&hook.secret));
+    let path = f.host.dirs.hook_secret(SESSION);
+    let mode = std::fs::metadata(path.as_path())
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+    let again = prepare(&f.host, &launch(&f, None, Some(47100))).unwrap();
+    let next = again.sandbox.unwrap().hook.unwrap();
+    assert!(!next.secret.matches(&hook.secret));
+    assert!(
+        load_hook_secret(&f.host.dirs, SESSION)
+            .unwrap()
+            .matches(&next.secret)
+    );
+    prepare(&f.host, &launch(&f, Some(SandboxLevel::Off), None)).unwrap();
+    assert!(load_hook_secret(&f.host.dirs, SESSION).is_none());
 }
 
 #[test]
