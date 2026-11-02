@@ -17,3 +17,6 @@ pub mod wire;
 
 pub use agent::{AgentOutput, FakeAgent, FakeScript, FakeStep, FakeTurn};
 pub use fold::FakeDriver;
+
+#[cfg(test)]
+mod tests;

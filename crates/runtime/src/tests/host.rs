@@ -364,13 +364,33 @@ impl Host for FakeHost {
         session: SessionId,
     ) -> BoxFuture<'_, Result<Option<Arc<dyn SupervisorConn>>, HostError>> {
         Box::pin(async move {
+            // Like the real host, wait while a previous connection still holds the writer role.
+            let mut changed = self.changed.subscribe();
+            let free = async {
+                loop {
+                    if !self
+                        .lock()
+                        .procs
+                        .get(&session)
+                        .is_some_and(|p| p.supervisor && p.writer)
+                    {
+                        return;
+                    }
+                    if changed.changed().await.is_err() {
+                        return;
+                    }
+                }
+            };
+            if tokio::time::timeout(Duration::from_secs(5), free)
+                .await
+                .is_err()
+            {
+                return Err(HostError("writer_busy".into()));
+            }
             let mut state = self.lock();
             let Some(proc) = state.procs.get_mut(&session).filter(|p| p.supervisor) else {
                 return Ok(None);
             };
-            if proc.writer {
-                return Err(HostError("writer_busy".into()));
-            }
             proc.writer = true;
             let conn: Arc<dyn SupervisorConn> = Arc::new(FakeConn {
                 host: self.clone(),
@@ -413,6 +433,7 @@ impl Host for FakeHost {
             state.procs.remove(&session);
             state.removed.push(session);
         }
+        self.bump();
         Box::pin(async { Ok(()) })
     }
 }
@@ -437,6 +458,7 @@ impl Drop for FakeConn {
         if let Some(proc) = self.host.lock().procs.get_mut(&self.session) {
             proc.writer = false;
         }
+        self.host.bump();
     }
 }
 

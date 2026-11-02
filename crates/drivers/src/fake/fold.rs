@@ -360,7 +360,11 @@ impl Driver for FakeDriver {
     fn fold(&mut self, rec: &Record) -> FoldOut {
         let mut out = FoldOut::default();
         match &rec.body {
-            Body::Meta(_) => self.reset_process(&mut out, rec),
+            Body::Meta(_) => {
+                self.reset_process(&mut out, rec);
+                // A new process reports its native session again.
+                self.view.native = None;
+            }
             Body::In(line) if line.truncated == 0 => self.fold_in(&line.raw, rec, &mut out),
             Body::Out(line) if line.truncated == 0 => self.fold_out(&line.raw, rec, &mut out),
             Body::Exit(exit) => {

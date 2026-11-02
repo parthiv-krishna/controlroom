@@ -151,7 +151,8 @@ pub struct NativeRef {
 pub enum DriverEvent {
     /// The agent process is up and answering (e.g. its first response arrived).
     Ready,
-    /// The agent reported its native session.
+    /// The agent reported its native session: once per agent process (after each `meta`
+    /// record, also when it resumed the same one), and again whenever it switches sessions.
     NativeSession(NativeRef),
     /// A run began. `cause` is the tag of the line that started it, when known.
     RunStarted {

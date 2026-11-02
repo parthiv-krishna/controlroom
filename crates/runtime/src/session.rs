@@ -196,6 +196,7 @@ impl Session {
     pub(crate) fn has_process(&self) -> bool {
         self.live.launching
             || self.live.loading
+            || self.live.relaunch
             || (self.live.attachment.is_some() && self.derived.process.live)
     }
 
@@ -242,7 +243,8 @@ impl Session {
         if self.data.closed() {
             return SessionState::Closed;
         }
-        if self.live.loading || self.live.launching {
+        let restarting = self.live.relaunch && !self.derived.process.live;
+        if self.live.loading || self.live.launching || restarting {
             return SessionState::Starting;
         }
         if self.live.attachment.is_some() && self.derived.process.live {

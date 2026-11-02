@@ -56,12 +56,18 @@ impl Core {
         }
     }
 
-    /// Starts the agent with `pending_start`, unless a start is already running.
+    /// Starts the agent with `pending_start`, unless a start is already running. While the
+    /// previous supervisor is still attached (it holds the transcript until it has drained its
+    /// readers), the start waits for it to go.
     pub(crate) fn request_start(&mut self, id: SessionId, by: StartedBy) -> Result<(), RpcError> {
         let session = self.session_mut(id)?;
         session.data.pending_start = Some(by);
         session.live.launch_error = None;
         if session.live.launching {
+            return Ok(());
+        }
+        if session.live.attachment.is_some() {
+            session.live.relaunch = true;
             return Ok(());
         }
         session.live.launching = true;

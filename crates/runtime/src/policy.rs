@@ -76,11 +76,9 @@ impl Core {
         let Some(days) = self.settings.retention.delete_closed_after_days else {
             return false;
         };
-        let session = &self.sessions[&id];
-        session.live.attachment.is_none()
-            && session
-                .data
-                .closed_at
-                .is_some_and(|at| now.0 - at.0 >= i64::from(days) * DAY_MS)
+        self.sessions[&id]
+            .data
+            .closed_at
+            .is_some_and(|at| now.0 - at.0 >= i64::from(days) * DAY_MS)
     }
 }

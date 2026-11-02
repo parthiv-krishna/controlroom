@@ -257,6 +257,8 @@ impl Core {
             if session.live.loading {
                 continue;
             }
+            // The flush empties the cache: if the commit fails, rebuild it by a re-fold.
+            session.needs_reload_on_failure = true;
             session.timeline.flush(&self.store, id)?;
             if session.data.timeline_seq != session.live.processed_seq {
                 self.tx
@@ -548,6 +550,7 @@ impl Core {
         if session.live.loading {
             return Ok(());
         }
+        session.needs_reload_on_failure = true;
         session.timeline.flush(&self.store, id).map_err(internal)?;
         session.data.timeline_seq = session.live.processed_seq;
         Ok(())

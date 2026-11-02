@@ -94,7 +94,13 @@ impl Harness {
     /// "Kills the daemon": stops the runtime (no flush, no goodbye) and opens a new one on the
     /// same store and transcripts.
     pub(crate) async fn restart(self) -> Harness {
+        self.restart_after(|_| {}).await
+    }
+
+    /// Like [`Harness::restart`], doing `meanwhile` while no runtime runs.
+    pub(crate) async fn restart_after(self, meanwhile: impl FnOnce(&FakeHost)) -> Harness {
         self.rt.shutdown().await;
+        meanwhile(&self.host);
         Harness::open(self.dir, self.host, self.clock, self.capabilities).await
     }
 
