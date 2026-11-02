@@ -10,7 +10,7 @@ fn permission_scenario() -> Value {
         "args": {"command": "rm -rf build"}, "result": "removed",
         "permission": {"title": "Run rm -rf build?"}}]});
     let done = json!({"content": [{"type": "text", "text": "done"}]});
-    json!({"replies": [turn.clone(), done.clone(), turn, done]})
+    json!({"replies": [turn.clone(), done.clone(), turn.clone(), done, turn]})
 }
 
 fn pending_request(client: &Client, id: &str) -> Value {
@@ -70,7 +70,7 @@ fn dialog_approve_and_deny() {
         .filter(|op| op["item"]["kind"] == "tool_call")
         .filter_map(|op| op["item"]["status"].as_str())
         .collect();
-    assert_eq!(statuses, ["completed", "failed"], "allowed, then blocked");
+    assert_eq!(statuses, ["completed", "cancelled"], "allowed, then blocked");
     let values: Vec<String> = answers(&env, &id)
         .iter()
         .filter_map(|a| a["value"].as_str().map(str::to_owned))

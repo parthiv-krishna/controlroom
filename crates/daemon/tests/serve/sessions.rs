@@ -83,8 +83,12 @@ fn set_option_model_and_thinking_including_during_a_turn() {
     let client = env.client();
     client.watch_machine();
     let id = client.create("fake", &env.work());
+    // Choices arrive with the state refresh after start (only the value before that).
     client.wait_session(&id, "options", |s| {
-        s["state"] == "idle" && option_value(s, "model") == "mock/mock-model"
+        s["state"] == "idle"
+            && s["options"].as_array().unwrap().iter().any(|o| {
+                o["id"] == "model" && o["choices"].as_array().is_some_and(|c| c.len() == 2)
+            })
     });
 
     let set = |option: &str, value: &str| {
@@ -105,7 +109,7 @@ fn set_option_model_and_thinking_including_during_a_turn() {
         option_value(s, "thinking") == "high"
     });
     env.release("busy");
-    client.wait_idle(&id);
+    client.wait_turn(&id, 0);
 
     let commands: Vec<String> = env
         .lines_in(&id)
@@ -193,7 +197,8 @@ fn close_reopen_delete() {
             .as_array()
             .is_some_and(|c| c.iter().any(|c| c["kind"] == "session_removed" && c["id"] == id))
     });
-    assert!(!env.state().join("sessions").join(&id).exists());
+    let dir = env.state().join("sessions").join(&id);
+    wait_until("the session files to go", || !dir.exists());
     client.call_err(
         "session.reopen",
         json!({"op_id": op(), "id": id}),

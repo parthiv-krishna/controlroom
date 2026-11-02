@@ -1,5 +1,6 @@
 //! The queue: auto-advance, pause on failure, send-now (pi steers), cancel.
 
+use controlroom_transcript::Body;
 use serde_json::{Value, json};
 
 use crate::harness::*;
@@ -45,8 +46,9 @@ fn queue_auto_advances_and_pauses_on_failure() {
         }
     }
 
+    let mark = client.turn_mark(&id);
     client.call("queue.resume", json!({"op_id": op(), "id": id}));
-    client.wait_idle(&id);
+    client.wait_turn(&id, mark);
     assert_eq!(env.prompts_sent(&id), ["first", "second", "third", "fourth"]);
 }
 
@@ -76,7 +78,7 @@ fn send_now_during_text_steers() {
     let (id, queue_id) = busy_with_queue(&env, &client);
     assert_eq!(send_now(&client, &id, &queue_id)["outcome"], "steered");
     env.release("hold");
-    client.wait_idle(&id);
+    client.wait_turn(&id, 0);
     let steers: Vec<Value> = env
         .lines_in(&id)
         .into_iter()
@@ -98,10 +100,24 @@ fn send_now_during_a_tool_steers_after_the_tool() {
     client.watch_machine();
     let (id, queue_id) = busy_with_queue(&env, &client);
     assert_eq!(send_now(&client, &id, &queue_id)["outcome"], "steered");
-    assert_eq!(client.summary(&id)["queue"]["len"], 1, "still waiting for the agent");
+    wait_until("the steer line", || {
+        env.lines_in(&id).iter().any(|l| l["type"] == "steer")
+    });
     env.release("hold");
-    client.wait_idle(&id);
-    // The tool completed: steering didn't interrupt it.
+    client.wait_turn(&id, 0);
+    // The steer went in while the tool ran, and the tool still completed.
+    let records = env.records(&id);
+    let steer_seq = records
+        .iter()
+        .find(|r| matches!(&r.body, Body::In(l) if l.raw.contains("\"steer\"")))
+        .map(|r| r.seq)
+        .expect("a steer line");
+    let tool_end_seq = records
+        .iter()
+        .find(|r| matches!(&r.body, Body::Out(l) if l.raw.contains("\"tool_execution_end\"")))
+        .map(|r| r.seq)
+        .expect("the tool end");
+    assert!(steer_seq < tool_end_seq);
     let (_, ops) = client.session_ops(&id, 0);
     assert!(ops.iter().any(|op| {
         op["item"]["kind"] == "tool_call" && op["item"]["status"] == "completed"
@@ -131,7 +147,7 @@ fn send_now_during_a_dialog_steers_and_the_dialog_stays_open() {
         json!({"op_id": op(), "id": id, "request_id": request,
                "response": {"kind": "choice", "option_id": "0"}}),
     );
-    client.wait_idle(&id);
+    client.wait_turn(&id, 0);
     assert_eq!(env.prompts_sent(&id), ["first", "second"]);
 }
 
@@ -148,7 +164,8 @@ fn cancel_pauses_the_queue() {
     assert_eq!(s["queue"]["paused"], true);
     assert_eq!(s["queue"]["len"], 1);
     assert_eq!(env.prompts_sent(&id), ["first"]);
+    let mark = client.turn_mark(&id);
     client.call("queue.resume", json!({"op_id": op(), "id": id}));
-    client.wait_idle(&id);
+    client.wait_turn(&id, mark);
     assert_eq!(env.prompts_sent(&id), ["first", "second"]);
 }

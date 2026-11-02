@@ -509,7 +509,36 @@ impl Client {
         )
     }
 
-    /// Waits until `session` is idle with an empty queue.
+    /// The session's `last_turn_end_seq` now, from a fresh snapshot (the feed's latest
+    /// summary may lag behind).
+    pub fn turn_mark(&self, session: &str) -> u64 {
+        let result = self.call("machine.subscribe", json!({"since_rev": null}));
+        self.call(
+            "unsubscribe",
+            json!({"subscription_id": result["subscription_id"]}),
+        );
+        result["snapshot"]["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == session)
+            .and_then(|s| s["last_turn_end_seq"].as_u64())
+            .expect("the session is in the snapshot")
+    }
+
+    /// Waits until a run ended after `mark` (see [`Client::turn_mark`]) and the session is
+    /// idle with an empty queue.
+    pub fn wait_turn(&self, session: &str, mark: u64) -> Value {
+        self.wait_session(session, "a turn end", |s| {
+            s["state"] == "idle"
+                && s["queue"]["len"] == 0
+                && s["last_turn_end_seq"].as_u64() > Some(mark)
+        })
+    }
+
+    /// Waits until `session` is idle with an empty queue. Only for states the session can't
+    /// have been in before (e.g. right after `create`); after a prompt use
+    /// [`Client::wait_turn`].
     pub fn wait_idle(&self, session: &str) -> Value {
         self.wait_session(session, "idle", |s| {
             s["state"] == "idle" && s["queue"]["len"] == 0
@@ -567,4 +596,12 @@ pub fn queue_texts(client: &Client, session: &str) -> Vec<String> {
         .iter()
         .map(|item| item["content"][0]["text"].as_str().unwrap_or("").to_owned())
         .collect()
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        // The reader thread holds a clone of the stream: close both directions explicitly.
+        let writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
+        let _ = writer.shutdown(std::net::Shutdown::Both);
+    }
 }
