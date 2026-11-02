@@ -15,8 +15,7 @@ use controlroom_sandbox::{AbsPath, Name, SessionId, SessionLayout};
 /// Arguments of `controlroomd credential`.
 #[derive(Debug, clap::Args)]
 pub struct Args {
-    /// Daemon state directory (default: `$XDG_DATA_HOME/controlroom` or
-    /// `~/.local/share/controlroom`).
+    /// Daemon state directory (default: `~/.local/state/controlroom`).
     #[arg(long)]
     state_dir: Option<PathBuf>,
     /// Session id (ULID).
@@ -49,26 +48,14 @@ pub fn run(args: Args) -> ExitCode {
 fn key(args: &Args) -> Result<controlroom_sandbox::credential::Secret, String> {
     let state_dir = match &args.state_dir {
         Some(dir) => AbsPath::from_path(dir).map_err(|e| e.to_string())?,
-        None => default_state_dir()?,
+        None => crate::dirs::Dirs::from_env(None)
+            .map_err(|e| e.to_string())?
+            .state()
+            .clone(),
     };
     let session = SessionId::new(&args.session).map_err(|e| e.to_string())?;
     let provider = Name::new(&args.provider).map_err(|e| e.to_string())?;
     let manifest =
         load_manifest(&SessionLayout::new(&state_dir, &session)).map_err(|e| e.to_string())?;
     resolve_api_key(&manifest, &provider).map_err(|e| e.to_string())
-}
-
-fn default_state_dir() -> Result<AbsPath, String> {
-    let from_env = |var: &str| {
-        std::env::var(var)
-            .ok()
-            .filter(|v| !v.is_empty())
-            .and_then(|v| AbsPath::new(&v).ok())
-    };
-    if let Some(data) = from_env("XDG_DATA_HOME") {
-        return Ok(data.join("controlroom"));
-    }
-    from_env("HOME")
-        .map(|home| home.join(".local/share/controlroom"))
-        .ok_or_else(|| "cannot determine the state directory; pass --state-dir".to_owned())
 }
