@@ -62,6 +62,8 @@ mod notify;
 mod rotation;
 mod rpc;
 pub mod store;
+#[cfg(all(unix, feature = "test-support"))]
+pub mod test_support;
 
 pub use auth::{
     AuthError, AuthPolicy, Authenticated, DEV_SUBJECT, Identity, NewLogin, Principal, token_hash,
