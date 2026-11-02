@@ -25,10 +25,6 @@ MOCK = "http://127.0.0.1:4000/control"
 # ------------------------------------------------------------------------------- helpers
 
 
-def sh(*words: str) -> str:
-    return " ".join(shlex.quote(w) for w in words)
-
-
 def as_alice(machine: Any, command: str) -> str:
     return machine.succeed(f"su - alice -c {shlex.quote(command)}")
 
@@ -67,9 +63,9 @@ class Spec:
             raise Exception(f"{self.name} ended before step {name}")
         return json.loads(server.succeed(f"cat {reached}"))
 
-    def release(self, name: str, payload: dict[str, Any] | None = None) -> None:
-        data = shlex.quote(json.dumps(payload or {}))
-        server.succeed(f"echo {data} > {GATES}/{name}.tmp && mv {GATES}/{name}.tmp {GATES}/{name}.release")
+    def release(self, name: str) -> None:
+        """Lets the spec continue past step `name`."""
+        server.succeed(f"touch {GATES}/{name}.release")
 
     def finish(self) -> None:
         server.wait_until_succeeds(f"test -e {self.status}", timeout=SPEC_TIMEOUT)
@@ -137,6 +133,7 @@ def agent_pids(machine: Any) -> list[str]:
 
 def collect_logs() -> None:
     """Copies the Playwright results and the server, daemon and mock logs to $out."""
+    server.execute(f"mkdir -p {E2E}")
     server.execute(f"journalctl -u controlroom-web --no-pager > {E2E}/server.log")
     server.copy_from_machine(E2E, "server")
     for machine in (devbox, buildbox):
