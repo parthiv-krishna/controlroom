@@ -212,6 +212,11 @@ fn start_fresh_with_history() {
         json!({"op_id": op(), "id": id, "include_history": true}),
     );
     let path = result["history_path"].as_str().unwrap().to_owned();
+    // In the session's sandboxed HOME, which a strict sandbox lets the agent read.
+    assert!(
+        path.ends_with(&format!("/sessions/{id}/home/history-1.md")),
+        "{path}"
+    );
     assert!(
         std::fs::read_to_string(&path)
             .unwrap()

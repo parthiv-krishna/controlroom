@@ -45,8 +45,8 @@ pub trait Host: Send + Sync + 'static {
         from: Seq,
     ) -> BoxFuture<'_, Result<Box<dyn RecordStream>, HostError>>;
 
-    /// Writes a file into the session's directory and returns its absolute path (history
-    /// exports).
+    /// Writes a file for the session's agent to read (history exports) where its sandbox lets it
+    /// read, and returns its absolute path.
     fn write_file(
         &self,
         session: SessionId,

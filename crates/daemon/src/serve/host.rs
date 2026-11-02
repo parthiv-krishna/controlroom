@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use controlroom_protocol::ids::{RemotePath, Seq, SessionId};
 use controlroom_protocol::{ErrorData, RpcError};
 use controlroom_runtime::ports::{Host, HostError, RecordStream, SupervisorConn};
+use controlroom_sandbox::SessionLayout;
 use controlroom_supervisor::{Client, ClientError, ErrorCode, LaunchRequest, SpawnSpec};
 use controlroom_transcript::{Reader, Record};
 use futures::future::BoxFuture;
@@ -143,7 +144,12 @@ impl Host for DaemonHost {
                 return Err(HostError(format!("invalid file name {name:?}")));
             }
             let id = Self::session_id(session)?;
-            let dir = supervisor_paths(&self.dirs, &id).dir;
+            // The agent reads these (history exports), so they go where a sandboxed agent may
+            // read: its HOME. The session dir itself is protected from the sandbox.
+            let dir = SessionLayout::new(self.dirs.state(), &id)
+                .home()
+                .as_path()
+                .to_owned();
             tokio::fs::create_dir_all(&dir).await.map_err(host_error)?;
             let path = dir.join(&name);
             tokio::fs::write(&path, contents)
