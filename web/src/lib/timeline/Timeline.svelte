@@ -58,7 +58,10 @@
   let viewport = $state(0);
   /** Bumped when a measured height changes. */
   let layout = $state(0);
+  /** Follow new content (the user hasn't scrolled up). */
   let stick = true;
+  /** A jump to an item is in progress (don't snap back to the bottom). */
+  let focusing = false;
   /** Measured heights by item id; kept for rows scrolled out of the window. */
   const measured = new Map<string, number>();
 
@@ -122,7 +125,6 @@
 
   // ------------------------------------------------------------------- jumping to an item
 
-  let focusing = false;
   $effect(() => {
     const target = app.view.focusItem;
     if (!target || target.key !== key || !scroller || raw) return;
