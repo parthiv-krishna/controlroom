@@ -33,6 +33,9 @@ pub struct FakeDriver {
     tools: HashMap<String, TimelineItem>,
     /// Requests by the agent's request id (open and answered ones of this process).
     requests: HashMap<String, TimelineItem>,
+    /// A written new-session line: once accepted, the native session is unknown until the
+    /// agent reports the new one.
+    switching: Option<LineTag>,
 }
 
 impl FakeDriver {
@@ -62,6 +65,7 @@ impl FakeDriver {
         }
         self.close_requests(out, rec);
         self.requests.clear();
+        self.switching = None;
         let capabilities = self.view.capabilities;
         let native = self.view.native.take();
         let options = std::mem::take(&mut self.view.options);
@@ -108,6 +112,9 @@ impl FakeDriver {
         };
         if let Some(tag) = input.tag.to_tag() {
             self.view.unanswered.push(tag.clone());
+            if matches!(input.command, Command::NewSession { .. }) {
+                self.switching = Some(tag.clone());
+            }
             out.events.push(DriverEvent::Written { tag });
         }
         match input.command {
@@ -158,6 +165,10 @@ impl FakeDriver {
             Output::Response { tag, ok, error } => {
                 let Some(tag) = tag.to_tag() else { return };
                 self.view.unanswered.retain(|t| *t != tag);
+                if ok && self.switching.as_ref() == Some(&tag) {
+                    self.switching = None;
+                    self.view.native = None;
+                }
                 out.events.push(if ok {
                     DriverEvent::Accepted { tag }
                 } else {

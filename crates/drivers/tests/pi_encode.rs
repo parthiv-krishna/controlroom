@@ -117,29 +117,39 @@ fn prompt(message: &str) -> Intent {
 fn prompt_round_trip_starts_a_run_caused_by_its_tag() {
     let mut session = Session::new();
     let tag = op("sched:1700000000000");
-    let lines = session.send(&prompt("Say hello."), &tag);
+    let line = session
+        .driver
+        .encode(&prompt("Say hello."), &tag)
+        .expect("encodes");
     assert_eq!(
-        lines,
-        [json!({"id": "cr:op:0:sched:1700000000000", "type": "prompt", "message": "Say hello."})]
+        serde_json::from_str::<Value>(&line[0]).expect("json"),
+        json!({"id": "cr:op:0:sched:1700000000000", "type": "prompt", "message": "Say hello."})
     );
+    let out = session.write(&line[0]);
+    assert_eq!(out.events, [DriverEvent::Written { tag: tag.clone() }]);
     assert_eq!(session.driver.view().unanswered, std::slice::from_ref(&tag));
 
+    // pi answers `started` before `agent_start`: the accept waits for the run.
     let events = session.ok(
         "cr:op:0:sched:1700000000000",
         "prompt",
         json!({"disposition": "started"}),
     );
+    assert_eq!(events, [DriverEvent::Ready]);
+    assert!(!session.driver.view().run_active);
+    assert_eq!(session.driver.view().unanswered, std::slice::from_ref(&tag));
+
+    let out = session.read(json!({"type": "agent_start"}));
     assert_eq!(
-        events,
+        out.events,
         [
-            DriverEvent::Ready,
-            DriverEvent::Accepted { tag: tag.clone() }
+            DriverEvent::RunStarted {
+                cause: Some(tag.clone())
+            },
+            DriverEvent::Accepted { tag }
         ]
     );
     assert!(session.driver.view().unanswered.is_empty());
-
-    let out = session.read(json!({"type": "agent_start"}));
-    assert_eq!(out.events, [DriverEvent::RunStarted { cause: Some(tag) }]);
     let TimelineOp::Upsert { item } = &out.ops[0] else {
         panic!("no run item");
     };
@@ -330,7 +340,13 @@ fn cancel_with_an_open_dialog_cancels_it_before_aborting() {
     );
 
     let out = session.write(&lines[0]);
-    assert_eq!(out.events, [DriverEvent::Accepted { tag: part(&tag, 0) }]);
+    assert_eq!(
+        out.events,
+        [
+            DriverEvent::Written { tag: part(&tag, 0) },
+            DriverEvent::Accepted { tag: part(&tag, 0) }
+        ]
+    );
     let TimelineOp::Upsert { item } = &out.ops[0] else {
         panic!("no request update");
     };
@@ -425,7 +441,11 @@ fn a_late_answer_to_an_expired_dialog_is_rejected() {
     });
     assert!(matches!(
         out.events.as_slice(),
-        [DriverEvent::RequestClosed { .. }, DriverEvent::Rejected { tag: t, .. }] if *t == tag
+        [
+            DriverEvent::Written { tag: w },
+            DriverEvent::RequestClosed { .. },
+            DriverEvent::Rejected { tag: t, .. },
+        ] if *t == tag && *w == tag
     ));
 }
 
@@ -528,6 +548,25 @@ fn new_session_links_the_parent_and_forgets_the_native_session() {
     );
     session.ok("cr:op:0:fresh", "new_session", json!({"cancelled": false}));
     assert_eq!(session.driver.view().native, None);
+    // The runtime passes the native id; pi links the parent by its file.
+    session.ok(
+        "x",
+        "get_state",
+        json!({"sessionId": "s2", "sessionFile": "/home/alice/s2.jsonl"}),
+    );
+    let lines = session
+        .driver
+        .encode(
+            &Intent::NewSession {
+                parent: Some("s2".into()),
+            },
+            &op("again"),
+        )
+        .expect("encodes");
+    assert!(
+        lines[0].contains(r#""parentSession":"/home/alice/s2.jsonl""#),
+        "{lines:?}"
+    );
 }
 
 #[test]
@@ -557,24 +596,50 @@ fn exit_mid_run_interrupts_and_drops_unanswered_lines() {
     let view = session.driver.view();
     assert!(!view.run_active && !view.ready && view.unanswered.is_empty());
     assert_eq!(view.last_outcome, Some(RunOutcome::Failed));
+}
 
-    // A new process after a supervisor died without an exit record closes the old one.
+/// A killed supervisor leaves no `exit` record: the next `meta` ends what the old process
+/// had open without an `Exited` (the runtime detects the dead supervisor itself), and the new
+/// process reports its native session again even when it resumed the same one.
+#[test]
+fn meta_resets_the_process_and_the_native_session_is_reported_again() {
+    let state = json!({"sessionId": "s1", "sessionFile": "/home/alice/s1.jsonl"});
+    let native = DriverEvent::NativeSession(NativeRef {
+        id: "s1".into(),
+        path: Some("/home/alice/s1.jsonl".into()),
+    });
     let mut session = Session::new();
+    assert!(
+        session
+            .ok("x", "get_state", state.clone())
+            .contains(&native)
+    );
+    assert!(session.ok("y", "get_state", state.clone()).is_empty());
     session.start_run(&op("run"));
+    session.read(json!({
+        "type": "extension_ui_request", "id": "dlg-9", "method": "confirm", "title": "Sure?"
+    }));
     let seq = session.next();
     let out = session.fold(Record {
         seq,
         ts: seq * 10,
         body: Body::Meta(Box::default()),
     });
-    assert_eq!(
-        out.events,
-        [DriverEvent::Exited {
-            code: None,
-            signal: None,
-            during_run: true
-        }]
+    assert!(
+        out.events
+            .iter()
+            .all(|e| matches!(e, DriverEvent::RequestClosed { .. })),
+        "{:?}",
+        out.events
     );
+    assert!(out.ops.iter().any(|op| matches!(op,
+        TimelineOp::Upsert { item } if matches!(item.body,
+            ItemBody::Run { outcome: Some(RunOutcome::Failed), .. }))));
+    let view = session.driver.view();
+    assert!(!view.ready && !view.run_active && view.open_requests.is_empty());
+    assert_eq!(view.native, None);
+    let events = session.ok("z", "get_state", state);
+    assert_eq!(events, [DriverEvent::Ready, native]);
 }
 
 #[test]

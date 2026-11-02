@@ -145,6 +145,29 @@ async fn start_fresh_in_process_when_the_driver_can() {
     assert_eq!(metas(&h), 1, "same process");
 }
 
+/// pi names its new session only when asked: after an in-process start fresh the runtime
+/// asks, so the new agent session is still recorded (and resumed later, not replaced).
+#[tokio::test]
+async fn start_fresh_in_process_asks_an_agent_that_reports_nothing() {
+    let caps = Capabilities {
+        new_session: true,
+        ..caps()
+    };
+    let mut h = Harness::with(FakeScript::default().quiet_switch(), caps).await;
+    let id = h.create().await;
+    h.rt.start_fresh(fresh(id, false)).await.unwrap();
+    let mut sessions = agent_sessions(&h, id).await;
+    while sessions.len() < 2 {
+        h.wait(id, "the new agent session", |s| {
+            s.state == SessionState::Idle
+        })
+        .await;
+        sessions = agent_sessions(&h, id).await;
+    }
+    assert_eq!(sessions[1].started_by, StartedBy::Fresh);
+    assert_ne!(sessions[1].native_id, sessions[0].native_id);
+}
+
 #[tokio::test]
 async fn close_reopen_delete() {
     let mut h = Harness::new(FakeScript::default()).await;

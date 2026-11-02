@@ -1,22 +1,28 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 3,
    "ops": [
      {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000316},"op":"upsert"}
    ],
-   "events": [
-     {"event":"ready"}
-   ]},
+   "events": []},
   {"seq": 4,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Run a slow command."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"ready"}
+   ]},
   {"seq": 5,
    "ops": [
      {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000319},"op":"upsert"}
    ],
    "events": [
-     {"cause":null,"event":"run_started"}
+     {"cause":{"op":"fixture-1","part":0},"event":"run_started"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 12,
    "ops": [
@@ -40,6 +46,11 @@
      {"item":{"actor":"root","duration_ms":null,"exit":null,"id":"msg-11.0","input":"sleep 60","kind":"tool_call","name":"bash","output":null,"parent_tool_call_id":null,"seq_from":12,"seq_to":17,"status":"running","streaming":true,"title":"sleep 60","tool_call_id":"call_sleep","tool_kind":"execute","ts":1700000000352},"op":"upsert"}
    ],
    "events": []},
+  {"seq": 19,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-2","part":0}}
+   ]},
   {"seq": 20,
    "ops": [
      {"item":{"actor":"root","duration_ms":9,"exit":null,"id":"msg-11.0","input":"sleep 60","kind":"tool_call","name":"bash","output":{"kind":"terminal","text":"Command aborted"},"parent_tool_call_id":null,"seq_from":12,"seq_to":20,"status":"cancelled","streaming":false,"title":"sleep 60","tool_call_id":"call_sleep","tool_kind":"execute","ts":1700000000352},"op":"upsert"}
@@ -51,6 +62,11 @@
    ],
    "events": [
      {"error":null,"event":"run_settled","outcome":"cancelled"}
+   ]},
+  {"seq": 30,
+   "ops": [],
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-2","part":0}}
    ]},
   {"seq": 31,
    "ops": [],

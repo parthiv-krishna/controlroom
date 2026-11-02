@@ -57,7 +57,7 @@ impl PiDriver {
                 }
                 let mut command = json!({"type": "new_session"});
                 if let Some(parent) = parent {
-                    command["parentSession"] = json!(parent);
+                    command["parentSession"] = json!(self.session_file(parent));
                 }
                 vec![command]
             }
@@ -76,6 +76,15 @@ impl PiDriver {
                 Ok(tagged(command, &tag::encode(tag, part)))
             })
             .collect()
+    }
+
+    /// pi links a parent session by its file: the file of the current native session when
+    /// `parent` is its id, else `parent` as given (already a path).
+    fn session_file<'a>(&'a self, parent: &'a str) -> &'a str {
+        match &self.view.native {
+            Some(native) if native.id == parent => native.path.as_deref().unwrap_or(parent),
+            _ => parent,
+        }
     }
 
     /// Cancels every open dialog, then aborts. pi's `abort` waits until the dialogs are

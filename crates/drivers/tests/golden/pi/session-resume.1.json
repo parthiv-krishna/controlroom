@@ -1,16 +1,26 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 4,
    "ops": [
      {"item":{"actor":"root","id":"notice-4","kind":"notice","level":"info","seq_from":4,"seq_to":4,"streaming":false,"text":"fixture: ready","ts":1700000000321},"op":"upsert"}
    ],
-   "events": [
-     {"event":"ready"}
-   ]},
+   "events": []},
   {"seq": 5,
    "ops": [],
    "events": [
+     {"event":"ready"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}},
      {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]},
      {"event":"native_session","id":"00000000-0000-4000-8000-000000000001","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-181Z_00000000-0000-4000-8000-000000000001.jsonl"}
+   ]},
+  {"seq": 6,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-2","part":0}}
    ]},
   {"seq": 7,
    "ops": [
@@ -22,7 +32,8 @@
      {"item":{"actor":"root","error":null,"id":"run-8","kind":"run","outcome":null,"seq_from":8,"seq_to":8,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000326},"op":"upsert"}
    ],
    "events": [
-     {"cause":null,"event":"run_started"}
+     {"cause":{"op":"fixture-2","part":0},"event":"run_started"},
+     {"event":"accepted","tag":{"op":"fixture-2","part":0}}
    ]},
   {"seq": 15,
    "ops": [
@@ -62,6 +73,16 @@
    ],
    "events": [
      {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 24,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-3","part":0}}
+   ]},
+  {"seq": 25,
+   "ops": [],
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-3","part":0}}
    ]},
   {"seq": 26,
    "ops": [],

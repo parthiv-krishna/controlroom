@@ -1,22 +1,28 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 3,
    "ops": [
      {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000316},"op":"upsert"}
    ],
-   "events": [
-     {"event":"ready"}
-   ]},
+   "events": []},
   {"seq": 4,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Busy task."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"ready"}
+   ]},
   {"seq": 5,
    "ops": [
      {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000320},"op":"upsert"}
    ],
    "events": [
-     {"cause":null,"event":"run_started"}
+     {"cause":{"op":"fixture-1","part":0},"event":"run_started"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 12,
    "ops": [
@@ -28,16 +34,40 @@
      {"id":"msg-11.0","op":"append_text","seq_from":13,"seq_to":13,"text":"Busy"}
    ],
    "events": []},
+  {"seq": 14,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-2","part":0}}
+   ]},
   {"seq": 16,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Queued steer."}],"id":"user-14","kind":"message","role":"user","seq_from":14,"seq_to":16,"streaming":false,"ts":1700000000348},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-2","part":0}}
+   ]},
+  {"seq": 17,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-3","part":0}}
+   ]},
   {"seq": 19,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Queued follow-up."}],"id":"user-17","kind":"message","role":"user","seq_from":17,"seq_to":19,"streaming":false,"ts":1700000000349},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-3","part":0}}
+   ]},
+  {"seq": 20,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-4","part":0}}
+   ]},
+  {"seq": 22,
+   "ops": [],
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-4","part":0}}
+   ]},
   {"seq": 23,
    "ops": [
      {"id":"msg-11.0","op":"append_text","seq_from":23,"seq_to":23,"text":" done."}

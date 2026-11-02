@@ -47,7 +47,16 @@ impl PiDriver {
             retry_error: None,
         });
         self.view.run_active = true;
-        out.events.push(DriverEvent::RunStarted { cause: tag });
+        out.events
+            .push(DriverEvent::RunStarted { cause: tag.clone() });
+        // The `started` response came first; its line counts as accepted now that the run is
+        // active, so the session never looks idle in between.
+        if let Some(tag) = tag
+            && self.view.unanswered.contains(&tag)
+        {
+            self.view.unanswered.retain(|t| *t != tag);
+            out.events.push(DriverEvent::Accepted { tag });
+        }
     }
 
     /// `agent_settled`: the run ends; its outcome comes from `aborted`, then the last
@@ -296,28 +305,40 @@ impl PiDriver {
         );
     }
 
-    /// A supervisor started pi. A previous process without an `exit` record (e.g. its
-    /// supervisor died) is closed as if it exited with an unknown status.
+    /// A supervisor started a new pi process. Whatever the previous one left open ends (a
+    /// killed supervisor leaves no `exit` record; the runtime notices that itself, so no
+    /// `Exited` here), and the new process reports its native session again.
     pub(super) fn on_meta(&mut self, at: At, out: &mut FoldOut) {
         if self.process.alive {
-            self.on_exit(at, None, out);
+            self.end_process(at, "pi stopped without an exit record", out);
         }
+        self.view.native = None;
         self.process.alive = true;
     }
 
     /// pi exited: everything it had open ends, and the run (if any) fails.
-    pub(super) fn on_exit(&mut self, at: At, exit: Option<&ExitInfo>, out: &mut FoldOut) {
-        let (code, signal) = exit.map_or((None, None), |e| (e.code, e.signal));
-        let reason = match (code, signal) {
+    pub(super) fn on_exit(&mut self, at: At, exit: &ExitInfo, out: &mut FoldOut) {
+        let reason = match (exit.code, exit.signal) {
             (_, Some(signal)) => format!("pi was killed by signal {signal}"),
             (Some(code), None) => format!("pi exited with code {code}"),
             (None, None) => "pi stopped".to_owned(),
         };
+        let during_run = self.end_process(at, &reason, out);
+        out.events.push(DriverEvent::Exited {
+            code: exit.code,
+            signal: exit.signal,
+            during_run,
+        });
+    }
+
+    /// Ends everything the process had open and resets its state. Returns whether a run
+    /// was in flight.
+    fn end_process(&mut self, at: At, reason: &str, out: &mut FoldOut) -> bool {
         self.end_message(at, out);
         self.close_tools(at, out);
         self.close_dialogs(at, RequestState::Withdrawn, |_| true, out);
         self.close_retry(at, None, out);
-        self.close_compaction(at, None, None, Some(reason.clone()), out);
+        self.close_compaction(at, None, None, Some(reason.to_owned()), out);
         let sent = std::mem::take(&mut self.process.sent);
         for sent in sent.into_values() {
             if let SentCommand::Bash { item } = sent.command {
@@ -342,11 +363,7 @@ impl PiDriver {
         self.view.open_tools = 0;
         self.view.open_requests.clear();
         self.view.unanswered.clear();
-        out.events.push(DriverEvent::Exited {
-            code,
-            signal,
-            during_run,
-        });
+        during_run
     }
 }
 

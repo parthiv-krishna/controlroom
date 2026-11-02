@@ -1,22 +1,28 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 3,
    "ops": [
      {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000311},"op":"upsert"}
    ],
-   "events": [
-     {"event":"ready"}
-   ]},
+   "events": []},
   {"seq": 4,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Run the guarded command."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"ready"}
+   ]},
   {"seq": 5,
    "ops": [
      {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":null,"seq_from":5,"seq_to":5,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000314},"op":"upsert"}
    ],
    "events": [
-     {"cause":null,"event":"run_started"}
+     {"cause":{"op":"fixture-1","part":0},"event":"run_started"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 12,
    "ops": [
@@ -47,9 +53,20 @@
    "events": [
      {"event":"request_opened","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000347,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Allow: echo fixture-guard?"}}
    ]},
+  {"seq": 19,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-2","part":0}}
+   ]},
+  {"seq": 20,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-3","part":0}}
+   ]},
   {"seq": 21,
    "ops": [],
    "events": [
+     {"event":"accepted","tag":{"op":"fixture-3","part":0}},
      {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]},
      {"event":"native_session","id":"00000000-0000-4000-8000-000000000003","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-178Z_00000000-0000-4000-8000-000000000003.jsonl"}
    ]},
@@ -58,7 +75,8 @@
      {"item":{"actor":"root","id":"dialog-18","kind":"request","request":{"answer":{"at":1700000000348,"by":null,"label":"Allow","response":{"kind":"choice","option_id":"0"}},"blocking":true,"body":null,"created_at":1700000000347,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Allow: echo fixture-guard?"},"seq_from":18,"seq_to":22,"streaming":false,"ts":1700000000347},"op":"upsert"}
    ],
    "events": [
-     {"event":"request_closed","id":"dialog-18"}
+     {"event":"written","tag":{"op":"fixture-00000000-0000-4000-8000-000000000002","part":0}},
+     {"event":"accepted","tag":{"op":"fixture-00000000-0000-4000-8000-000000000002","part":0}}
    ]},
   {"seq": 23,
    "ops": [
@@ -71,6 +89,11 @@
    ],
    "events": [
      {"error":null,"event":"run_settled","outcome":"cancelled"}
+   ]},
+  {"seq": 33,
+   "ops": [],
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-2","part":0}}
    ]},
   {"seq": 34,
    "ops": [],

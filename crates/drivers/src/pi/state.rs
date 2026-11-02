@@ -76,7 +76,8 @@ pub(crate) struct Echo {
     pub started: bool,
 }
 
-/// What started a run.
+/// What starts the next run: the line whose response said `started`. If it is tagged, its
+/// `Accepted` waits for `agent_start` (the tag stays unanswered until then).
 #[derive(Debug, Clone)]
 pub(crate) struct Cause {
     /// The tag of the line, when it carried one.

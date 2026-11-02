@@ -1,5 +1,6 @@
-//! Golden fold tests: every pi fixture folded into timeline ops and driver events, plus the
-//! materialized timeline and the final view, compared with `tests/golden/pi/<fixture>.json`.
+//! Golden fold tests: every pi fixture, with its lines tagged as the runtime would write them,
+//! folded into timeline ops and driver events, plus the materialized timeline and the final
+//! view, compared with `tests/golden/pi/<fixture>.json`.
 //!
 //! Regenerate with `UPDATE_GOLDEN=1 cargo test -p controlroom-drivers --test pi_golden`, then
 //! review the diff by eye.
@@ -10,7 +11,7 @@ use std::path::PathBuf;
 
 use controlroom_drivers::Driver;
 use serde_json::{Value, json};
-use support::{Timeline, event_json, fixtures, fold_all, view_json};
+use support::{Timeline, event_json, fixtures, fold_all, tagged, view_json};
 
 fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden/pi")
@@ -68,7 +69,7 @@ fn every_fixture_matches_its_golden() {
     }
     let mut mismatched = Vec::new();
     for (name, records) in fixtures() {
-        let rendered = render(&records);
+        let rendered = render(&tagged(&records));
         serde_json::from_str::<Value>(&rendered).expect("golden is valid JSON");
         let path = dir.join(format!("{name}.json"));
         if update {

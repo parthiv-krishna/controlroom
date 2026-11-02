@@ -247,7 +247,9 @@ pub struct AgentView {
     pub open_requests: Vec<RequestId>,
     /// How the last run ended.
     pub last_outcome: Option<RunOutcome>,
-    /// The current native session.
+    /// The current native session. `None` while unknown: before the process reports it, and
+    /// after a session switch the agent doesn't announce by itself (pi's `new_session`); the
+    /// runtime sends [`Intent::Refresh`] then.
     pub native: Option<NativeRef>,
     /// Current agent options.
     pub options: Vec<SessionOption>,
