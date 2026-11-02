@@ -39,7 +39,7 @@
         controlroomd {m.version ?? '—'} · {m.arch ?? '?'} · {sessionsOn(m)} sessions · {st === 'connected' ? 'live' : `last seen ${ago(m.last_seen)}`}
         {#if m.update_available && st === 'connected'} · update available ({m.version} → {app.client.hello?.server_version ?? 'newer'}){/if}
       </div>
-      {#if st === 'action_required'}<MachineFix {m} />{:else if m.last_error && st !== 'connected'}<div class="small warn-t">{m.last_error}</div>{/if}
+      {#if st === 'action_required'}<MachineFix {m} />{:else if m.last_error}<div class="small warn-t" role="status">{m.last_error}</div>{/if}
       {#if m.bootstrap}<div class="small"><span class="spin"></span> {upgrading(m) ? 'Upgrading: ' : ''}{m.bootstrap.message}</div>{/if}
       {#if m.doctor}<DoctorView doctor={m.doctor} />{/if}
       <div class="settings small">

@@ -1,8 +1,9 @@
 <script lang="ts">
   // One card for every request kind (permission, question, dialog, sandbox, spawn, contact; unknown
   // kinds stay answerable from title, detail and options). Approvals block (the solid flag tier);
-  // questions never block (outlined tier): answer or Dismiss ("declined"). A blocking request with
-  // a deny option offers "Reject and steer…": deny, then send the text ahead of the queue.
+  // questions never block (outlined tier): answer or Dismiss ("declined"). A permission request with
+  // a deny option offers "Reject and steer…": deny, then send the text ahead of the queue. A sandbox
+  // request offers "Deny with reason…": the agent's command fails with that reason.
   // Used in the session pane, the notifications panel and the task detail (compact).
   import { newOpId, useApp } from '../app/app.svelte';
   import { RpcError, describeError } from '../api/errors';
@@ -26,7 +27,8 @@
   const deny = $derived(req.options.find((o) => o.style === 'deny'));
   const q = $derived(req.questions[0] ?? null);
 
-  let steering = $state(false);
+  /** The open text box under the options: steer after rejecting, or the reason of a denial. */
+  let steering = $state<'steer' | 'reason' | null>(null);
   let steer = $state('');
   let free = $state('');
   let selected = $state<string[]>([]);
@@ -75,8 +77,10 @@
   }
   async function sendSteer() {
     if (!deny || !steer.trim()) return;
-    if (await respond({ kind: 'choice', option_id: deny.id, reason: null }, steer.trim())) {
-      steering = false;
+    const text = steer.trim();
+    const done = steering === 'reason' ? await respond({ kind: 'choice', option_id: deny.id, reason: text }) : await respond({ kind: 'choice', option_id: deny.id, reason: null }, text);
+    if (done) {
+      steering = null;
       steer = '';
     }
   }
@@ -88,12 +92,12 @@
     } else if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      steering = false;
+      steering = null;
     }
   }
-  function startSteer() {
+  function startSteer(mode: 'steer' | 'reason') {
     if (compact) app.open({ machine_id: s.machine_id, id: targetId });
-    else steering = true;
+    else steering = mode;
   }
   function freeKey(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -136,16 +140,21 @@
         {#each req.options as o (o.id)}
           <button class="btn" class:sm={compact} class:primary={o.style === 'allow'} class:danger={o.style === 'deny'} disabled={!live || busy} onclick={() => choose(o.id)}>{o.label}</button>
         {/each}
-        {#if req.kind === 'permission' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={startSteer}>Reject and steer…</button>{/if}
+        {#if req.kind === 'permission' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={() => startSteer('steer')}>Reject and steer…</button>{/if}
+        {#if req.kind === 'sandbox' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={() => startSteer('reason')}>{deny.label} with reason…</button>{/if}
         {#if !live}<span class="small warn-t">{s.stale ? 'machine offline' : 'not connected'}</span>{/if}
       </div>
       {#if steering}
         <div class="steer">
           <!-- svelte-ignore a11y_autofocus -->
-          <textarea rows="2" placeholder="What should the agent do instead?" aria-label="Steer" bind:value={steer} onkeydown={steerKey} autofocus></textarea>
+          {#if steering === 'reason'}
+            <textarea rows="2" placeholder="Why? The agent sees the reason." aria-label="Reason" bind:value={steer} onkeydown={steerKey} autofocus></textarea>
+          {:else}
+            <textarea rows="2" placeholder="What should the agent do instead?" aria-label="Steer" bind:value={steer} onkeydown={steerKey} autofocus></textarea>
+          {/if}
           <div class="acts end">
-            <button class="btn" onclick={() => (steering = false)}><span class="kbd">Esc</span> Cancel</button>
-            <button class="btn danger" disabled={!steer.trim() || busy} onclick={sendSteer}><span class="kbd">↵</span> Reject and steer</button>
+            <button class="btn" onclick={() => (steering = null)}><span class="kbd">Esc</span> Cancel</button>
+            <button class="btn danger" disabled={!steer.trim() || busy} onclick={sendSteer}><span class="kbd">↵</span> {steering === 'reason' ? deny?.label : 'Reject and steer'}</button>
           </div>
         </div>
       {/if}
@@ -153,7 +162,7 @@
   {:else}
     <div class="res">
       {#if req.state === 'answered' && req.answer}
-        → {req.answer.label}{#if req.answer.by}<span class="muted"> · {deviceLabel(req.answer.by)}</span>{/if}
+        → {req.answer.label}{#if req.answer.by}<span class="muted">{' · '}{deviceLabel(req.answer.by)}</span>{/if}
       {:else if req.state === 'withdrawn'}⊘ withdrawn by the agent
       {:else}expired{/if}
     </div>

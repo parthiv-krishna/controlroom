@@ -2,10 +2,12 @@
   // The session timeline: one component per item kind, windowed (only rows near the viewport are
   // in the DOM, with measured heights in a Fenwick tree), patched in place while text streams, and
   // stuck to the bottom unless the user scrolled up. Pending requests that have no timeline item
-  // (a subagent's, rolled up from the summary) follow the last row. The raw view replaces the list
+  // (a subagent's, rolled up from the summary) follow the last row. A "Started fresh" divider
+  // precedes the first row of each agent session started fresh. The raw view replaces the list
   // while it is open.
   import { onDestroy, untrack } from 'svelte';
   import { useApp } from '../app/app.svelte';
+  import { freshDividers } from '../model/fresh';
   import { HeightIndex, visibleRange } from '../model/heights';
   import { keyOf } from '../model/projects';
   import type { MachineSession, TimelineItem } from '../protocol';
@@ -43,6 +45,8 @@
   onDestroy(() => delete app.view.raw[opened]);
 
   const orphans = $derived(s.requests.filter((r) => r.state === 'pending' && !timeline.requestIds.has(r.id)));
+  const freshStarts = $derived(feed?.detail?.agent_sessions.filter((a) => a.started_by === 'fresh') ?? []);
+  const fresh = $derived(freshDividers(freshStarts.length ? rows.map((c) => ({ id: c.id, ts: c.item.ts })) : [], freshStarts));
 
   // ------------------------------------------------------------------------------- windowing
 
@@ -153,6 +157,9 @@
 {#if raw && feed}
   <RawView {s} {feed} focus={raw} />
 {:else}
+  {#snippet divider()}
+    <div class="fresh" role="separator" aria-label="Started fresh"><span>Started fresh</span></div>
+  {/snippet}
   <div class="timeline" data-pane="session" tabindex="-1" aria-label="Timeline" bind:this={scroller} onscroll={onScroll}>
     <div class="bar"><button class="btn ghost xs" title="Show the raw transcript records" onclick={openRaw} disabled={!feed}>raw</button></div>
     <div class="body">
@@ -166,10 +173,12 @@
       <div style:height="{padTop}px" aria-hidden="true"></div>
       {#each shown as cell (cell.id)}
         <div class="row" data-row={cell.id} use:measure>
+          {#if fresh.before.has(cell.id)}{@render divider()}{/if}
           <ItemView {cell} />
         </div>
       {/each}
       <div style:height="{padBottom}px" aria-hidden="true"></div>
+      {#each fresh.trailing as a (a.native_id)}{@render divider()}{/each}
       {#each orphans as req (req.id)}<div class="row"><RequestCard {req} {s} /></div>{/each}
     </div>
   </div>
@@ -185,5 +194,7 @@
   .placeholder { display: flex; flex-direction: column; }
   .preview { color: var(--fg); margin: 0; }
   .trimmed { text-align: center; padding: 6px; }
+  .fresh { display: flex; align-items: center; gap: 10px; margin: 6px 0 12px; font-size: 12px; color: var(--muted); }
+  .fresh::before, .fresh::after { content: ''; flex: 1; border-top: 1px dashed var(--line); }
   @media (max-width: 760px) { .body { padding: 4px 16px 12px; } }
 </style>
