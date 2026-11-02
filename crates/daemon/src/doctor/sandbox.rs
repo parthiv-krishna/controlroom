@@ -91,25 +91,32 @@ fn landlock_status(landlock: Landlock) -> (Option<u32>, DoctorCheck) {
     }
 }
 
-/// Where OpenSSH's sftp server usually lives.
-const SFTP_SERVERS: [&str; 5] = [
-    "/run/current-system/sw/libexec/sftp-server",
-    "/usr/lib/openssh/sftp-server",
-    "/usr/libexec/openssh/sftp-server",
-    "/usr/lib/ssh/sftp-server",
-    "/usr/libexec/sftp-server",
-];
-
-/// Placeholder for file browsing (future, spec §3): looks for OpenSSH's sftp server in the
-/// usual places. The SSH server's `Subsystem sftp` setting is what really decides.
+/// Placeholder for file browsing (future, spec §3): reads the `Subsystem sftp` line of
+/// OpenSSH's server config, when readable. (Match blocks and included files are not followed.)
 pub fn sftp() -> DoctorCheck {
-    match SFTP_SERVERS
-        .iter()
-        .find(|p| std::path::Path::new(p).exists())
-    {
-        Some(path) => check(CheckStatus::Ok, "yes", format!("found {path}")),
-        None => unknown(
-            "no sftp-server in the usual places; file browsing (future) needs the SSH server's sftp subsystem",
+    match std::fs::read_to_string("/etc/ssh/sshd_config") {
+        Ok(config) => sftp_status(&config, |p| std::path::Path::new(p).exists()),
+        Err(e) => unknown(format!("cannot read /etc/ssh/sshd_config: {e}")),
+    }
+}
+
+fn sftp_status(config: &str, exists: impl Fn(&str) -> bool) -> DoctorCheck {
+    let server = config.lines().find_map(|line| {
+        let mut words = line.split_whitespace();
+        let keyword = words.next()?;
+        let name = words.next()?;
+        (keyword.eq_ignore_ascii_case("subsystem") && name == "sftp")
+            .then(|| words.next())
+            .flatten()
+    });
+    match server {
+        Some("internal-sftp") => check(CheckStatus::Ok, "yes", "internal-sftp"),
+        Some(path) if exists(path) => check(CheckStatus::Ok, "yes", path),
+        Some(path) => check(CheckStatus::Warn, "no", format!("{path} does not exist")),
+        None => check(
+            CheckStatus::Warn,
+            "no",
+            "no `Subsystem sftp` in /etc/ssh/sshd_config; file browsing (future) needs it",
         ),
     }
 }
@@ -143,6 +150,25 @@ mod tests {
         assert!(old.detail.contains("0.80.0"));
         let broken = nono_status(&path, NonoStatus::Unavailable("exec failed".into()));
         assert_eq!(broken.status, CheckStatus::Fail);
+    }
+
+    #[test]
+    fn sftp_subsystem() {
+        let exists = |p: &str| p == "/usr/lib/openssh/sftp-server";
+        let status = |config: &str| sftp_status(config, exists).status;
+        assert_eq!(
+            status("# x\nSubsystem sftp /usr/lib/openssh/sftp-server\n"),
+            CheckStatus::Ok
+        );
+        assert_eq!(
+            status("subsystem  sftp  internal-sftp -u 077"),
+            CheckStatus::Ok
+        );
+        assert_eq!(
+            status("Subsystem sftp /missing/sftp-server"),
+            CheckStatus::Warn
+        );
+        assert_eq!(status("Port 22\n"), CheckStatus::Warn);
     }
 
     #[test]

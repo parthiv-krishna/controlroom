@@ -26,6 +26,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 
+use controlroom_protocol::session::DriverKind;
 use controlroom_sandbox::agent_dir::{
     AgentDirError, BuiltAgentDir, build_session_dirs, write_profile,
 };
@@ -188,7 +189,10 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
     let id = launch.session.as_str().to_owned();
     let labels = BTreeMap::from([
         ("agent".to_owned(), launch.agent_name.clone()),
-        ("driver".to_owned(), "pi".to_owned()),
+        (
+            "driver".to_owned(),
+            driver_label(launch.agent.driver).to_owned(),
+        ),
         (
             "sandbox".to_owned(),
             level_label(launch.policy.level).to_owned(),
@@ -217,7 +221,7 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
 }
 
 /// Finds nono from `sandbox.toml`'s `nono` setting: an absolute (or `~/`) path as is, a
-/// program name through the login shell. The binary must be executable and canonical.
+/// program name through the login shell; then canonicalized (store paths, not profile links).
 pub fn find_nono(shell: &AbsPath, setting: &str, home: &AbsPath) -> Result<AbsPath, String> {
     let path = if setting.starts_with('/') || setting.starts_with('~') {
         crate::dirs::expand_home(setting, home)
@@ -254,6 +258,14 @@ fn argv(cmd: &LaunchCommand) -> Exec {
             .chain(cmd.args.iter().cloned())
             .collect(),
     )
+}
+
+fn driver_label(driver: DriverKind) -> &'static str {
+    match driver {
+        DriverKind::Pi => "pi",
+        DriverKind::Fake => "fake",
+        DriverKind::Unknown => "unknown",
+    }
 }
 
 fn level_label(level: SandboxLevel) -> &'static str {
