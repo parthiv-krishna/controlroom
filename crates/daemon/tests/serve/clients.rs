@@ -274,3 +274,26 @@ fn ctl_round_trip() {
     let _ = watch.kill();
     let _ = watch.wait();
 }
+
+/// Requests run concurrently: an `unsubscribe` sent right after a subscribe result must find
+/// the subscription. The daemon used to register it only after queuing the result, which lost
+/// the race under heavy load (seen once in a flake check). The fix (register, then answer) is
+/// correct by construction; this loop is a stress check, not a deterministic reproduction.
+#[test]
+fn unsubscribe_right_after_subscribe_always_finds_it() {
+    let env = Env::with(json!({}));
+    let client = env.client();
+    let id = client.create("fake", &env.work());
+    for _ in 0..200 {
+        let machine = client.call("machine.subscribe", json!({"since_rev": null}));
+        client.call(
+            "unsubscribe",
+            json!({"subscription_id": machine["subscription_id"]}),
+        );
+        let session = client.call("session.subscribe", json!({"id": id, "since_seq": 0}));
+        client.call(
+            "unsubscribe",
+            json!({"subscription_id": session["subscription_id"]}),
+        );
+    }
+}

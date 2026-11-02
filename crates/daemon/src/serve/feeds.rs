@@ -41,7 +41,6 @@ pub async fn subscribe_machine(conn: &Arc<Conn>, id: RpcId, params: MachineSubsc
         rev: subscription.rev,
         snapshot: subscription.snapshot,
     };
-    conn.respond(id, to_value(&result)).await;
     let feed = machine_feed(
         conn.clone(),
         subscription_id,
@@ -49,7 +48,29 @@ pub async fn subscribe_machine(conn: &Arc<Conn>, id: RpcId, params: MachineSubsc
         subscription.backlog,
         subscription.changes,
     );
-    conn.add_subscription(subscription_id, tokio::spawn(feed).abort_handle());
+    start_after_result(conn, id, subscription_id, to_value(&result), feed).await;
+}
+
+/// Registers the subscription before answering, so an `unsubscribe` sent right after the
+/// result always finds it (requests run concurrently), and starts the feed only once the
+/// result is queued, so the result precedes every notification.
+async fn start_after_result(
+    conn: &Arc<Conn>,
+    id: RpcId,
+    subscription_id: SubscriptionId,
+    result: Result<serde_json::Value, RpcError>,
+    feed: impl std::future::Future<Output = ()> + Send + 'static,
+) {
+    let (go, ready) = tokio::sync::oneshot::channel::<()>();
+    let task = tokio::spawn(async move {
+        if ready.await.is_ok() {
+            feed.await;
+        }
+    });
+    conn.add_subscription(subscription_id, task.abort_handle());
+    conn.respond(id, result).await;
+    // The client may already have unsubscribed (the task is then aborted): nothing to start.
+    let _ = go.send(());
 }
 
 async fn machine_feed(
@@ -115,7 +136,6 @@ pub async fn subscribe_session(conn: &Arc<Conn>, id: RpcId, params: SessionSubsc
         head_seq: subscription.head_seq,
         detail: subscription.detail,
     };
-    conn.respond(id, to_value(&result)).await;
     let feed = SessionFeed {
         conn: conn.clone(),
         subscription_id,
@@ -123,8 +143,8 @@ pub async fn subscribe_session(conn: &Arc<Conn>, id: RpcId, params: SessionSubsc
         raw: params.raw_since.is_some(),
         head_seq: subscription.head_seq,
     };
-    let task = tokio::spawn(feed.run(subscription.backlog, subscription.raw, subscription.updates));
-    conn.add_subscription(subscription_id, task.abort_handle());
+    let run = feed.run(subscription.backlog, subscription.raw, subscription.updates);
+    start_after_result(conn, id, subscription_id, to_value(&result), run).await;
 }
 
 struct SessionFeed {

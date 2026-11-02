@@ -472,7 +472,7 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "controlroom-client-core"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "bytes",
  "chacha20poly1305",
@@ -493,11 +493,11 @@ dependencies = [
 
 [[package]]
 name = "controlroom-controller"
-version = "0.0.2"
+version = "0.0.3"
 
 [[package]]
 name = "controlroom-drivers"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "controlroom-protocol",
  "controlroom-transcript",
@@ -508,7 +508,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-fake-agent"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "controlroom-transcript",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-fixture-tool"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-protocol"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -549,7 +549,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-runtime"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "controlroom-drivers",
  "controlroom-protocol",
@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-sandbox"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "base64",
  "getrandom 0.3.4",
@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-supervisor"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-transcript"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -606,11 +606,11 @@ dependencies = [
 
 [[package]]
 name = "controlroom-web"
-version = "0.0.2"
+version = "0.0.3"
 
 [[package]]
 name = "controlroomd"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "clap",
