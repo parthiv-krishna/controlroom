@@ -334,7 +334,7 @@ fn cancel_with_an_open_dialog_cancels_it_before_aborting() {
     let TimelineOp::Upsert { item } = &out.ops[0] else {
         panic!("no request update");
     };
-    let ItemBody::Request(answered) = &item.body else {
+    let ItemBody::Request { request: answered } = &item.body else {
         panic!("not a request");
     };
     assert_eq!(answered.state, RequestState::Answered);

@@ -8,56 +8,56 @@
    ]},
   {"seq": 4,
    "ops": [
-     {"item":{"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":4,"seq_to":4,"state":"pending","streaming":false,"title":"Pick a color","ts":1700000000324},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-4","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Pick a color"},"seq_from":4,"seq_to":4,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
      {"event":"request_opened","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Pick a color"}}
    ]},
   {"seq": 5,
    "ops": [
-     {"item":{"actor":"root","answer":{"at":1700000000324,"by":null,"label":"green","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":4,"seq_to":5,"state":"answered","streaming":false,"title":"Pick a color","ts":1700000000324},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-4","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"green","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Pick a color"},"seq_from":4,"seq_to":5,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
      {"event":"request_closed","id":"dialog-4"}
    ]},
   {"seq": 6,
    "ops": [
-     {"item":{"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"This is a fixture dialog.","id":"dialog-6","kind":"dialog","options":[{"id":"yes","label":"Yes","style":"neutral"},{"id":"no","label":"No","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":6,"seq_to":6,"state":"pending","streaming":false,"title":"Proceed?","ts":1700000000324},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-6","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"This is a fixture dialog.","id":"dialog-6","kind":"dialog","options":[{"id":"yes","label":"Yes","style":"neutral"},{"id":"no","label":"No","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Proceed?"},"seq_from":6,"seq_to":6,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
      {"event":"request_opened","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"This is a fixture dialog.","id":"dialog-6","kind":"dialog","options":[{"id":"yes","label":"Yes","style":"neutral"},{"id":"no","label":"No","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Proceed?"}}
    ]},
   {"seq": 7,
    "ops": [
-     {"item":{"actor":"root","answer":{"at":1700000000324,"by":null,"label":"Yes","response":{"kind":"choice","option_id":"yes"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"This is a fixture dialog.","id":"dialog-6","kind":"dialog","options":[{"id":"yes","label":"Yes","style":"neutral"},{"id":"no","label":"No","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":6,"seq_to":7,"state":"answered","streaming":false,"title":"Proceed?","ts":1700000000324},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-6","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"Yes","response":{"kind":"choice","option_id":"yes"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"This is a fixture dialog.","id":"dialog-6","kind":"dialog","options":[{"id":"yes","label":"Yes","style":"neutral"},{"id":"no","label":"No","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Proceed?"},"seq_from":6,"seq_to":7,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
      {"event":"request_closed","id":"dialog-6"}
    ]},
   {"seq": 8,
    "ops": [
-     {"item":{"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"type a name","id":"dialog-8","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"input","multi":false,"options":[],"text":"Your name"}],"seq_from":8,"seq_to":8,"state":"pending","streaming":false,"title":"Your name","ts":1700000000324},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-8","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"type a name","id":"dialog-8","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"input","multi":false,"options":[],"text":"Your name"}],"state":"pending","title":"Your name"},"seq_from":8,"seq_to":8,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
      {"event":"request_opened","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"type a name","id":"dialog-8","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"input","multi":false,"options":[],"text":"Your name"}],"state":"pending","title":"Your name"}}
    ]},
   {"seq": 9,
    "ops": [
-     {"item":{"actor":"root","answer":{"at":1700000000324,"by":null,"label":"alice","response":{"answers":[{"question_id":"input","selected":[],"text":"alice"}],"kind":"answers"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"type a name","id":"dialog-8","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"input","multi":false,"options":[],"text":"Your name"}],"seq_from":8,"seq_to":9,"state":"answered","streaming":false,"title":"Your name","ts":1700000000324},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-8","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"alice","response":{"answers":[{"question_id":"input","selected":[],"text":"alice"}],"kind":"answers"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"type a name","id":"dialog-8","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"input","multi":false,"options":[],"text":"Your name"}],"state":"answered","title":"Your name"},"seq_from":8,"seq_to":9,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
      {"event":"request_closed","id":"dialog-8"}
    ]},
   {"seq": 10,
    "ops": [
-     {"item":{"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"line 1\nline 2","id":"dialog-10","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"editor","multi":false,"options":[],"text":"Edit notes"}],"seq_from":10,"seq_to":10,"state":"pending","streaming":false,"title":"Edit notes","ts":1700000000324},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-10","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"line 1\nline 2","id":"dialog-10","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"editor","multi":false,"options":[],"text":"Edit notes"}],"state":"pending","title":"Edit notes"},"seq_from":10,"seq_to":10,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
      {"event":"request_opened","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":"line 1\nline 2","id":"dialog-10","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"editor","multi":false,"options":[],"text":"Edit notes"}],"state":"pending","title":"Edit notes"}}
    ]},
   {"seq": 11,
    "ops": [
-     {"item":{"actor":"root","answer":{"at":1700000000325,"by":null,"label":"Cancelled","response":{"kind":"dismiss"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"line 1\nline 2","id":"dialog-10","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"editor","multi":false,"options":[],"text":"Edit notes"}],"seq_from":10,"seq_to":11,"state":"answered","streaming":false,"title":"Edit notes","ts":1700000000324},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-10","kind":"request","request":{"answer":{"at":1700000000325,"by":null,"label":"Cancelled","response":{"kind":"dismiss"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"line 1\nline 2","id":"dialog-10","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"editor","multi":false,"options":[],"text":"Edit notes"}],"state":"answered","title":"Edit notes"},"seq_from":10,"seq_to":11,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
      {"event":"request_closed","id":"dialog-10"}
@@ -96,10 +96,10 @@
 "timeline": [
   {"actor":"root","content":[{"kind":"text","text":"/fixture-dialogs"}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":17,"streaming":false,"ts":1700000000001},
   {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000322},
-  {"actor":"root","answer":{"at":1700000000324,"by":null,"label":"green","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":4,"seq_to":5,"state":"answered","streaming":false,"title":"Pick a color","ts":1700000000324},
-  {"actor":"root","answer":{"at":1700000000324,"by":null,"label":"Yes","response":{"kind":"choice","option_id":"yes"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"This is a fixture dialog.","id":"dialog-6","kind":"dialog","options":[{"id":"yes","label":"Yes","style":"neutral"},{"id":"no","label":"No","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":6,"seq_to":7,"state":"answered","streaming":false,"title":"Proceed?","ts":1700000000324},
-  {"actor":"root","answer":{"at":1700000000324,"by":null,"label":"alice","response":{"answers":[{"question_id":"input","selected":[],"text":"alice"}],"kind":"answers"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"type a name","id":"dialog-8","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"input","multi":false,"options":[],"text":"Your name"}],"seq_from":8,"seq_to":9,"state":"answered","streaming":false,"title":"Your name","ts":1700000000324},
-  {"actor":"root","answer":{"at":1700000000325,"by":null,"label":"Cancelled","response":{"kind":"dismiss"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"line 1\nline 2","id":"dialog-10","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"editor","multi":false,"options":[],"text":"Edit notes"}],"seq_from":10,"seq_to":11,"state":"answered","streaming":false,"title":"Edit notes","ts":1700000000324},
+  {"actor":"root","id":"dialog-4","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"green","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Pick a color"},"seq_from":4,"seq_to":5,"streaming":false,"ts":1700000000324},
+  {"actor":"root","id":"dialog-6","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"Yes","response":{"kind":"choice","option_id":"yes"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"This is a fixture dialog.","id":"dialog-6","kind":"dialog","options":[{"id":"yes","label":"Yes","style":"neutral"},{"id":"no","label":"No","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Proceed?"},"seq_from":6,"seq_to":7,"streaming":false,"ts":1700000000324},
+  {"actor":"root","id":"dialog-8","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"alice","response":{"answers":[{"question_id":"input","selected":[],"text":"alice"}],"kind":"answers"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"type a name","id":"dialog-8","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"input","multi":false,"options":[],"text":"Your name"}],"state":"answered","title":"Your name"},"seq_from":8,"seq_to":9,"streaming":false,"ts":1700000000324},
+  {"actor":"root","id":"dialog-10","kind":"request","request":{"answer":{"at":1700000000325,"by":null,"label":"Cancelled","response":{"kind":"dismiss"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"line 1\nline 2","id":"dialog-10","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"editor","multi":false,"options":[],"text":"Edit notes"}],"state":"answered","title":"Edit notes"},"seq_from":10,"seq_to":11,"streaming":false,"ts":1700000000324},
   {"actor":"root","id":"notice-12","kind":"notice","level":"info","seq_from":12,"seq_to":12,"streaming":false,"text":"select=green confirm=true input=alice editor=<none>","ts":1700000000325},
   {"actor":"root","id":"notice-13","kind":"notice","level":"info","seq_from":13,"seq_to":13,"streaming":false,"text":"fixture: dialogs done","ts":1700000000325},
   {"actor":"root","id":"notice-14","kind":"notice","level":"info","seq_from":14,"seq_to":14,"streaming":false,"text":"fixture:\nfixture widget\ncolor: green","ts":1700000000325},

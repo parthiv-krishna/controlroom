@@ -42,14 +42,14 @@
    "events": []},
   {"seq": 18,
    "ops": [
-     {"item":{"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000349,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":18,"seq_to":18,"state":"pending","streaming":false,"title":"Allow: echo fixture-guard ok?","ts":1700000000349},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-18","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000349,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Allow: echo fixture-guard ok?"},"seq_from":18,"seq_to":18,"streaming":false,"ts":1700000000349},"op":"upsert"}
    ],
    "events": [
      {"event":"request_opened","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000349,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Allow: echo fixture-guard ok?"}}
    ]},
   {"seq": 19,
    "ops": [
-     {"item":{"actor":"root","answer":{"at":1700000000350,"by":null,"label":"Allow","response":{"kind":"choice","option_id":"0"}},"blocking":true,"body":null,"created_at":1700000000349,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":18,"seq_to":19,"state":"answered","streaming":false,"title":"Allow: echo fixture-guard ok?","ts":1700000000349},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-18","kind":"request","request":{"answer":{"at":1700000000350,"by":null,"label":"Allow","response":{"kind":"choice","option_id":"0"}},"blocking":true,"body":null,"created_at":1700000000349,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Allow: echo fixture-guard ok?"},"seq_from":18,"seq_to":19,"streaming":false,"ts":1700000000349},"op":"upsert"}
    ],
    "events": [
      {"event":"request_closed","id":"dialog-18"}
@@ -88,14 +88,14 @@
    "events": []},
   {"seq": 34,
    "ops": [
-     {"item":{"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000411,"detail":null,"id":"dialog-34","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":34,"seq_to":34,"state":"pending","streaming":false,"title":"Allow: echo fixture-guard no?","ts":1700000000411},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-34","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000411,"detail":null,"id":"dialog-34","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Allow: echo fixture-guard no?"},"seq_from":34,"seq_to":34,"streaming":false,"ts":1700000000411},"op":"upsert"}
    ],
    "events": [
      {"event":"request_opened","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000411,"detail":null,"id":"dialog-34","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Allow: echo fixture-guard no?"}}
    ]},
   {"seq": 35,
    "ops": [
-     {"item":{"actor":"root","answer":{"at":1700000000411,"by":null,"label":"Block","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000411,"detail":null,"id":"dialog-34","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":34,"seq_to":35,"state":"answered","streaming":false,"title":"Allow: echo fixture-guard no?","ts":1700000000411},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-34","kind":"request","request":{"answer":{"at":1700000000411,"by":null,"label":"Block","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000411,"detail":null,"id":"dialog-34","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Allow: echo fixture-guard no?"},"seq_from":34,"seq_to":35,"streaming":false,"ts":1700000000411},"op":"upsert"}
    ],
    "events": [
      {"event":"request_closed","id":"dialog-34"}
@@ -161,10 +161,10 @@
   {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":51,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000314},
   {"actor":"root","duration_ms":12,"exit":0,"id":"msg-11.0","input":"echo fixture-guard ok","kind":"tool_call","name":"bash","output":{"kind":"terminal","text":"fixture-guard ok\n"},"parent_tool_call_id":null,"seq_from":12,"seq_to":22,"status":"completed","streaming":false,"title":"echo fixture-guard ok","tool_call_id":"call_allow","tool_kind":"execute","ts":1700000000345},
   {"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-16","kind":"usage","scope":"turn","seq_from":16,"seq_to":16,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000348},
-  {"actor":"root","answer":{"at":1700000000350,"by":null,"label":"Allow","response":{"kind":"choice","option_id":"0"}},"blocking":true,"body":null,"created_at":1700000000349,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":18,"seq_to":19,"state":"answered","streaming":false,"title":"Allow: echo fixture-guard ok?","ts":1700000000349},
+  {"actor":"root","id":"dialog-18","kind":"request","request":{"answer":{"at":1700000000350,"by":null,"label":"Allow","response":{"kind":"choice","option_id":"0"}},"blocking":true,"body":null,"created_at":1700000000349,"detail":null,"id":"dialog-18","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Allow: echo fixture-guard ok?"},"seq_from":18,"seq_to":19,"streaming":false,"ts":1700000000349},
   {"actor":"root","duration_ms":null,"exit":null,"id":"msg-27.0","input":"echo fixture-guard no","kind":"tool_call","name":"bash","output":{"kind":"terminal","text":"Blocked by user"},"parent_tool_call_id":null,"seq_from":28,"seq_to":36,"status":"cancelled","streaming":false,"title":"echo fixture-guard no","tool_call_id":"call_block","tool_kind":"execute","ts":1700000000410},
   {"actor":"root","context":{"cost":0.00024799999999999996,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-32","kind":"usage","scope":"turn","seq_from":32,"seq_to":32,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000411},
-  {"actor":"root","answer":{"at":1700000000411,"by":null,"label":"Block","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000411,"detail":null,"id":"dialog-34","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":34,"seq_to":35,"state":"answered","streaming":false,"title":"Allow: echo fixture-guard no?","ts":1700000000411},
+  {"actor":"root","id":"dialog-34","kind":"request","request":{"answer":{"at":1700000000411,"by":null,"label":"Block","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000411,"detail":null,"id":"dialog-34","kind":"dialog","options":[{"id":"0","label":"Allow","style":"neutral"},{"id":"1","label":"Block","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Allow: echo fixture-guard no?"},"seq_from":34,"seq_to":35,"streaming":false,"ts":1700000000411},
   {"actor":"root","content":[{"kind":"text","text":"Permission scenario done."}],"id":"msg-41.0","kind":"message","role":"agent","seq_from":42,"seq_to":47,"streaming":false,"ts":1700000000456},
   {"actor":"root","context":{"cost":0.00037199999999999993,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-48","kind":"usage","scope":"turn","seq_from":48,"seq_to":48,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000457}
 ],

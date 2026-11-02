@@ -59,7 +59,9 @@ impl PiDriver {
             id,
             at,
             at.seq,
-            ItemBody::Request(neutral.clone()),
+            ItemBody::Request {
+                request: neutral.clone(),
+            },
             Life::Open,
         );
         let deadline = ui.timeout.map(|ms| {
@@ -111,7 +113,7 @@ impl PiDriver {
         let answer = dialogs::answer(&open.dialog, line, at.ts);
         self.items
             .finish(&mut out.ops, open.request.as_str(), at, |body| {
-                if let ItemBody::Request(request) = body {
+                if let ItemBody::Request { request } = body {
                     request.state = RequestState::Answered;
                     request.answer = Some(answer);
                 }
@@ -149,7 +151,7 @@ impl PiDriver {
         for open in closing {
             self.items
                 .finish(&mut out.ops, open.request.as_str(), at, |body| {
-                    if let ItemBody::Request(request) = body {
+                    if let ItemBody::Request { request } = body {
                         request.state = state;
                     }
                 });

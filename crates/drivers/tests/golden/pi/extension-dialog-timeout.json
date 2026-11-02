@@ -8,14 +8,14 @@
    ]},
   {"seq": 4,
    "ops": [
-     {"item":{"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000322,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"yes","style":"neutral"},{"id":"1","label":"no","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":4,"seq_to":4,"state":"pending","streaming":false,"title":"Quick!","ts":1700000000322},"op":"upsert"}
+     {"item":{"actor":"root","id":"dialog-4","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000322,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"yes","style":"neutral"},{"id":"1","label":"no","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Quick!"},"seq_from":4,"seq_to":4,"streaming":false,"ts":1700000000322},"op":"upsert"}
    ],
    "events": [
      {"event":"request_opened","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000322,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"yes","style":"neutral"},{"id":"1","label":"no","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Quick!"}}
    ]},
   {"seq": 5,
    "ops": [
-     {"item":{"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000322,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"yes","style":"neutral"},{"id":"1","label":"no","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":4,"seq_to":5,"state":"expired","streaming":false,"title":"Quick!","ts":1700000000322},"op":"upsert"},
+     {"item":{"actor":"root","id":"dialog-4","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000322,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"yes","style":"neutral"},{"id":"1","label":"no","style":"neutral"}],"origin_child":null,"questions":[],"state":"expired","title":"Quick!"},"seq_from":4,"seq_to":5,"streaming":false,"ts":1700000000322},"op":"upsert"},
      {"item":{"actor":"root","id":"notice-5","kind":"notice","level":"warning","seq_from":5,"seq_to":5,"streaming":false,"text":"timed out with <none>","ts":1700000000622},"op":"upsert"}
    ],
    "events": [
@@ -41,7 +41,7 @@
 "timeline": [
   {"actor":"root","content":[{"kind":"text","text":"/fixture-timeout"}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":6,"streaming":false,"ts":1700000000001},
   {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000320},
-  {"actor":"root","answer":null,"blocking":true,"body":null,"created_at":1700000000322,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"yes","style":"neutral"},{"id":"1","label":"no","style":"neutral"}],"origin_child":null,"questions":[],"seq_from":4,"seq_to":5,"state":"expired","streaming":false,"title":"Quick!","ts":1700000000322},
+  {"actor":"root","id":"dialog-4","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000322,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"yes","style":"neutral"},{"id":"1","label":"no","style":"neutral"}],"origin_child":null,"questions":[],"state":"expired","title":"Quick!"},"seq_from":4,"seq_to":5,"streaming":false,"ts":1700000000322},
   {"actor":"root","id":"notice-5","kind":"notice","level":"warning","seq_from":5,"seq_to":5,"streaming":false,"text":"timed out with <none>","ts":1700000000622}
 ],
 "view": {"last_outcome":null,"last_seq":10,"last_ts":1700000000632,"native":{"id":"00000000-0000-4000-8000-000000000004","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-188Z_00000000-0000-4000-8000-000000000004.jsonl"},"open_requests":[],"open_tools":0,"options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}],"ready":false,"run_active":false,"unanswered":[]}}
