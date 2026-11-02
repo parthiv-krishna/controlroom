@@ -59,7 +59,7 @@ async fn open(
         id: key.session_id,
         since_seq: since,
         raw_since,
-        timeline: true,
+        timeline: key.timeline,
     };
     let result = daemon
         .call_with::<SessionSubscribe>(&params, options)
@@ -88,6 +88,7 @@ pub(super) async fn subscribe(
         machine_id,
         session_id: p.params.id,
         raw_owner: p.params.raw_since.map(|_| ui_sub),
+        timeline: p.params.timeline,
     };
     let (plan, joined) = {
         let mut st = hub.lock();
@@ -96,7 +97,13 @@ pub(super) async fn subscribe(
             return Err(client_gone());
         }
         let fanout = st.timelines.entry(key).or_default();
-        let plan = fanout.add(ui_sub, conn.client, p.params.since_seq, p.params.raw_since);
+        let plan = fanout.add(
+            ui_sub,
+            conn.client,
+            p.params.since_seq,
+            p.params.raw_since,
+            key.timeline,
+        );
         (plan, fanout.snapshot())
     };
     let (head_seq, detail) = match plan {

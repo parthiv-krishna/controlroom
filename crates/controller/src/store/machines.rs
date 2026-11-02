@@ -4,10 +4,12 @@
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::daemon::{DaemonSettings, DoctorReport};
 use controlroom_protocol::ids::{DaemonId, KeyId, MachineId};
+use controlroom_protocol::version::Capability;
 use rusqlite::OptionalExtension;
 
 use super::{
-    OwnerId, Store, StoreResult, conflict, json_col_opt, parsed_col, parsed_col_opt, to_json,
+    OwnerId, Store, StoreResult, conflict, json_col, json_col_opt, parsed_col, parsed_col_opt,
+    to_json,
 };
 
 /// A stored machine.
@@ -39,6 +41,8 @@ pub struct MachineRow {
     pub arch: Option<String>,
     /// The running daemon's version, once known.
     pub version: Option<String>,
+    /// The daemon's optional features, from its last `hello`.
+    pub capabilities: Vec<Capability>,
     /// When the daemon was last reachable.
     pub last_seen: Option<UnixMillis>,
     /// The latest doctor report.
@@ -75,6 +79,8 @@ pub struct SeenUpdate {
     pub daemon_id: Option<DaemonId>,
     /// The running daemon's version.
     pub version: Option<String>,
+    /// The daemon's capabilities.
+    pub capabilities: Option<Vec<Capability>>,
     /// The remote `$HOME`.
     pub home: Option<String>,
     /// The architecture.
@@ -89,7 +95,7 @@ pub struct Machines<'a> {
 
 const COLUMNS: &str = "id, name, host, port, username, key_id, auth_key_id, host_key, \
                        auto_upgrade, daemon_id, home, arch, version, last_seen, doctor, \
-                       daemon_settings, created_at";
+                       daemon_settings, created_at, capabilities";
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<MachineRow> {
     Ok(MachineRow {
@@ -110,6 +116,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<MachineRow> {
         doctor: json_col_opt(row, 14)?,
         daemon_settings: json_col_opt(row, 15)?,
         created_at: UnixMillis(row.get(16)?),
+        capabilities: json_col(row, 17)?,
     })
 }
 
@@ -255,7 +262,8 @@ impl<'a> Machines<'a> {
         let n = self.store.lock().execute(
             "UPDATE machines SET last_seen = ?3,
                  daemon_id = COALESCE(?4, daemon_id), version = COALESCE(?5, version),
-                 home = COALESCE(?6, home), arch = COALESCE(?7, arch)
+                 home = COALESCE(?6, home), arch = COALESCE(?7, arch),
+                 capabilities = COALESCE(?8, capabilities)
              WHERE owner_id = ?1 AND id = ?2",
             rusqlite::params![
                 self.owner.as_str(),
@@ -264,7 +272,8 @@ impl<'a> Machines<'a> {
                 seen.daemon_id.map(|d| d.to_string()),
                 seen.version,
                 seen.home,
-                seen.arch
+                seen.arch,
+                seen.capabilities.as_ref().map(to_json).transpose()?
             ],
         )?;
         Ok(n > 0)

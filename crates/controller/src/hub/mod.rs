@@ -358,7 +358,6 @@ impl Hub {
         id: MachineId,
         link: Link,
         seen: SeenUpdate,
-        capabilities: Vec<controlroom_protocol::version::Capability>,
         update_available: bool,
     ) {
         let now = controlroom_protocol::UnixMillis::now();
@@ -391,7 +390,6 @@ impl Hub {
             update_available,
             last_error: None,
             bootstrap: None,
-            capabilities,
         };
         for session_id in gone {
             st.session_removed(id, session_id);

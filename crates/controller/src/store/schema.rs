@@ -12,7 +12,7 @@ use rusqlite::Connection;
 use super::{StoreError, StoreResult};
 
 /// The schema version, kept in `PRAGMA user_version`.
-pub(super) const VERSION: u32 = 1;
+pub(super) const VERSION: u32 = 2;
 
 const SCHEMA: &str = r#"
 CREATE TABLE installation (
@@ -60,6 +60,8 @@ CREATE TABLE machines (
     home             TEXT,
     arch             TEXT,
     version          TEXT,
+    -- The daemon's `hello` capabilities (JSON array of strings).
+    capabilities     TEXT NOT NULL DEFAULT '[]',
     last_seen        INTEGER,
     -- The latest doctor report and daemon settings (protocol JSON).
     doctor           TEXT,

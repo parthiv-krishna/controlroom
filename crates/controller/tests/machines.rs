@@ -60,6 +60,13 @@ async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_instal
     assert_eq!(machine["arch"], std::env::consts::ARCH);
     assert!(machine["daemon_id"].is_string());
     assert!(machine["settings"]["idle_timeout_h"].is_number());
+    assert!(
+        machine["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("sandbox_approvals")),
+        "{machine}"
+    );
 
     // The same host can't be added twice.
     ui.err("machines.add", new, "invalid_params").await;
@@ -137,13 +144,15 @@ async fn two_tabs_run_a_session_end_to_end() {
         .ok("tasks.create", json!({"title": "greet", "status": "todo"}))
         .await;
     let task_id = task["id"].as_str().unwrap().to_owned();
-    let session = create_session(
-        &mut a,
-        &machine,
-        &host,
-        json!({"prompt": {"content": text("say hello")}, "task_ids": [task_id], "name": "greeter"}),
-    )
-    .await;
+    // One call creates the session with its first prompt (atomic on the daemon) and links it to
+    // the task. The client's prompt origin is replaced by its device.
+    let create = json!({"machine_id": machine, "op_id": op(), "agent": "fake", "cwd": host.work(),
+        "sandbox_level": "off", "name": "greeter", "task_ids": [task_id],
+        "prompt": {"content": text("say hello"),
+                   "origin": {"kind": "user", "device": {"device_id": "evil", "label": "Evil"}}}});
+    let created = a.ok("session.create", create.clone()).await;
+    assert_eq!(created["prompt"]["outcome"], "queued", "{created}");
+    let session = created["session"]["id"].as_str().unwrap().to_owned();
     b.wait("the first run finishes, linked to the task", |m| {
         let s = m.session(&session);
         let Some(t) = m.tasks.get(&task_id) else {
@@ -156,6 +165,9 @@ async fn two_tabs_run_a_session_end_to_end() {
             && t["links"][0]["session_id"] == json!(session)
     })
     .await;
+    // A retry with the same op id returns the same session and applies nothing twice.
+    let retried = a.ok("session.create", create).await;
+    assert_eq!(retried["session"]["id"], json!(session));
     let sandbox = &b.mirror.session(&session)["sandbox"];
     assert_eq!(sandbox["default_level"], "relaxed", "{sandbox}");
     assert_eq!(sandbox["level"], "off");
@@ -184,7 +196,35 @@ async fn two_tabs_run_a_session_end_to_end() {
         assert_eq!(backlog["params"]["machine_id"], json!(machine));
         let all = backlog["params"]["ops"].to_string();
         assert!(all.contains("hello there"), "{all}");
+        let prompts = backlog["params"]["ops"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|op| op["item"]["kind"] == "message" && op["item"]["role"] == "user")
+            .count();
+        assert_eq!(prompts, 1, "the first prompt was sent once: {all}");
+        assert!(
+            !all.contains("\"evil\""),
+            "the client's origin was replaced: {all}"
+        );
     }
+    // A detail-only subscription (`timeline: false`) gets the detail but never ops.
+    let detail_only = b
+        .ok(
+            "session.subscribe",
+            json!({"machine_id": machine, "id": session, "since_seq": 0, "timeline": false}),
+        )
+        .await;
+    assert!(detail_only["detail"]["queue"].is_array());
+    // Daemon errors pass through unchanged.
+    let unknown = a
+        .err(
+            "session.set_option",
+            json!({"machine_id": machine, "op_id": op(), "id": session, "option_id": "nope", "value": "x"}),
+            "not_found",
+        )
+        .await;
+    assert_eq!(unknown["data"]["resource"], "option");
 
     // A prompt from the phone streams to both tabs; the laptop queues another meanwhile.
     b.ok(
@@ -247,6 +287,19 @@ async fn two_tabs_run_a_session_end_to_end() {
         ui.notification("the streamed text", streamed).await;
         assert!(!ui.notifications.iter().any(streamed), "streamed twice");
     }
+    // The detail-only subscription saw the queue change but no ops.
+    let detail_events: Vec<_> = b
+        .notifications
+        .iter()
+        .filter(|n| n["params"]["subscription_id"] == detail_only["subscription_id"])
+        .collect();
+    assert!(!detail_events.is_empty());
+    assert!(
+        detail_events
+            .iter()
+            .all(|n| n["params"]["ops"].as_array().is_none_or(Vec::is_empty)),
+        "{detail_events:#?}"
+    );
     let unsubscribed = a
         .ok(
             "unsubscribe",
@@ -463,13 +516,23 @@ async fn approvals_push_once_per_device_and_the_first_answer_wins() {
             .await;
         let respond = |option: &str| {
             json!({"machine_id": machine, "op_id": op(), "id": session,
-                   "request_id": request["id"], "response": {"kind": "choice", "option_id": option}})
+                   "request_id": request["id"], "response": {"kind": "choice", "option_id": option},
+                   // Never trusted: the controller records the answering connection's device.
+                   "by": {"device_id": "laptop", "label": "Not me"}})
         };
         let answered = phone.ok("request.respond", respond("0")).await;
         assert_eq!(answered["request"]["state"], "answered");
-        laptop
+        assert_eq!(
+            answered["request"]["answer"]["by"],
+            json!({"device_id": "phone", "label": "phone (Firefox on Linux)"})
+        );
+        let lost = laptop
             .err("request.respond", respond("1"), "already_resolved")
             .await;
+        assert_eq!(
+            lost["data"]["request"]["answer"]["by"]["device_id"],
+            "phone"
+        );
         phone
             .wait("the run finishes", |m| {
                 let s = m.session(&session);

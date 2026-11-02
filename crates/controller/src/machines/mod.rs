@@ -349,10 +349,10 @@ async fn session(
             SeenUpdate {
                 daemon_id: Some(hello.daemon_id),
                 version: Some(hello.daemon_version.clone()),
+                capabilities: Some(hello.capabilities.clone()),
                 home: Some(probe.home.clone()),
                 arch: Some(probe.arch.to_string()),
             },
-            hello.capabilities.clone(),
             update_available,
         );
         connect::record_auth_key(hub, id, key_id);

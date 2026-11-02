@@ -10,7 +10,6 @@ use controlroom_protocol::Rev;
 use controlroom_protocol::ids::{KeyId, SessionId, SubscriptionId};
 use controlroom_protocol::session::{SessionState, SessionSummary};
 use controlroom_protocol::ui::{BootstrapProgress, Connectivity, HostKeyInfo, Machine};
-use controlroom_protocol::version::Capability;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -33,7 +32,6 @@ pub(crate) struct MachineLive {
     pub update_available: bool,
     pub last_error: Option<String>,
     pub bootstrap: Option<BootstrapProgress>,
-    pub capabilities: Vec<Capability>,
 }
 
 impl Default for MachineLive {
@@ -43,7 +41,6 @@ impl Default for MachineLive {
             update_available: false,
             last_error: None,
             bootstrap: None,
-            capabilities: Vec::new(),
         }
     }
 }
@@ -138,7 +135,7 @@ impl MachineEntry {
             version: r.version.clone(),
             arch: r.arch.clone(),
             last_error: self.live.last_error.clone(),
-            capabilities: self.live.capabilities.clone(),
+            capabilities: r.capabilities.clone(),
             settings: r.daemon_settings.clone(),
             doctor: r.doctor.clone(),
             bootstrap: self.live.bootstrap.clone(),

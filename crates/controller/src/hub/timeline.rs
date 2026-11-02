@@ -11,7 +11,8 @@
 //! A new subscriber stays *pending* until its `session.subscribe` response has been sent, so no
 //! event reaches the client before the response; its events are buffered meanwhile.
 //!
-//! Subscriptions that ask for raw frames (the raw view) get a fanout of their own.
+//! Subscriptions that ask for raw frames (the raw view) get a fanout of their own, and so do
+//! detail-only subscriptions (`timeline: false`), which share one per session.
 
 use std::collections::BTreeMap;
 
@@ -23,19 +24,23 @@ use controlroom_protocol::timeline::{RawFrame, TimelineOp};
 
 use super::clients::ClientId;
 
-/// Identifies a fanout: a session, plus the owning UI subscription for raw-frame fanouts.
+/// Identifies a fanout: a session, whether it carries the timeline, and the owning UI
+/// subscription for raw-frame fanouts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct TimelineKey {
     pub machine_id: MachineId,
     pub session_id: SessionId,
     /// `Some` for a dedicated raw-frame fanout.
     pub raw_owner: Option<SubscriptionId>,
+    /// Timeline ops (`true`) or the detail only.
+    pub timeline: bool,
 }
 
 /// What a new subscriber needs from the daemon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum JoinPlan {
-    /// The shared daemon subscription is live and exactly at the subscriber's position.
+    /// The shared daemon subscription is live and exactly at the subscriber's position (any
+    /// position, for detail-only subscriptions).
     Join,
     /// (Re)open the daemon subscription.
     Subscribe {
@@ -102,13 +107,15 @@ impl Fanout {
         (self.head, self.detail.clone())
     }
 
-    /// Adds a pending subscriber that has seen everything up to `since`.
+    /// Adds a pending subscriber that has seen everything up to `since` (ignored without the
+    /// timeline).
     pub(crate) fn add(
         &mut self,
         sub: SubscriptionId,
         client: ClientId,
         since: Seq,
         raw_since: Option<Seq>,
+        timeline: bool,
     ) -> JoinPlan {
         self.subscribers.insert(
             sub,
@@ -119,7 +126,8 @@ impl Fanout {
                 pending: Some(Vec::new()),
             },
         );
-        if self.daemon_sub.is_some() && since == self.head && self.detail.is_some() {
+        let caught_up = !timeline || since == self.head;
+        if self.daemon_sub.is_some() && caught_up && self.detail.is_some() {
             JoinPlan::Join
         } else {
             self.resume_plan()
@@ -304,7 +312,7 @@ mod tests {
         let (c1, c2) = (ClientId(1), ClientId(2));
         let (a, b) = (SubscriptionId::generate(), SubscriptionId::generate());
 
-        let plan = f.add(a, c1, Seq(0), None);
+        let plan = f.add(a, c1, Seq(0), None, true);
         assert_eq!(
             plan,
             JoinPlan::Subscribe {
@@ -321,7 +329,7 @@ mod tests {
         assert!(f.activate(&a).is_empty());
 
         // A second tab exactly at the shared head joins without the daemon.
-        assert_eq!(f.add(b, c2, Seq(3), None), JoinPlan::Join);
+        assert_eq!(f.add(b, c2, Seq(3), None, true), JoinPlan::Join);
         assert!(f.activate(&b).is_empty());
         let both = f.deliver(&events(d1, 4..=4));
         assert_eq!(both.len(), 2);
@@ -330,7 +338,7 @@ mod tests {
         // text, so nobody sees it twice.
         let c = SubscriptionId::generate();
         assert_eq!(
-            f.add(c, c2, Seq(0), None),
+            f.add(c, c2, Seq(0), None, true),
             JoinPlan::Subscribe {
                 since: Seq(0),
                 raw_since: None
@@ -355,12 +363,12 @@ mod tests {
     fn reconnects_resume_from_the_lowest_delivered_seq() {
         let mut f = Fanout::default();
         let (a, b) = (SubscriptionId::generate(), SubscriptionId::generate());
-        f.add(a, ClientId(1), Seq(0), None);
+        f.add(a, ClientId(1), Seq(0), None, true);
         let d1 = SubscriptionId::generate();
         f.subscribed(d1, Seq(0), detail());
         f.activate(&a);
         f.deliver(&events(d1, 1..=10));
-        assert_eq!(f.add(b, ClientId(2), Seq(10), None), JoinPlan::Join);
+        assert_eq!(f.add(b, ClientId(2), Seq(10), None, true), JoinPlan::Join);
         f.activate(&b);
         f.deliver(&events(d1, 11..=12));
 
@@ -385,7 +393,7 @@ mod tests {
         let mut f = Fanout::default();
         let a = SubscriptionId::generate();
         assert_eq!(
-            f.add(a, ClientId(1), Seq(0), Some(Seq(2))),
+            f.add(a, ClientId(1), Seq(0), Some(Seq(2)), true),
             JoinPlan::Subscribe {
                 since: Seq(0),
                 raw_since: Some(Seq(2))

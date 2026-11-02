@@ -26,6 +26,8 @@ pub(crate) enum Fill {
     PromptOrigin,
     /// `sandbox`: the session's refreshed defaults (machine and matching projects).
     Sandbox,
+    /// `by`: the deciding device is this connection's, always (a client's value is dropped).
+    Responder,
 }
 
 /// What the controller does with the result.
@@ -57,8 +59,7 @@ const fn plain(method: &'static str) -> Entry {
     }
 }
 
-/// Every passed-through method. `request.respond` attribution: the daemon records the device
-/// once its params carry one (W4d); until then the answer carries no device.
+/// Every passed-through method.
 const TABLE: &[Entry] = &[
     Entry {
         fill: Fill::PromptOrigin,
@@ -85,7 +86,10 @@ const TABLE: &[Entry] = &[
     plain("queue.remove"),
     plain("queue.reorder"),
     plain("queue.resume"),
-    plain("request.respond"),
+    Entry {
+        fill: Fill::Responder,
+        ..plain("request.respond")
+    },
     plain("todo.add"),
     plain("todo.update"),
     plain("todo.remove"),
@@ -179,6 +183,14 @@ fn fill(
             };
             params.insert("origin".into(), encode(&origin)?);
         }
+        Fill::Responder => match conn.device_ref() {
+            Some(device) => {
+                params.insert("by".into(), encode(&device)?);
+            }
+            None => {
+                params.remove("by");
+            }
+        },
         Fill::Sandbox => {
             let session: SessionId = params
                 .get("id")
