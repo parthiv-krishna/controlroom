@@ -7,10 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use controlroom_client_core::SshPrivateKey;
-use controlroom_client_core::daemon::{
-    CallError, CallOptions, ClientOptions, DaemonClient, Notification, RpcMethod,
-};
+use controlroom_client_core::daemon::{CallError, CallOptions, ClientOptions, DaemonClient};
 use controlroom_client_core::ssh::{ConnectOptions, connect};
+use controlroom_protocol::{ErrorData, Method, RpcNotification, RpcOutcome};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use support::TestServer;
@@ -18,6 +17,7 @@ use tokio::io::{
     AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, Lines, ReadHalf, WriteHalf,
 };
 use tokio::sync::mpsc;
+use ts_rs::TS;
 
 /// The daemon end of an in-memory connection.
 struct FakeDaemon {
@@ -49,7 +49,7 @@ fn pair(
 ) -> (
     DaemonClient,
     FakeDaemon,
-    mpsc::UnboundedReceiver<Notification>,
+    mpsc::UnboundedReceiver<RpcNotification<Value>>,
 ) {
     let (client_side, daemon_side) = tokio::io::duplex(1 << 16);
     let (cr, cw) = tokio::io::split(client_side);
@@ -82,10 +82,10 @@ async fn calls_hooks_notifications_and_close() {
     let hook_order = order.clone();
     let options = CallOptions {
         on_response: Some(Box::new(move |r| {
-            hook_order
-                .lock()
-                .unwrap()
-                .push(format!("hook:{}", r.is_ok()));
+            hook_order.lock().unwrap().push(format!(
+                "hook:{}",
+                matches!(r.outcome, RpcOutcome::Result(_))
+            ));
         })),
         ..Default::default()
     };
@@ -109,13 +109,13 @@ async fn calls_hooks_notifications_and_close() {
     assert_eq!(note.params, json!({"n": 1}));
     assert_eq!(call.await.unwrap().unwrap(), json!({"echo": 1}));
 
-    // Null params are omitted.
+    // Null params are sent as an empty object.
     let call = tokio::spawn({
         let client = client.clone();
         async move { client.call_raw("fail", Value::Null).await }
     });
     let req = daemon.next_request().await;
-    assert!(req.get("params").is_none(), "{req}");
+    assert_eq!(req["params"], json!({}), "{req}");
     daemon
         .send(json!({"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32015, "message": "busy", "data": {"kind": "busy"}}}))
         .await;
@@ -175,30 +175,22 @@ async fn a_bad_response_body_fails_only_its_own_call() {
     for call in calls {
         outcomes.push(call.await.unwrap());
     }
-    assert!(
-        matches!(&outcomes[0], Err(CallError::Malformed(_))),
-        "{:?}",
-        outcomes[0]
-    );
+    assert!(is_invalid_response(&outcomes[0]), "{:?}", outcomes[0]);
     let Err(CallError::Rpc(e)) = &outcomes[1] else {
         panic!("{:?}", outcomes[1])
     };
-    assert_eq!(e.data, Some(json!({"kind": "from_the_future"})));
-    assert!(
-        matches!(&outcomes[2], Err(CallError::Malformed(_))),
-        "{:?}",
-        outcomes[2]
-    );
+    assert_eq!((e.code, e.data.clone()), (-32099, Some(ErrorData::Unknown)));
+    assert!(is_invalid_response(&outcomes[2]), "{:?}", outcomes[2]);
     assert_eq!(outcomes[3].as_ref().unwrap(), &json!("fine"));
     assert!(!client.is_closed());
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, TS)]
 struct EchoParams {
     word: String,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 struct EchoResult {
     word: String,
 }
@@ -206,7 +198,7 @@ struct EchoResult {
 /// A typed method, as the protocol crate will define them.
 struct Echo;
 
-impl RpcMethod for Echo {
+impl Method for Echo {
     const NAME: &'static str = "echo";
     type Params = EchoParams;
     type Result = EchoResult;
@@ -238,7 +230,7 @@ async fn typed_calls_and_mismatched_results() {
     assert_eq!(ok.unwrap(), EchoResult { word: "hi".into() });
     let err = bad.unwrap_err();
     assert!(
-        matches!(&err, CallError::Malformed(m) if m.contains("echo")),
+        matches!(&err, CallError::Rpc(e) if e.data == Some(ErrorData::InvalidResponse) && e.message.contains("echo")),
         "{err:?}"
     );
     assert!(!client.is_closed());
@@ -344,4 +336,63 @@ async fn client_over_an_ssh_exec_channel() {
     // Dropping the last client sends EOF; the remote loop ends.
     drop(client);
     assert!(exit.wait().await.success());
+}
+
+fn is_invalid_response(outcome: &Result<Value, CallError>) -> bool {
+    matches!(outcome, Err(CallError::Rpc(e)) if e.data == Some(ErrorData::InvalidResponse))
+}
+
+#[tokio::test]
+async fn hello_sends_the_controller_role_and_maps_refusals() {
+    use controlroom_client_core::daemon::{HelloError, hello};
+    use controlroom_protocol::ids::{ControllerId, DaemonId};
+
+    let controller_id = ControllerId::generate();
+    let other = ControllerId::generate();
+    let daemon_id = DaemonId::generate();
+    let (client, mut daemon, _notes) = pair(ClientOptions::default());
+    let answers = [
+        json!({"result": {"daemon_version": "0.1.0", "protocol_version": {"major": 1, "minor": 3},
+            "daemon_id": daemon_id, "capabilities": ["jobs", "teleport"]}}),
+        json!({"error": {"code": -32019, "message": "taken", "data": {"kind": "controller_conflict",
+            "controller_id": other, "connected_since": 5}}}),
+        json!({"error": {"code": -32001, "message": "old", "data": {"kind": "incompatible_version",
+            "protocol_version": {"major": 2, "minor": 0}, "version": "9.0.0"}}}),
+        json!({"result": {"daemon_version": "9.0.0", "protocol_version": {"major": 2, "minor": 0},
+            "daemon_id": daemon_id, "capabilities": []}}),
+    ];
+    let task = tokio::spawn({
+        let client = client.clone();
+        async move {
+            let mut out = Vec::new();
+            for _ in 0..4 {
+                out.push(hello(&client, "controlroom-test", controller_id).await);
+            }
+            out
+        }
+    });
+    for answer in answers {
+        let req = daemon.next_request().await;
+        assert_eq!(req["method"], "hello");
+        assert_eq!(
+            req["params"]["role"],
+            json!({"kind": "controller", "controller_id": controller_id})
+        );
+        let mut reply = answer;
+        reply["jsonrpc"] = json!("2.0");
+        reply["id"] = req["id"].clone();
+        daemon.send(reply).await;
+    }
+    let out = task.await.unwrap();
+    let ok = out[0].as_ref().unwrap();
+    assert_eq!((ok.daemon_id, ok.capabilities.len()), (daemon_id, 2));
+    assert!(
+        matches!(&out[1], Err(HelloError::ControllerConflict { controller_id: c, .. }) if *c == other)
+    );
+    for refused in &out[2..] {
+        assert!(
+            matches!(refused, Err(HelloError::Incompatible { daemon_version, .. }) if daemon_version == "9.0.0"),
+            "{refused:?}"
+        );
+    }
 }

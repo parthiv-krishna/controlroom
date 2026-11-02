@@ -6,48 +6,51 @@
 //! - Every call has a timeout ([`ClientOptions::call_timeout`] unless
 //!   [`CallOptions::timeout`] overrides it), and dropping a call's future
 //!   cancels it, so post-connect steps can be abandoned at any point.
-//! - A response whose body doesn't parse fails only its own call
-//!   ([`CallError::Malformed`]); the connection carries on.
+//! - Lines are classified with the protocol's tolerant [`Message::parse`]. A
+//!   response whose body doesn't parse fails only its own call (as an
+//!   `invalid_response` error); the connection carries on. Typed calls decode
+//!   their result with [`RpcResponse::into_typed`].
 //! - Notifications go to one handler, called on the reader task in wire
 //!   order. A call can carry a response hook ([`CallOptions::on_response`])
 //!   that runs on the reader task before the next message is read: this is
 //!   how a subscriber records a new subscription before any notification
 //!   for it is routed.
-//!
-//! The core is untyped (`serde_json::Value`); [`DaemonClient::call`] adds
-//! types through [`RpcMethod`].
+//! - [`hello`] performs the handshake as the controller and maps the typed
+//!   refusals (incompatible protocol, another controller connected).
 
+mod handshake;
 mod line;
-mod message;
-mod method;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use serde_json::{Value, json};
+use controlroom_protocol::jsonrpc::encode_line;
+use controlroom_protocol::{
+    ErrorData, Message, Method, RpcError, RpcId, RpcNotification, RpcRequest, RpcResponse,
+};
+use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot, watch};
 
+pub use self::handshake::{HelloError, hello};
 use self::line::{Line, read_line};
-use self::message::{Incoming, parse_incoming};
-pub use self::message::{Notification, RpcError};
-pub use self::method::RpcMethod;
 
 /// Receives every notification, in wire order, on the reader task. It must not
 /// block: hand slow work to another task.
-pub type NotificationHandler = Box<dyn Fn(Notification) + Send + Sync>;
+pub type NotificationHandler = Box<dyn Fn(RpcNotification<Value>) + Send + Sync>;
 
-/// Runs on the reader task with a call's outcome, before the next message is
+/// Runs on the reader task with a call's response, before the next message is
 /// read. It doesn't run if the call timed out, was cancelled, or the
 /// connection closed first.
-pub type ResponseHook = Box<dyn FnOnce(&Result<Value, CallError>) + Send>;
+pub type ResponseHook = Box<dyn FnOnce(&RpcResponse<Value>) + Send>;
 
 /// Why a call failed.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum CallError {
-    /// The daemon answered with an error.
+    /// The daemon answered with an error, or its answer was malformed
+    /// (`invalid_response`, also for a result that doesn't match the method).
     #[error("{0}")]
     Rpc(RpcError),
     /// No answer arrived in time. The call is abandoned; a late answer is dropped.
@@ -56,13 +59,19 @@ pub enum CallError {
     /// The connection closed before the answer arrived.
     #[error("daemon connection closed: {0}")]
     Closed(String),
-    /// The answer arrived but its body is malformed (or doesn't match the
-    /// method's result type).
-    #[error("malformed response: {0}")]
-    Malformed(String),
     /// The params could not be encoded.
     #[error("cannot encode params: {0}")]
     Encode(String),
+}
+
+impl CallError {
+    /// The typed protocol error, when the daemon answered (or answered malformed).
+    pub fn rpc(&self) -> Option<&RpcError> {
+        match self {
+            CallError::Rpc(e) => Some(e),
+            _ => None,
+        }
+    }
 }
 
 /// Connection-wide settings.
@@ -96,7 +105,7 @@ pub struct CallOptions {
 }
 
 struct PendingCall {
-    reply: oneshot::Sender<Result<Value, CallError>>,
+    reply: oneshot::Sender<RpcResponse<Value>>,
     hook: Option<ResponseHook>,
 }
 
@@ -135,6 +144,18 @@ impl Inner {
                 .clone()
                 .unwrap_or_else(|| "connection closed".into()),
         )
+    }
+
+    /// Resolves call `id` with `response`, running its hook first.
+    fn resolve(&self, id: i64, response: RpcResponse<Value>) {
+        let Some(call) = self.pending().remove(&id) else {
+            tracing::debug!(id, "dropping a response to no pending call");
+            return;
+        };
+        if let Some(hook) = call.hook {
+            hook(&response);
+        }
+        let _ = call.reply.send(response);
     }
 }
 
@@ -213,13 +234,45 @@ impl DaemonClient {
             .await
     }
 
-    /// Calls `method` with untyped params. `Value::Null` params are omitted.
+    /// Calls `method` with untyped params. `Value::Null` params are sent as `{}`.
     pub async fn call_raw_with(
         &self,
         method: &str,
         params: Value,
         options: CallOptions,
     ) -> Result<Value, CallError> {
+        self.exchange(method, params, options)
+            .await?
+            .into_result()
+            .map_err(CallError::Rpc)
+    }
+
+    /// Calls method `M` with the default options.
+    pub async fn call<M: Method>(&self, params: &M::Params) -> Result<M::Result, CallError> {
+        self.call_with::<M>(params, CallOptions::default()).await
+    }
+
+    /// Calls method `M`. A result that doesn't decode as `M::Result` fails
+    /// this call only, with an `invalid_response` error.
+    pub async fn call_with<M: Method>(
+        &self,
+        params: &M::Params,
+        options: CallOptions,
+    ) -> Result<M::Result, CallError> {
+        let params = serde_json::to_value(params).map_err(|e| CallError::Encode(e.to_string()))?;
+        self.exchange(M::NAME, params, options)
+            .await?
+            .into_typed::<M>()
+            .map_err(CallError::Rpc)
+    }
+
+    /// Sends one request and waits for its response.
+    async fn exchange(
+        &self,
+        method: &str,
+        params: Value,
+        options: CallOptions,
+    ) -> Result<RpcResponse<Value>, CallError> {
         let inner = &*self.inner;
         let id = inner.next_id.fetch_add(1, Ordering::Relaxed);
         let (reply, rx) = oneshot::channel();
@@ -236,11 +289,17 @@ impl DaemonClient {
         if inner.closed.borrow().is_some() {
             return Err(inner.closed_error());
         }
-        let mut request = json!({"jsonrpc": "2.0", "id": id, "method": method});
-        if !params.is_null() {
-            request["params"] = params;
-        }
-        let line = format!("{request}\n");
+        let params = match params {
+            Value::Null => Value::Object(Default::default()),
+            other => other,
+        };
+        let request = RpcRequest {
+            jsonrpc: Default::default(),
+            id: RpcId::Number(id),
+            method: method.to_owned(),
+            params,
+        };
+        let line = encode_line(&request).map_err(|e| CallError::Encode(e.to_string()))?;
         let timeout = options.timeout.unwrap_or(inner.options.call_timeout);
         let exchange = async {
             inner
@@ -248,29 +307,11 @@ impl DaemonClient {
                 .send(line)
                 .await
                 .map_err(|_| inner.closed_error())?;
-            rx.await.map_err(|_| inner.closed_error())?
+            rx.await.map_err(|_| inner.closed_error())
         };
         tokio::time::timeout(timeout, exchange)
             .await
             .unwrap_or(Err(CallError::Timeout(timeout)))
-    }
-
-    /// Calls method `M` with the default options.
-    pub async fn call<M: RpcMethod>(&self, params: &M::Params) -> Result<M::Result, CallError> {
-        self.call_with::<M>(params, CallOptions::default()).await
-    }
-
-    /// Calls method `M`. A result that doesn't decode as `M::Result` fails
-    /// this call only, with [`CallError::Malformed`].
-    pub async fn call_with<M: RpcMethod>(
-        &self,
-        params: &M::Params,
-        options: CallOptions,
-    ) -> Result<M::Result, CallError> {
-        let params = serde_json::to_value(params).map_err(|e| CallError::Encode(e.to_string()))?;
-        let value = self.call_raw_with(M::NAME, params, options).await?;
-        serde_json::from_value(value)
-            .map_err(|e| CallError::Malformed(format!("{} result: {e}", M::NAME)))
     }
 
     /// Whether the connection is gone.
@@ -342,29 +383,40 @@ async fn read_loop<R: AsyncRead + Unpin>(
         if buf.trim_ascii().is_empty() {
             continue;
         }
-        match parse_incoming(&buf) {
-            Ok(Incoming::Response { id, outcome }) => {
-                let call = id.as_i64().and_then(|id| inner.pending().remove(&id));
-                let Some(call) = call else {
-                    tracing::debug!(%id, "dropping a response to no pending call");
-                    continue;
-                };
-                if let Some(hook) = call.hook {
-                    hook(&outcome);
+        let line = String::from_utf8_lossy(&buf);
+        match Message::parse(&line) {
+            Ok(Message::Response(response)) => match response.id.clone() {
+                Some(RpcId::Number(id)) => inner.resolve(id, response),
+                other => tracing::debug!(?other, "dropping a response with a foreign id"),
+            },
+            Ok(Message::Notification(notification)) => on_notification(notification),
+            Ok(Message::Request(request)) => {
+                tracing::warn!(method = %request.method, "refusing a request from the daemon");
+                let reply = RpcResponse::<Value>::error(
+                    Some(request.id),
+                    RpcError::new(
+                        ErrorData::MethodNotFound,
+                        "the controller serves no methods",
+                    ),
+                );
+                if let Ok(line) = encode_line(&reply) {
+                    let _ = inner.out.send(line).await;
                 }
-                let _ = call.reply.send(outcome);
             }
-            Ok(Incoming::Notification(notification)) => on_notification(notification),
-            Ok(Incoming::Request { id, method }) => {
-                tracing::warn!(%method, "refusing a request from the daemon");
-                let reply = json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "error": {"code": -32601, "message": "the controller serves no methods"},
-                });
-                let _ = inner.out.send(format!("{reply}\n")).await;
-            }
-            Err(e) => tracing::warn!("unparseable daemon message: {e}"),
+            Err(e) => match e.id {
+                // A response we can attribute fails only its own call.
+                Some(RpcId::Number(id)) => inner.resolve(
+                    id,
+                    RpcResponse::error(
+                        Some(RpcId::Number(id)),
+                        RpcError::new(
+                            ErrorData::InvalidResponse,
+                            format!("malformed response: {}", e.error.message),
+                        ),
+                    ),
+                ),
+                _ => tracing::warn!("unparseable daemon message: {e}"),
+            },
         }
     };
     inner.close(reason);
