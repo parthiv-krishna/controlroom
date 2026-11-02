@@ -16,12 +16,19 @@
 //! The runtime owns everything else: the queue, op dedup, in-doubt handling, persistence,
 //! send-now policy timing, injection origins, auto-continue.
 //!
-//! Implementations: `pi` (native `pi --mode rpc`, P3) and `fake` (in-process, for runtime unit
+//! A `meta` record starts a new agent process (a launch or resume appends to the same
+//! transcript): the fold resets everything that belongs to the previous process (ready, run,
+//! open tools and requests, unanswered tags), because a supervisor that was killed leaves no
+//! `exit` record behind.
+//!
+//! Implementations: `pi` (native `pi --mode rpc`, P3) and [`fake`] (in-process, for runtime unit
 //! tests). This module is the contract between the drivers and the runtime; change it only with
 //! a reason recorded in the workstream report.
 
+pub mod fake;
 mod pi;
 
+pub use fake::FakeDriver;
 pub use pi::PiDriver;
 
 use controlroom_protocol::daemon::OptionValue;
@@ -158,7 +165,17 @@ pub enum DriverEvent {
         /// The error text, for failures.
         error: Option<String>,
     },
-    /// The agent accepted a tagged line.
+    /// A tagged line reached the transcript (an `in` record). Reported for every tagged `in`
+    /// line, before the other events of that record. This is how the runtime learns, from the
+    /// transcript alone, which of its writes the agent was given (exactly-once after a crash).
+    Written {
+        /// The line.
+        tag: LineTag,
+    },
+    /// The agent accepted a tagged line. For a [`Intent::Prompt`] that starts a run, the run
+    /// is already active in the view when this is reported (pi: report the `started`
+    /// response no earlier than `agent_start`), so the session never looks idle between the
+    /// hand-over and the run.
     Accepted {
         /// The line.
         tag: LineTag,
