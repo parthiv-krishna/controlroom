@@ -4,7 +4,46 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "controlroom-web"
+path = "src/main.rs"
+
 [dependencies]
+anyhow.workspace = true
+axum.workspace = true
+# Seals the in-flight OIDC login state into its cookie (no server-side login table to fill).
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+clap = { workspace = true, features = ["env"] }
+controlroom-client-core.workspace = true
+controlroom-controller.workspace = true
+controlroom-protocol.workspace = true
+data-encoding = "2.6"
+futures.workspace = true
+getrandom = "0.4"
+# OIDC: typed discovery, PKCE and ID-token validation over reqwest + rustls.
+openidconnect = { version = "4.0", default-features = false, features = ["reqwest", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# Always embedded (also in debug builds); `include-exclude` keeps source maps out.
+rust-embed = { version = "8.7", features = ["debug-embed", "include-exclude"] }
+serde.workspace = true
+serde_json.workspace = true
+subtle = "2.6"
+thiserror.workspace = true
+tokio.workspace = true
+toml = "0.9"
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url = "2.5"
+
+[dev-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+sha2 = "0.11"
+tempfile.workspace = true
+tokio-tungstenite = "0.29"
 
 [lints]
 workspace = true

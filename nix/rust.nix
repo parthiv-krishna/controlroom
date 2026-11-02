@@ -106,8 +106,9 @@ let
     };
   };
 
-  # The web server with the UI copied to web/dist (embedded once the web crate
-  # uses rust-embed) and both static daemons bundled for deployment.
+  # The web server with the UI embedded (copied to web/dist, where rust-embed
+  # reads it) and both static daemons bundled for deployment. The bundled
+  # directory is compiled in as the default for `bundled_daemons_dir`.
   controlroomWeb = craneLib.buildPackage (
     commonArgs
     // {
@@ -126,6 +127,15 @@ let
         install -m 755 ${controlroomdStatic.x86_64}/bin/controlroomd $daemons/controlroomd-x86_64-linux
         install -m 755 ${controlroomdStatic.aarch64}/bin/controlroomd $daemons/controlroomd-aarch64-linux
         echo ${commonArgs.version} > $daemons/version
+      '';
+      doInstallCheck = true;
+      installCheckPhase = ''
+        runHook preInstallCheck
+        [ "$($out/bin/controlroom-web --version)" = "controlroom-web ${commonArgs.version}" ]
+        # The UI's hashed entry chunk and the bundled daemons directory are compiled in.
+        grep -qF "$(basename ${webDist}/assets/index-*.js)" $out/bin/controlroom-web
+        grep -qF "$out/share/controlroom/daemons" $out/bin/controlroom-web
+        runHook postInstallCheck
       '';
     }
   );
