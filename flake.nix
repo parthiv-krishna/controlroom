@@ -35,6 +35,14 @@
         );
       webFor = pkgs: import ./nix/web.nix { inherit pkgs; };
       nonoFor = pkgs: import ./nix/nono.nix { inherit pkgs; };
+      e2eFor =
+        pkgs:
+        import ./nix/tests/e2e.nix {
+          inherit pkgs;
+          rust = rustFor pkgs;
+          web = webFor pkgs;
+          nono = nonoFor pkgs;
+        };
       rustFor =
         pkgs:
         import ./nix/rust.nix {
@@ -59,6 +67,12 @@
           controlroomd-aarch64-linux = rust.controlroomdStatic.aarch64;
           # The sandbox, pinned to the version the profiles are validated against.
           nono = nonoFor pkgs;
+          # The Playwright runner of the VM test and the VM test run ($out has its logs).
+          e2e-vm = web.e2eVm;
+        }
+        // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+          vm-e2e-run = (e2eFor pkgs).run;
+          vm-e2e-driver = (e2eFor pkgs).test.driver;
         }
       );
 
@@ -82,6 +96,10 @@
           web-check = web.check;
           # Builds the pinned nono; its install check asserts `nono --version`.
           nono = nonoFor pkgs;
+        }
+        # The browser end-to-end test in NixOS VMs (needs KVM): x86_64 only.
+        // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
+          vm-e2e = (e2eFor pkgs).check;
         }
       );
 

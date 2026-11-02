@@ -47,7 +47,13 @@ let
   # Fully static controlroomd for arbitrary Linux hosts, cross-compiled with
   # the matching musl toolchain (C dependencies such as bundled SQLite too).
   mkStaticDaemon =
-    { target, crossPkgs }:
+    {
+      target,
+      crossPkgs,
+      # Build it reporting another version (the VM test's "older" daemon). It reuses the
+      # regular build's dependencies; cargo updates the workspace versions in Cargo.lock.
+      versionOverride ? null,
+    }:
     let
       cc = crossPkgs.stdenv.cc;
       targetEnv = lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] target);
@@ -63,18 +69,37 @@ let
         depsBuildBuild = [ cc ];
         doCheck = false;
       };
+      cargoArtifacts = craneLib.buildDepsOnly args;
+      regular = craneLib.buildPackage (
+        args
+        // {
+          inherit cargoArtifacts;
+          doInstallCheck = true;
+          nativeInstallCheckInputs = [ pkgs.file ];
+          installCheckPhase = ''
+            file -L $out/bin/controlroomd | tee /dev/stderr | grep -Eq 'static(-pie|ally) linked'
+          '';
+        }
+      );
     in
-    craneLib.buildPackage (
-      args
-      // {
-        cargoArtifacts = craneLib.buildDepsOnly args;
-        doInstallCheck = true;
-        nativeInstallCheckInputs = [ pkgs.file ];
-        installCheckPhase = ''
-          file -L $out/bin/controlroomd | tee /dev/stderr | grep -Eq 'static(-pie|ally) linked'
-        '';
-      }
-    );
+    if versionOverride == null then
+      regular
+    else
+      craneLib.buildPackage (
+        args
+        // {
+          version = versionOverride;
+          cargoExtraArgs = "-p controlroomd";
+          inherit cargoArtifacts;
+          postPatch = ''
+            sed -i 's/^version = "${commonArgs.version}"$/version = "${versionOverride}"/' Cargo.toml
+          '';
+          doInstallCheck = true;
+          installCheckPhase = ''
+            [ "$($out/bin/controlroomd --version | head -n 1)" = "controlroomd ${versionOverride}" ]
+          '';
+        }
+      );
 
   # The TypeScript drift test, with the checked-in bindings in the source so it
   # compares instead of skipping (the plain `test` check doesn't see web/).
@@ -104,6 +129,13 @@ let
       target = "aarch64-unknown-linux-musl";
       crossPkgs = pkgs.pkgsCross.aarch64-multiplatform-musl;
     };
+  };
+
+  # An x86_64 daemon that reports an older (pre-release) version, for the VM test's auto-upgrade.
+  controlroomdStaticOld = mkStaticDaemon {
+    target = "x86_64-unknown-linux-musl";
+    crossPkgs = pkgs.pkgsCross.musl64;
+    versionOverride = "${commonArgs.version}-old";
   };
 
   # The web server with the UI embedded (copied to web/dist, where rust-embed
@@ -146,6 +178,7 @@ in
     workspace
     controlroomWeb
     controlroomdStatic
+    controlroomdStaticOld
     protocolTsDrift
     ;
 

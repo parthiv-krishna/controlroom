@@ -22,6 +22,12 @@ let
         "playwright-report"
       ];
   };
+  # The UI build doesn't read the VM specs, so editing them doesn't rebuild the server.
+  distSrc = lib.cleanSourceWith {
+    name = "controlroom-web-dist-src";
+    inherit src;
+    filter = path: _type: baseNameOf path != "e2e-vm";
+  };
 
   pnpmDeps = pkgs.fetchPnpmDeps {
     pname = "controlroom-web";
@@ -50,6 +56,7 @@ in
   # The production build (web/dist).
   dist = mkWeb {
     pname = "controlroom-web-dist";
+    src = distSrc;
     buildPhase = ''
       runHook preBuild
       pnpm build
@@ -59,6 +66,34 @@ in
       runHook preInstall
       test -f dist/index.html
       cp -r dist $out
+      runHook postInstall
+    '';
+  };
+
+  # The Playwright specs against the real server (web/e2e-vm), with their node_modules and the
+  # browsers pinned to the same Playwright version; the NixOS VM test runs them.
+  # `controlroom-e2e-vm [playwright test args]` reads its settings from E2E_* variables (see
+  # web/e2e-vm/playwright.config.ts).
+  e2eVm = mkWeb {
+    pname = "controlroom-e2e-vm";
+    nativeBuildInputs = [
+      nodejs
+      pnpm
+      pkgs.pnpmConfigHook
+      pkgs.makeWrapper
+    ];
+    dontBuild = true;
+    installPhase = ''
+      runHook preInstall
+      lib=$out/lib/controlroom-e2e-vm
+      mkdir -p $lib
+      cp -r node_modules package.json tsconfig.json e2e-vm $lib/
+      [ "$(node -p 'require("./node_modules/@playwright/test/package.json").version')" = "${pkgs.playwright-driver.version}" ]
+      makeWrapper ${nodejs}/bin/node $out/bin/controlroom-e2e-vm \
+        --chdir $lib \
+        --set PLAYWRIGHT_BROWSERS_PATH ${pkgs.playwright-driver.browsers} \
+        --set PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS true \
+        --add-flags "$lib/node_modules/@playwright/test/cli.js test --config e2e-vm/playwright.config.ts"
       runHook postInstall
     '';
   };
