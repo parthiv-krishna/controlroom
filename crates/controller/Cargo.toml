@@ -23,6 +23,10 @@ tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# Web Push: pure RustCrypto RFC 8291 encryption + RFC 8292 VAPID (no OpenSSL), sent with
+# reqwest over rustls.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+web-push-native = "0.5"
 
 [dev-dependencies]
 controlroom-controller = { path = ".", features = ["test-support"] }

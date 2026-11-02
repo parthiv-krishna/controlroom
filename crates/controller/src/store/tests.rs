@@ -275,7 +275,7 @@ fn tasks_with_checklist_projects_and_dangling_links() {
         })
         .unwrap();
     assert_eq!(task.project_ids, [p2.id, p1.id]);
-    assert_eq!(task.links, [link.clone()]);
+    assert_eq!(task.links, std::slice::from_ref(&link));
     let texts = |t: &controlroom_protocol::ui::Task| {
         t.checklist
             .iter()
@@ -484,7 +484,7 @@ fn sandbox_profiles_and_grants() {
         .grants()
         .insert(&a, &a, ContactScope::Pair, None)
         .unwrap();
-    assert_eq!(repo.grants().list().unwrap(), [grant.clone()]);
+    assert_eq!(repo.grants().list().unwrap(), std::slice::from_ref(&grant));
     assert!(repo.grants().delete(grant.id).unwrap());
     assert!(!repo.grants().delete(grant.id).unwrap());
 }

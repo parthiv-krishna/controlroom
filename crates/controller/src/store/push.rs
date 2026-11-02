@@ -157,6 +157,15 @@ impl<'a> PushSubscriptions<'a> {
         Ok(())
     }
 
+    /// Forgets the deliveries of a deleted session.
+    pub fn forget_session(&self, machine: MachineId, session: SessionId) -> StoreResult<()> {
+        self.store.lock().execute(
+            "DELETE FROM push_deliveries WHERE owner_id = ?1 AND machine_id = ?2 AND session_id = ?3",
+            (self.owner.as_str(), machine.to_string(), session.to_string()),
+        )?;
+        Ok(())
+    }
+
     /// Forgets deliveries older than `before`; returns how many.
     pub fn prune_deliveries(&self, before: UnixMillis) -> StoreResult<usize> {
         Ok(self.store.lock().execute(
