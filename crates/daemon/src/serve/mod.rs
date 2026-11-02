@@ -32,8 +32,6 @@ use controlroom_runtime::{Runtime, RuntimeConfig};
 use controlroom_sandbox::AbsPath;
 use tokio::signal::unix::{SignalKind, signal};
 
-pub use agents::policy;
-
 use crate::config::sandbox as sandbox_config;
 use crate::dirs::Dirs;
 use crate::instance::{self, Claim, ReadyLine, Started};

@@ -2,8 +2,9 @@
 //! `controlroomd` binary's subcommands.
 //!
 //! - [`dirs`], [`config`], [`version`], [`shell`]: paths, configuration and host helpers;
-//! - [`instance`], [`serve`], [`connect`]: the single daemon instance, starting it, and the
-//!   stdio bridge the controller runs over SSH;
+//! - [`instance`], [`serve`], [`connect`]: the single daemon instance, the daemon API it serves
+//!   (the session runtime behind its host and agents ports), and the stdio bridge the
+//!   controller runs over SSH;
 //! - [`launch`]: agent launch glue (session dirs, nono profile, supervisor spawn spec);
 //! - [`doctor`]: environment checks;
 //! - [`ctl`]: the debug client and its timeline renderer;
