@@ -5,7 +5,7 @@
 //! environment value or command-line argument under it, and no bound unix socket in it.
 
 use std::fs;
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -45,8 +45,32 @@ pub fn clean_leaked_nono_dirs(tmp: &Path, min_age: Duration) -> Vec<PathBuf> {
     candidates
         .into_iter()
         .filter(|dir| !refs.iter().any(|r| references(r, dir)))
-        .filter(|dir| fs::remove_dir_all(dir).is_ok())
+        .filter(|dir| remove_tree(dir))
         .collect()
+}
+
+/// Removes `dir` and everything in it. nono's command-mediation dirs hold a read-only
+/// `shims/` directory, so on failure the tree's directories are made writable (never
+/// following symlinks) and the removal is tried once more.
+fn remove_tree(dir: &Path) -> bool {
+    if fs::remove_dir_all(dir).is_ok() {
+        return true;
+    }
+    make_dirs_writable(dir);
+    fs::remove_dir_all(dir).is_ok()
+}
+
+fn make_dirs_writable(dir: &Path) {
+    let Ok(meta) = dir.symlink_metadata() else {
+        return;
+    };
+    if !meta.is_dir() {
+        return;
+    }
+    let _ = fs::set_permissions(dir, fs::Permissions::from_mode(meta.mode() | 0o700));
+    for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+        make_dirs_writable(&entry.path());
+    }
 }
 
 /// True if the string `r` mentions `dir` or something beneath it.
@@ -117,6 +141,11 @@ mod tests {
         for d in ["nono-old", "nono-busy", "other-dir"] {
             fs::create_dir(tmp.join(d)).expect("mkdir");
         }
+        // A command-mediation dir: its shims are read-only.
+        let shims = tmp.join("nono-tool-sandbox-1/shims");
+        fs::create_dir_all(&shims).expect("mkdir");
+        fs::write(shims.join("git"), "").expect("write");
+        fs::set_permissions(&shims, fs::Permissions::from_mode(0o500)).expect("chmod");
         fs::write(tmp.join("nono-file"), "").expect("write");
         // Hold a file open in nono-busy: it is referenced by this process.
         let _busy = fs::File::create(tmp.join("nono-busy/held")).expect("create");
@@ -124,8 +153,12 @@ mod tests {
         // Nothing is old enough yet.
         assert!(clean_leaked_nono_dirs(tmp, Duration::from_secs(3600)).is_empty());
 
-        let removed = clean_leaked_nono_dirs(tmp, Duration::ZERO);
-        assert_eq!(removed, vec![tmp.join("nono-old")]);
+        let mut removed = clean_leaked_nono_dirs(tmp, Duration::ZERO);
+        removed.sort();
+        assert_eq!(
+            removed,
+            vec![tmp.join("nono-old"), tmp.join("nono-tool-sandbox-1")]
+        );
         assert!(tmp.join("nono-busy").exists());
         assert!(tmp.join("other-dir").exists());
         assert!(tmp.join("nono-file").exists());
