@@ -216,6 +216,22 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
     })
 }
 
+/// Finds nono from `sandbox.toml`'s `nono` setting: an absolute (or `~/`) path as is, a
+/// program name through the login shell. The binary must be executable and canonical.
+pub fn find_nono(shell: &AbsPath, setting: &str, home: &AbsPath) -> Result<AbsPath, String> {
+    let path = if setting.starts_with('/') || setting.starts_with('~') {
+        crate::dirs::expand_home(setting, home)
+            .map_err(|e| e.to_string())?
+            .to_string()
+    } else {
+        crate::shell::resolve_program(shell, setting)
+            .map_err(|e| e.describe(shell.as_str()))?
+            .ok_or_else(|| format!("`{setting}` not found by the login shell ({shell} -lc)"))?
+    };
+    let real = std::fs::canonicalize(&path).map_err(|e| format!("{path}: {e}"))?;
+    AbsPath::from_path(&real).map_err(|e| e.to_string())
+}
+
 /// Starts the supervisor of a prepared launch and returns once it is ready. The supervisor is
 /// detached: it outlives this process.
 pub async fn start(host: &Host, prepared: &PreparedLaunch) -> Result<SupervisorInfo, LaunchError> {

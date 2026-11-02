@@ -12,7 +12,9 @@
 pub mod config;
 pub mod connect;
 pub mod credential;
+pub mod ctl;
 pub mod dirs;
+pub mod doctor;
 pub mod instance;
 pub mod launch;
 pub mod serve;

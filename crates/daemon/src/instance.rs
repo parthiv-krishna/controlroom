@@ -231,8 +231,9 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+        // Re-claiming after the daemon exits (lock released, stale socket replaced) is tested
+        // end to end in tests/connect.rs: in this process, a child forked by a concurrent test
+        // could briefly hold a copy of the lock fd.
         drop(first);
-        // The lock is released and the leftover socket file is replaced.
-        assert!(matches!(claim(&dirs).unwrap(), Claim::Acquired(_)));
     }
 }

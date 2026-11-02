@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use controlroomd::{connect, credential, serve, supervise};
+use controlroomd::{connect, credential, ctl, doctor, serve, supervise};
 
 /// The controlroom daemon.
 #[derive(Parser)]
@@ -19,6 +19,10 @@ enum Command {
     Serve(serve::Args),
     /// Bridge stdin/stdout to the daemon socket, starting the daemon if needed.
     Connect(connect::Args),
+    /// Debug client: talk to the daemon, render a session's timeline.
+    Ctl(ctl::Args),
+    /// Check this machine: persistence, boot start, sandbox, agents.
+    Doctor(doctor::Args),
     /// Print a provider's API key for nono's credential capture.
     Credential(credential::Args),
     /// Run one detached supervisor (an agent or job and its transcript).
@@ -30,6 +34,8 @@ fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Serve(args) => serve::run(args),
         Command::Connect(args) => connect::run(args),
+        Command::Ctl(args) => ctl::run(args),
+        Command::Doctor(args) => doctor::run(args),
         Command::Credential(args) => credential::run(args),
         Command::Supervise(args) => supervise::run(args),
     }
