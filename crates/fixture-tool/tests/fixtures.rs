@@ -170,6 +170,61 @@ async fn mock_model_streams_and_holds_at_gates() {
     assert_eq!(mock.remaining(), 0);
 }
 
+/// Sends one HTTP/1.1 request with `connection: close` and returns the raw response.
+async fn http(port: u16, method: &str, path: &str, body: &str) -> String {
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect");
+    stream.write_all(request.as_bytes()).await.expect("write");
+    let mut response = String::new();
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        stream.read_to_string(&mut response),
+    )
+    .await
+    .expect("response in time")
+    .expect("read");
+    response
+}
+
+/// A served mock is scripted, released and inspected over its control API.
+#[tokio::test]
+async fn mock_model_control_api() {
+    let mock = MockModel::serve("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("mock");
+    let port = mock.port();
+    let state = |r: &str| r.split("\r\n\r\n").nth(1).unwrap_or_default().to_owned();
+    let replies = r#"[{"gated_text": {"before": "hello", "gate": "g1", "after": " world"}}, {"text": "second"}]"#;
+    let ok = http(port, "POST", "/control/replies", replies).await;
+    assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
+    let bad = http(port, "POST", "/control/replies", r#"[{"sing": "x"}]"#).await;
+    assert!(bad.starts_with("HTTP/1.1 422"), "{bad}");
+    assert_eq!(
+        state(&http(port, "GET", "/control/state", "").await),
+        r#"{"remaining":2,"requests":0,"reached":[]}"#
+    );
+
+    let body = r#"{"model":"mock-model","stream":true,"messages":[]}"#;
+    let completion = tokio::spawn(http(port, "POST", "/v1/chat/completions", body));
+    mock.wait_reached("g1", Duration::from_secs(10))
+        .await
+        .expect("gate reached");
+    assert_eq!(
+        state(&http(port, "GET", "/control/state", "").await),
+        r#"{"remaining":1,"requests":1,"reached":["g1"]}"#
+    );
+    http(port, "POST", "/control/release/g1", "").await;
+    let response = completion.await.expect("completion");
+    assert!(response.contains(r#""content":" world""#), "{response}");
+    let requests = state(&http(port, "GET", "/control/requests", "").await);
+    assert!(requests.starts_with(r#"[{"messages":[]"#), "{requests}");
+}
+
 /// Records every scenario with the real pi on PATH (or `$CONTROLROOM_PI`),
 /// sanitizes the result and checks it against the committed fixtures,
 /// ignoring only timing and pi's known races (see [`timeless`]). Needs pi

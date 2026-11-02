@@ -5,7 +5,11 @@
 //! [`Reply`]; when the script is exhausted the server answers `ok`. Streams
 //! can stop at named gates that the recorder releases, which makes "abort
 //! during text" or "steer mid-run" deterministic without sleeps.
+//!
+//! [`MockModel::serve`] adds an HTTP control API ([`control`]) for tests that
+//! script the model from another process.
 
+pub mod control;
 mod script;
 mod sse;
 
@@ -47,18 +51,30 @@ pub struct MockModel {
 impl MockModel {
     /// Serve `replies` on an ephemeral loopback port.
     pub async fn start(replies: Vec<Reply>) -> Result<Self> {
+        Self::bind(SocketAddr::from(([127, 0, 0, 1], 0)), replies, false).await
+    }
+
+    /// Serve on `addr` with no scripted replies yet, plus the [`control`] API that scripts
+    /// the model over HTTP.
+    pub async fn serve(addr: SocketAddr) -> Result<Self> {
+        Self::bind(addr, Vec::new(), true).await
+    }
+
+    async fn bind(addr: SocketAddr, replies: Vec<Reply>, with_control: bool) -> Result<Self> {
         let shared = Arc::new(Shared {
             replies: Mutex::new(replies.into()),
             requests: Mutex::new(Vec::new()),
             released: watch::Sender::new(BTreeSet::new()),
             reached: watch::Sender::new(BTreeSet::new()),
         });
-        let app = Router::new()
-            .route("/v1/chat/completions", post(completions))
-            .with_state(shared.clone());
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        let mut app = Router::new().route("/v1/chat/completions", post(completions));
+        if with_control {
+            app = app.merge(control::routes());
+        }
+        let app = app.with_state(shared.clone());
+        let listener = tokio::net::TcpListener::bind(addr)
             .await
-            .context("binding the mock model port")?;
+            .with_context(|| format!("binding the mock model to {addr}"))?;
         let addr = listener.local_addr()?;
         let server = tokio::spawn(async move {
             if let Err(err) = axum::serve(listener, app).await {
@@ -107,6 +123,13 @@ impl MockModel {
     /// Scripted replies not consumed yet.
     pub fn remaining(&self) -> usize {
         lock(&self.shared.replies).len()
+    }
+
+    /// Runs until the server stops (it only stops on an error).
+    pub async fn wait(mut self) -> Result<()> {
+        (&mut self.server)
+            .await
+            .context("the mock model server task")
     }
 }
 

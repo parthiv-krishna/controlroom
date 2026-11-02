@@ -5,14 +5,17 @@
 //! controlroom-fixture-tool record --raw-dir /tmp/raw [--only plain-text]
 //! controlroom-fixture-tool sanitize /tmp/raw fixtures/pi-rpc/1.2.0
 //! controlroom-fixture-tool list
+//! controlroom-fixture-tool mock-model --listen 127.0.0.1:4000
 //! ```
 
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use controlroom_fixture_tool::fixture::{self, Fixture};
+use controlroom_fixture_tool::mock_model::MockModel;
 use controlroom_fixture_tool::sanitize::Sanitizer;
 use controlroom_fixture_tool::{scenario, scenarios};
 use controlroom_transcript::Record;
@@ -40,6 +43,12 @@ enum Cmd {
     Sanitize { raw_dir: PathBuf, out_dir: PathBuf },
     /// List the scenarios.
     List,
+    /// Serve the mock model with its HTTP control API (`mock_model::control`) until killed.
+    MockModel {
+        /// The address to listen on.
+        #[arg(long, default_value = "127.0.0.1:4000")]
+        listen: SocketAddr,
+    },
 }
 
 #[tokio::main]
@@ -52,6 +61,11 @@ async fn main() -> Result<()> {
                 println!("{:<26} {}", scenario.name, scenario.about);
             }
             Ok(())
+        }
+        Cmd::MockModel { listen } => {
+            let mock = MockModel::serve(listen).await?;
+            eprintln!("mock model listening on {}", mock.base_url());
+            mock.wait().await
         }
     }
 }
