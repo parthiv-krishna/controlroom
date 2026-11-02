@@ -30,7 +30,8 @@ new methods and notifications, new optional params fields, new result fields, ne
 Everything else is a major change.
 
 **Capabilities.** `hello.capabilities` lists optional features as free strings; unknown ones are kept.
-Daemon: `jobs` (`job.*`), `todos` (`todo.*`), `subagents`, `mailbox` (`outbox.*`, `inbox.deliver`). Controller: `schedules`.
+Daemon: `jobs` (`job.*`), `todos` (`todo.*`), `subagents`, `mailbox` (`outbox.*`, `inbox.deliver`), `sandbox_approvals` (the approval webhook runs: sandbox approvals reach the user as `sandbox` requests; without it, commands that need an approval are denied). Controller: `schedules`.
+Today's daemon advertises `sandbox_approvals` (when its webhook listener is up) and nothing else.
 A client calls a feature's methods only when the peer advertised it.
 **Terminals (§22) and files (§23) are deliberately not designed yet.** They will arrive as later minor versions behind `terminals` / `files` capabilities, new methods, and new enum variants (e.g. a `privileged` request kind, a `terminal` request body), which 1.0 peers already decode as `unknown`.
 
@@ -50,7 +51,7 @@ A client calls a feature's methods only when the peer advertised it.
 ## 3. Session model (`session`)
 
 **`SessionSummary`** (every session, fed by `machine.subscribe`, sent whole on each change; preview throttled to 1/s):
-`id, name?, title?, cwd, agent, created_at, updated_at, closed_at?, parent_id?, spawned_by?, state, last_outcome?, last_error?, read_seq, last_turn_end_seq, unread, preview, attention?, rollup, context?, queue, requests[], todo?, live_work, options[], sandbox, resumable`.
+`id, name?, title?, cwd, agent, created_at, updated_at, closed_at?, parent_id?, spawned_by?, state, last_outcome?, last_error?, read_seq, last_turn_end_seq, unread, preview, attention?, rollup, context?, queue, requests[], todo?, live_work, options[], agent_live, sandbox, resumable`.
 
 - `state`: `starting · idle · working · awaiting_permission · awaiting_input · failed · dormant · interrupted · closed`.
 - `last_outcome` (`RunOutcome`): `completed · cancelled · failed · max_tokens · refusal · unknown`.
@@ -59,13 +60,20 @@ A client calls a feature's methods only when the peer advertised it.
 - `requests[]`: pending requests, including descendants' (`origin_child`).
 - `todo`: `{done, total (excl. skipped), auto_continue: on|off|paused|stalled|budget}`. `live_work`: `{jobs, children, asks}`.
 - `options[]`: neutral agent settings (`SessionOption {id, label, kind: select{value, choices} | bool{value}}`), e.g. model and thinking level.
+- `agent_live`: a live, ready agent process is attached, so options can be changed and the agent's requests answered. UIs disable option pickers while it is `false` (choices arrive with the agent's first state report).
 - `sandbox`: `{level: strict|relaxed|off, default_level, explicit, looser_than_default, grants[]}`. `level` is the explicit level when one was chosen, else the default; `looser_than_default` drives the badge (`off` gets the warning badge). `context`: `{used, size?, cost?}`.
 
 **`SessionDetail`** (one open session, from `session.subscribe`, replaced whole on change): `agent_sessions[]` (`{driver: pi|fake, native_id, started_at, ended_at?, started_by: new|resume|fresh}`), `queue[]` (`QueueItem {id, content, origin, sending, queued_at}`), `todos[]`, `auto_continue {status, reason?, runs_used, budget}`, `jobs[]`, `peers[]` (`Peer {peer, relation: task|parent|child|grant, task?}`: whom the session may contact).
 
 **`Request`** (one card for all kinds): `{id, kind: permission|question|dialog|sandbox|contact|spawn, blocking, state: pending|answered|withdrawn|expired, title, detail?, body?, options[], questions[], answer?, origin_child?, created_at}`.
 `body` is a structured subject: `command · path · endpoint · diff · git_push · contact · spawn`. Title, detail and options are always enough to answer, so unknown kinds stay answerable.
-Answers are `Response`: `choice {option_id, reason?}` · `answers {answers[]}` · `dismiss` (questions: tells the agent "declined"). The recorded `answer` carries the deciding `DeviceRef`.
+Answers are `Response`: `choice {option_id, reason?}` · `answers {answers[]}` · `dismiss` (questions: tells the agent "declined"). The recorded `answer` carries the deciding `DeviceRef` (`request.respond.by`, set by the controller).
+
+**Sandbox approvals** (spec §11.4) are raised by the daemon itself, not the agent: nono asks the daemon's loopback webhook, and the daemon shows a blocking `kind: sandbox` request (state `awaiting_permission`, attention `approval`, a timeline `request` item).
+
+- Bodies: `git_push {command, remote, branch, force}` for a mediated `git push`, else `command`, `path {path, access}` (file access) or `endpoint {method, url}`.
+- Options: `allow-once` / `deny` for commands, endpoints and network destinations (nono asks per invocation); `allow-session` / `deny` for file access (nono remembers a granted path for the rest of its session).
+- A `deny` choice's `reason` is passed to the agent. The first resolution wins: answered, `withdrawn` (the run was cancelled or the session closed) or `expired` (nono's timeout came first, nono hung up, or the daemon restarted while it waited). Expired and withdrawn approvals are denials.
 
 **Attribution.** `DeviceRef {device_id, label}` (label at the time; UIs show the current label, falling back to this). `Author` (todos): `agent · user{device} · system`. `PromptOrigin`: `user{device} · schedule{schedule_id, name}`.
 **Cross-machine references.** Daemon-side types name other sessions with `PeerRef {daemon_id, session_id, name}`; the UI maps `daemon_id` to a machine through `Machine.daemon_id`.
@@ -107,17 +115,17 @@ Lifecycle: `hello` first (else `hello_required`), then subscriptions. Disconnect
 | --- | --- |
 | `hello {protocol_version, client_name, role}` | → `daemon_version`, `protocol_version`, `daemon_id`, capabilities |
 | `machine.subscribe {since_rev}` | every summary + settings; incremental from a persisted rev log, else `snapshot` |
-| `session.subscribe {id, since_seq, raw_since?}` | backlog = upsert of each item changed after `since_seq` (from the materialized timeline), then live ops; result carries `head_seq` and `detail` |
+| `session.subscribe {id, since_seq, raw_since?, timeline?}` | backlog = upsert of each item changed after `since_seq` (from the materialized timeline), then live ops; result carries `head_seq` and `detail`. `timeline: false` (default `true`): detail only, no backlog and no ops |
 | `unsubscribe {subscription_id}` | end any subscription |
-| `session.create {agent, cwd, name?, parent_id?, spawned_by?, sandbox_level?, sandbox?}` | create and start a session (`sandbox_level`: explicit user choice; `sandbox`: the controller-computed defaults) |
+| `session.create {agent, cwd, name?, parent_id?, spawned_by?, sandbox_level?, sandbox?, prompt?}` | create and start a session (`sandbox_level`: explicit user choice; `sandbox`: the controller-computed defaults). `prompt {content, origin?}` is queued in the same transaction under the same `op_id` and sent once the agent is ready (result `prompt: queued{queue_id}`) |
 | `session.prompt {id, content, origin?, if_busy?}` | send, steer or queue → `sent · steered · queued{queue_id} · skipped` |
 | `session.cancel` · `close` · `reopen` · `delete` | lifecycle |
 | `session.resume {id, sandbox?}` · `session.start_fresh {id, include_history, sandbox?}` | reattach / new agent session (→ `history_path?`); `sandbox` refreshes the defaults, an explicit level stays |
 | `session.update {name?, auto_send?, auto_continue?, auto_continue_budget?}` | session settings |
 | `session.mark_read {seq}` · `session.mark_unread` | shared read cursor → `{read_seq, unread}` |
-| `session.set_option {option_id, value}` | model, thinking level, … |
-| `queue.send_now` (→ `sent · steered · interrupting`) · `queue.edit` · `queue.remove` · `queue.reorder` · `queue.resume` | queue |
-| `request.respond {request_id, response, then?}` | answer any request kind; first answer wins (`already_resolved` carries the winner) |
+| `session.set_option {option_id, value}` | model, thinking level, … (`not_found {resource: option}` for an unknown option) |
+| `queue.send_now {queue_id, interrupt?}` (→ `sent · steered · interrupting · queued`) · `queue.edit` · `queue.remove` · `queue.reorder` · `queue.resume` | queue. Send-now steers, or cancels at a safe point (no tool running); `interrupt: true` cancels at once and sends the item as the next prompt; `queued` while the agent isn't ready |
+| `request.respond {request_id, response, then?, by?}` | answer any request kind; first answer wins (`already_resolved` carries the winner). `by` is the deciding device, filled in by the controller (it overwrites a client's value) |
 | `todo.add {texts[], index?}` · `todo.update` · `todo.remove` · `todo.reorder` | shared todo list (`todos`) |
 | `job.list` · `job.logs {from_line?, max_lines?}` · `job.kill` · `job.follow {buffer_seconds?, pattern?, from?}` · `job.unfollow` | jobs (`jobs`) |
 | `sandbox.revoke {grant_id}` | remove a session grant ("Remove · restarts agent") |
@@ -183,3 +191,5 @@ Regenerate: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --test t
 16. **Tool input** is display text (`input?: string`), not structured JSON, to keep agent payloads off the wire. Structured results travel as `output` (e.g. `diff`); anything else is in the raw view.
 17. **Auto-continue budget** is a run count (`auto_continue_budget`); dollar budgets (§23) are a later addition.
 18. **`fs.list`** has no controller-side cache flag (the prototype's `cached`); add it if offline directory listing is wanted.
+19. **Daemon-raised requests in the timeline.** Sandbox approvals have no transcript record. Their `request` item sits at the transcript head when they were raised (`seq_from = seq_to = head`), and each change to them counts as changed *after* the head, so a client resuming with `since_seq = head` still receives it (possibly again: upserts are idempotent).
+20. **Sandbox approval options.** File access offers "Allow for this session" rather than "Allow once", because nono remembers a granted path for the rest of its session. Commands and endpoints offer "Allow once" only: nono asks per invocation, and remembering a command grant in the daemon would undercut "approve each time" for `git push`. Granted runtime paths are not listed in `SandboxInfo.grants` yet.
