@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadFixture } from '../../test/fixture';
+import type { SessionEventsParams } from '../protocol';
+import { Timeline } from '../state/timeline.svelte';
 import { FixtureTransport } from './fixture';
 
 const open = async (t: FixtureTransport) => {
@@ -47,6 +49,33 @@ describe('FixtureTransport', () => {
     expect(seen).toEqual([subscription_id]);
   });
 
+  it('replays a recorded timeline: backlog after the result, then live steps, raw only on request', async () => {
+    const fixture = loadFixture();
+    const key = Object.keys(fixture.timelines!).find((k) => fixture.timelines![k].live.length)!;
+    const recorded = fixture.timelines![key];
+    const [machine_id, id] = key.split('/');
+    const t = new FixtureTransport(fixture, { autoplay: false });
+    await open(t);
+    const events: SessionEventsParams[] = [];
+    t.subscribe('session.events', (p) => events.push(p));
+    const sub = await t.request('session.subscribe', { machine_id, id, since_seq: 0 });
+    expect(sub.head_seq).toBe(recorded.head_seq);
+    expect(events).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(events[0]).toMatchObject({ subscription_id: sub.subscription_id, head_seq: recorded.head_seq, raw: [] });
+    expect(events[0].ops).toHaveLength(recorded.items.length);
+    expect(t.advance(machine_id, id, 2)).toBe(2);
+    expect(events.slice(1).map((e) => e.head_seq)).toEqual(recorded.live.slice(0, 2).map((s) => s.head_seq));
+    // A resubscribe from the head gets nothing twice; one with raw_since gets the raw frames.
+    events.length = 0;
+    const again = await t.request('session.subscribe', { machine_id, id, since_seq: recorded.live[1].head_seq, raw_since: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(events[0].ops).toEqual([]);
+    expect(events[0].raw?.length).toBeGreaterThan(0);
+    t.advance(machine_id, id);
+    expect(events.at(-1)).toMatchObject({ subscription_id: again.subscription_id, raw: recorded.live[2].raw });
+  });
+
   it('stays offline when asked', async () => {
     const t = new FixtureTransport(loadFixture(), { offline: true });
     await Promise.resolve();
@@ -75,5 +104,35 @@ describe('the development fixture', () => {
 
   it('contains no real host names', () => {
     for (const m of f.snapshot.machines) expect(m.host).toMatch(/\.example\.com$/);
+  });
+  it('has consistent recorded timelines', () => {
+    for (const [key, t] of Object.entries(f.timelines ?? {})) {
+      expect(sessions).toContain(key);
+      const ids = t.items.map((it) => it.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      for (const it of t.items) expect(it.seq_to).toBeLessThanOrEqual(t.head_seq);
+      // Live steps move forward, and every append or end targets an item that exists by then.
+      const store = new Timeline();
+      store.apply(t.items.map((item) => ({ op: 'upsert' as const, item })), 0);
+      let head = t.head_seq;
+      for (const step of t.live) {
+        expect(step.head_seq).toBeGreaterThan(head);
+        for (const op of step.ops) {
+          if (op.op === 'append_text' || op.op === 'end') expect(store.get(op.id), `${key} ${op.id}`).toBeDefined();
+          if (op.op !== 'unknown') expect(op.op === 'upsert' ? op.item.seq_to : op.seq_to).toBeLessThanOrEqual(step.head_seq);
+        }
+        store.apply(step.ops, head);
+        head = step.head_seq;
+      }
+      const raw = [...t.raw, ...t.live.flatMap((s) => s.raw)].map((r) => r.seq);
+      expect(raw).toEqual([...raw].sort((a, b) => a - b));
+      expect(new Set(raw).size).toBe(raw.length);
+    }
+  });
+
+  it('keeps the recordings sanitized', () => {
+    const text = JSON.stringify(f.timelines);
+    for (const [url] of text.matchAll(/[a-z]+:\/\/[^\s"\\]+/g)) expect(url).toMatch(/^https?:\/\/(127\.0\.0\.1|[a-z.]*example\.com)[:/]/);
+    for (const [home] of text.matchAll(/\/home\/[a-z]+/g)) expect(home).toBe('/home/alice');
   });
 });

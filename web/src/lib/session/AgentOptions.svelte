@@ -1,6 +1,7 @@
 <script lang="ts">
   // The agent's neutral options (model, thinking level, …) and the context meter, from the summary.
-  // Changing one calls session.set_option, which needs a live agent.
+  // Changing one calls session.set_option, which needs a live agent; a select stays disabled until
+  // the agent reported its choices (empty until then).
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import type { MachineSession } from '../protocol';
@@ -16,8 +17,9 @@
 <span class="opts">
   {#each s.options as o (o.id)}
     {#if o.kind === 'select'}
-      <span class="opt" class:locked={!editable} title={editable ? o.label : `${o.label} (needs a running agent)`}>
-        <Dropdown small label={o.label} value={o.value} disabled={!editable} options={o.choices.map((c) => ({ value: c.value, label: c.label }))} onchange={(value) => app.client.call('session.set_option', { ...onSession(s), option_id: o.id, value })} />
+      {@const ready = editable && o.choices.length > 0}
+      <span class="opt" class:locked={!ready} title={ready ? o.label : `${o.label} (${editable ? 'choices not loaded yet' : 'needs a running agent'})`}>
+        <Dropdown small label={o.label} value={o.value} disabled={!ready} options={o.choices.map((c) => ({ value: c.value, label: c.label }))} onchange={(value) => app.client.call('session.set_option', { ...onSession(s), option_id: o.id, value })} />
       </span>
     {:else if o.kind === 'bool'}
       <label class="small check"><input type="checkbox" checked={o.value} disabled={!editable} onchange={(e) => app.client.call('session.set_option', { ...onSession(s), option_id: o.id, value: e.currentTarget.checked })} /> {o.label}</label>

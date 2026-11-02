@@ -11,6 +11,7 @@
   import { sessionKey } from '../model/projects';
   import type { MachineSession, QuestionAnswer, Request, Response } from '../protocol';
   import Icon from '../ui/Icon.svelte';
+  import Markdown from '../ui/Markdown.svelte';
   import RequestBody from './RequestBody.svelte';
 
   let { req, s, compact = false }: { req: Request; s: MachineSession; compact?: boolean } = $props();
@@ -112,12 +113,12 @@
   {#if req.origin_child}
     <div class="from">from subagent <button class="linkish" onclick={() => app.open({ machine_id: s.machine_id, id: targetId })}>{child ? displayName(child) : 'subagent'}</button></div>
   {/if}
-  {#if req.detail && !compact}<div class="detail">{req.detail}</div>{/if}
+  {#if req.detail && !compact}<div class="detail"><Markdown text={req.detail} /></div>{/if}
   {#if req.body}<RequestBody body={req.body} {compact} />{/if}
 
   {#if pending}
     {#if q}
-      {#if !compact && q.text !== req.title}<div class="detail">{q.text}</div>{/if}
+      {#if !compact && q.text !== req.title}<div class="detail"><Markdown text={q.text} /></div>{/if}
       <div class="acts">
         {#if !req.blocking}<button class="btn ghost" class:sm={compact} title="Answers “declined”; the agent decides on its own" disabled={!live || busy} onclick={() => respond({ kind: 'dismiss' })}>Dismiss</button>{/if}
         {#each q.options as o (o.label)}
@@ -171,7 +172,7 @@
   .title { font-size: 13.5px; }
   .compact .title { font-size: 13px; }
   .from { font-size: 12px; color: var(--muted); }
-  .detail { font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+  .detail { font-size: 13px; color: var(--muted); }
   .acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .acts.end { justify-content: flex-end; }
   .steer { display: flex; flex-direction: column; gap: 6px; }

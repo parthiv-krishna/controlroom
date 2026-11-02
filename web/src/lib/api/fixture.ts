@@ -1,7 +1,8 @@
 // A transport for development and tests that serves recorded data: a `state.subscribe` snapshot,
 // session details, canned query results and scripted feed events from a JSON fixture
-// (web/fixtures/). It holds no backend logic: mutations are only recorded (and answered with an
-// ack, or a canned result when the fixture has one), and the feed changes only by script.
+// (web/fixtures/), plus recorded session timelines (see fixture-timelines.ts). It holds no backend
+// logic: mutations are only recorded (and answered with an ack, or a canned result when the
+// fixture has one), and the feeds change only by script.
 import type {
   OnMachine,
   SessionDetail,
@@ -28,6 +29,7 @@ import {
   type Result,
   type Transport,
 } from './transport';
+import { TimelineReplay, type FixtureTimeline } from './fixture-timelines';
 
 /** One scripted feed event; the transport fills in the subscription id it handed out. */
 export type FixtureStep =
@@ -43,6 +45,8 @@ export interface Fixture {
   /** Canned results of query methods (and of mutations whose result isn't an ack). */
   responses: { [M in UiMethod]?: Result<M> };
   script: FixtureStep[];
+  /** Recorded timelines by `<machine id>/<session id>` (web/fixtures/timelines.json). */
+  timelines?: Record<string, FixtureTimeline>;
 }
 
 export interface RecordedCall {
@@ -53,7 +57,10 @@ export interface RecordedCall {
 export interface FixtureOptions {
   /** Never connect: shows the "can't reach server" state. */
   offline?: boolean;
-  /** Play the script on its timers after `state.subscribe` (default true); otherwise use step(). */
+  /**
+   * Play the script on its timers after `state.subscribe`, and a session's live timeline steps
+   * after its first subscribe (default true); otherwise use step() and advance().
+   */
   autoplay?: boolean;
 }
 
@@ -76,7 +83,10 @@ export class FixtureTransport implements Transport {
 
   private readonly hub = new NotificationHub();
   private readonly stateListeners = new Listeners<ConnState>();
-  private readonly sessionSubs = new Map<string, string>();
+  /** Session subscriptions by session key, with their `raw_since`. */
+  private readonly sessionSubs = new Map<string, { id: string; rawSince: number | null }>();
+  private readonly replays: Map<string, TimelineReplay>;
+  private readonly liveTimers = new Map<string, ReturnType<typeof setTimeout> | null>();
   private stateSub: string | null = null;
   private next = 0;
   private played = 0;
@@ -86,6 +96,7 @@ export class FixtureTransport implements Transport {
     private readonly fixture: Fixture,
     private readonly options: FixtureOptions = {},
   ) {
+    this.replays = new Map(Object.entries(fixture.timelines ?? {}).map(([key, t]) => [key, new TimelineReplay(t)]));
     if (options.offline) this.state = 'closed';
     else queueMicrotask(() => this.setState('open'));
   }
@@ -114,6 +125,7 @@ export class FixtureTransport implements Transport {
   }
   close(): void {
     if (this.timer) clearTimeout(this.timer);
+    for (const t of this.liveTimers.values()) if (t) clearTimeout(t);
     this.setState('closed');
   }
 
@@ -126,9 +138,16 @@ export class FixtureTransport implements Transport {
       if (this.stateSub) this.hub.emit('state.events', { ...step.params, subscription_id: this.stateSub });
     } else {
       const sub = this.sessionSubs.get(`${step.params.machine_id}/${step.params.id}`);
-      if (sub) this.hub.emit('session.events', { ...step.params, subscription_id: sub });
+      if (sub) this.hub.emit('session.events', { ...step.params, subscription_id: sub.id });
     }
     return true;
+  }
+
+  /** Plays a session's next `n` live timeline steps now; returns how many there were. */
+  advance(machineId: string, id: string, n = 1): number {
+    let done = 0;
+    while (done < n && this.playLive(`${machineId}/${id}`)) done++;
+    return done;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -156,20 +175,59 @@ export class FixtureTransport implements Transport {
         return { subscription_id: this.stateSub, cursor: this.fixture.cursor, snapshot: this.fixture.snapshot };
       }
       case 'session.subscribe': {
-        const { machine_id, id } = params as Params<'session.subscribe'>;
+        const { machine_id, id, since_seq, raw_since } = params as Params<'session.subscribe'>;
         const key = `${machine_id}/${id}`;
-        const subscription_id = `fixture-session-${++this.next}`;
-        this.sessionSubs.set(key, subscription_id);
-        return { subscription_id, head_seq: 0, detail: this.fixture.details[key] ?? EMPTY_DETAIL };
+        const sub = { id: `fixture-session-${++this.next}`, rawSince: raw_since ?? null };
+        this.sessionSubs.set(key, sub);
+        const replay = this.replays.get(key);
+        if (replay) {
+          // After the result, like the server: the backlog, then live steps.
+          setTimeout(() => this.sendBacklog(machine_id, id, sub, since_seq), 0);
+          if ((this.options.autoplay ?? true) && !this.liveTimers.has(key)) this.scheduleLive(key);
+        }
+        return { subscription_id: sub.id, head_seq: replay?.head ?? 0, detail: this.fixture.details[key] ?? EMPTY_DETAIL };
       }
       case 'unsubscribe': {
         const { subscription_id } = params as Params<'unsubscribe'>;
-        for (const [key, sub] of this.sessionSubs) if (sub === subscription_id) this.sessionSubs.delete(key);
+        for (const [key, sub] of this.sessionSubs) if (sub.id === subscription_id) this.sessionSubs.delete(key);
         return {};
       }
       default:
         return undefined;
     }
+  }
+
+  private sendBacklog(machine_id: string, id: string, sub: { id: string; rawSince: number | null }, since: number): void {
+    const key = `${machine_id}/${id}`;
+    const replay = this.replays.get(key);
+    if (!replay || this.sessionSubs.get(key) !== sub) return;
+    const { ops, raw } = replay.backlog(since, sub.rawSince);
+    if (ops.length || raw.length) this.hub.emit('session.events', { subscription_id: sub.id, machine_id, id, head_seq: replay.head, ops, raw });
+  }
+
+  /** Plays one live step of a session's timeline (sent if it is subscribed). */
+  private playLive(key: string): boolean {
+    const step = this.replays.get(key)?.take();
+    if (!step) return false;
+    const sub = this.sessionSubs.get(key);
+    if (sub) {
+      const [machine_id, id] = key.split('/');
+      const raw = sub.rawSince === null ? [] : step.raw.filter((f) => f.seq > sub.rawSince!);
+      this.hub.emit('session.events', { subscription_id: sub.id, machine_id, id, head_seq: step.head_seq, ops: step.ops, raw });
+    }
+    return true;
+  }
+
+  private scheduleLive(key: string): void {
+    const step = this.replays.get(key)?.peek();
+    if (!step) return;
+    this.liveTimers.set(
+      key,
+      setTimeout(() => {
+        this.playLive(key);
+        this.scheduleLive(key);
+      }, step.delay_ms),
+    );
   }
 
   private playNext(): void {

@@ -1,0 +1,9 @@
+<script lang="ts">
+  // An item kind this UI doesn't know (a newer daemon): its records are in the raw view (#seq).
+</script>
+
+<div class="unknown muted small">An item this version can't show · see its raw records</div>
+
+<style>
+  .unknown { border: 1px dashed var(--line); border-radius: 7px; padding: 4px 10px; }
+</style>

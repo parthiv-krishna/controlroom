@@ -10,6 +10,8 @@ export const S = {
   release: '01JAS000000000000000000004',
   blog: '01JAS000000000000000000006',
   coord: '01JAS000000000000000000011',
+  svelte: '01JAS000000000000000000009',
+  sweep8k: '01JAS000000000000000000013',
 };
 
 /** Opens the fixture build with the scripted feed paused (deterministic), optionally at a session. */
@@ -22,4 +24,9 @@ export async function start(page: Page, session?: { machine: string; id: string 
 export async function calls(page: Page, method?: string): Promise<RecordedCall[]> {
   const all = await page.evaluate(() => window.__fixture?.calls ?? []);
   return method ? all.filter((c) => c.method === method) : all;
+}
+
+/** Plays a session's next `n` recorded timeline steps (web/fixtures/timelines.json). */
+export async function advance(page: Page, session: { machine: string; id: string }, n = 1): Promise<number> {
+  return page.evaluate(({ machine, id, n }) => window.__fixture?.advance(machine, id, n) ?? 0, { ...session, n });
 }

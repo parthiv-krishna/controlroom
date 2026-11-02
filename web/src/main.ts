@@ -18,9 +18,10 @@ async function pickTransport(): Promise<Transport> {
   if (import.meta.env.MODE === 'fixture') {
     const { FixtureTransport } = await import('./lib/api/fixture');
     const { default: fixture } = await import('../fixtures/controlroom.json');
+    const { default: timelines } = await import('../fixtures/timelines.json');
     const query = new URLSearchParams(location.search);
     // SAFETY: JSON imports widen string unions; fixture.test.ts checks the fixture's consistency.
-    const data = fixture as unknown as Fixture;
+    const data = { ...fixture, timelines } as unknown as Fixture;
     const transport = new FixtureTransport(data, { offline: query.has('offline'), autoplay: !query.has('paused') });
     window.__fixture = transport;
     return transport;

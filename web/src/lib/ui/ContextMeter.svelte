@@ -7,12 +7,12 @@
 </script>
 
 <script lang="ts">
+  import { compact as k } from '../model/format';
   import type { ContextUsage } from '../protocol';
 
   let { usage, compact = false }: { usage: ContextUsage; compact?: boolean } = $props();
   const pct = $derived(usage.size ? Math.min(100, (usage.used / usage.size) * 100) : 0);
   const level = $derived(ctxLevel(usage.used, usage.size));
-  const k = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
   const title = $derived(
     `Context ${usage.used.toLocaleString()}${usage.size ? ` / ${usage.size.toLocaleString()}` : ''} tokens${usage.cost != null ? ` · $${usage.cost.toFixed(2)}` : ''}`,
   );

@@ -28,6 +28,13 @@ export type Modal =
   | { kind: 'link-tasks'; session: SessionRef }
   | { kind: 'task'; id: TaskId };
 
+/** Where the raw view was opened: an item's records, or the live tail (all null). */
+export interface RawFocus {
+  from: number | null;
+  to: number | null;
+  item: string | null;
+}
+
 export type SettingsTab = 'machines' | 'keys' | 'notifications' | 'devices' | 'sandbox' | 'contacts' | 'schedules' | 'keyboard' | 'appearance';
 
 export class View {
@@ -63,6 +70,12 @@ export class View {
   lastSearch = $state('');
   /** Session panels folded or opened by the user, by `<panel>:<session key>`. */
   panels = $state<Record<string, boolean>>({});
+  /** Timeline items expanded or collapsed by the user, by `<session key>#<item id>`. */
+  expanded = $state<Record<string, boolean>>({});
+  /** The open raw view per session key, and the records it was opened at. */
+  raw = $state<Record<string, RawFocus>>({});
+  /** A timeline item to scroll to and flash (a raw record's link back). */
+  focusItem = $state<{ key: string; id: string } | null>(null);
 
   get filtering(): boolean {
     return !!this.q.trim() || Object.values(this.filters).some((x) => x.length);

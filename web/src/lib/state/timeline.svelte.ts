@@ -15,7 +15,8 @@ export const MAX_ITEMS = 5000;
 /** Raw frames kept per timeline. */
 export const MAX_RAW = 2000;
 
-export type ToolItem = Extract<TimelineItem, { kind: 'tool_call' }>;
+/** The item of one kind. */
+export type ItemOf<K extends TimelineItem['kind']> = Extract<TimelineItem, { kind: K }>;
 
 /** One item's reactive state. */
 export class ItemCell {
@@ -43,10 +44,14 @@ export class Timeline {
   children = $state.raw<ReadonlyMap<string, readonly ItemCell[]>>(new Map());
   /** How many old items were dropped to bound memory. */
   trimmed = $state(0);
+  /** Ids of the requests that have a timeline item (others are shown from the summary). */
+  requestIds = $state.raw<ReadonlySet<string>>(new Set());
   /** Raw transcript frames (only while a raw view asks for them). */
   readonly raw = new RawFrames();
 
   private readonly cells = new Map<string, ItemCell>();
+  /** Tool call cells by `tool_call_id`. */
+  private tools = new Map<string, ItemCell>();
   /** Every cell, in order. */
   private order: ItemCell[] = [];
   private arrivals = 0;
@@ -62,6 +67,18 @@ export class Timeline {
   /** Every item in order, nested ones included. */
   all(): readonly ItemCell[] {
     return this.order;
+  }
+
+  /** The top-level row an item is shown in (itself, or the outermost tool call around it). */
+  rowOf(id: string): ItemCell | undefined {
+    let cell = this.cells.get(id);
+    for (let hops = 0; cell && hops < this.order.length; hops++) {
+      const parent = parentOf(cell.item);
+      const up = parent ? this.tools.get(parent) : undefined;
+      if (!up) return cell;
+      cell = up;
+    }
+    return cell;
   }
 
   /**
@@ -145,8 +162,13 @@ export class Timeline {
       for (const cell of this.order.splice(0, excess)) this.cells.delete(cell.item.id);
       this.trimmed += excess;
     }
-    const tools = new Set<string>();
-    for (const cell of this.order) if (cell.item.kind === 'tool_call') tools.add(cell.item.tool_call_id);
+    const tools = new Map<string, ItemCell>();
+    const requests = new Set<string>();
+    for (const cell of this.order) {
+      const { item } = cell;
+      if (item.kind === 'tool_call') tools.set(item.tool_call_id, cell);
+      else if (item.kind === 'request') requests.add(item.request.id);
+    }
     const rows: ItemCell[] = [];
     const children = new Map<string, ItemCell[]>();
     for (const cell of this.order) {
@@ -157,8 +179,10 @@ export class Timeline {
         else children.set(parent, [cell]);
       } else rows.push(cell);
     }
+    this.tools = tools;
     this.rows = rows;
     this.children = children;
+    if (requests.size !== this.requestIds.size || [...requests].some((id) => !this.requestIds.has(id))) this.requestIds = requests;
   }
 }
 
