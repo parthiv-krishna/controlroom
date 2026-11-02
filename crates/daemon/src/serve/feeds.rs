@@ -5,7 +5,8 @@
 //! resubscribes from the last rev or `head_seq` it sent, so the client sees no gap. If the
 //! machine rev log no longer reaches back that far, the feed can't be repaired in place and
 //! the connection is closed; the client reconnects and resubscribes (disconnecting does
-//! nothing else).
+//! nothing else). A detail-only session subscription (`timeline: false`) gets no backlog and
+//! no timeline ops, only the detail when it changes (and raw frames if it asked for them).
 
 use std::sync::Arc;
 

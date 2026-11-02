@@ -2,7 +2,8 @@
 # Acceptance (spec §11): a real `pi --mode rpc` under the pinned nono, fake credentials only, a
 # local mock model. `acceptance_pi_nono` drives it through the launch glue and raw RPC lines;
 # `acceptance_serve` drives it through `controlroomd serve`, SIGKILLs the daemon mid-run and
-# checks the run completes with no duplicate prompt.
+# checks the run completes with no duplicate prompt, and runs a mediated `git push` that the
+# test approves, then denies, through the daemon's approval webhook (needs git on PATH).
 # Needs Nix, Landlock and pi:
 #
 #   crates/daemon/scripts/acceptance-pi-nono.sh             # pi from PATH
