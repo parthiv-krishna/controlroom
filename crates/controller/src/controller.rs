@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use controlroom_client_core::bootstrap::DirBinaries;
 use controlroom_protocol::ids::DeviceId;
@@ -267,8 +266,6 @@ impl Controller {
         for hub in hubs {
             hub.shutdown().await;
         }
-        // Let closing links flush their EOFs.
-        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 

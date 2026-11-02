@@ -126,6 +126,13 @@ async fn two_tabs_run_a_session_end_to_end() {
     })
     .await;
 
+    // The controller fills in the machine's sandbox defaults; the explicit level still wins.
+    a.ok(
+        "sandbox.set_profile",
+        json!({"scope": {"kind": "machine", "machine_id": machine},
+               "change": {"kind": "set_level", "level": "relaxed"}}),
+    )
+    .await;
     let task = a
         .ok("tasks.create", json!({"title": "greet", "status": "todo"}))
         .await;
@@ -149,6 +156,10 @@ async fn two_tabs_run_a_session_end_to_end() {
             && t["links"][0]["session_id"] == json!(session)
     })
     .await;
+    let sandbox = &b.mirror.session(&session)["sandbox"];
+    assert_eq!(sandbox["default_level"], "relaxed", "{sandbox}");
+    assert_eq!(sandbox["level"], "off");
+    assert_eq!(sandbox["looser_than_default"], true);
 
     // Both tabs subscribe to the timeline; the second shares the daemon subscription.
     let sub_a = a

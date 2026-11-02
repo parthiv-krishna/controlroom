@@ -712,7 +712,7 @@ async fn stop_task(mut task: tokio::task::JoinHandle<()>) {
     }
 }
 
-/// An internal error for a hub that vanished mid-call.
+/// The error for a request whose connection closed while it ran.
 pub(crate) fn client_gone() -> RpcError {
     internal("the connection closed")
 }

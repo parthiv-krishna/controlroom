@@ -372,10 +372,29 @@ async fn session(
             hub.update_live(id, |l| l.last_error = Some(error));
         }
 
-        if let Err(e) = daemon::subscribe_machine(hub, id, &client).await {
-            return End::Lost(e);
+        // The post-connect steps give way to a lost link or a user command.
+        let post_connect = async {
+            daemon::subscribe_machine(hub, id, &client).await?;
+            crate::rpc::resubscribe_sessions(hub, id, &client).await;
+            Ok::<_, String>(())
+        };
+        let interrupted = tokio::select! {
+            r = post_connect => r.err().map(End::Lost),
+            reason = client.closed() => Some(End::Lost(reason)),
+            reason = conn.closed() => Some(End::Lost(reason)),
+            cmd = rx.recv() => Some(match cmd {
+                Some(MachineCommand::Stop) | None => End::Stop,
+                Some(MachineCommand::Reconnect) => End::Reconnect,
+                Some(MachineCommand::Upgrade) => {
+                    *policy = InstallPolicy::IfOlder;
+                    End::Reconnect
+                }
+            }),
+        };
+        if let Some(end) = interrupted {
+            client.close();
+            return end;
         }
-        crate::rpc::resubscribe_sessions(hub, id, &client).await;
         let doctor = daemon::spawn_doctor(hub, id, &client);
         tokio::spawn(crate::rotation::migrate_pending(hub.clone(), id));
 
