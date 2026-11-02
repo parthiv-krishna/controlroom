@@ -10,6 +10,26 @@
 //!
 //! Secrets come only from files. Relative secret paths name systemd credentials
 //! (`$CREDENTIALS_DIRECTORY/<name>`, from `LoadCredential=`).
+//!
+//! A deployment under systemd (`StateDirectory=`, `LoadCredential=master-key:…`,
+//! `oidc-client-secret:…`, `vapid-key:…`):
+//!
+//! ```toml
+//! listen = "127.0.0.1:8080"            # or "unix:/run/controlroom/web.sock"
+//! public_url = "https://controlroom.example.com"
+//!
+//! [auth.oidc]
+//! issuer = "https://id.example.com"
+//! client_id = "controlroom"
+//! client_secret_file = "oidc-client-secret"
+//! allowed_groups = ["controlroom-users"]
+//!
+//! [push]
+//! vapid_key_file = "vapid-key"
+//! ```
+//!
+//! Development: `controlroom-web --state-dir /var/tmp/cr --master-key-file /var/tmp/cr-key
+//! --auth-mode dev-token` prints the sign-in URL.
 
 mod file;
 mod listen;
