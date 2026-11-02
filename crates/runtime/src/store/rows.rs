@@ -4,11 +4,10 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use controlroom_protocol::ids::{ItemId, RemotePath, Seq, SessionId, UnixMillis};
-use controlroom_protocol::session::{AgentSession, Request};
-use controlroom_protocol::timeline::{Actor, ItemBody, TimelineItem};
+use controlroom_protocol::session::AgentSession;
+use controlroom_protocol::timeline::TimelineItem;
 use rusqlite::{OptionalExtension, Row, params};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 
 use super::{Store, json};
 use super::{int, int_usize, uint};
@@ -18,65 +17,6 @@ const SESSION_COLUMNS: &str = "id, agent, driver, cwd, name, created_at, closed_
     spawned_by, sandbox_level, sandbox, read_seq, last_turn_end_seq, last_outcome, last_error,
     queue_paused, auto_send, pending_start, history_note, resume_failed, applied_seq,
     timeline_seq";
-
-/// A timeline item as stored. Not the wire form, which doesn't round-trip: the body is
-/// flattened into the item, so a `request` body's own `id` and `kind` collide with the item's
-/// `id` and the body's `kind` tag (reported as a protocol issue).
-#[derive(Serialize, Deserialize)]
-struct StoredItem {
-    id: ItemId,
-    seq_from: Seq,
-    seq_to: Seq,
-    actor: Actor,
-    ts: UnixMillis,
-    streaming: bool,
-    body: StoredBody,
-}
-
-/// [`ItemBody`] with requests nested instead of flattened into the tagged body.
-#[derive(Serialize, Deserialize)]
-enum StoredBody {
-    Request(Request),
-    Other(ItemBody),
-}
-
-impl From<StoredBody> for ItemBody {
-    fn from(body: StoredBody) -> Self {
-        match body {
-            StoredBody::Request(request) => ItemBody::Request(request),
-            StoredBody::Other(body) => body,
-        }
-    }
-}
-
-impl From<StoredItem> for TimelineItem {
-    fn from(s: StoredItem) -> Self {
-        TimelineItem {
-            id: s.id,
-            seq_from: s.seq_from,
-            seq_to: s.seq_to,
-            actor: s.actor,
-            ts: s.ts,
-            streaming: s.streaming,
-            body: s.body.into(),
-        }
-    }
-}
-
-fn stored(item: &TimelineItem) -> StoredItem {
-    StoredItem {
-        id: item.id.clone(),
-        seq_from: item.seq_from,
-        seq_to: item.seq_to,
-        actor: item.actor,
-        ts: item.ts,
-        streaming: item.streaming,
-        body: match &item.body {
-            ItemBody::Request(request) => StoredBody::Request(request.clone()),
-            other => StoredBody::Other(other.clone()),
-        },
-    }
-}
 
 fn decode<T: DeserializeOwned>(raw: &str) -> rusqlite::Result<T> {
     serde_json::from_str(raw).map_err(|e| {
@@ -327,7 +267,7 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
-        row.map(|(raw, seq)| Ok((decode::<StoredItem>(&raw)?.into(), Seq(uint(seq)))))
+        row.map(|(raw, seq)| Ok((decode::<TimelineItem>(&raw)?, Seq(uint(seq)))))
             .transpose()
     }
 
@@ -345,7 +285,7 @@ impl Store {
                 item.id.as_str(),
                 int(item.seq_from.0),
                 int(changed.0),
-                json(&stored(item))
+                json(item)
             ],
         )?;
         Ok(())
@@ -366,7 +306,7 @@ impl Store {
         })?;
         let mut items = Vec::new();
         for raw in rows {
-            items.push(decode::<StoredItem>(&raw?)?.into());
+            items.push(decode::<TimelineItem>(&raw?)?);
         }
         Ok(items)
     }

@@ -79,7 +79,7 @@ impl FakeDriver {
 
     fn close_requests(&mut self, out: &mut FoldOut, rec: &Record) {
         for item in self.requests.values_mut() {
-            if let ItemBody::Request(request) = &mut item.body
+            if let ItemBody::Request { request } = &mut item.body
                 && request.state == RequestState::Pending
             {
                 request.state = RequestState::Withdrawn;
@@ -128,7 +128,7 @@ impl FakeDriver {
                 let Some(item) = self.requests.get_mut(&request) else {
                     return;
                 };
-                if let ItemBody::Request(req) = &mut item.body {
+                if let ItemBody::Request { request: req } = &mut item.body {
                     req.state = RequestState::Answered;
                     req.answer = Some(RequestAnswer {
                         label: answer_label(req, &response),
@@ -293,7 +293,14 @@ impl FakeDriver {
                     created_at: ts(rec),
                 };
                 self.view.open_requests.push(request.id.clone());
-                let item = new_item(rec, "q", false, ItemBody::Request(request.clone()));
+                let item = new_item(
+                    rec,
+                    "q",
+                    false,
+                    ItemBody::Request {
+                        request: request.clone(),
+                    },
+                );
                 out.ops.push(upsert(item.clone(), rec));
                 self.requests.insert(id, item);
                 out.events
@@ -303,7 +310,7 @@ impl FakeDriver {
                 let Some(item) = self.requests.get_mut(&id) else {
                     return;
                 };
-                if let ItemBody::Request(request) = &mut item.body
+                if let ItemBody::Request { request } = &mut item.body
                     && request.state == RequestState::Pending
                 {
                     request.state = RequestState::Withdrawn;
@@ -325,7 +332,7 @@ impl FakeDriver {
         self.requests
             .iter()
             .find_map(|(agent_id, item)| match &item.body {
-                ItemBody::Request(r) if r.id == *request => Some(agent_id.as_str()),
+                ItemBody::Request { request: r } if r.id == *request => Some(agent_id.as_str()),
                 _ => None,
             })
     }

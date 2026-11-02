@@ -153,6 +153,7 @@ pub fn event_json(event: &DriverEvent) -> Value {
         DriverEvent::RunSettled { outcome, error } => {
             json!({"event": "run_settled", "outcome": outcome, "error": error})
         }
+        DriverEvent::Written { tag } => json!({"event": "written", "tag": tag_json(tag)}),
         DriverEvent::Accepted { tag } => json!({"event": "accepted", "tag": tag_json(tag)}),
         DriverEvent::Rejected { tag, error } => {
             json!({"event": "rejected", "tag": tag_json(tag), "error": error})
