@@ -3,7 +3,8 @@ import { closeSettings, header, login, machineCard, openMachines, send, sessionR
 
 // The test script unplugs buildbox's network. The SSH keepalives notice, the machine shows as
 // unreachable, and its session keeps its last known (stale) state, read-only. devbox keeps
-// working meanwhile. Once the network is back, "Retry now" reconnects.
+// working meanwhile. Once the network is back it reconnects (the server retries with a backoff;
+// "Retry now" skips the wait).
 test('an unreachable machine shows its stale state and does not block the other', async ({ page }) => {
   await login(page, 'Laptop');
   await step('unplug');
@@ -28,8 +29,11 @@ test('an unreachable machine shows its stale state and does not block the other'
 
   await step('plug');
   await sessionRow(page, 'build').click();
-  await banner.getByRole('button', { name: 'Retry now' }).click();
-  await expect(banner).toHaveCount(0, { timeout: 120_000 });
+  const retry = banner.getByRole('button', { name: 'Retry now' });
+  await expect(async () => {
+    if (await retry.isVisible()) await retry.click({ timeout: 1_000 });
+    await expect(page.locator('.banner')).toHaveCount(0, { timeout: 5_000 });
+  }).toPass({ timeout: 180_000 });
   await expect(page.getByLabel('Message')).toBeEnabled();
   await expect(header(page).locator('.status')).toHaveText('Complete');
 });
