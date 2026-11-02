@@ -128,6 +128,7 @@ fn summary() -> SessionSummary {
                 }],
             },
         }],
+        agent_live: true,
         sandbox: SandboxInfo {
             level: SandboxLevel::Relaxed,
             default_level: SandboxLevel::Strict,
@@ -188,6 +189,7 @@ fn summary_json() -> Value {
             "value": "medium",
             "choices": [{"value": "medium", "label": "Medium"}]
         }],
+        "agent_live": true,
         "sandbox": {
             "level": "relaxed",
             "default_level": "strict",
@@ -402,6 +404,7 @@ fn golden_ui_request_respond_pass_through() {
                     reason: Some("push to a branch".into()),
                 },
                 then: Some(vec![ContentPart::text("push to fix/flaky instead")]),
+                by: None,
             },
         ),
     );
@@ -420,6 +423,125 @@ fn golden_ui_request_respond_pass_through() {
                 "then": [{"kind": "text", "text": "push to fix/flaky instead"}]
             }
         }),
+    );
+}
+
+#[test]
+fn golden_daemon_request_respond_carries_the_deciding_device() {
+    let params = RequestRespondParams {
+        op_id: OpId::new("op-2"),
+        id: sid(),
+        request_id: RequestId::new("sandbox-1"),
+        response: Response::Choice {
+            option_id: "allow-once".into(),
+            reason: None,
+        },
+        then: None,
+        by: Some(DeviceRef {
+            device_id: DeviceId::new("dev-1"),
+            label: "Laptop".into(),
+        }),
+    };
+    golden(
+        &params,
+        json!({
+            "op_id": "op-2",
+            "id": SID,
+            "request_id": "sandbox-1",
+            "response": {"kind": "choice", "option_id": "allow-once"},
+            "by": {"device_id": "dev-1", "label": "Laptop"}
+        }),
+    );
+}
+
+#[test]
+fn golden_session_create_with_a_first_prompt() {
+    let params = SessionCreateParams {
+        op_id: OpId::new("op-3"),
+        agent: "pi".into(),
+        cwd: "~/src/app".into(),
+        name: None,
+        parent_id: None,
+        spawned_by: None,
+        sandbox_level: None,
+        sandbox: None,
+        prompt: Some(InitialPrompt {
+            content: vec![ContentPart::text("fix the flaky test")],
+            origin: PromptOrigin::User { device: None },
+        }),
+    };
+    golden(
+        &params,
+        json!({
+            "op_id": "op-3",
+            "agent": "pi",
+            "cwd": "~/src/app",
+            "prompt": {
+                "content": [{"kind": "text", "text": "fix the flaky test"}],
+                "origin": {"kind": "user", "device": null}
+            }
+        }),
+    );
+    let queue_id: QueueId = "01HZY3K6W8Q9X2V4N7B5C1D3ED".parse().unwrap();
+    let result = SessionCreateResult {
+        session: summary(),
+        prompt: Some(PromptResult::Queued { queue_id }),
+    };
+    golden(
+        &result,
+        json!({
+            "session": summary_json(),
+            "prompt": {"outcome": "queued", "queue_id": "01HZY3K6W8Q9X2V4N7B5C1D3ED"}
+        }),
+    );
+}
+
+#[test]
+fn golden_send_now_interrupt_and_queued() {
+    let params = QueueSendNowParams {
+        op_id: OpId::new("op-4"),
+        id: sid(),
+        queue_id: "01HZY3K6W8Q9X2V4N7B5C1D3ED".parse().unwrap(),
+        interrupt: true,
+    };
+    golden(
+        &params,
+        json!({
+            "op_id": "op-4",
+            "id": SID,
+            "queue_id": "01HZY3K6W8Q9X2V4N7B5C1D3ED",
+            "interrupt": true
+        }),
+    );
+    golden(&SendNowResult::Queued, json!({"outcome": "queued"}));
+}
+
+#[test]
+fn golden_detail_only_session_subscribe() {
+    golden(
+        &SessionSubscribeParams {
+            id: sid(),
+            since_seq: Seq(0),
+            raw_since: None,
+            timeline: false,
+        },
+        json!({"id": SID, "since_seq": 0, "timeline": false}),
+    );
+}
+
+#[test]
+fn golden_unknown_option_is_not_found() {
+    let err = RpcError::new(
+        ErrorData::NotFound {
+            resource: Resource::Option,
+            id: "model".into(),
+        },
+        "no option model",
+    );
+    assert_eq!(
+        serde_json::to_value(&err).unwrap(),
+        json!({"code": -32007, "message": "no option model",
+               "data": {"kind": "not_found", "resource": "option", "id": "model"}})
     );
 }
 
@@ -535,6 +657,27 @@ fn optional_params_may_be_omitted() {
     .unwrap();
     assert_eq!(follow.from, FollowFrom::Unseen);
     assert_eq!(follow.buffer_seconds, None);
+
+    // P4 additions are optional params: older clients keep working.
+    let create: SessionCreateParams =
+        serde_json::from_value(json!({"op_id": "op-4", "agent": "pi", "cwd": "~"})).unwrap();
+    assert_eq!(create.prompt, None);
+    let first: InitialPrompt =
+        serde_json::from_value(json!({"content": [{"kind": "text", "text": "hi"}]})).unwrap();
+    assert_eq!(first.origin, PromptOrigin::User { device: None });
+    let subscribe: SessionSubscribeParams =
+        serde_json::from_value(json!({"id": SID, "since_seq": 4})).unwrap();
+    assert!(subscribe.timeline, "the timeline is on by default");
+    let send_now: QueueSendNowParams = serde_json::from_value(json!({
+        "op_id": "op-5", "id": SID, "queue_id": "01HZY3K6W8Q9X2V4N7B5C1D3ED"
+    }))
+    .unwrap();
+    assert!(!send_now.interrupt);
+    let respond: RequestRespondParams = serde_json::from_value(json!({
+        "op_id": "op-6", "id": SID, "request_id": "r1", "response": {"kind": "dismiss"}
+    }))
+    .unwrap();
+    assert_eq!(respond.by, None);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -673,6 +816,35 @@ fn newer_result_variants_and_fields_still_decode() {
     );
     assert!(hello.capabilities.contains(&Capability::JOBS));
     assert!(hello.capabilities.contains(&Capability::new("terminals")));
+
+    // A newer daemon's send-now outcome, first-prompt outcome or `not_found` resource.
+    assert_eq!(
+        serde_json::from_value::<SendNowResult>(json!({"outcome": "deferred"})).unwrap(),
+        SendNowResult::Unknown
+    );
+    let created: SessionCreateResult = serde_json::from_value(json!({
+        "session": summary_json(),
+        "prompt": {"outcome": "scheduled", "at": 5}
+    }))
+    .unwrap();
+    assert_eq!(created.prompt, Some(PromptResult::Unknown));
+    let error: RpcError = serde_json::from_value(json!({
+        "code": -32007, "message": "x",
+        "data": {"kind": "not_found", "resource": "terminal", "id": "t1"}
+    }))
+    .unwrap();
+    assert_eq!(
+        error.data,
+        Some(ErrorData::NotFound {
+            resource: Resource::Unknown,
+            id: "t1".into()
+        })
+    );
+    // Capabilities this daemon advertises are plain strings.
+    assert_eq!(
+        serde_json::to_value(&Capability::SANDBOX_APPROVALS).unwrap(),
+        json!("sandbox_approvals")
+    );
 }
 
 #[test]

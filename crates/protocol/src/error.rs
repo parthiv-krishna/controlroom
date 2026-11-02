@@ -93,6 +93,8 @@ pub enum Resource {
     Subscription,
     /// An outbox item.
     OutboxItem,
+    /// A session option (`session.set_option`).
+    Option,
     /// A machine record (UI API).
     Machine,
     /// An additional SSH key (UI API).

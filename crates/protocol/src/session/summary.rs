@@ -229,6 +229,9 @@ pub struct SessionSummary {
     pub live_work: LiveWork,
     /// Agent options (model, thinking level, ...).
     pub options: Vec<SessionOption>,
+    /// A live, ready agent process is attached: options can be changed and the agent's own
+    /// requests answered. Clients disable option pickers while it is `false`.
+    pub agent_live: bool,
     /// The sandbox.
     pub sandbox: SandboxInfo,
     /// Whether the agent session can be reattached after it stops.

@@ -46,6 +46,21 @@ pub struct SessionCreateParams {
     /// projects, replacing any value a client sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<SandboxSpec>,
+    /// A first prompt, queued in the same transaction as the session (under this `op_id`), so
+    /// a retried create never makes a session without its prompt or sends the prompt twice.
+    /// It goes to the agent as soon as the agent is ready.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<InitialPrompt>,
+}
+
+/// The first prompt of `session.create`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct InitialPrompt {
+    /// The prompt.
+    pub content: Vec<ContentPart>,
+    /// Where it comes from; default: the user.
+    #[serde(default)]
+    pub origin: PromptOrigin,
 }
 
 /// Result of `session.create`.
@@ -53,6 +68,9 @@ pub struct SessionCreateParams {
 pub struct SessionCreateResult {
     /// The new session (state `starting`).
     pub session: SessionSummary,
+    /// What happened to the first prompt, if one was given: `queued` (it is sent once the
+    /// agent is ready).
+    pub prompt: Option<PromptResult>,
 }
 
 /// What `session.prompt` does when a run is active.
@@ -195,8 +213,9 @@ pub enum OptionValue {
 }
 
 /// Params of `session.set_option`: change an agent option such as the model. Works in any live
-/// state, including during a run. Errors: `not_found` for an unknown option, `invalid_params`
-/// for a value the option doesn't allow, `invalid_state` without a live agent.
+/// state, including during a run. Errors: `not_found` (`option`) for an unknown option,
+/// `invalid_params` for a value the option doesn't allow, `invalid_state` without a live agent
+/// (see [`SessionSummary::agent_live`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct SessionSetOptionParams {
     /// Idempotency key.
@@ -209,7 +228,10 @@ pub struct SessionSetOptionParams {
     pub value: OptionValue,
 }
 
-/// Params of `queue.send_now`: deliver a queued item ahead of everything else.
+/// Params of `queue.send_now`: deliver a queued item ahead of everything else. While a run is
+/// active the item is steered in when the agent can take it; otherwise the run is cancelled at
+/// a safe point (no tool running) and the item goes next. Calling it again for the same item
+/// with `interrupt` escalates a send-now that is waiting for a tool.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct QueueSendNowParams {
     /// Idempotency key.
@@ -218,6 +240,11 @@ pub struct QueueSendNowParams {
     pub id: SessionId,
     /// The item.
     pub queue_id: QueueId,
+    /// "Interrupt now": cancel the active run at once, even while a tool is running, and send
+    /// the item as the next prompt (never as a steer). Default `false`.
+    #[serde(default)]
+    #[ts(as = "Option<bool>", optional)]
+    pub interrupt: bool,
 }
 
 /// Result of `queue.send_now`. How it is delivered is the driver's choice.
@@ -228,9 +255,12 @@ pub enum SendNowResult {
     Sent,
     /// Delivered into the active run as a steer.
     Steered,
-    /// The run is being cancelled at a safe point; the item goes next
-    /// (`queue.send_now_pending` in the summary).
+    /// The run is being cancelled (at a safe point, or at once with `interrupt`); the item
+    /// goes next (`queue.send_now_pending` in the summary while it waits for the safe point).
     Interrupting,
+    /// The agent isn't ready (starting, reconnecting, or stopped and now starting): the item
+    /// is first in the queue and goes as soon as the agent is ready.
+    Queued,
     /// An outcome this build doesn't know.
     #[serde(other)]
     Unknown,

@@ -3,4 +3,4 @@
 /**
  * What a `not_found` error refers to.
  */
-export type Resource = "queue_item" | "request" | "todo" | "job" | "grant" | "agent" | "subscription" | "outbox_item" | "machine" | "key" | "project" | "task" | "checklist_item" | "device" | "schedule" | "unknown";
+export type Resource = "queue_item" | "request" | "todo" | "job" | "grant" | "agent" | "subscription" | "outbox_item" | "option" | "machine" | "key" | "project" | "task" | "checklist_item" | "device" | "schedule" | "unknown";

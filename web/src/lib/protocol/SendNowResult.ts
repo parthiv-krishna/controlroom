@@ -3,4 +3,4 @@
 /**
  * Result of `queue.send_now`. How it is delivered is the driver's choice.
  */
-export type SendNowResult = { "outcome": "sent" } | { "outcome": "steered" } | { "outcome": "interrupting" } | { "outcome": "unknown" };
+export type SendNowResult = { "outcome": "sent" } | { "outcome": "steered" } | { "outcome": "interrupting" } | { "outcome": "queued" } | { "outcome": "unknown" };

@@ -64,6 +64,7 @@ export type * from "./HostKeyInfo";
 export type * from "./IfBusy";
 export type * from "./InboxDeliverParams";
 export type * from "./InboxDelivery";
+export type * from "./InitialPrompt";
 export type * from "./InjectOrigin";
 export type * from "./ItemId";
 export type * from "./Job";

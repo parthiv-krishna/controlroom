@@ -95,6 +95,16 @@ pub struct SessionSubscribeParams {
     /// seq link; omit otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_since: Option<Seq>,
+    /// Send timeline ops (default `true`). With `false` the subscription carries the detail
+    /// only: no backlog and no live ops (`since_seq` is ignored), e.g. for a queue panel of a
+    /// session whose timeline isn't shown. Raw frames still follow `raw_since`.
+    #[serde(default = "yes")]
+    #[ts(as = "Option<bool>", optional)]
+    pub timeline: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Result of `session.subscribe`. It is sent before any `session.events` of the subscription;

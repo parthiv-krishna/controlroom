@@ -65,6 +65,10 @@ impl Capability {
     pub const SUBAGENTS: Capability = Capability(Cow::Borrowed("subagents"));
     /// The durable mailbox: `outbox.*` and `inbox.deliver` (daemon).
     pub const MAILBOX: Capability = Capability(Cow::Borrowed("mailbox"));
+    /// Sandbox approvals: the sandbox's approval requests (e.g. a mediated `git push`) reach
+    /// the user as blocking `sandbox` requests (daemon). Without it, commands that need an
+    /// approval are denied.
+    pub const SANDBOX_APPROVALS: Capability = Capability(Cow::Borrowed("sandbox_approvals"));
     /// Schedules: `schedules.*` (controller).
     pub const SCHEDULES: Capability = Capability(Cow::Borrowed("schedules"));
 

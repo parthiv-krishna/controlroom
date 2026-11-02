@@ -5,8 +5,9 @@ import type { SessionId } from "./SessionId";
 
 /**
  * Params of `session.set_option`: change an agent option such as the model. Works in any live
- * state, including during a run. Errors: `not_found` for an unknown option, `invalid_params`
- * for a value the option doesn't allow, `invalid_state` without a live agent.
+ * state, including during a run. Errors: `not_found` (`option`) for an unknown option,
+ * `invalid_params` for a value the option doesn't allow, `invalid_state` without a live agent
+ * (see [`SessionSummary::agent_live`]).
  */
 export type SessionSetOptionParams = { 
 /**

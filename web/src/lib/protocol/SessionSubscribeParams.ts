@@ -19,4 +19,10 @@ since_seq: Seq,
  * Also stream raw transcript frames with a seq after this one. Only for the raw view or a
  * seq link; omit otherwise.
  */
-raw_since?: Seq | null, };
+raw_since?: Seq | null, 
+/**
+ * Send timeline ops (default `true`). With `false` the subscription carries the detail
+ * only: no backlog and no live ops (`since_seq` is ignored), e.g. for a queue panel of a
+ * session whose timeline isn't shown. Raw frames still follow `raw_since`.
+ */
+timeline?: boolean, };

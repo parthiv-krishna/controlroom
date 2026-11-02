@@ -6,7 +6,7 @@ use ts_rs::TS;
 
 use crate::daemon::PromptResult;
 use crate::ids::{GrantId, JobId, OpId, RequestId, SessionId, TodoId};
-use crate::session::{ContentPart, Job, Request, Response, Todo, TodoStatus};
+use crate::session::{ContentPart, DeviceRef, Job, Request, Response, Todo, TodoStatus};
 
 /// Params of `request.respond`: answer a permission, question, dialog, sandbox, contact or
 /// spawn request. The first answer wins; later ones get `already_resolved` with the winner.
@@ -23,6 +23,11 @@ pub struct RequestRespondParams {
     /// A prompt to send right after, ahead of the queue ("deny and steer").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub then: Option<Vec<ContentPart>>,
+    /// The deciding device, recorded as [`crate::session::RequestAnswer::by`]. The controller
+    /// fills it in from the authenticated UI connection and **overwrites** any value a client
+    /// sent, so a browser can't answer in another device's name. Debug clients omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
 }
 
 /// Result of `request.respond`.

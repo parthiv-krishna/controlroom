@@ -122,6 +122,11 @@ live_work: LiveWork,
  */
 options: Array<SessionOption>, 
 /**
+ * A live, ready agent process is attached: options can be changed and the agent's own
+ * requests answered. Clients disable option pickers while it is `false`.
+ */
+agent_live: boolean, 
+/**
  * The sandbox.
  */
 sandbox: SandboxInfo, 
