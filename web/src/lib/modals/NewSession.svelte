@@ -7,7 +7,7 @@
   import type { NewSessionPreset } from '../app/view.svelte';
   import { normPath, prefixMatch } from '../model/location';
   import { textContent } from '../model/misc';
-  import { columnLabel, columnTasks, orderFor } from '../model/tasks';
+  import { columnLabel } from '../model/tasks';
   import { LEVELS, defaultLevel, levelLabel, looser } from '../model/sandbox';
   import { connKind, connLabel, isLive } from '../model/status';
   import type { AgentInfo, SandboxLevel, SandboxProfile } from '../protocol';
@@ -88,22 +88,16 @@
       cwd: cwd.trim(),
       name: name.trim() || null,
       sandbox_level: level === 'default' ? null : level,
+      // The first message goes in the same call (the server overwrites its origin), and existing
+      // tasks are linked (and moved to In progress) by the server.
+      prompt: prompt.trim() ? { content: textContent(prompt.trim()), origin: { kind: 'user', device: app.client.deviceRef } } : null,
+      task_ids: tasks.filter((v) => !v.startsWith('new:')),
     });
     if (!r) return void (busy = false);
     const id = r.session.id;
     const ref = { machine_id: machineId, session_id: id };
-    // The protocol has no atomic create-and-link: the first message and the task links follow.
-    if (prompt.trim()) {
-      await app.client.call('session.prompt', { machine_id: machineId, op_id: newOpId(), id, content: textContent(prompt.trim()), origin: { kind: 'user', device: app.client.deviceRef }, if_busy: 'queue' });
-    }
-    for (const v of tasks) {
-      if (v.startsWith('new:')) {
-        await app.client.call('tasks.create', { title: v.slice(4), status: 'doing', links: [ref], project_ids: app.view.project ? [app.view.project] : [] });
-        continue;
-      }
-      await app.client.call('tasks.link', { task_id: v, ...ref });
-      const t = feed.tasks.get(v);
-      if (t && (t.status === 'backlog' || t.status === 'todo')) await app.client.call('tasks.move', { task_id: v, status: 'doing', order: orderFor(columnTasks(app.ctx.tasks, 'doing'), v, null) });
+    for (const v of tasks.filter((v) => v.startsWith('new:'))) {
+      await app.client.call('tasks.create', { title: v.slice(4), status: 'doing', links: [ref], project_ids: app.view.project ? [app.view.project] : [] });
     }
     busy = false;
     close();

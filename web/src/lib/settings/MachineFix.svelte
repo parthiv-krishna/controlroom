@@ -1,6 +1,6 @@
 <script lang="ts">
   // The inline fix for a machine whose connection needs the user: confirm a changed or unconfirmed
-  // host key, or install the key the host rejected, then retry.
+  // host key, install the key the host rejected, or stop the other controlroom server; then retry.
   import { useApp } from '../app/app.svelte';
   import type { Machine } from '../protocol';
 
@@ -28,6 +28,9 @@
   <div class="fix">
     {#if c.reason === 'auth_failed'}
       <div><b>{m.user}@{m.host}</b> no longer accepts the {m.key_id ? 'selected' : 'controlroom'} key. Install it again (Settings › SSH keys), then retry.</div>
+      <div class="acts"><button class="btn sm primary" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: m.id })}>Retry</button></div>
+    {:else if c.reason === 'controller_conflict'}
+      <div>Another controlroom server is connected to <b>{m.name}</b>. A machine serves one server at a time: stop the other one, then retry.</div>
       <div class="acts"><button class="btn sm primary" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: m.id })}>Retry</button></div>
     {:else}
       <div>

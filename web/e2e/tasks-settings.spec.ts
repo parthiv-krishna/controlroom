@@ -44,9 +44,13 @@ test('new session dialog: machine, agent, directory and sandbox', async ({ page 
   await dialog.getByRole('option', { name: /^Off/ }).click();
   await expect(dialog.getByText('no sandbox')).toBeVisible();
   await dialog.getByLabel('Name').fill('try the fix');
+  await dialog.getByLabel('First message').fill('reproduce the bug');
   await dialog.getByRole('button', { name: '↵ Create session' }).click();
   const [create] = await calls(page, 'session.create');
-  expect(create.params).toMatchObject({ machine_id: M.buildbox, agent: 'pi', cwd: '~/src/acme-api', name: 'try the fix', sandbox_level: 'off' });
+  expect(create.params).toMatchObject({ machine_id: M.buildbox, agent: 'pi', cwd: '~/src/acme-api', name: 'try the fix', sandbox_level: 'off', task_ids: [] });
+  // The first message travels in the create call (the server links tasks and sends it once).
+  expect((create.params as { prompt: { content: unknown } }).prompt.content).toEqual([{ kind: 'text', text: 'reproduce the bug' }]);
+  expect(await calls(page, 'session.prompt')).toEqual([]);
 });
 
 test('settings: tabs, the add-machine flow, devices and sandbox defaults', async ({ page }) => {

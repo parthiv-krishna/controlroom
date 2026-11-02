@@ -9,7 +9,7 @@ import { notes } from './notifications';
 import { health, inProject, keyOf, needsYouElsewhere, type Ctx } from './projects';
 import { defaultLevel, looser } from './sandbox';
 import { humanSchedule, parseCron } from './schedule';
-import { statusKind, statusLabel } from './status';
+import { connKind, connLabel, statusKind, statusLabel } from './status';
 import { columnTasks, orderFor, rollup, suggestMove, taskPrompt } from './tasks';
 import { leadsToMatch, treeIndex, treeRoots } from './tree';
 
@@ -81,6 +81,16 @@ describe('status and attention', () => {
     expect(health(ctx, null)).toEqual({ approvals: 4, questions: 1, problems: 2, unread: 1 });
     expect(health(ctx, project('Docs'))).toEqual({ approvals: 1, questions: 1, problems: 0, unread: 0 });
     expect(needsYouElsewhere(ctx, project('Docs'))).toBe(5);
+  });
+
+  it('labels every reason a machine needs the user', () => {
+    const with_ = (reason: string) =>
+      ({ ...devbox, connectivity: { state: 'action_required', reason, presented_host_key: null } }) as typeof devbox;
+    expect(connLabel(with_('controller_conflict'))).toBe('another server connected');
+    expect(connLabel(with_('auth_failed'))).toBe('key rejected');
+    expect(connLabel(with_('host_key_unconfirmed'))).toBe('confirm host key');
+    expect(connLabel(with_('unknown'))).toBe('needs attention');
+    expect(connKind(with_('controller_conflict'))).toBe('attention');
   });
 });
 

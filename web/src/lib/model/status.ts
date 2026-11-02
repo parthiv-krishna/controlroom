@@ -70,6 +70,14 @@ export const isLive = (m: Machine | undefined): boolean => m?.connectivity.state
 export const upgrading = (m: Machine): boolean =>
   m.connectivity.state === 'connecting' && !!m.version && (m.bootstrap?.step === 'install' || m.bootstrap?.step === 'start');
 
+/** Short labels of the reasons a machine needs the user. */
+const ACTION_LABELS: Partial<Record<string, string>> = {
+  auth_failed: 'key rejected',
+  host_key_changed: 'host key changed',
+  host_key_unconfirmed: 'confirm host key',
+  controller_conflict: 'another server connected',
+};
+
 export function connLabel(m: Machine): string {
   const c = m.connectivity;
   switch (c.state) {
@@ -77,8 +85,7 @@ export function connLabel(m: Machine): string {
     case 'connecting': return upgrading(m) ? 'upgrading…' : m.bootstrap?.message ?? 'connecting…';
     case 'unreachable': return 'unreachable';
     case 'incompatible': return 'outdated';
-    case 'action_required':
-      return c.reason === 'auth_failed' ? 'key rejected' : c.reason === 'host_key_changed' ? 'host key changed' : 'confirm host key';
+    case 'action_required': return ACTION_LABELS[c.reason] ?? 'needs attention';
     default: return 'unknown';
   }
 }
