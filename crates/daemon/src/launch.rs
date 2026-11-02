@@ -200,10 +200,7 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
     ]);
     Ok(PreparedLaunch {
         request: LaunchRequest {
-            paths: Paths {
-                dir: layout.root().as_path().to_owned(),
-                socket: host.dirs.supervisor_socket(&id).as_path().to_owned(),
-            },
+            paths: supervisor_paths(&host.dirs, &launch.session),
             id,
             spec: SpawnSpec {
                 kind: ProcessKind::Agent,
@@ -218,6 +215,15 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
         },
         sandbox,
     })
+}
+
+/// Where the supervisor of session `id`'s agent keeps its files: the session dir (transcript,
+/// supervisor files) and the short socket path `<state>/run/<id>.sock`.
+pub fn supervisor_paths(dirs: &Dirs, id: &SessionId) -> Paths {
+    Paths {
+        dir: SessionLayout::new(dirs.state(), id).root().as_path().to_owned(),
+        socket: dirs.supervisor_socket(id.as_str()).as_path().to_owned(),
+    }
 }
 
 /// Finds nono from `sandbox.toml`'s `nono` setting: an absolute (or `~/`) path as is, a

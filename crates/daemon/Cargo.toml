@@ -7,21 +7,26 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+controlroom-drivers.workspace = true
 controlroom-protocol.workspace = true
+controlroom-runtime.workspace = true
 controlroom-sandbox.workspace = true
 controlroom-supervisor.workspace = true
 controlroom-transcript.workspace = true
+futures.workspace = true
 # setsid() and flock() without unsafe.
 rustix = { version = "1.1", features = ["fs", "process"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 toml = "0.9"
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 controlroom-fixture-tool = { path = "../fixture-tool" }
 tempfile.workspace = true
-tokio.workspace = true
 ulid.workspace = true
 
 [lints]

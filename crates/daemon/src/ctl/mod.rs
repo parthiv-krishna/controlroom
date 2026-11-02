@@ -6,6 +6,10 @@
 //! controlroomd ctl call <method> [<params JSON>] any daemon method; prints the result
 //! controlroomd ctl watch <session> [--since N]   subscribe and render the timeline live
 //! controlroomd ctl render [<file>]               render ops offline (JSONL from a file or stdin)
+//! controlroomd ctl create [--agent pi] [--cwd D] [--sandbox off] [prompt...]
+//! controlroomd ctl prompt <session> <text...>
+//! controlroomd ctl cancel <session>
+//! controlroomd ctl approve <session> <request> <option>
 //! ```
 //!
 //! `render` accepts lines that are `session.events` notifications, their params, or single
@@ -20,8 +24,12 @@ use std::process::ExitCode;
 
 use anyhow::{Context, bail};
 use controlroom_protocol::daemon::notifications::SessionEvents;
-use controlroom_protocol::daemon::{SessionEventsParams, SessionSubscribeParams, methods};
-use controlroom_protocol::ids::SessionId;
+use controlroom_protocol::daemon::{
+    PromptResult, RequestRespondParams, SessionCreateParams, SessionEventsParams, SessionOpParams,
+    SessionPromptParams, SessionSubscribeParams, methods,
+};
+use controlroom_protocol::ids::{OpId, RequestId, SessionId};
+use controlroom_protocol::session::{ContentPart, Response, SandboxLevel};
 use controlroom_protocol::timeline::TimelineOp;
 use controlroom_protocol::{NotificationMethod, Seq};
 use serde_json::Value;
@@ -60,6 +68,45 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         since: u64,
     },
+    /// Create a session and print its summary; with a prompt, send it too.
+    Create {
+        /// The agent key in agents.toml.
+        #[arg(long, default_value = "pi")]
+        agent: String,
+        /// The working directory [default: the current directory].
+        #[arg(long)]
+        cwd: Option<String>,
+        /// A name for the session.
+        #[arg(long)]
+        name: Option<String>,
+        /// The sandbox level (strict, relaxed or off) [default: the daemon's default].
+        #[arg(long)]
+        sandbox: Option<String>,
+        /// A first prompt.
+        prompt: Vec<String>,
+    },
+    /// Send a prompt (queued while the agent is busy).
+    Prompt {
+        /// The session id.
+        session: SessionId,
+        /// The text.
+        #[arg(required = true)]
+        text: Vec<String>,
+    },
+    /// Cancel the running turn.
+    Cancel {
+        /// The session id.
+        session: SessionId,
+    },
+    /// Answer a request (approval or dialog) with one of its options.
+    Approve {
+        /// The session id.
+        session: SessionId,
+        /// The request id.
+        request: String,
+        /// The option id.
+        option: String,
+    },
     /// Render timeline ops from a JSONL file (or stdin).
     Render {
         /// The file [default: stdin].
@@ -97,8 +144,94 @@ fn online(dirs: &Dirs, command: Cmd) -> anyhow::Result<()> {
             print_json(&client.call_raw(&method, params).context(method)?)
         }
         Cmd::Watch { session, since } => watch(&mut client, session, since),
+        Cmd::Create {
+            agent,
+            cwd,
+            name,
+            sandbox,
+            prompt,
+        } => create(&mut client, agent, cwd, name, sandbox, &prompt),
+        Cmd::Prompt { session, text } => {
+            print_json(&serde_json::to_value(prompt(&mut client, session, &text)?)?)
+        }
+        Cmd::Cancel { session } => {
+            client.call::<methods::SessionCancel>(SessionOpParams {
+                op_id: OpId::generate(),
+                id: session,
+            })?;
+            Ok(())
+        }
+        Cmd::Approve {
+            session,
+            request,
+            option,
+        } => {
+            let result = client.call::<methods::RequestRespond>(RequestRespondParams {
+                op_id: OpId::generate(),
+                id: session,
+                request_id: RequestId::new(request),
+                response: Response::Choice {
+                    option_id: option,
+                    reason: None,
+                },
+                then: None,
+            })?;
+            print_json(&serde_json::to_value(result)?)
+        }
         Cmd::Render { .. } => unreachable!("rendered offline"),
     }
+}
+
+fn create(
+    client: &mut DaemonClient,
+    agent: String,
+    cwd: Option<String>,
+    name: Option<String>,
+    sandbox: Option<String>,
+    first_prompt: &[String],
+) -> anyhow::Result<()> {
+    let cwd = match cwd {
+        Some(cwd) => cwd,
+        None => std::env::current_dir()?.to_string_lossy().into_owned(),
+    };
+    let sandbox_level = sandbox
+        .map(|level| match level.as_str() {
+            "strict" => Ok(SandboxLevel::Strict),
+            "relaxed" => Ok(SandboxLevel::Relaxed),
+            "off" => Ok(SandboxLevel::Off),
+            other => Err(anyhow::anyhow!("unknown sandbox level {other:?}")),
+        })
+        .transpose()?;
+    let created = client.call::<methods::SessionCreate>(SessionCreateParams {
+        op_id: OpId::generate(),
+        agent,
+        cwd: cwd.into(),
+        name,
+        parent_id: None,
+        spawned_by: None,
+        sandbox_level,
+        sandbox: None,
+    })?;
+    let id = created.session.id;
+    print_json(&serde_json::to_value(&created.session)?)?;
+    if !first_prompt.is_empty() {
+        print_json(&serde_json::to_value(prompt(client, id, first_prompt)?)?)?;
+    }
+    Ok(())
+}
+
+fn prompt(
+    client: &mut DaemonClient,
+    session: SessionId,
+    words: &[String],
+) -> anyhow::Result<PromptResult> {
+    Ok(client.call::<methods::SessionPrompt>(SessionPromptParams {
+        op_id: OpId::generate(),
+        id: session,
+        content: vec![ContentPart::text(words.join(" "))],
+        origin: Default::default(),
+        if_busy: Default::default(),
+    })?)
 }
 
 fn print_json(value: &Value) -> anyhow::Result<()> {
