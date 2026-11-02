@@ -1,5 +1,6 @@
-//! Intents as pi RPC lines, each tagged in its `id` (or `crTag`, see [`super::tag`]).
+//! Intents as pi RPC lines, each tagged in its `id` (or `crTag`, see the `tag` module).
 
+use controlroom_protocol::session::ContentPart;
 use serde_json::{Map, Value, json};
 
 use super::content::PiPrompt;
@@ -96,10 +97,7 @@ impl PiDriver {
 }
 
 /// A `prompt`, `steer` or `follow_up` command.
-fn user_command(
-    kind: &str,
-    content: &[controlroom_protocol::session::ContentPart],
-) -> Result<Value, EncodeError> {
+fn user_command(kind: &str, content: &[ContentPart]) -> Result<Value, EncodeError> {
     let prompt = PiPrompt::from_parts(content);
     if prompt.is_empty() {
         return Err(EncodeError::Invalid("empty content".into()));

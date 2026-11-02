@@ -14,7 +14,7 @@
 //!
 //! Item and request ids are `<kind>-<seq>[.<index>]` of the record that started them, so a
 //! re-fold yields the same ids. Every line written carries its [`LineTag`] in pi's `id` field
-//! (`extension_ui_response`, whose `id` is the dialog's, carries it in `crTag`); see [`tag`].
+//! (`extension_ui_response`, whose `id` is the dialog's, carries it in `crTag`); see the `tag` module.
 
 mod content;
 mod dialogs;
