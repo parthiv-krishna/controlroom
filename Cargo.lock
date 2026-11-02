@@ -496,6 +496,22 @@ dependencies = [
 [[package]]
 name = "controlroom-controller"
 version = "0.0.4"
+dependencies = [
+ "controlroom-client-core",
+ "controlroom-controller",
+ "controlroom-protocol",
+ "data-encoding",
+ "futures",
+ "getrandom 0.4.3",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "controlroom-drivers"

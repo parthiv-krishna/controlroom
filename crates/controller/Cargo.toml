@@ -4,7 +4,29 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# Test helpers for this crate's and the web shell's tests: a fake remote machine (client-core's
+# in-process SSH server with a scratch $HOME and the fake agent) and the built controlroomd.
+test-support = ["controlroom-client-core/test-support", "dep:tempfile"]
+
 [dependencies]
+controlroom-client-core.workspace = true
+controlroom-protocol.workspace = true
+data-encoding = "2.6"
+futures.workspace = true
+getrandom = "0.4"
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.11"
+tempfile = { workspace = true, optional = true }
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+controlroom-controller = { path = ".", features = ["test-support"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true
