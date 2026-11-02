@@ -190,15 +190,12 @@ impl Core {
     /// `session.delete`: stop the agent and forget the session and its files.
     pub(crate) fn delete(&mut self, id: SessionId) -> Result<(), RpcError> {
         let session = self.session(id)?;
-        if let Some(attachment) = &session.live.attachment {
-            let conn = attachment.conn.clone();
-            self.task(Task::Terminate(conn, Duration::ZERO));
-        }
+        let conn = session.live.attachment.as_ref().map(|a| a.conn.clone());
         self.remove_session(id);
         self.store.delete_session(id).map_err(internal)?;
         self.emit(MachineEvent::SessionRemoved { id })
             .map_err(internal)?;
-        self.task(Task::Remove(id));
+        self.task(Task::Remove(id, conn));
         Ok(())
     }
 

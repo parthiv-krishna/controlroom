@@ -34,7 +34,12 @@ pub(crate) fn spawn_tasks(inner: &Arc<Inner>, tasks: Vec<Task>) {
                 }
             }),
             Task::Reload(id) => inner.spawn(reload(inner2, id)),
-            Task::Remove(id) => inner.spawn(async move {
+            Task::Remove(id, conn) => inner.spawn(async move {
+                if let Some(conn) = conn
+                    && let Err(e) = conn.terminate(std::time::Duration::ZERO).await
+                {
+                    tracing::warn!("session {id}: stopping its agent: {e}");
+                }
                 if let Err(e) = inner2.host.remove(id).await {
                     tracing::warn!("session {id}: removing its files: {e}");
                 }

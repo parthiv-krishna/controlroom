@@ -122,17 +122,16 @@ impl Core {
     /// Persisted consequences of an event.
     fn react(&mut self, id: SessionId, seq: Seq, record: &Record, event: &DriverEvent) {
         let ts = UnixMillis(i64::try_from(record.ts).unwrap_or(i64::MAX));
-        let new_queue_id = QueueId::generate();
         let Some(session) = self.sessions.get_mut(&id) else {
             return;
         };
         let data = &mut session.data;
         match event {
+            // The transcript is the truth: the item reached the agent.
             DriverEvent::Written { tag } => {
-                if let Some(entry) = data.queue.iter_mut().find(|e| e.has_tag(tag))
-                    && let Some(delivery) = entry.delivery
-                {
-                    entry.delivery = Some(Delivery::Written(delivery.via()));
+                if let Some(entry) = data.queue.iter_mut().find(|e| e.has_tag(tag)) {
+                    let via = entry.delivery.map_or(Via::Prompt, Delivery::via);
+                    entry.delivery = Some(Delivery::Written(via));
                 }
             }
             DriverEvent::Accepted { tag } => data.queue.retain(|e| !e.has_tag(tag)),
@@ -142,7 +141,7 @@ impl Core {
                 };
                 tracing::info!("session {id}: the agent refused a queued prompt: {error}");
                 let entry = data.queue.remove(pos);
-                requeue(data, entry, new_queue_id);
+                requeue(data, entry, QueueId::generate());
             }
             DriverEvent::RunSettled { outcome, error } => {
                 data.last_outcome = Some(*outcome);
@@ -320,6 +319,8 @@ fn end_process(
         data.pending_start = None;
     }
     if during_run {
+        // The run never settled: it has no outcome, only the error.
+        data.last_outcome = None;
         data.last_turn_end_seq = seq;
         data.last_error = Some(error.to_owned());
         pause_after_bad_end(data);

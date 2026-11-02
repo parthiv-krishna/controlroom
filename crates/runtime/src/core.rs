@@ -17,7 +17,7 @@ use controlroom_protocol::RpcError;
 use controlroom_protocol::Seq;
 use controlroom_protocol::daemon::{DaemonSettings, MachineChange, MachineEvent};
 use controlroom_protocol::ids::{DaemonId, Rev, SessionId};
-use controlroom_protocol::session::{AttentionRollup, SessionSummary, TodoRollup};
+use controlroom_protocol::session::{AttentionRollup, SessionDetail, SessionSummary, TodoRollup};
 use tokio::sync::broadcast;
 
 use crate::errors::{internal, unknown_session};
@@ -39,8 +39,8 @@ pub(crate) enum Task {
     Terminate(Arc<dyn SupervisorConn>, Duration),
     /// Rebuild the session from the store and its transcript, then reattach.
     Reload(SessionId),
-    /// Delete the session's files.
-    Remove(SessionId),
+    /// Stop the agent, if one is attached, then delete the session's files.
+    Remove(SessionId, Option<Arc<dyn SupervisorConn>>),
     /// Run a barrier for an attachment that is in doubt.
     Barrier {
         id: SessionId,
@@ -55,11 +55,8 @@ struct Effects {
     lines: Vec<(SessionId, String)>,
     machine: Vec<MachineChange>,
     updates: Vec<(SessionId, SessionUpdate)>,
-    emitted: Vec<(
-        SessionId,
-        Option<SessionSummary>,
-        Option<controlroom_protocol::session::SessionDetail>,
-    )>,
+    /// What the feeds will have seen: (session, new summary, new detail).
+    emitted: Vec<(SessionId, Option<SessionSummary>, Option<SessionDetail>)>,
     tasks: Vec<Task>,
 }
 

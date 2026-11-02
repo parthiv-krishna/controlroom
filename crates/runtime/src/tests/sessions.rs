@@ -417,3 +417,36 @@ async fn prompt_while_busy_can_skip() {
             .all(|item| item.content != text("scheduled"))
     );
 }
+
+#[tokio::test]
+async fn preview_only_changes_are_throttled_to_one_a_second() {
+    let mut h = Harness::new(FakeScript::default().default_turn([
+        FakeStep::Text("first".into()),
+        FakeStep::Gate("go".into()),
+        FakeStep::Text("\nsecond".into()),
+        FakeStep::Gate("end".into()),
+    ]))
+    .await;
+    let id = h.create().await;
+    h.prompt(id, "go").await;
+    h.wait(id, "the first text", |s| s.preview == "first").await;
+    h.host.release(id, "go");
+    h.wait(id, "the second line", |s| s.preview == "second")
+        .await;
+    let last_emitted = |h: &Harness| {
+        h.emitted
+            .iter()
+            .rev()
+            .find(|s| s.id == id)
+            .map(|s| s.preview.clone())
+            .unwrap()
+    };
+    assert_ne!(last_emitted(&h), "second", "held back within the second");
+    h.rt.tick();
+    h.wait(id, "a tick", |_| true).await;
+    assert_ne!(last_emitted(&h), "second", "still within the second");
+    h.clock.advance(1000);
+    h.rt.tick();
+    h.wait(id, "the throttled preview", |_| true).await;
+    assert_eq!(last_emitted(&h), "second");
+}
