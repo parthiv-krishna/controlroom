@@ -338,7 +338,13 @@ async fn an_unreachable_machine_does_not_block_others() {
     .await;
 
     let machine = add_machine(&mut ui, &host, "devbox").await;
-    let session = create_session(&mut ui, &machine, &host, json!({"prompt": {"content": text("hi")}})).await;
+    let session = create_session(
+        &mut ui,
+        &machine,
+        &host,
+        json!({"prompt": {"content": text("hi")}}),
+    )
+    .await;
     ui.wait("the session runs", |m| {
         m.session(&session)["last_outcome"] == "completed"
     })
@@ -393,5 +399,85 @@ async fn rotation_migrates_connected_machines() {
     let keys = ui.ok("keys.list", json!({})).await;
     assert_eq!(keys["controlroom"]["public_key"], json!(new));
     assert_eq!(keys["controlroom"]["retiring_machines"], 0);
+    setup.controller.shutdown().await;
+}
+
+/// Approvals through the UI: server-owned attention, one push per device per request (none to
+/// a device focused on the session), the first answer wins.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn approvals_push_once_per_device_and_the_first_answer_wins() {
+    let push = std::sync::Arc::new(support::RecordingPush::default());
+    let bundled = bundled_daemons();
+    let setup = controller(Some(bundled.path()), Some(push.config()));
+    let mut host = RemoteHost::start().await;
+    let turn = controlroom_controller::test_support::permission("Run rm -rf build?");
+    let done = json!({"content": [{"type": "text", "text": "done"}]});
+    host.agent(
+        "fake",
+        json!({"replies": [turn.clone(), done.clone(), turn, done]}),
+    );
+    let mut laptop = ui(&setup.controller, "laptop").await;
+    let mut phone = ui(&setup.controller, "phone").await;
+    for (ui, (device, n)) in [(&mut laptop, ("laptop", 1)), (&mut phone, ("phone", 2))] {
+        ui.ok(
+            "notifications.subscribe",
+            json!({"device_id": device, "subscription": support::browser_subscription(n)}),
+        )
+        .await;
+    }
+    let machine = add_machine(&mut laptop, &host, "devbox").await;
+    let session = create_session(&mut laptop, &machine, &host, json!({"name": "cleanup"})).await;
+    laptop
+        .ok(
+            "client.focus",
+            json!({"device_id": "laptop", "visible": true,
+                   "session": {"machine_id": machine, "session_id": session}}),
+        )
+        .await;
+
+    for round in 1..=2 {
+        laptop
+            .ok(
+                "session.prompt",
+                json!({"machine_id": machine, "op_id": op(), "id": session, "content": text("clean")}),
+            )
+            .await;
+        phone
+            .wait("an approval is pending", |m| {
+                m.session(&session)["attention"] == "approval"
+            })
+            .await;
+        let request = phone.mirror.session(&session)["requests"][0].clone();
+        controlroom_controller::test_support::wait_until("the push", || push.sent().len() >= round)
+            .await;
+        let respond = |option: &str| {
+            json!({"machine_id": machine, "op_id": op(), "id": session,
+                   "request_id": request["id"], "response": {"kind": "choice", "option_id": option}})
+        };
+        let answered = phone.ok("request.respond", respond("0")).await;
+        assert_eq!(answered["request"]["state"], "answered");
+        laptop
+            .err("request.respond", respond("1"), "already_resolved")
+            .await;
+        phone
+            .wait("the run finishes", |m| {
+                let s = m.session(&session);
+                s["state"] == "idle" && s["requests"] == json!([])
+            })
+            .await;
+    }
+    let sent = push.sent();
+    assert_eq!(sent.len(), 2, "one push per request: {sent:#?}");
+    assert!(
+        sent.iter().all(|(device, _)| device == "phone"),
+        "the focused laptop is skipped"
+    );
+    let (_, payload) = &sent[0];
+    assert_eq!(payload["state"], "approval");
+    assert_eq!(payload["name"], "cleanup");
+    assert_eq!(payload["machine"], "devbox");
+    assert_eq!(payload["session_id"], json!(session));
+    assert_eq!(payload["url"], json!(format!("#/s/{machine}/{session}")));
+    assert!(!payload.to_string().contains("rm -rf"), "metadata only");
     setup.controller.shutdown().await;
 }

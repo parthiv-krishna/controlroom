@@ -265,13 +265,17 @@ async fn session(
             .machines
             .get(&id)
             .and_then(|e| e.record.version.clone());
+        let mut installed_older = bootstrap::installed_is_older(hub, &probe);
         let upgrade = *policy == InstallPolicy::IfOlder
-            && (bootstrap::installed_is_older(hub, &probe)
-                || bundled_is_newer(hub, running.as_deref()));
+            && (installed_older || bundled_is_newer(hub, running.as_deref()));
         *policy = InstallPolicy::IfMissing;
         let link = if upgrade {
             match bootstrap::upgrade(hub, id, conn, running.as_deref()).await {
-                Ok(link) => Ok(link),
+                Ok(link) => {
+                    // The new daemon reported the bundled version.
+                    installed_older = false;
+                    Ok(link)
+                }
                 Err(e) if auto.attempting => {
                     // Keep the machine usable on the old daemon.
                     auto.failed(hub, id, &e);
@@ -333,8 +337,8 @@ async fn session(
             }
         };
 
-        let update_available = bootstrap::installed_is_older(hub, &probe)
-            || bundled_is_newer(hub, Some(&hello.daemon_version));
+        let update_available =
+            installed_older || bundled_is_newer(hub, Some(&hello.daemon_version));
         hub.connected(
             id,
             Link {
