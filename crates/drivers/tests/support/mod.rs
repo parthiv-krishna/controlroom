@@ -55,6 +55,49 @@ pub fn fold_all(records: &[Record]) -> (PiDriver, Vec<FoldOut>) {
     (driver, outs)
 }
 
+/// Rewrites a fixture as if the runtime had written its lines: every `in` line gets a tag in
+/// its `id` (or `crTag` for dialog answers), and pi's responses echo it.
+pub fn tagged(records: &[Record]) -> Vec<Record> {
+    let tag_for = |id: &str| format!("cr:op:0:fixture-{id}");
+    records
+        .iter()
+        .map(|record| {
+            let body = match &record.body {
+                Body::In(line) | Body::Out(line) => {
+                    let Ok(Value::Object(mut map)) = serde_json::from_str::<Value>(&line.raw)
+                    else {
+                        return record.clone();
+                    };
+                    let is_in = matches!(record.body, Body::In(_));
+                    let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
+                    let id = map.get("id").and_then(Value::as_str).map(str::to_owned);
+                    match (is_in, kind, id) {
+                        (true, "extension_ui_response", Some(id)) => {
+                            map.insert("crTag".into(), tag_for(&id).into());
+                        }
+                        (true, _, Some(id)) | (false, "response", Some(id)) => {
+                            map.insert("id".into(), tag_for(&id).into());
+                        }
+                        _ => return record.clone(),
+                    }
+                    let line = Line::new(Value::Object(map).to_string());
+                    if is_in {
+                        Body::In(line)
+                    } else {
+                        Body::Out(line)
+                    }
+                }
+                other => other.clone(),
+            };
+            Record {
+                seq: record.seq,
+                ts: record.ts,
+                body,
+            }
+        })
+        .collect()
+}
+
 /// A line record.
 pub fn record(seq: u64, ts: u64, body: Body) -> Record {
     Record { seq, ts, body }

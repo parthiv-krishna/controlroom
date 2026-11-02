@@ -67,6 +67,8 @@ pub struct FakeScript {
     pub default_turn: Vec<FakeStep>,
     /// The agent's options.
     pub options: Vec<SessionOption>,
+    /// After a new session the agent reports nothing until asked (like pi).
+    pub quiet_switch: bool,
 }
 
 impl FakeScript {
@@ -88,6 +90,12 @@ impl FakeScript {
     /// Sets the agent's options.
     pub fn options(mut self, options: Vec<SessionOption>) -> Self {
         self.options = options;
+        self
+    }
+
+    /// Makes the agent report a new session only when asked (like pi).
+    pub fn quiet_switch(mut self) -> Self {
+        self.quiet_switch = true;
         self
     }
 
@@ -252,7 +260,9 @@ impl FakeAgent {
                     path: None,
                 };
                 respond(&mut out, tag);
-                self.state(&mut out);
+                if !self.script.quiet_switch {
+                    self.state(&mut out);
+                }
             }
             Command::State => {
                 respond(&mut out, tag);

@@ -4,7 +4,9 @@
 //! in this order:
 //!
 //! 1. nothing at all while the session is in doubt, loading, closed or has no live process;
-//! 2. a state query until the agent has answered once (per process);
+//! 2. a state query until the agent has answered once (per process), and again after an
+//!    in-process start fresh while the driver doesn't know the new native session (pi
+//!    names it only when asked);
 //! 3. answers for decided requests whose answer isn't in the transcript or on its way;
 //! 4. a requested cancel;
 //! 5. the queue: while the agent is busy, a send-now item is steered in (driver capability) or
@@ -17,7 +19,7 @@
 
 use controlroom_drivers::{Intent, LineTag};
 use controlroom_protocol::ids::SessionId;
-use controlroom_protocol::session::{ContentPart, RequestState};
+use controlroom_protocol::session::{ContentPart, RequestState, StartedBy};
 
 use crate::core::Core;
 use crate::model::{Decision, Delivery, Via};
@@ -25,7 +27,8 @@ use crate::session::Doubt;
 
 /// Key prefix of the cancel a send-now item causes: `cancel:<queue id>`.
 pub(crate) const SEND_NOW_CANCEL: &str = "cancel:";
-/// Key prefix of the state query after a start: `refresh:<meta seq>`.
+/// Key prefix of the state query after a start, `refresh:<meta seq>`, and after an in-process
+/// start fresh, `refresh:<meta seq>:<agent sessions so far>`.
 const REFRESH: &str = "refresh:";
 
 impl Core {
@@ -44,6 +47,14 @@ impl Core {
                 self.write(id, &Intent::Refresh, tag);
             }
             return;
+        }
+        if session.data.pending_start == Some(StartedBy::Fresh) && session.view().native.is_none() {
+            let meta = session.derived.process.meta_seq.map_or(0, |s| s.0);
+            let count = session.data.agent_sessions.len();
+            let tag = internal_tag(format!("{REFRESH}{meta}:{count}"));
+            if !session.live.sent(&tag) {
+                self.write(id, &Intent::Refresh, tag);
+            }
         }
         self.write_answers(id);
         self.write_cancel(id);

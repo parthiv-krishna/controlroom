@@ -1,10 +1,19 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 3,
    "ops": [
      {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000328},"op":"upsert"}
    ],
+   "events": []},
+  {"seq": 4,
+   "ops": [],
    "events": [
-     {"event":"ready"}
+     {"event":"ready"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 5,
    "ops": [],

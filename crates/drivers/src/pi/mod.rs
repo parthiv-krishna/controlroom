@@ -38,7 +38,7 @@ use controlroom_transcript::{Body, Line, Record};
 use self::items::{At, Items, Life, item_id};
 use self::options::Options;
 use self::state::Process;
-use self::wire::Out;
+use self::wire::{InLine, Out};
 use crate::{
     AgentView, Capabilities, Driver, DriverEvent, EncodeError, FoldOut, Intent, LineTag, StartMode,
 };
@@ -88,10 +88,6 @@ impl PiDriver {
         let Ok(event) = serde_json::from_str::<Out>(raw) else {
             return;
         };
-        if !self.view.ready {
-            self.view.ready = true;
-            out.events.push(DriverEvent::Ready);
-        }
         match event {
             Out::Response(response) => self.on_response(at, response, out),
             Out::AgentStart {} => self.on_agent_start(at, out),
@@ -187,19 +183,28 @@ impl Driver for PiDriver {
             ts: UnixMillis(i64::try_from(record.ts).unwrap_or(i64::MAX)),
         };
         let mut out = FoldOut::default();
+        let line = match &record.body {
+            Body::In(line) if complete(line) => serde_json::from_str::<InLine>(&line.raw).ok(),
+            _ => None,
+        };
+        if let Some(tag) = line.as_ref().and_then(input::line_tag) {
+            out.events.push(DriverEvent::Written { tag });
+        }
         self.expire_dialogs(at, &mut out);
         match &record.body {
             Body::Meta(_) => self.on_meta(at, &mut out),
-            Body::In(line) if complete(line) => {
-                self.process.alive = true;
-                self.on_in(at, &line.raw, &mut out);
+            Body::In(_) => {
+                if let Some(line) = line {
+                    self.process.alive = true;
+                    self.on_in(at, line, &mut out);
+                }
             }
             Body::Out(line) if complete(line) => {
                 self.process.alive = true;
                 self.on_out(at, &line.raw, &mut out);
             }
-            Body::Exit(exit) => self.on_exit(at, Some(exit), &mut out),
-            Body::In(_) | Body::Out(_) | Body::Stderr(_) | Body::Unknown(_) => {}
+            Body::Exit(exit) => self.on_exit(at, exit, &mut out),
+            Body::Out(_) | Body::Stderr(_) | Body::Unknown(_) => {}
         }
         self.view.last_seq = Some(at.seq);
         self.view.last_ts = Some(at.ts);

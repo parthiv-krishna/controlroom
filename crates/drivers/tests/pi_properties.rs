@@ -10,7 +10,7 @@ use controlroom_protocol::ids::{OpId, RequestId};
 use controlroom_protocol::session::{ContentPart, Response};
 use controlroom_transcript::{Body, Line, Record};
 use serde_json::Value;
-use support::{fixtures, fold_all};
+use support::{fixtures, fold_all, tagged};
 
 #[test]
 fn refolding_from_scratch_is_identical() {
@@ -151,68 +151,76 @@ fn cut_and_missing_records_never_panic() {
     }
 }
 
-/// Rewrites a fixture as if the runtime had written its lines: every `in` line gets a tag in
-/// its `id` (or `crTag` for dialog answers), and pi's responses echo it.
-fn tagged(records: &[Record]) -> Vec<Record> {
-    let tag_for = |id: &str| format!("cr:op:0:fixture-{id}");
+/// The `id` and `disposition` of every successful `prompt` response, by id.
+fn prompt_dispositions(records: &[Record]) -> Vec<(String, String)> {
     records
         .iter()
-        .map(|record| {
-            let body = match &record.body {
-                Body::In(line) | Body::Out(line) => {
-                    let Ok(Value::Object(mut map)) = serde_json::from_str::<Value>(&line.raw)
-                    else {
-                        return record.clone();
-                    };
-                    let is_in = matches!(record.body, Body::In(_));
-                    let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
-                    let id = map.get("id").and_then(Value::as_str).map(str::to_owned);
-                    match (is_in, kind, id) {
-                        (true, "extension_ui_response", Some(id)) => {
-                            map.insert("crTag".into(), tag_for(&id).into());
-                        }
-                        (true, _, Some(id)) | (false, "response", Some(id)) => {
-                            map.insert("id".into(), tag_for(&id).into());
-                        }
-                        _ => return record.clone(),
-                    }
-                    let line = Line::new(Value::Object(map).to_string());
-                    if is_in {
-                        Body::In(line)
-                    } else {
-                        Body::Out(line)
-                    }
-                }
-                other => other.clone(),
-            };
-            Record {
-                seq: record.seq,
-                ts: record.ts,
-                body,
-            }
+        .filter(|r| matches!(r.body, Body::Out(_)))
+        .filter_map(|r| serde_json::from_str::<Value>(r.raw()?).ok())
+        .filter(|v| v["type"] == "response" && v["command"] == "prompt" && v["success"] == true)
+        .filter_map(|v| {
+            let id = v["id"].as_str()?.to_owned();
+            Some((id, v["data"]["disposition"].as_str()?.to_owned()))
         })
         .collect()
 }
 
-/// Every tagged line is answered at most once; every response and every dialog answer that
-/// reached an open dialog is reported; nothing stays unanswered once pi exits.
+/// For the runtime written as if it had written every line (see `tagged`):
+/// - every tagged `in` line is reported `Written`, before the other events of its record;
+/// - a tag is `Accepted`/`Rejected` only after its `Written`, and at most once;
+/// - a prompt that starts a run is `Accepted` only once the run is active, after
+///   `RunStarted` (pi answers `started` before `agent_start`);
+/// - every response and every answer to an open dialog is reported; nothing stays
+///   unanswered once pi exits.
 #[test]
-fn tagged_lines_are_answered_exactly_once() {
+fn tagged_lines_are_written_then_answered_once() {
+    let mut run_starting_prompts = 0;
     for (name, records) in fixtures() {
         let records = tagged(&records);
+        let starting: Vec<LineTag> = prompt_dispositions(&records)
+            .into_iter()
+            .filter(|(_, disposition)| disposition == "started")
+            .map(|(id, _)| LineTag::Op {
+                op_id: OpId::new(id.trim_start_matches("cr:op:0:")),
+                part: 0,
+            })
+            .collect();
+        run_starting_prompts += starting.len();
         let mut driver = PiDriver::new();
+        let mut written: Vec<LineTag> = Vec::new();
         let mut answered: Vec<LineTag> = Vec::new();
-        let mut written = 0;
+        let mut tagged_lines = 0;
         for record in &records {
-            if matches!(record.body, Body::In(_))
-                && record.raw().is_some_and(|r| r.contains("cr:op"))
-            {
-                written += 1;
+            let is_tagged_in = matches!(record.body, Body::In(_))
+                && record.raw().is_some_and(|r| r.contains("cr:op"));
+            if is_tagged_in {
+                tagged_lines += 1;
             }
-            for event in driver.fold(record).events {
+            let events = driver.fold(record).events;
+            if is_tagged_in {
+                assert!(
+                    matches!(events.first(), Some(DriverEvent::Written { .. })),
+                    "{name}: seq {} does not start with Written: {events:?}",
+                    record.seq
+                );
+            }
+            let mut run_started = false;
+            for event in events {
                 match event {
+                    DriverEvent::Written { tag } => {
+                        assert!(!written.contains(&tag), "{name}: {tag:?} written twice");
+                        written.push(tag);
+                    }
+                    DriverEvent::RunStarted { .. } => run_started = true,
                     DriverEvent::Accepted { tag } | DriverEvent::Rejected { tag, .. } => {
+                        assert!(written.contains(&tag), "{name}: {tag:?} answered unwritten");
                         assert!(!answered.contains(&tag), "{name}: {tag:?} answered twice");
+                        if starting.contains(&tag) {
+                            assert!(
+                                run_started && driver.view().run_active,
+                                "{name}: run-starting {tag:?} accepted while idle"
+                            );
+                        }
                         answered.push(tag);
                     }
                     DriverEvent::RequestClosed { id } => {
@@ -223,13 +231,17 @@ fn tagged_lines_are_answered_exactly_once() {
                 }
             }
         }
-        let unanswered_at_exit = written - answered.len();
+        assert_eq!(written.len(), tagged_lines, "{name}");
         // Lines pi never answered: the ones in flight when it died, and a late dialog answer
-        // (rejected, so counted) — so only crash-like fixtures may leave some.
+        // (rejected, so counted), so only crash-like fixtures may leave some.
         let crashed = ["sighup", "sigterm", "crash", "stdin-close"];
         if !crashed.iter().any(|c| name.starts_with(c)) {
-            assert_eq!(unanswered_at_exit, 0, "{name}");
+            assert_eq!(answered.len(), tagged_lines, "{name}");
         }
         assert!(driver.view().unanswered.is_empty(), "{name}");
     }
+    assert!(
+        run_starting_prompts > 20,
+        "too few run-starting prompts checked"
+    );
 }

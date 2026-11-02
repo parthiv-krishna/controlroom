@@ -1,11 +1,14 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 3,
    "ops": [
      {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000322},"op":"upsert"}
    ],
-   "events": [
-     {"event":"ready"}
-   ]},
+   "events": []},
   {"seq": 4,
    "ops": [
      {"item":{"actor":"root","id":"dialog-4","kind":"request","request":{"answer":null,"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"state":"pending","title":"Pick a color"},"seq_from":4,"seq_to":4,"streaming":false,"ts":1700000000324},"op":"upsert"}
@@ -18,7 +21,8 @@
      {"item":{"actor":"root","id":"dialog-4","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"green","response":{"kind":"choice","option_id":"1"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":null,"id":"dialog-4","kind":"dialog","options":[{"id":"0","label":"red","style":"neutral"},{"id":"1","label":"green","style":"neutral"},{"id":"2","label":"blue","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Pick a color"},"seq_from":4,"seq_to":5,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
-     {"event":"request_closed","id":"dialog-4"}
+     {"event":"written","tag":{"op":"fixture-00000000-0000-4000-8000-000000000002","part":0}},
+     {"event":"accepted","tag":{"op":"fixture-00000000-0000-4000-8000-000000000002","part":0}}
    ]},
   {"seq": 6,
    "ops": [
@@ -32,7 +36,8 @@
      {"item":{"actor":"root","id":"dialog-6","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"Yes","response":{"kind":"choice","option_id":"yes"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"This is a fixture dialog.","id":"dialog-6","kind":"dialog","options":[{"id":"yes","label":"Yes","style":"neutral"},{"id":"no","label":"No","style":"neutral"}],"origin_child":null,"questions":[],"state":"answered","title":"Proceed?"},"seq_from":6,"seq_to":7,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
-     {"event":"request_closed","id":"dialog-6"}
+     {"event":"written","tag":{"op":"fixture-00000000-0000-4000-8000-000000000003","part":0}},
+     {"event":"accepted","tag":{"op":"fixture-00000000-0000-4000-8000-000000000003","part":0}}
    ]},
   {"seq": 8,
    "ops": [
@@ -46,7 +51,8 @@
      {"item":{"actor":"root","id":"dialog-8","kind":"request","request":{"answer":{"at":1700000000324,"by":null,"label":"alice","response":{"answers":[{"question_id":"input","selected":[],"text":"alice"}],"kind":"answers"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"type a name","id":"dialog-8","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"input","multi":false,"options":[],"text":"Your name"}],"state":"answered","title":"Your name"},"seq_from":8,"seq_to":9,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
-     {"event":"request_closed","id":"dialog-8"}
+     {"event":"written","tag":{"op":"fixture-00000000-0000-4000-8000-000000000004","part":0}},
+     {"event":"accepted","tag":{"op":"fixture-00000000-0000-4000-8000-000000000004","part":0}}
    ]},
   {"seq": 10,
    "ops": [
@@ -60,7 +66,8 @@
      {"item":{"actor":"root","id":"dialog-10","kind":"request","request":{"answer":{"at":1700000000325,"by":null,"label":"Cancelled","response":{"kind":"dismiss"}},"blocking":true,"body":null,"created_at":1700000000324,"detail":"line 1\nline 2","id":"dialog-10","kind":"dialog","options":[],"origin_child":null,"questions":[{"free_text":true,"id":"editor","multi":false,"options":[],"text":"Edit notes"}],"state":"answered","title":"Edit notes"},"seq_from":10,"seq_to":11,"streaming":false,"ts":1700000000324},"op":"upsert"}
    ],
    "events": [
-     {"event":"request_closed","id":"dialog-10"}
+     {"event":"written","tag":{"op":"fixture-00000000-0000-4000-8000-000000000005","part":0}},
+     {"event":"accepted","tag":{"op":"fixture-00000000-0000-4000-8000-000000000005","part":0}}
    ]},
   {"seq": 12,
    "ops": [
@@ -86,7 +93,20 @@
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"/fixture-dialogs"}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":17,"streaming":false,"ts":1700000000001},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"ready"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}}
+   ]},
+  {"seq": 18,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-2","part":0}}
+   ]},
+  {"seq": 19,
+   "ops": [],
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-2","part":0}}
+   ]},
   {"seq": 20,
    "ops": [],
    "events": [

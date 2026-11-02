@@ -1,21 +1,39 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 3,
    "ops": [
      {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000324},"op":"upsert"}
    ],
-   "events": [
-     {"event":"ready"}
-   ]},
+   "events": []},
   {"seq": 5,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Idle steer."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":5,"streaming":false,"ts":1700000000001},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"ready"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}}
+   ]},
+  {"seq": 6,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-2","part":0}}
+   ]},
   {"seq": 8,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Idle follow-up."}],"id":"user-6","kind":"message","role":"user","seq_from":6,"seq_to":8,"streaming":false,"ts":1700000000326},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-2","part":0}}
+   ]},
+  {"seq": 9,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-3","part":0}}
+   ]},
   {"seq": 10,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Idle prompt."}],"id":"user-9","kind":"message","role":"user","seq_from":9,"seq_to":10,"streaming":false,"ts":1700000000326},"op":"upsert"}
@@ -26,7 +44,8 @@
      {"item":{"actor":"root","error":null,"id":"run-11","kind":"run","outcome":null,"seq_from":11,"seq_to":11,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000328},"op":"upsert"}
    ],
    "events": [
-     {"cause":null,"event":"run_started"}
+     {"cause":{"op":"fixture-3","part":0},"event":"run_started"},
+     {"event":"accepted","tag":{"op":"fixture-3","part":0}}
    ]},
   {"seq": 18,
    "ops": [
@@ -119,9 +138,15 @@
    "events": [
      {"error":null,"event":"run_settled","outcome":"completed"}
    ]},
+  {"seq": 44,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-4","part":0}}
+   ]},
   {"seq": 45,
    "ops": [],
    "events": [
+     {"event":"accepted","tag":{"op":"fixture-4","part":0}},
      {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]},
      {"event":"native_session","id":"00000000-0000-4000-8000-000000000002","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-186Z_00000000-0000-4000-8000-000000000002.jsonl"}
    ]},

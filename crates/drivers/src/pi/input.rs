@@ -15,13 +15,10 @@ use super::{PiDriver, content, tag, tools};
 use crate::{DriverEvent, FoldOut, LineTag, NativeRef};
 
 impl PiDriver {
-    /// Folds one line written to pi.
-    pub(super) fn on_in(&mut self, at: At, raw: &str, out: &mut FoldOut) {
-        let Ok(line) = serde_json::from_str::<InLine>(raw) else {
-            return;
-        };
+    /// Folds one line written to pi (its `Written` event is already out).
+    pub(super) fn on_in(&mut self, at: At, line: InLine, out: &mut FoldOut) {
         if line.kind == "extension_ui_response" {
-            let tag = line.cr_tag.as_deref().and_then(tag::decode);
+            let tag = line_tag(&line);
             self.on_answer(at, &line, tag, out);
             return;
         }
@@ -69,14 +66,24 @@ impl PiDriver {
         self.process.sent.insert(id, Sent { at, command });
     }
 
-    /// Folds a `response`.
+    /// Folds a `response`. The first one shows pi is up and answering.
     pub(super) fn on_response(&mut self, at: At, response: Response, out: &mut FoldOut) {
+        if !self.view.ready {
+            self.view.ready = true;
+            out.events.push(DriverEvent::Ready);
+        }
         let tag = response.id.as_deref().and_then(tag::decode);
         let sent = response
             .id
             .as_deref()
             .and_then(|id| self.process.sent.remove(id));
-        if let Some(tag) = &tag {
+        // A line that starts a run counts as accepted once the run is active (see `Cause`).
+        let starts_run = response.success
+            && !self.view.run_active
+            && response.data.get("disposition").and_then(Value::as_str) == Some("started");
+        if let Some(tag) = &tag
+            && !starts_run
+        {
             self.view.unanswered.retain(|t| t != tag);
         }
         if matches!(
@@ -96,7 +103,9 @@ impl PiDriver {
             }
             return;
         }
-        if let Some(tag) = &tag {
+        if let Some(tag) = &tag
+            && !starts_run
+        {
             out.events.push(DriverEvent::Accepted { tag: tag.clone() });
         }
         let data = response.data;
@@ -348,6 +357,17 @@ impl PiDriver {
         }
         self.items.append(&mut out.ops, &item, at, delta);
     }
+}
+
+/// The tag of a line written to pi: in `crTag` for dialog answers (whose `id` is pi's),
+/// else in `id`.
+pub(super) fn line_tag(line: &InLine) -> Option<LineTag> {
+    let field = if line.kind == "extension_ui_response" {
+        &line.cr_tag
+    } else {
+        &line.id
+    };
+    field.as_deref().and_then(tag::decode)
 }
 
 /// Decodes response data leniently: malformed data reads as the default.

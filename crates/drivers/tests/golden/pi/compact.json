@@ -1,11 +1,14 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-0","part":0}}
+   ]},
   {"seq": 3,
    "ops": [
      {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000316},"op":"upsert"}
    ],
-   "events": [
-     {"event":"ready"}
-   ]},
+   "events": []},
   {"seq": 4,
    "ops": [
      {"item":{"actor":"root","error":null,"id":"compaction-4","kind":"compaction","phase":"running","reason":"manual","seq_from":4,"seq_to":4,"streaming":false,"tokens_after":null,"tokens_before":null,"ts":1700000000318},"op":"upsert"}
@@ -16,6 +19,17 @@
      {"item":{"actor":"root","error":"Compaction failed: Nothing to compact (session too small)","id":"compaction-4","kind":"compaction","phase":"failed","reason":"manual","seq_from":4,"seq_to":5,"streaming":false,"tokens_after":null,"tokens_before":null,"ts":1700000000318},"op":"upsert"}
    ],
    "events": []},
+  {"seq": 6,
+   "ops": [],
+   "events": [
+     {"event":"ready"},
+     {"error":"Nothing to compact (session too small)","event":"rejected","tag":{"op":"fixture-0","part":0}}
+   ]},
+  {"seq": 7,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 8,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Tell me something."}],"id":"user-7","kind":"message","role":"user","seq_from":7,"seq_to":8,"streaming":false,"ts":1700000000318},"op":"upsert"}
@@ -26,7 +40,8 @@
      {"item":{"actor":"root","error":null,"id":"run-9","kind":"run","outcome":null,"seq_from":9,"seq_to":9,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000321},"op":"upsert"}
    ],
    "events": [
-     {"cause":null,"event":"run_started"}
+     {"cause":{"op":"fixture-1","part":0},"event":"run_started"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 16,
    "ops": [
@@ -72,6 +87,11 @@
    "events": [
      {"error":null,"event":"run_settled","outcome":"completed"}
    ]},
+  {"seq": 26,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1b","part":0}}
+   ]},
   {"seq": 27,
    "ops": [
      {"item":{"actor":"root","content":[{"kind":"text","text":"Tell me more."}],"id":"user-26","kind":"message","role":"user","seq_from":26,"seq_to":27,"streaming":false,"ts":1700000000371},"op":"upsert"}
@@ -82,7 +102,8 @@
      {"item":{"actor":"root","error":null,"id":"run-28","kind":"run","outcome":null,"seq_from":28,"seq_to":28,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000372},"op":"upsert"}
    ],
    "events": [
-     {"cause":null,"event":"run_started"}
+     {"cause":{"op":"fixture-1b","part":0},"event":"run_started"},
+     {"event":"accepted","tag":{"op":"fixture-1b","part":0}}
    ]},
   {"seq": 33,
    "ops": [
@@ -118,6 +139,11 @@
    "events": [
      {"error":null,"event":"run_settled","outcome":"completed"}
    ]},
+  {"seq": 41,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-2","part":0}}
+   ]},
   {"seq": 42,
    "ops": [
      {"item":{"actor":"root","error":null,"id":"compaction-42","kind":"compaction","phase":"running","reason":"manual","seq_from":42,"seq_to":42,"streaming":false,"tokens_after":null,"tokens_before":null,"ts":1700000000420},"op":"upsert"}
@@ -130,11 +156,23 @@
    "events": [
      {"context":{"cost":0.00024799999999999996,"size":null,"used":1539},"event":"context"}
    ]},
+  {"seq": 44,
+   "ops": [],
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-2","part":0}}
+   ]},
+  {"seq": 45,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-3","part":0}}
+   ]},
   {"seq": 46,
    "ops": [
      {"item":{"actor":"root","context":null,"cost":0.00037199999999999993,"id":"usage-46","kind":"usage","scope":"session","seq_from":46,"seq_to":46,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":300,"output":36},"ts":1700000000466},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-3","part":0}}
+   ]},
   {"seq": 47,
    "ops": [],
    "events": [

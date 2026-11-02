@@ -1,16 +1,36 @@
 {"folded": [
+  {"seq": 2,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-1","part":0}}
+   ]},
   {"seq": 3,
    "ops": [
      {"item":{"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000595},"op":"upsert"}
    ],
-   "events": [
-     {"event":"ready"}
-   ]},
+   "events": []},
   {"seq": 4,
    "ops": [],
    "events": [
+     {"event":"ready"},
+     {"event":"accepted","tag":{"op":"fixture-1","part":0}},
      {"event":"options","options":[{"choices":[{"label":"Mock Model","value":"mock/mock-model"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model"},{"choices":[{"label":"medium","value":"medium"}],"id":"thinking","kind":"select","label":"Thinking","value":"medium"}]},
      {"event":"native_session","id":"00000000-0000-4000-8000-000000000001","path":"/home/alice/.pi/agent/sessions/--home-alice-project--/2023-11-14T22-13-20-181Z_00000000-0000-4000-8000-000000000001.jsonl"}
+   ]},
+  {"seq": 5,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-2","part":0}}
+   ]},
+  {"seq": 6,
+   "ops": [],
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-2","part":0}}
+   ]},
+  {"seq": 7,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-3","part":0}}
    ]},
   {"seq": 8,
    "ops": [
@@ -22,7 +42,8 @@
      {"item":{"actor":"root","error":null,"id":"run-9","kind":"run","outcome":null,"seq_from":9,"seq_to":9,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000600},"op":"upsert"}
    ],
    "events": [
-     {"cause":null,"event":"run_started"}
+     {"cause":{"op":"fixture-3","part":0},"event":"run_started"},
+     {"event":"accepted","tag":{"op":"fixture-3","part":0}}
    ]},
   {"seq": 14,
    "ops": [
@@ -57,6 +78,16 @@
    ],
    "events": [
      {"error":null,"event":"run_settled","outcome":"completed"}
+   ]},
+  {"seq": 22,
+   "ops": [],
+   "events": [
+     {"event":"written","tag":{"op":"fixture-4","part":0}}
+   ]},
+  {"seq": 23,
+   "ops": [],
+   "events": [
+     {"event":"accepted","tag":{"op":"fixture-4","part":0}}
    ]},
   {"seq": 24,
    "ops": [],
