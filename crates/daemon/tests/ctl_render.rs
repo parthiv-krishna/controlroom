@@ -101,39 +101,41 @@ fn tool(status: ToolStatus, output: Option<ToolOutput>, exit: Option<i32>) -> It
 }
 
 fn request(state: RequestState, answer: Option<&str>) -> ItemBody {
-    ItemBody::Request(Request {
-        id: RequestId::new("req-1"),
-        kind: RequestKind::Sandbox,
-        blocking: true,
-        state,
-        title: "Run git push origin main?".into(),
-        detail: None,
-        body: None,
-        options: vec![
-            RequestOption {
-                id: "allow".into(),
-                label: "Allow once".into(),
-                style: OptionStyle::Allow,
-            },
-            RequestOption {
-                id: "deny".into(),
-                label: "Deny".into(),
-                style: OptionStyle::Deny,
-            },
-        ],
-        questions: Vec::new(),
-        answer: answer.map(|label| RequestAnswer {
-            response: Response::Choice {
-                option_id: "allow".into(),
-                reason: None,
-            },
-            label: label.into(),
-            by: None,
-            at: UnixMillis(1),
-        }),
-        origin_child: None,
-        created_at: UnixMillis(1),
-    })
+    ItemBody::Request {
+        request: Request {
+            id: RequestId::new("req-1"),
+            kind: RequestKind::Sandbox,
+            blocking: true,
+            state,
+            title: "Run git push origin main?".into(),
+            detail: None,
+            body: None,
+            options: vec![
+                RequestOption {
+                    id: "allow".into(),
+                    label: "Allow once".into(),
+                    style: OptionStyle::Allow,
+                },
+                RequestOption {
+                    id: "deny".into(),
+                    label: "Deny".into(),
+                    style: OptionStyle::Deny,
+                },
+            ],
+            questions: Vec::new(),
+            answer: answer.map(|label| RequestAnswer {
+                response: Response::Choice {
+                    option_id: "allow".into(),
+                    reason: None,
+                },
+                label: label.into(),
+                by: None,
+                at: UnixMillis(1),
+            }),
+            origin_child: None,
+            created_at: UnixMillis(1),
+        },
+    }
 }
 
 fn todo(text: &str, status: TodoStatus) -> Todo {
@@ -226,21 +228,23 @@ fn session_ops() -> Vec<TimelineOp> {
             "j1",
             16,
             false,
-            ItemBody::Job(Job {
-                id: ULID.parse::<JobId>().unwrap(),
-                name: "build".into(),
-                command: "make".into(),
-                cwd: "/home/alice/project".into(),
-                status: JobStatus::Failed,
-                exit: Some(2),
-                signal: None,
-                started_at: UnixMillis(1),
-                ended_at: Some(UnixMillis(2)),
-                timeout_s: None,
-                log_path: "/home/alice/project/.controlroom/jobs/j1.log".into(),
-                lines: 10,
-                follow: None,
-            }),
+            ItemBody::Job {
+                job: Job {
+                    id: ULID.parse::<JobId>().unwrap(),
+                    name: "build".into(),
+                    command: "make".into(),
+                    cwd: "/home/alice/project".into(),
+                    status: JobStatus::Failed,
+                    exit: Some(2),
+                    signal: None,
+                    started_at: UnixMillis(1),
+                    ended_at: Some(UnixMillis(2)),
+                    timeout_s: None,
+                    log_path: "/home/alice/project/.controlroom/jobs/j1.log".into(),
+                    lines: 10,
+                    follow: None,
+                },
+            },
         ),
         item(
             "sub",

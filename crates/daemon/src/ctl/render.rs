@@ -328,7 +328,7 @@ fn summary(body: &ItemBody) -> Option<String> {
             }
             s
         }
-        ItemBody::Request(r) => request(r),
+        ItemBody::Request { request: r } => request(r),
         ItemBody::Subagent {
             child,
             title,
@@ -348,7 +348,7 @@ fn summary(body: &ItemBody) -> Option<String> {
             }
             line
         }
-        ItemBody::Job(job) => {
+        ItemBody::Job { job } => {
             let mut line = format!("job {}: {} ({})", job.name, job.command, name(&job.status));
             if let Some(exit) = job.exit {
                 line.push_str(&format!(", exit {exit}"));

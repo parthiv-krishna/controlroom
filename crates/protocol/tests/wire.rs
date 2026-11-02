@@ -725,3 +725,42 @@ fn ui_passes_through_every_session_scoped_daemon_method() {
         }
     }
 }
+
+/// Request and job items nest their payload: flattened, their own `id`/`kind` would collide
+/// with the item's and the item could not cross the wire.
+#[test]
+fn request_and_job_items_round_trip() {
+    let item = |id: &str, body: ItemBody| TimelineItem {
+        id: ItemId::new(id),
+        seq_from: Seq(7),
+        seq_to: Seq(9),
+        actor: Actor::Root,
+        ts: UnixMillis(1_000),
+        streaming: false,
+        body,
+    };
+    let job = Job {
+        id: "01HZY3K6W8Q9X2V4N7B5C1D3EC".parse().unwrap(),
+        name: "build".into(),
+        command: "make".into(),
+        cwd: RemotePath::new("~/src/app"),
+        status: JobStatus::Running,
+        exit: None,
+        signal: None,
+        started_at: UnixMillis(1_000),
+        ended_at: None,
+        timeout_s: None,
+        log_path: RemotePath::new("~/src/app/.controlroom/jobs/build.log"),
+        lines: 0,
+        follow: None,
+    };
+    for original in [
+        item("req-item", ItemBody::Request { request: request() }),
+        item("job-item", ItemBody::Job { job }),
+    ] {
+        let value = serde_json::to_value(&original).unwrap();
+        assert_eq!(value["id"], json!(original.id.as_str()));
+        let back: TimelineItem = serde_json::from_value(value).unwrap();
+        assert_eq!(back, original);
+    }
+}

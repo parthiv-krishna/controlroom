@@ -392,8 +392,12 @@ pub enum ItemBody {
         /// The entries.
         items: Vec<Todo>,
     },
-    /// A request and, once resolved, its answer.
-    Request(Request),
+    /// A request and, once resolved, its answer. Nested (not flattened) because the request's
+    /// own `id` and `kind` would collide with the item's.
+    Request {
+        /// The request.
+        request: Request,
+    },
     /// A child session spawned by this one.
     Subagent {
         /// The child.
@@ -411,8 +415,12 @@ pub enum ItemBody {
         /// Its reported result, once done.
         result: Option<String>,
     },
-    /// A background job.
-    Job(Job),
+    /// A background job. Nested (not flattened) because the job's own `id` would collide with
+    /// the item's.
+    Job {
+        /// The job.
+        job: Job,
+    },
     /// A mailbox message.
     SessionMessage {
         /// The message.

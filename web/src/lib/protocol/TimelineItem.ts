@@ -125,7 +125,11 @@ duration_ms: number | null, } | { "kind": "todo",
 /**
  * The entries.
  */
-items: Array<Todo>, } | { "kind": "request" } & Request | { "kind": "subagent", 
+items: Array<Todo>, } | { "kind": "request", 
+/**
+ * The request.
+ */
+request: Request, } | { "kind": "subagent", 
 /**
  * The child.
  */
@@ -153,7 +157,11 @@ usage: TokenUsage | null,
 /**
  * Its reported result, once done.
  */
-result: string | null, } | { "kind": "job" } & Job | { "kind": "session_message", 
+result: string | null, } | { "kind": "job", 
+/**
+ * The job.
+ */
+job: Job, } | { "kind": "session_message", 
 /**
  * The message.
  */
