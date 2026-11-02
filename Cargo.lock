@@ -498,6 +498,13 @@ version = "0.0.1"
 [[package]]
 name = "controlroom-drivers"
 version = "0.0.1"
+dependencies = [
+ "controlroom-protocol",
+ "controlroom-transcript",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "controlroom-fake-agent"
