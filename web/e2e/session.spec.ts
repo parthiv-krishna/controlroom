@@ -99,3 +99,14 @@ test('schedules panel: add a schedule', async ({ page }) => {
   const [call] = await calls(page, 'schedules.create');
   expect(call.params).toMatchObject({ name: 'Evening sweep', spec: { kind: 'cron', expr: '0 18 * * *' }, message: 'Summarize the day' });
 });
+
+test('schedules panel: recent runs and run now', async ({ page }) => {
+  await start(page, { machine: M.devbox, id: '01JAS000000000000000000018' });
+  const row = page.getByLabel('Schedules').locator('[data-schedule="01JAC000000000000000000001"]');
+  await row.getByRole('button', { name: 'fired' }).click();
+  await expect(row.locator('.hist')).toContainText('missed \u00d73');
+  await expect(row.locator('.hist')).toContainText('devbox unreachable');
+  await row.getByRole('button', { name: 'Run now' }).click();
+  const [call] = await calls(page, 'schedules.run_now');
+  expect(call.params).toEqual({ schedule_id: '01JAC000000000000000000001' });
+});

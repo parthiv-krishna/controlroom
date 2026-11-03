@@ -2639,15 +2639,18 @@
     "if_busy": "queue",
     "missed": "skip",
     "next_run": 1767650400000,
+    "pending_run": null,
     "recent_runs": [
      {
       "at": 1767564000000,
+      "until": null,
       "outcome": "fired",
       "detail": null,
       "count": 1
      },
      {
       "at": 1767340800000,
+      "until": 1767513600000,
       "outcome": "missed",
       "detail": "devbox unreachable",
       "count": 3
@@ -2670,6 +2673,7 @@
     "if_busy": "skip",
     "missed": "run_once",
     "next_run": null,
+    "pending_run": null,
     "recent_runs": [],
     "created_at": 1766822400000
    }
@@ -4212,15 +4216,18 @@
    "if_busy": "queue",
    "missed": "skip",
    "next_run": 1767650400000,
+   "pending_run": null,
    "recent_runs": [
     {
      "at": 1767564000000,
+     "until": null,
      "outcome": "fired",
      "detail": null,
      "count": 1
     },
     {
      "at": 1767340800000,
+     "until": 1767513600000,
      "outcome": "missed",
      "detail": "devbox unreachable",
      "count": 3
@@ -4243,15 +4250,18 @@
    "if_busy": "queue",
    "missed": "skip",
    "next_run": 1767650400000,
+   "pending_run": null,
    "recent_runs": [
     {
      "at": 1767564000000,
+     "until": null,
      "outcome": "fired",
      "detail": null,
      "count": 1
     },
     {
      "at": 1767340800000,
+     "until": 1767513600000,
      "outcome": "missed",
      "detail": "devbox unreachable",
      "count": 3
@@ -4274,15 +4284,18 @@
    "if_busy": "queue",
    "missed": "skip",
    "next_run": 1767650400000,
+   "pending_run": null,
    "recent_runs": [
     {
      "at": 1767564000000,
+     "until": null,
      "outcome": "fired",
      "detail": null,
      "count": 1
     },
     {
      "at": 1767340800000,
+     "until": 1767513600000,
      "outcome": "missed",
      "detail": "devbox unreachable",
      "count": 3

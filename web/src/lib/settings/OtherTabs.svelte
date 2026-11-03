@@ -6,7 +6,7 @@
   import { SHORTCUTS } from '../keys/shortcuts';
   import { displayName } from '../model/filters';
   import { sessionKey } from '../model/projects';
-  import { formatIn, humanSchedule } from '../model/schedule';
+  import { formatIn, humanSchedule, runText } from '../model/schedule';
   import { ago } from '../model/status';
   import type { SessionLink } from '../protocol';
 
@@ -48,8 +48,9 @@
         <div><b>{x.name}</b> <span class="small muted">{humanSchedule(x.spec)} · {x.timezone}</span></div>
         <div class="small muted">
           <button class="linkish" onclick={() => open({ machine_id: x.machine_id, session_id: x.session_id })}>{nameOf({ machine_id: x.machine_id, session_id: x.session_id })}</button>
-          · {feed.machines.get(x.machine_id)?.name ?? '?'}{#if x.enabled && x.next_run} · next {formatIn(x.next_run, x.timezone)}{/if}{#if last} · last {last.outcome} {ago(last.at)}{/if}
+          · {feed.machines.get(x.machine_id)?.name ?? 'removed machine'}{#if x.enabled && x.next_run} · next {formatIn(x.next_run, x.timezone)}{/if}{#if last} · last <span class="o-{last.outcome}">{runText(last)}</span> {ago(last.until ?? last.at)}{/if}
         </div>
+        {#if x.pending_run}<div class="small o-missed" data-pending>The {formatIn(x.pending_run, x.timezone)} run is waiting for the machine</div>{/if}
       </div>
       <label class="check small"><input type="checkbox" checked={x.enabled} aria-label="Enable {x.name}" disabled={!online} onchange={(e) => app.client.call('schedules.update', { schedule_id: x.id, enabled: e.currentTarget.checked })} /> enabled</label>
     </div>
@@ -80,6 +81,7 @@
 <style>
   .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--line); }
   .row.off { opacity: 0.6; }
+  .o-missed, .o-failed { color: var(--bad); }
   .pair { flex: 1; min-width: 220px; }
   .none { color: var(--muted); text-align: center; padding: 40px 10px; }
   .check { display: flex; align-items: center; gap: 8px; }

@@ -1,6 +1,7 @@
-// Schedules (spec §8.1) as text: the human form of a cron or interval spec, and cron validation for
-// the editor. Next and past run times come from the server.
-import type { ScheduleSpec } from '../protocol';
+// Schedules (spec §8.1) as text: the human form of a cron or interval spec, cron validation for the
+// editor (the server has the final word), and run outcomes. Next and past run times come from the
+// server.
+import type { ScheduleOutcome, ScheduleRun, ScheduleSpec } from '../protocol';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DOW_LONG = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
@@ -25,10 +26,23 @@ interface Cron {
   raw: string[];
 }
 
-/** Parses a five-field cron expression (minute hour day-of-month month day-of-week). */
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+/** Replaces month or weekday names (any case) with their numbers. */
+function numbered(src: string, names: string[], first: number): string {
+  return src.toUpperCase().replace(/[A-Z]{3}/g, (n) => (names.includes(n) ? String(names.indexOf(n) + first) : n));
+}
+
+/**
+ * Parses a five-field cron expression (minute hour day-of-month month day-of-week; month and
+ * weekday names allowed). The server also accepts croner's extensions (`L`, `W`, `#`).
+ */
 export function parseCron(expr: string): Cron | null {
   const f = expr.trim().split(/\s+/);
   if (f.length !== 5) return null;
+  f[3] = numbered(f[3], MONTHS, 1);
+  f[4] = numbered(f[4], DAYS, 0);
   const ok = [field(f[0], 0, 59), field(f[1], 0, 23), field(f[2], 1, 31), field(f[3], 1, 12)].every(Boolean);
   const dow = field(f[4], 0, 7);
   return ok && dow ? { dow, raw: f } : null;
@@ -80,4 +94,25 @@ export function localZone(): string {
   } catch {
     return 'UTC';
   }
+}
+
+/** "in 5m", "in 3h", "in 2d" (or "now") until `t`. */
+export function inTime(t: number, now = Date.now()): string {
+  const m = Math.round((t - now) / 60e3);
+  if (m < 1) return 'now';
+  if (m < 60) return `in ${m}m`;
+  if (m < 48 * 60) return `in ${Math.round(m / 60)}h`;
+  return `in ${Math.round(m / 1440)}d`;
+}
+
+const OUTCOME: Record<ScheduleOutcome, string> = { fired: 'fired', queued: 'queued (busy)', skipped: 'skipped', missed: 'missed', failed: 'failed', unknown: '?' };
+
+/** A run's outcome, e.g. "missed ×3". */
+export function runText(r: ScheduleRun): string {
+  return `${OUTCOME[r.outcome]}${r.count > 1 ? ` ×${r.count}` : ''}`;
+}
+
+/** A run's scheduled time in the schedule's zone; a range for collapsed misses. */
+export function runWhen(r: ScheduleRun, timeZone: string): string {
+  return r.until == null ? formatIn(r.at, timeZone) : `${formatIn(r.at, timeZone)} – ${formatIn(r.until, timeZone)}`;
 }

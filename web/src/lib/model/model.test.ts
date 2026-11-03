@@ -8,7 +8,7 @@ import { contentText, deepLinkHash, guessDeviceName, lineDiff, parseDeepLink } f
 import { notes } from './notifications';
 import { health, inProject, keyOf, needsYouElsewhere, type Ctx } from './projects';
 import { defaultLevel, looser } from './sandbox';
-import { humanSchedule, parseCron } from './schedule';
+import { humanSchedule, inTime, parseCron, runText, runWhen } from './schedule';
 import { connKind, connLabel, statusKind, statusLabel } from './status';
 import { columnTasks, orderFor, rollup, suggestMove, taskPrompt } from './tasks';
 import { leadsToMatch, treeIndex, treeRoots } from './tree';
@@ -218,6 +218,25 @@ describe('schedules', () => {
     expect(humanSchedule({ kind: 'interval', every_s: 1800 })).toBe('Every 30 min');
     expect(humanSchedule({ kind: 'cron', expr: 'nope' })).toContain('invalid');
     expect(parseCron('61 * * * *')).toBeNull();
+  });
+
+  it('accepts month and weekday names', () => {
+    expect(humanSchedule({ kind: 'cron', expr: '0 9 * * mon-fri' })).toBe('Weekdays 09:00');
+    expect(humanSchedule({ kind: 'cron', expr: '0 16 * * FRI' })).toBe('Fridays 16:00');
+    expect(parseCron('0 9 1 JAN *')).not.toBeNull();
+    expect(parseCron('0 9 * * FUNDAY')).toBeNull();
+  });
+
+  it('shows runs, collapsed misses and the time until the next run', () => {
+    const [fired, missed] = f.snapshot.schedules[0].recent_runs;
+    expect(runText(fired)).toBe('fired');
+    expect(runText(missed)).toBe('missed ×3');
+    expect(runWhen(missed, 'UTC')).toBe('Fri 08:00 – Sun 08:00');
+    const now = 1_767_600_000_000;
+    expect(inTime(now + 20e3, now)).toBe('now');
+    expect(inTime(now + 5 * 60e3, now)).toBe('in 5m');
+    expect(inTime(now + 3 * 3600e3, now)).toBe('in 3h');
+    expect(inTime(now + 3 * 86400e3, now)).toBe('in 3d');
   });
 });
 

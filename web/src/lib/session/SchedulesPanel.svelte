@@ -1,9 +1,9 @@
 <script lang="ts">
   // The session's schedules (spec §8.1): the server wakes the agent with a canned message on a cron
-  // or interval spec. Add, edit, enable, run now, delete; next run and recent runs come from the
-  // server.
+  // or interval spec. Add, edit, enable, run now, delete; next run, a run waiting for an unreachable
+  // machine, and recent runs come from the server. Closed sessions can't have enabled schedules.
   import { useApp } from '../app/app.svelte';
-  import { formatIn, humanSchedule, localZone, parseCron } from '../model/schedule';
+  import { formatIn, humanSchedule, inTime, localZone, parseCron, runText, runWhen } from '../model/schedule';
   import { ago } from '../model/status';
   import type { IfBusy, MachineSession, MissedPolicy, Schedule, ScheduleSpec } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
@@ -12,7 +12,14 @@
   const app = useApp();
   const list = $derived(app.client.feed.scheduleList.filter((x) => x.machine_id === s.machine_id && x.session_id === s.id));
   const online = $derived(app.client.online);
+  const supported = $derived(app.client.hello?.capabilities.includes('schedules') ?? false);
+  const closed = $derived(s.state === 'closed');
   let history = $state<string | null>(null);
+  let now = $state(Date.now());
+  $effect(() => {
+    const t = setInterval(() => (now = Date.now()), 30_000);
+    return () => clearInterval(t);
+  });
 
   interface Draft {
     id: string | null;
@@ -55,7 +62,7 @@
     const fields = { name: draft.name.trim(), spec, timezone: draft.timezone.trim() || 'UTC', message: draft.message.trim(), if_busy: draft.if_busy, missed: draft.missed };
     const r = draft.id
       ? await app.client.call('schedules.update', { schedule_id: draft.id, ...fields })
-      : await app.client.call('schedules.create', { machine_id: s.machine_id, session_id: s.id, ...fields });
+      : await app.client.call('schedules.create', { machine_id: s.machine_id, session_id: s.id, enabled: !closed, ...fields });
     if (r) draft = null;
   }
   function editorKey(e: KeyboardEvent) {
@@ -68,43 +75,56 @@
       void save();
     }
   }
+  async function runNow(x: Schedule) {
+    const r = await app.client.call('schedules.run_now', { schedule_id: x.id });
+    const run = r?.recent_runs[0];
+    if (run?.outcome === 'failed') app.toasts.show(`“${x.name}” failed: ${run.detail ?? 'unknown error'}`, 'error');
+    else if (run?.outcome === 'skipped') app.toasts.show(`“${x.name}” skipped: the session is busy`);
+  }
   async function remove(x: Schedule) {
     if (await app.dialogs.confirm({ title: `Delete schedule “${x.name}”?`, body: 'Past runs stay in the timeline.', ok: 'Delete', danger: true })) await app.client.call('schedules.delete', { schedule_id: x.id });
   }
-  const OUTCOME: Record<string, string> = { fired: 'fired', queued: 'queued (busy)', skipped: 'skipped', missed: 'missed', failed: 'failed', unknown: '?' };
 </script>
 
 <div class="sched" aria-label="Schedules" data-pane="schedules">
   <div class="sh">
     <b>Schedules</b> <span class="muted">{list.length}</span><span class="sp"></span>
-    {#if !draft}<button class="btn xs" disabled={!online} onclick={() => edit(null)}>+ Add schedule</button>{/if}
+    {#if !draft && supported}<button class="btn xs" disabled={!online} onclick={() => edit(null)}>+ Add schedule</button>{/if}
   </div>
+  {#if !supported}
+    <div class="small muted">This server doesn't run schedules.</div>
+  {:else if closed && list.length}
+    <div class="small muted">The session is closed, so its schedules are off. Reopen it to enable them.</div>
+  {/if}
   {#each list as x (x.id)}
     {@const last = x.recent_runs[0]}
     <div class="row" class:off={!x.enabled} data-schedule={x.id}>
-      <input type="checkbox" checked={x.enabled} aria-label="Enable {x.name}" disabled={!online} onchange={(e) => app.client.call('schedules.update', { schedule_id: x.id, enabled: e.currentTarget.checked })} />
+      <input type="checkbox" checked={x.enabled} aria-label="Enable {x.name}" disabled={!online || !supported || (closed && !x.enabled)} onchange={(e) => app.client.call('schedules.update', { schedule_id: x.id, enabled: e.currentTarget.checked })} />
       <div class="main">
         <div><b>{x.name}</b> <span class="when">{humanSchedule(x.spec)} · {x.timezone}</span></div>
         <div class="small muted msg">“{x.message}”</div>
         <div class="small">
-          {#if x.enabled && x.next_run}next {formatIn(x.next_run, x.timezone)}{:else}<span class="muted">disabled</span>{/if}
-          {#if last}<span class="muted"> · last</span> <button class="out o-{last.outcome}" onclick={() => (history = history === x.id ? null : x.id)}>{OUTCOME[last.outcome]}{last.count > 1 ? ` ×${last.count}` : ''}</button> <span class="muted">{ago(last.at)}</span>{/if}
+          {#if x.enabled && x.next_run}next {formatIn(x.next_run, x.timezone)} <span class="muted">({inTime(x.next_run, now)})</span>{:else}<span class="muted">disabled</span>{/if}
+          {#if last}<span class="muted"> · last</span> <button class="out o-{last.outcome}" title="Show recent runs" onclick={() => (history = history === x.id ? null : x.id)}>{runText(last)}</button> <span class="muted">{ago(last.until ?? last.at, now)}</span>{/if}
           <span class="muted"> · if busy: {x.if_busy} · after downtime: {x.missed === 'run_once' ? 'run once' : 'skip'}</span>
         </div>
+        {#if x.pending_run}
+          <div class="small pending" data-pending>The {formatIn(x.pending_run, x.timezone)} run is waiting for the machine; it is retried until the next run, then missed.</div>
+        {/if}
         {#if history === x.id}
           <div class="hist small">
-            {#each x.recent_runs as r (r.at)}<div><span class="out o-{r.outcome}">{OUTCOME[r.outcome]}{r.count > 1 ? ` ×${r.count}` : ''}</span> <span class="muted">{formatIn(r.at, x.timezone)}{r.detail ? ` · ${r.detail}` : ''}</span></div>{/each}
+            {#each x.recent_runs as r (`${r.at}:${r.outcome}`)}<div><span class="out o-{r.outcome}">{runText(r)}</span> <span class="muted">{runWhen(r, x.timezone)}{r.detail ? ` · ${r.detail}` : ''}</span></div>{:else}<div class="muted">No runs yet</div>{/each}
           </div>
         {/if}
       </div>
       <div class="acts">
-        <button class="btn xs" disabled={!online} title="Send the message now (same busy rule)" onclick={() => app.client.call('schedules.run_now', { schedule_id: x.id })}>Run now</button>
-        <button class="btn xs ghost" disabled={!online} onclick={() => edit(x)}>Edit</button>
-        <button class="btn xs ghost bad-t" disabled={!online} onclick={() => remove(x)}>Delete</button>
+        <button class="btn xs" disabled={!online || !supported || s.stale || closed} title={s.stale ? 'The machine is unreachable' : 'Send the message now (same busy rule)'} onclick={() => runNow(x)}>Run now</button>
+        <button class="btn xs ghost" disabled={!online || !supported} onclick={() => edit(x)}>Edit</button>
+        <button class="btn xs ghost bad-t" disabled={!online || !supported} onclick={() => remove(x)}>Delete</button>
       </div>
     </div>
   {:else}
-    {#if !draft}<div class="small muted">No schedules.</div>{/if}
+    {#if !draft && supported}<div class="small muted">No schedules. Add one to wake this agent with a message on a schedule.</div>{/if}
   {/each}
   {#if draft}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc and Ctrl-Enter from its fields) -->
@@ -147,6 +167,7 @@
   .out { background: none; border: none; padding: 0; font: inherit; cursor: pointer; text-decoration: underline dotted; color: inherit; }
   .o-missed, .o-failed { color: var(--bad); }
   .o-fired { color: var(--ok); }
+  .pending { color: var(--warn, var(--bad)); }
   .hist { margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--line); }
   .acts { display: flex; gap: 4px; flex-wrap: wrap; }
   .editor { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; }
