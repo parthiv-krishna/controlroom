@@ -225,6 +225,20 @@ async fn two_tabs_run_a_session_end_to_end() {
         )
         .await;
     assert_eq!(unknown["data"]["resource"], "option");
+    // Job commands pass through too.
+    let jobs = a
+        .ok("job.list", json!({"machine_id": machine, "id": session}))
+        .await;
+    assert_eq!(jobs["jobs"], json!([]));
+    let missing = a
+        .err(
+            "job.kill",
+            json!({"machine_id": machine, "op_id": op(), "id": session,
+                   "job_id": "01HZY3K6W8Q9X2V4N7B5C1D3E6"}),
+            "not_found",
+        )
+        .await;
+    assert_eq!(missing["data"]["resource"], "job");
 
     // A prompt from the phone streams to both tabs; the laptop queues another meanwhile.
     b.ok(
