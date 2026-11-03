@@ -53,6 +53,16 @@
         };
     in
     {
+      # services.controlroom, with the package defaulting to this flake's controlroom-web.
+      nixosModules.default =
+        { lib, pkgs, ... }:
+        {
+          imports = [ ./nix/module.nix ];
+          services.controlroom.package =
+            lib.mkDefault
+              self.packages.${pkgs.stdenv.hostPlatform.system}.controlroom-web;
+        };
+
       packages = forAllSystems (
         pkgs:
         let
@@ -102,11 +112,22 @@
           extension-pi = (extensionFor pkgs).check;
           # Builds the pinned nono; its install check asserts `nono --version`.
           nono = nonoFor pkgs;
+          # services.controlroom's assertions and generated settings.
+          module-eval = import ./nix/tests/module-eval.nix {
+            inherit pkgs;
+            module = ./nix/module.nix;
+          };
         }
         // (piFor pkgs).checks
         # The browser end-to-end test in NixOS VMs (needs KVM): x86_64 only.
         // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
           vm-e2e = (e2eFor pkgs).check;
+          # services.controlroom in a VM: secrets, OIDC rendering, sandbox, exposure.
+          vm-module = import ./nix/tests/module.nix {
+            inherit pkgs;
+            module = ./nix/module.nix;
+            package = rust.controlroomWeb;
+          };
         }
       );
 
