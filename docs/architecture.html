@@ -470,6 +470,7 @@ sessions/&lt;id&gt;/profile.json   generated nono profile (absolute path; never 
 <li>Without capability elevation, denials don't show up in diagnostics. Use the audit trail and <code>nono why</code>.</li>
 <li>Command mediation on NixOS is fragile: it needs exact store-path pins and only allows PATH binaries to run. Keep the mediated set small and test each command.</li>
 <li>Clean up leaked <code>/tmp/nono-*</code> directories.</li>
+<li><b>Known limitation (accepted): command mediation is a policy layer, not a security boundary.</b> nono 0.80 grants execute on every directory the session can write (including the working directory), and mediated commands are identified by file identity. An agent can therefore copy <code>git</code> and its helpers into its cwd and push without the approval card. What still bounds it: writes stay confined (Landlock), only allowlisted hosts are reachable, and only the credentials the session holds work. Treat the <code>git push</code> approval as a policy aid. <i>Possible fix (not scheduled):</i> give git-host domains and git credentials only to the mediated <code>git</code>/<code>gh</code> command sandboxes (command-scoped domains and credentials in sandbox profiles, a protocol change), deny proxy <code>CONNECT</code> to port 22 for the session, and keep SSH keys out of the session HOME (a nono agent-socket credential for git&rarr;ssh).</li>
 </ul></div>
 <p><b>Per-session sandbox levels:</b></p>
 <ul>
