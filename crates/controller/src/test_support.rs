@@ -7,7 +7,7 @@
 //!   its home (the daemon that `controlroomd connect` started, supervisors, agents), pass or
 //!   fail.
 //! - [`bundled_daemons`] makes a bundled-daemons directory from the freshly built
-//!   `controlroomd`.
+//!   `controlroomd` (without its debug info, see [`copy_daemon`]).
 //! - [`UiDriver`] speaks the UI API over a [`UiClient`] and mirrors the state feed.
 //!
 //! **Finding the binaries.** Integration tests run from `target/<profile>/deps/`, so
@@ -123,12 +123,30 @@ pub fn write_executable(path: &Path, content: &[u8]) {
 /// A bundled-daemons directory holding the built `controlroomd`.
 pub fn bundled_daemons() -> tempfile::TempDir {
     let dir = tempfile::Builder::new().prefix("crbin").tempdir().unwrap();
-    write_executable(
-        &dir.path().join(bundled_name()),
-        &std::fs::read(controlroomd()).unwrap(),
-    );
+    copy_daemon(&dir.path().join(bundled_name()));
     std::fs::write(dir.path().join("version"), format!("{DAEMON_VERSION}\n")).unwrap();
     dir
+}
+
+/// Copies the built `controlroomd` to `dest` without its debug info, from a child process (as
+/// in [`write_executable`]). Debug info is most of a debug build (about 180 of 230 MB), and
+/// tests upload the daemon over SSH, where a debug build's crypto makes the full binary take
+/// many seconds of CPU per install (minutes under load). Copies it whole where `strip` is
+/// missing.
+pub fn copy_daemon(dest: &Path) {
+    let status = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(r#"{ strip --strip-debug -o "$2" "$1" 2>/dev/null || cp "$1" "$2"; } && chmod 755 "$2""#)
+        .arg("sh")
+        .arg(controlroomd())
+        .arg(dest)
+        .status()
+        .unwrap();
+    assert!(
+        status.success(),
+        "copying controlroomd to {}",
+        dest.display()
+    );
 }
 
 /// A bundled-daemons directory whose "daemon" is `script`, claiming `version`.

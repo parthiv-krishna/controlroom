@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use controlroom_controller::Controller;
 use controlroom_controller::test_support::{
-    DAEMON_VERSION, RemoteHost, UiDriver, bundled_daemons, bundled_script, controlroomd, gated, op,
-    text, write_executable,
+    DAEMON_VERSION, RemoteHost, UiDriver, bundled_daemons, bundled_script, copy_daemon, gated, op,
+    text,
 };
 use serde_json::json;
 use support::{add_machine, config, create_session, ui};
@@ -27,10 +27,7 @@ fn old_daemon(host: &RemoteHost) -> tempfile::TempDir {
         .home()
         .join(".local/share/controlroom/versions/old-real");
     std::fs::create_dir_all(&real).unwrap();
-    write_executable(
-        &real.join("controlroomd"),
-        &std::fs::read(controlroomd()).unwrap(),
-    );
+    copy_daemon(&real.join("controlroomd"));
     bundled_script(
         &format!(
             "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'controlroomd {OLD}'; exit 0; fi\n\
