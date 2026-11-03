@@ -135,7 +135,7 @@ impl Core {
         let record = self.job_record_mut(job.session, &job.job)?;
         record.exit_woken = record.kill == Some(KilledBy::Agent);
         record.end = Some(end);
-        self.flush_job_wakes(job.session, true)?;
+        self.flush_job_wakes(job.session)?;
         let record = self.job_record_mut(job.session, &job.job)?;
         record.follow = None;
         self.jobs.remove(&job.job);
@@ -163,17 +163,13 @@ impl Core {
 
     /// Delivers the session's due wakes as one merged wake: every ended job not woken yet and
     /// every followed job with unreported lines, once any of them is due (an exit, or a follow
-    /// whose buffer elapsed). `exit_due` says an exit is waiting.
-    pub(crate) fn flush_job_wakes(
-        &mut self,
-        id: SessionId,
-        exit_due: bool,
-    ) -> Result<(), RpcError> {
+    /// whose buffer elapsed).
+    pub(crate) fn flush_job_wakes(&mut self, id: SessionId) -> Result<(), RpcError> {
         let now = self.clock.now();
         let Some(session) = self.sessions.get(&id) else {
             return Ok(());
         };
-        let mut due = exit_due;
+        let mut due = false;
         let mut entries = Vec::new();
         for record in session.data.jobs.values() {
             let live = self.jobs.get_mut(&record.id);
@@ -253,7 +249,7 @@ impl Core {
             .map(|l| l.session)
             .collect();
         for id in due {
-            self.flush_job_wakes(id, false)?;
+            self.flush_job_wakes(id)?;
         }
         Ok(())
     }
