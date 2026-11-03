@@ -95,9 +95,14 @@ impl Core {
                     self.stage_line(id, line);
                 }
             }
-            Err(e) => {
-                tracing::warn!("session {id}: can't deliver an injection: {e}");
+            // A steer the driver refuses goes as a prompt later; a prompt it refuses never can.
+            Err(e) if via == Via::Steer => {
+                tracing::debug!("session {id}: an injection can't be steered: {e}");
                 session.data.injections[index].no_steer = true;
+            }
+            Err(e) => {
+                tracing::warn!("session {id}: dropping an injection the driver can't send: {e}");
+                session.data.injections.remove(index);
             }
         }
     }

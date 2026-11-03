@@ -5,7 +5,7 @@
 import { AgentClient } from './client.ts';
 import type { ControlroomEnv } from './env.ts';
 import { readEnv } from './env.ts';
-import type { AgentState } from './protocol/AgentState';
+import type { AgentState } from './protocol/AgentState.ts';
 import { PROMPT, SECTION } from './prompt.ts';
 import { TOOLS, type Tool, type ToolResult } from './tools.ts';
 

@@ -10,9 +10,9 @@
 
 import { createConnection, type Socket } from 'node:net';
 
-import type { AgentMethod, AgentMethods } from './protocol/AgentMethods';
-import type { AgentState } from './protocol/AgentState';
-import type { RpcError } from './protocol/RpcError';
+import type { AgentMethod, AgentMethods } from './protocol/AgentMethods.ts';
+import type { AgentState } from './protocol/AgentState.ts';
+import type { RpcError } from './protocol/RpcError.ts';
 import { AGENT_PROTOCOL_VERSION } from './protocol/versions.ts';
 
 /** A failed call, with the daemon's error kind when it sent one. */

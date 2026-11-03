@@ -4,10 +4,10 @@
 // for rendering.
 
 import type { AgentClient } from './client.ts';
-import type { AgentQuestion } from './protocol/AgentQuestion';
-import type { NoticeLevel } from './protocol/NoticeLevel';
-import type { Todo } from './protocol/Todo';
-import type { TodoStatus } from './protocol/TodoStatus';
+import type { AgentQuestion } from './protocol/AgentQuestion.ts';
+import type { NoticeLevel } from './protocol/NoticeLevel.ts';
+import type { Todo } from './protocol/Todo.ts';
+import type { TodoStatus } from './protocol/TodoStatus.ts';
 
 /** What a tool returns to pi. */
 export interface ToolResult<D> {

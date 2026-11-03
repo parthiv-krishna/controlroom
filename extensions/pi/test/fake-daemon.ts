@@ -6,9 +6,9 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { AgentState } from '../src/protocol/AgentState';
-import type { Todo } from '../src/protocol/Todo';
-import type { TodoStatus } from '../src/protocol/TodoStatus';
+import type { AgentState } from '../src/protocol/AgentState.ts';
+import type { Todo } from '../src/protocol/Todo.ts';
+import type { TodoStatus } from '../src/protocol/TodoStatus.ts';
 
 /** A method handler: a result, or an error object `{code, message, data}`. */
 export type Handler = (params: Record<string, unknown>) => { result?: unknown; error?: unknown };

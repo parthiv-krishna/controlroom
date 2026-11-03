@@ -4,7 +4,7 @@ import { after, before, test } from 'node:test';
 import { activate, type PiApi, type PiContext, type PiTool, widget } from '../src/extension.ts';
 import { SECTION } from '../src/prompt.ts';
 import { renderTodos } from '../src/tools.ts';
-import type { TodoStatus } from '../src/protocol/TodoStatus';
+import type { TodoStatus } from '../src/protocol/TodoStatus.ts';
 import { FakeDaemon, todo } from './fake-daemon.ts';
 
 /** A pi stand-in that records registrations and lets the test fire events. */
