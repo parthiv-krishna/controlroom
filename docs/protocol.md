@@ -1,17 +1,18 @@
 # controlroom protocol 1.0
 
-The contract between the browser, the controller (`controlroom-web`) and the daemon (`controlroomd`).
-Source of truth: `crates/protocol` (Rust). TypeScript is generated into `web/src/lib/protocol/` (read-only for the UI).
+The contract between the browser, the controller (`controlroom-web`), the daemon (`controlroomd`) and the agent's extension (`@controlroom/pi`).
+Source of truth: `crates/protocol` (Rust). TypeScript is generated into `web/src/lib/protocol/` (read-only for the UI) and `extensions/pi/src/protocol/` (agent API, read-only for the extension).
 Spec: `docs/architecture.html` §5, §7, §8, §8.1, §10, §11.4, §11.6, §12, §13.
 
-Two APIs, both JSON-RPC 2.0 with newline-delimited framing (one compact JSON object per line, no batches):
+Three APIs, all JSON-RPC 2.0 with newline-delimited framing (one compact JSON object per line, no batches):
 
 | API | Between | Transport | Version constant |
 | --- | --- | --- | --- |
 | Daemon API | controller ↔ `controlroomd` | SSH exec channel `controlroomd connect` | `DAEMON_PROTOCOL_VERSION` = 1.0 |
 | UI API | browser ↔ controller | one WebSocket per tab | `UI_PROTOCOL_VERSION` = 1.0 |
+| Agent API | `@controlroom/pi` ↔ `controlroomd` | the session's unix socket `run/<id>.agent.sock` | `AGENT_PROTOCOL_VERSION` = 1.0 |
 
-Rust areas (crate root modules): `ids`, `jsonrpc`, `error`, `version`, `session` (model), `timeline`, `daemon`, `ui`, `typescript`.
+Rust areas (crate root modules): `ids`, `jsonrpc`, `error`, `version`, `session` (model), `timeline`, `daemon`, `ui`, `agent`, `typescript`.
 
 ## 1. Conventions
 
@@ -31,7 +32,7 @@ Everything else is a major change.
 
 **Capabilities.** `hello.capabilities` lists optional features as free strings; unknown ones are kept.
 Daemon: `jobs` (`job.*`), `todos` (`todo.*`), `subagents`, `mailbox` (`outbox.*`, `inbox.deliver`), `sandbox_approvals` (the approval webhook runs: sandbox approvals reach the user as `sandbox` requests; without it, commands that need an approval are denied). Controller: `schedules`.
-Today's daemon advertises `sandbox_approvals` (when its webhook listener is up) and nothing else.
+Today's daemon advertises `todos` and `sandbox_approvals` (when its webhook listener is up).
 A client calls a feature's methods only when the peer advertised it.
 **Terminals (§22) and files (§23) are deliberately not designed yet.** They will arrive as later minor versions behind `terminals` / `files` capabilities, new methods, and new enum variants (e.g. a `privileged` request kind, a `terminal` request body), which 1.0 peers already decode as `unknown`.
 
@@ -126,7 +127,7 @@ Lifecycle: `hello` first (else `hello_required`), then subscriptions. Disconnect
 | `session.set_option {option_id, value}` | model, thinking level, … (`not_found {resource: option}` for an unknown option) |
 | `queue.send_now {queue_id, interrupt?}` (→ `sent · steered · interrupting · queued`) · `queue.edit` · `queue.remove` · `queue.reorder` · `queue.resume` | queue. Send-now steers, or cancels at a safe point (no tool running); `interrupt: true` cancels at once and sends the item as the next prompt; `queued` while the agent isn't ready |
 | `request.respond {request_id, response, then?, by?}` | answer any request kind; first answer wins (`already_resolved` carries the winner). `by` is the deciding device, filled in by the controller (it overwrites a client's value) |
-| `todo.add {texts[], index?}` · `todo.update` · `todo.remove` · `todo.reorder` | shared todo list (`todos`) |
+| `todo.add {texts[], index?, by?}` · `todo.update {todo_id, text?, status?, reason?, by?}` · `todo.remove` · `todo.reorder` | shared todo list (`todos`); `by` is the editing device, filled in by the controller like `request.respond.by`. Every user edit reaches the agent as a short notice in its next turn |
 | `job.list` · `job.logs {from_line?, max_lines?}` · `job.kill` · `job.follow {buffer_seconds?, pattern?, from?}` · `job.unfollow` | jobs (`jobs`) |
 | `sandbox.revoke {grant_id}` | remove a session grant ("Remove · restarts agent") |
 | `agents.list` · `fs.list {path, include_files?}` · `doctor.report` · `settings.get` · `settings.set` | machine queries and settings |
@@ -169,10 +170,33 @@ Notifications: `state.events {changes[{rev, kind}]}` (machine/session/project/ta
 **Connectivity** (`Machine.connectivity`, by `state`): `connected · connecting · unreachable · incompatible · action_required {reason: host_key_changed|auth_failed|host_key_unconfirmed|controller_conflict, presented_host_key?}`, plus `Machine.update_available`.
 UI-only errors: `unauthenticated · machine_unavailable{machine_id, connectivity} · host_key_mismatch · unsupported_platform · key_in_use · invalid_key`.
 
+## 6a. Agent API (`agent`)
+
+The extension inside a session's agent talks to its daemon over that session's own unix socket, `<state>/run/<id>.agent.sock`.
+The session's sandbox profile grants only that socket, and a socket serves only its own session, so an agent can't reach any other session.
+The launch env file sets `CONTROLROOM_SESSION_ID`, `CONTROLROOM_AGENT_SOCKET` and `CONTROLROOM_AGENT_TOKEN` (a fresh token per launch, kept in `sessions/<id>/agent.token`). Without them the extension registers nothing.
+
+Lifecycle: `hello {protocol_version, token, client_name}` first (`hello_required` otherwise; a wrong token is `unauthenticated`, a major mismatch `incompatible_version`), then the daemon sends a `state` notification, and again on every change.
+Mutating calls carry `call_id` (pi's tool call id) as their idempotency key: a call resent after a reconnect applies once.
+
+| Method | Purpose |
+| --- | --- |
+| `hello {protocol_version, token, client_name}` | → `daemon_version`, `protocol_version`, `session_id`, `capabilities` |
+| `question.ask {call_id, title?, questions[{text, options[{label, description?}], multi?, free_text?}]}` | → `{question_id, reminder}`. Raises a non-blocking `question` request (attention `question`); never blocks. The answer (or a Dismiss: "declined") is injected into the agent's next turn |
+| `question.withdraw {call_id, question_id}` | → `{state, answer?}`: `withdrawn`, or how the user resolved it first |
+| `todo.list` · `todo.add {call_id, texts[]}` · `todo.update {call_id, todo_id, text?, status?, reason?}` | → `{todos[]}`, attributed to the agent |
+| `notify {call_id, text, level?}` | a `notice` item in the session's timeline |
+
+Notification: `state {todos[], questions[], auto_continue}` (the open questions and the auto-continue details).
+Daemon → extension traffic goes through this socket rather than `/controlroom <verb>` commands on pi's stdin: those would be transcript lines that need a ready agent, follow the in-doubt rules, and make pi wait for the handler. Answers, todo notices and continuations reach the model through the agent's own RPC (injection: `steer` while it works, a `prompt` while it is idle), never through the socket.
+
+**Runtime rules behind it** (spec §8): an injection carries its origin, which becomes the run's trigger (`inject {origin, label}`; a continuation is `auto_continue`). Auto-continue (on by default, budget 10 runs per user instruction) starts a continue run when the agent ends its turn with pending or in-progress todos, unless a question or an approval is open, background work is running, the run failed or was cancelled, or the queue (or another injection) has items. It pauses with attention when only blocked items remain (`paused`), after 3 continue runs that closed no item (`stalled`), when the budget is used (`budget`), and on a user cancel (`paused`). `session.update {auto_continue: true}` resumes it with a fresh budget; raising `auto_continue_budget` resumes a `budget` pause.
+
 ## 7. TypeScript
 
 `web/src/lib/protocol/`: one file per type, `DaemonMethods.ts` / `UiMethods.ts` (method → `{params, result}`, notification → params), `versions.ts`, `index.ts`.
-Regenerate: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --test typescript`. The `protocol-ts-drift` flake check fails when the checked-in files differ; `web-check` type-checks them.
+`extensions/pi/src/protocol/`: the same for the agent API (`AgentMethods.ts`).
+Regenerate both: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --test typescript`. The `protocol-ts-drift` flake check fails when the checked-in files differ; `web-check` type-checks the UI's.
 
 ## 8. Open questions (judgment calls to review)
 
@@ -196,3 +220,7 @@ Regenerate: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --test t
 18. **`fs.list`** has no controller-side cache flag (the prototype's `cached`); add it if offline directory listing is wanted.
 19. **Daemon-raised requests in the timeline.** Sandbox approvals have no transcript record. Their `request` item sits at the transcript head when they were raised (`seq_from = seq_to = head`), and each change to them counts as changed *after* the head, so a client resuming with `since_seq = head` still receives it (possibly again: upserts are idempotent).
 20. **Sandbox approval options.** File access offers "Allow for this session" rather than "Allow once", because nono remembers a granted path for the rest of its session. Commands and endpoints offer "Allow once" only: nono asks per invocation, and remembering a command grant in the daemon would undercut "approve each time" for `git push`. Granted runtime paths are not listed in `SandboxInfo.grants` yet.
+21. **Agent API transport.** A per-session socket (granted only in that session's profile) plus a per-launch token, rather than the daemon socket with a session claim: an agent can't even name another session. Daemon → extension pushes are `state` notifications on that socket, not `/controlroom` commands (see §6a).
+22. **Todo notices don't wake the agent.** A user's todo edit is delivered into the agent's next turn (steered into a running one), never starting a run by itself; with a driver that can't steer it waits until the agent is idle and then starts one. Answers and continuations wake the agent.
+23. **Auto-continue defaults.** On for every session, budget 10 continue runs per user instruction: a run the user starts (prompt or queue) and turning auto-continue on reset the count. Progress means a todo closed (done, blocked or skipped) during the run.
+24. **`notify`** only adds a timeline notice; it doesn't change attention or push.
