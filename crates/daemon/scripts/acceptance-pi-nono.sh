@@ -5,8 +5,8 @@
 # `acceptance_serve` drives it through `controlroomd serve`, SIGKILLs the daemon mid-run and
 # checks the run completes with no duplicate prompt, and runs a mediated `git push` that the
 # test approves, then denies, through the daemon's approval webhook (needs git on PATH);
-# `acceptance_agent` loads @controlroom/pi into pi: todos, auto-continue, a question and the
-# answer that wakes the agent.
+# `acceptance_agent` runs pi through the real controlroom-pi bundle (with @controlroom/pi):
+# todos, auto-continue, a question and the answer that wakes the agent.
 # Needs Nix, Landlock and pi:
 #
 #   crates/daemon/scripts/acceptance-pi-nono.sh             # pi from PATH
@@ -29,6 +29,11 @@ nix build -o "$work/bundle" "$repo#checks.$(nix eval --raw --impure --expr built
 export CR_TEST_BUNDLE
 CR_TEST_BUNDLE=$(readlink -f "$work/bundle")
 export PATH="$CR_TEST_BUNDLE/bin:$PATH"
+# The real bundle, with @controlroom/pi from extensions/pi (`acceptance_agent`). Its launcher is
+# reached through sandbox.toml `exec_dirs`, so it doesn't shadow the stub bundle's on PATH.
+nix build -o "$work/pi-bundle" "$repo#controlroom-pi"
+export CR_TEST_PI_BUNDLE
+CR_TEST_PI_BUNDLE=$(readlink -f "$work/pi-bundle")
 if [ -z "${CR_TEST_PI:-}" ]; then
   CR_TEST_PI=$(readlink -f "$(command -v pi)")
 fi

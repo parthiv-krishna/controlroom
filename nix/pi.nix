@@ -92,13 +92,24 @@ let
       };
     };
 
+  # What pi loads: the manifest and the sources (no tests, no tsconfig). It has no npm
+  # dependencies; pi provides its imports.
   extension =
     if builtins.pathExists ../extensions/pi then
-      extensionFrom (lib.cleanSource ../extensions/pi)
+      extensionFrom (
+        lib.fileset.toSource {
+          root = ../extensions/pi;
+          fileset = lib.fileset.unions [
+            ../extensions/pi/package.json
+            ../extensions/pi/src
+          ];
+        }
+      )
     else
       null;
 
-  # The checks use a stub until extensions/pi lands.
+  # The launcher checks use a stub: it registers a command they can see in `get_commands`, while
+  # the real extension registers nothing outside a controlroom session.
   testBundle = mkBundle (extensionFrom ./pi/tests/stub-extension);
 
   check =

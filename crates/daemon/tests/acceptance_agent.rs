@@ -1,6 +1,7 @@
-//! Acceptance (spec §8, §9): a real `pi --mode rpc` 1.2.0 with `@controlroom/pi` loaded, under
-//! nono 0.80.0 at level strict, through `controlroomd serve`, against the fixture tool's mock
-//! model scripting the tool calls:
+//! Acceptance (spec §8, §9, §14): real pi 1.2.0 through the `controlroom-pi` bundle's launcher,
+//! which loads `@controlroom/pi` from the bundle (built from `extensions/pi`), under nono 0.80.0
+//! at level strict, through `controlroomd serve`, against the fixture tool's mock model scripting
+//! the tool calls:
 //!
 //! 1. the agent adds two todos and ends its turn;
 //! 2. auto-continue starts the next run, in which the agent asks a question and ends its turn
@@ -9,6 +10,8 @@
 //!    numbers) and finishes with no open items left, so nothing continues.
 //!
 //! The extension reaches its own agent socket from inside the sandbox with the launch's token.
+//! The bundle lives in the Nix store, which the sandbox reads; its launcher runs from
+//! `sandbox.toml` `exec_dirs` (`CR_TEST_PI_BUNDLE`, built by the script).
 //! Needs nono 0.80.0, Landlock and pi, so it is `#[ignore]`d; run it with
 //! `crates/daemon/scripts/acceptance-pi-nono.sh`. Every process it starts is killed at the end,
 //! pass or fail.
@@ -30,41 +33,17 @@ fn env_var(var: &str) -> String {
     })
 }
 
-/// A copy of `extensions/pi` outside the scratch HOME, readable in the sandbox.
-fn extension_copy(root: &Path) -> tempfile::TempDir {
-    let dir = tempfile::Builder::new()
-        .prefix("ext")
-        .tempdir_in(root)
-        .unwrap();
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../extensions/pi");
-    copy_tree(&source.join("src"), &dir.path().join("src"));
-    std::fs::copy(source.join("package.json"), dir.path().join("package.json")).unwrap();
-    dir
-}
-
-fn copy_tree(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for entry in std::fs::read_dir(from).unwrap().flatten() {
-        let target = to.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_tree(&entry.path(), &target);
-        } else {
-            std::fs::copy(entry.path(), target).unwrap();
-        }
-    }
-}
-
-/// pi with the extension, pointing the mock provider at nono's reverse proxy (see
-/// `acceptance_serve.rs`).
-fn agent_command(pi: &str, extension: &Path, mock: &MockModel) -> String {
+/// The bundle's launcher (pi with @controlroom/pi), pointing the mock provider at nono's reverse
+/// proxy (see `acceptance_serve.rs`).
+fn agent_command(bundle: &Path, mock: &MockModel) -> String {
     let origin = format!("http://127.0.0.1:{}", mock.port());
     let placeholder = controlroom_sandbox::agent_dir::PLACEHOLDER;
-    let entry = extension.join("src/index.ts");
+    let launcher = bundle.join("bin/controlroom-pi");
     let script = format!(
         r##"m="$PI_CODING_AGENT_DIR/models.json"
 sed -e "s#{origin}#$CR_MOCK_BASE_URL#" -e 's#"{placeholder}"#"$CR_MOCK_PHANTOM"#' "$m" > "$m.tmp" && mv "$m.tmp" "$m" || exit 1
-PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 exec {pi} -e {entry} "$@""##,
-        entry = entry.display(),
+PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 exec {launcher} -- "$@""##,
+        launcher = launcher.display(),
     );
     format!(
         "sh -c {} pi",
@@ -73,7 +52,7 @@ PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 exec {pi} -e {entry} "$@""##
 }
 
 /// The user's (fake) pi config, agents.toml and sandbox.toml in the environment's HOME.
-fn configure(env: &Env, mock: &MockModel, extension: &Path, nono_tmp: &Path) {
+fn configure(env: &Env, mock: &MockModel, bundle: &Path, nono_tmp: &Path) {
     let home = env.path();
     let agent_dir = home.join(".pi/agent");
     std::fs::create_dir_all(&agent_dir).unwrap();
@@ -98,7 +77,7 @@ fn configure(env: &Env, mock: &MockModel, extension: &Path, nono_tmp: &Path) {
     .unwrap();
     let config = home.join(".config/controlroom");
     std::fs::create_dir_all(&config).unwrap();
-    let command = agent_command(&env_var("CR_TEST_PI"), extension, mock);
+    let command = agent_command(bundle, mock);
     std::fs::write(
         config.join("agents.toml"),
         format!("[agents.pi]\ncommand = {command:?}\ndriver = \"pi\"\n"),
@@ -109,7 +88,7 @@ fn configure(env: &Env, mock: &MockModel, extension: &Path, nono_tmp: &Path) {
         format!(
             r#"nono = "{nono}"
 nono_tmp = "{tmp}"
-read_only = ["/nix/store", "{extension}"]
+exec_dirs = ["/usr/bin", "/bin", "{bundle}/bin", "{bundle}/libexec/controlroom-pi/tools"]
 allow_loopback_upstreams = true
 [[routes]]
 provider = "mock"
@@ -118,7 +97,7 @@ allow = ["POST /v1/chat/completions"]
 "#,
             nono = env_var("CR_TEST_NONO"),
             tmp = nono_tmp.display(),
-            extension = extension.display(),
+            bundle = bundle.display(),
             port = mock.port(),
         ),
     )
@@ -162,7 +141,13 @@ async fn real_pi_with_the_extension_adds_todos_continues_asks_and_is_woken_by_th
     ])
     .await
     .expect("mock model");
-    let extension = extension_copy(&root);
+    let bundle = PathBuf::from(env_var("CR_TEST_PI_BUNDLE"));
+    assert!(
+        bundle
+            .join("share/controlroom-pi/extension/src/index.ts")
+            .exists(),
+        "the bundle carries the real @controlroom/pi"
+    );
     let mut env = Env::new_in(&root);
     let nono_tmp = NonoTmp(
         tempfile::Builder::new()
@@ -170,7 +155,7 @@ async fn real_pi_with_the_extension_adds_todos_continues_asks_and_is_woken_by_th
             .tempdir_in("/tmp")
             .unwrap(),
     );
-    configure(&env, &mock, extension.path(), nono_tmp.0.path());
+    configure(&env, &mock, &bundle, nono_tmp.0.path());
     // The login shell runs inside the sandbox, so it must be readable there.
     std::fs::remove_file(env.path().join("login-shell")).unwrap();
     std::os::unix::fs::symlink("/bin/sh", env.path().join("login-shell")).unwrap();
