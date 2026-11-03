@@ -73,6 +73,7 @@ impl Core {
             queue: Vec::new(),
             decisions: BTreeMap::new(),
             raised: BTreeMap::new(),
+            jobs: BTreeMap::new(),
             todos: Vec::new(),
             injections: Vec::new(),
             auto: Default::default(),
@@ -210,6 +211,7 @@ impl Core {
             let conn = attachment.conn.clone();
             self.task(Task::Terminate(conn, STOP_GRACE));
         }
+        self.kill_session_jobs(params.id)?;
         self.end_pending_raised(params.id, RequestState::Withdrawn, true)
     }
 
@@ -223,6 +225,8 @@ impl Core {
     pub(crate) fn delete(&mut self, id: SessionId) -> Result<(), RpcError> {
         let session = self.session(id)?;
         let conn = session.live.attachment.as_ref().map(|a| a.conn.clone());
+        self.kill_session_jobs(id)?;
+        self.jobs.retain(|_, job| job.session != id);
         self.remove_session(id);
         self.store.delete_session(id).map_err(internal)?;
         self.emit(MachineEvent::SessionRemoved { id })

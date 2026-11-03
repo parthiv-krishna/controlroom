@@ -10,7 +10,7 @@
 //! directories cleaned once at start. SIGTERM or SIGINT stop accepting, drop every supervisor
 //! connection and exit 0; agents keep running under their supervisors. SIGHUP is ignored.
 //!
-//! - [`host`], [`agents`]: the runtime's ports on this machine;
+//! - [`host`], [`agents`], [`jobs`]: the runtime's ports on this machine;
 //! - [`agent`]: the per-session agent sockets `@controlroom/pi` talks to;
 //! - [`conn`], [`controller`], [`dispatch`], [`feeds`], [`fs_list`]: the daemon API;
 //! - [`webhook`]: nono's approval requests, raised as `sandbox` requests on the session. It is
@@ -25,6 +25,7 @@ mod dispatch;
 mod feeds;
 mod fs_list;
 mod host;
+mod jobs;
 mod webhook;
 
 use std::path::PathBuf;
@@ -146,15 +147,21 @@ async fn serve_async(
         .and_then(|l| l.local_addr().ok())
         .map(|a| a.port());
     let sockets = agent::AgentSockets::new(dirs.clone(), tokio::runtime::Handle::current());
+    let agents = Arc::new(agents::DaemonAgents::new(
+        dirs.clone(),
+        controlroomd,
+        webhook_port,
+        sockets.clone(),
+    ));
     let runtime = Runtime::open(RuntimeConfig {
         db_path: dirs.state().join("daemon.sqlite").as_path().to_owned(),
-        host: Arc::new(host::DaemonHost::new(dirs.clone(), exe, sockets.clone())),
-        agents: Arc::new(agents::DaemonAgents::new(
+        host: Arc::new(host::DaemonHost::new(
             dirs.clone(),
-            controlroomd,
-            webhook_port,
+            exe.clone(),
             sockets.clone(),
         )),
+        agents: agents.clone(),
+        job_host: Arc::new(jobs::DaemonJobs::new(dirs.clone(), exe, agents)),
         clock: Arc::new(SystemClock),
     })?;
     // Agents that outlived the previous daemon reconnect to their sockets.
@@ -197,7 +204,7 @@ async fn serve_async(
         }
     });
 
-    let mut capabilities = vec![Capability::TODOS];
+    let mut capabilities = vec![Capability::TODOS, Capability::JOBS];
     let hooks = hooks.map(|listener| {
         capabilities.push(Capability::SANDBOX_APPROVALS);
         tokio::spawn(webhook::serve(listener, runtime.clone(), dirs.clone()))

@@ -52,7 +52,7 @@ impl DaemonHost {
     }
 }
 
-fn host_error(e: impl std::fmt::Display) -> HostError {
+pub(super) fn host_error(e: impl std::fmt::Display) -> HostError {
     HostError(e.to_string())
 }
 
@@ -101,28 +101,7 @@ impl Host for DaemonHost {
     ) -> BoxFuture<'_, Result<Option<Arc<dyn SupervisorConn>>, HostError>> {
         Box::pin(async move {
             let id = Self::session_id(session)?;
-            let socket = supervisor_paths(&self.dirs, &id).socket;
-            let deadline = Instant::now() + WRITER_RETRY;
-            loop {
-                match Client::connect(&socket, true).await {
-                    Ok(client) => {
-                        let conn: Arc<dyn SupervisorConn> = Arc::new(DaemonConn {
-                            writer: client,
-                            socket,
-                        });
-                        return Ok(Some(conn));
-                    }
-                    Err(ClientError::Remote(e))
-                        if e.code == ErrorCode::WriterBusy && Instant::now() < deadline =>
-                    {
-                        tokio::time::sleep(Duration::from_millis(20)).await;
-                    }
-                    Err(ClientError::Io(e)) if not_running(&e) => return Ok(None),
-                    // The supervisor exited between accepting and answering.
-                    Err(ClientError::Disconnected) => return Ok(None),
-                    Err(e) => return Err(host_error(e)),
-                }
-            }
+            connect_writer(supervisor_paths(&self.dirs, &id).socket).await
         })
     }
 
@@ -187,6 +166,34 @@ impl Host for DaemonHost {
     }
 }
 
+/// Connects to the supervisor at `socket` in the writer role; `None` when none runs. Retries
+/// while a previous writer connection is being released.
+pub(super) async fn connect_writer(
+    socket: PathBuf,
+) -> Result<Option<Arc<dyn SupervisorConn>>, HostError> {
+    let deadline = Instant::now() + WRITER_RETRY;
+    loop {
+        match Client::connect(&socket, true).await {
+            Ok(client) => {
+                let conn: Arc<dyn SupervisorConn> = Arc::new(DaemonConn {
+                    writer: client,
+                    socket,
+                });
+                return Ok(Some(conn));
+            }
+            Err(ClientError::Remote(e))
+                if e.code == ErrorCode::WriterBusy && Instant::now() < deadline =>
+            {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Err(ClientError::Io(e)) if not_running(&e) => return Ok(None),
+            // The supervisor exited between accepting and answering.
+            Err(ClientError::Disconnected) => return Ok(None),
+            Err(e) => return Err(host_error(e)),
+        }
+    }
+}
+
 /// No supervisor listens: the socket is gone or refuses connections.
 fn not_running(e: &std::io::Error) -> bool {
     matches!(
@@ -247,7 +254,7 @@ impl RecordStream for SupervisorRecords {
 }
 
 /// Records of a transcript file, read on a blocking thread.
-struct FileRecords(mpsc::Receiver<Record>);
+pub(super) struct FileRecords(mpsc::Receiver<Record>);
 
 impl RecordStream for FileRecords {
     fn next(&mut self) -> BoxFuture<'_, Option<Record>> {
@@ -257,7 +264,7 @@ impl RecordStream for FileRecords {
 
 /// Streams the complete records of `path` from `from` to its current end. A missing file is
 /// an empty transcript; a corrupt record ends the stream (logged).
-fn read_file(path: PathBuf, from: u64) -> FileRecords {
+pub(super) fn read_file(path: PathBuf, from: u64) -> FileRecords {
     let (tx, rx) = mpsc::channel(FILE_READ_AHEAD);
     tokio::task::spawn_blocking(move || {
         let mut reader = match Reader::open(&path, from) {

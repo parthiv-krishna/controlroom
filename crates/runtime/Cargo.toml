@@ -10,6 +10,7 @@ controlroom-protocol.workspace = true
 controlroom-supervisor.workspace = true
 controlroom-transcript.workspace = true
 futures.workspace = true
+regex = "1.12"
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

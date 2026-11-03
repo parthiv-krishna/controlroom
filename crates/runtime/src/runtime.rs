@@ -25,7 +25,7 @@ use crate::commands::params_hash;
 use crate::core::Core;
 use crate::errors::{busy, internal};
 use crate::io;
-use crate::ports::{Agents, Clock, Host};
+use crate::ports::{Agents, Clock, Host, JobHost};
 use crate::raised::{RaiseRequest, RaisedRequest};
 use crate::session::{Session, SessionUpdate, raw_frame};
 use crate::store::{MigrateError, Store};
@@ -38,6 +38,8 @@ pub struct RuntimeConfig {
     pub host: Arc<dyn Host>,
     /// The configured agents.
     pub agents: Arc<dyn Agents>,
+    /// Background jobs' supervisors.
+    pub job_host: Arc<dyn JobHost>,
     /// The time.
     pub clock: Arc<dyn Clock>,
 }
@@ -85,6 +87,7 @@ pub(crate) struct Inner {
     core: Mutex<Core>,
     pub host: Arc<dyn Host>,
     pub agents: Arc<dyn Agents>,
+    pub job_host: Arc<dyn JobHost>,
     tasks: Mutex<JoinSet<()>>,
     recovered: watch::Sender<bool>,
 }
@@ -163,6 +166,7 @@ impl Runtime {
                 core: Mutex::new(core),
                 host: config.host,
                 agents: config.agents,
+                job_host: config.job_host,
                 tasks: Mutex::new(JoinSet::new()),
                 recovered: watch::channel(false).0,
             }),
@@ -181,6 +185,7 @@ impl Runtime {
             .into_iter()
             .map(|id| io::recover_session(self.inner.clone(), id));
         futures::future::join_all(recoveries).await;
+        crate::jobs::recover_jobs(&self.inner).await;
         let finished = self.inner.transact(|core| {
             let ids: Vec<SessionId> = core.sessions.keys().copied().collect();
             for id in ids {
@@ -209,6 +214,9 @@ impl Runtime {
             for session in core.sessions.values_mut() {
                 session.abort_tasks();
                 session.live.attachment = None;
+            }
+            for job in core.jobs.values_mut() {
+                job.conn = None;
             }
         });
         tasks.shutdown().await;
@@ -311,7 +319,12 @@ impl Runtime {
                 None => Vec::new(),
             };
             let session = core.session(id)?;
-            Ok((head, session.detail(), backlog, session.updates.subscribe()))
+            Ok((
+                head,
+                core.detail(session),
+                backlog,
+                session.updates.subscribe(),
+            ))
         })?;
         let mut raw = Vec::new();
         if let Some(raw_since) = raw_since.filter(|r| *r < head_seq) {

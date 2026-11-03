@@ -43,9 +43,14 @@ fn hello_required_and_errors() {
     raw.call_err("session.nope", json!({}), "method_not_found");
     raw.call_err("session.prompt", json!({"id": 3}), "invalid_params");
     raw.call_err(
+        "sandbox.revoke",
+        json!({"op_id": op(), "id": ulid::Ulid::generate().to_string(), "grant_id": ulid::Ulid::generate().to_string()}),
+        "unsupported",
+    );
+    raw.call_err(
         "job.list",
         json!({"id": ulid::Ulid::generate().to_string()}),
-        "unsupported",
+        "unknown_session",
     );
     raw.call_err(
         "unsubscribe",

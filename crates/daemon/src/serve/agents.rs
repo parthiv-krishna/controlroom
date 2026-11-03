@@ -81,7 +81,7 @@ impl DaemonAgents {
         })
     }
 
-    fn host(&self, sandboxed: bool) -> Result<Host, RpcError> {
+    pub(super) fn host(&self, sandboxed: bool) -> Result<Host, RpcError> {
         let loaded = sandbox_config::load(&self.dirs);
         if let Some(e) = &loaded.error {
             tracing::warn!("{e}");
@@ -135,7 +135,7 @@ impl DaemonAgents {
     }
 }
 
-fn sandbox_unavailable(detail: String) -> RpcError {
+pub(super) fn sandbox_unavailable(detail: String) -> RpcError {
     RpcError::new(
         ErrorData::SandboxUnavailable {
             detail: detail.clone(),

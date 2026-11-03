@@ -696,6 +696,7 @@ dependencies = [
  "controlroom-supervisor",
  "controlroom-transcript",
  "futures",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

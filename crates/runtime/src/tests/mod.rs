@@ -5,6 +5,8 @@
 mod agent;
 mod auto_continue;
 mod host;
+mod job_host;
+mod jobs;
 mod lifecycle;
 mod queue;
 mod raised;
@@ -29,6 +31,7 @@ use tempfile::TempDir;
 use tokio::sync::broadcast;
 
 pub(crate) use host::{FakeAgents, FakeHost, ManualClock};
+pub(crate) use job_host::FakeJobHost;
 
 use crate::{Runtime, RuntimeConfig, SessionUpdate};
 
@@ -38,6 +41,7 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) struct Harness {
     pub rt: Runtime,
     pub host: FakeHost,
+    pub jobs: FakeJobHost,
     pub clock: Arc<ManualClock>,
     capabilities: Capabilities,
     dir: TempDir,
@@ -63,13 +67,15 @@ impl Harness {
     pub(crate) async fn with(script: FakeScript, capabilities: Capabilities) -> Harness {
         let clock = Arc::new(ManualClock::default());
         let host = FakeHost::new(script, clock.clone());
+        let jobs = FakeJobHost::new(clock.clone());
         let dir = tempfile::tempdir().unwrap();
-        Harness::open(dir, host, clock, capabilities).await
+        Harness::open(dir, host, jobs, clock, capabilities).await
     }
 
     async fn open(
         dir: TempDir,
         host: FakeHost,
+        jobs: FakeJobHost,
         clock: Arc<ManualClock>,
         capabilities: Capabilities,
     ) -> Harness {
@@ -77,6 +83,7 @@ impl Harness {
             db_path: dir.path().join("daemon.sqlite"),
             host: Arc::new(host.clone()),
             agents: Arc::new(FakeAgents { capabilities }),
+            job_host: Arc::new(jobs.clone()),
             clock: clock.clone(),
         })
         .unwrap();
@@ -85,6 +92,7 @@ impl Harness {
         Harness {
             rt,
             host,
+            jobs,
             clock,
             capabilities,
             dir,
@@ -104,7 +112,14 @@ impl Harness {
     pub(crate) async fn restart_after(self, meanwhile: impl FnOnce(&FakeHost)) -> Harness {
         self.rt.shutdown().await;
         meanwhile(&self.host);
-        Harness::open(self.dir, self.host, self.clock, self.capabilities).await
+        Harness::open(
+            self.dir,
+            self.host,
+            self.jobs,
+            self.clock,
+            self.capabilities,
+        )
+        .await
     }
 
     /// Creates a session and waits until its agent is idle.

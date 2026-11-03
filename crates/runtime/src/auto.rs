@@ -197,7 +197,8 @@ pub(crate) fn waiting_on(session: &Session) -> Option<String> {
     }
     let work = session.live_work();
     if work.jobs > 0 {
-        return Some("waiting on job".into());
+        let name = session.running_job_name().unwrap_or_default();
+        return Some(format!("waiting on job {name}"));
     }
     if work.children > 0 {
         return Some("waiting on a subagent".into());

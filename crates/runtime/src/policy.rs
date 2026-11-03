@@ -1,5 +1,6 @@
 //! Periodic policy, run by the daemon's tick (about once a second): throttled previews,
-//! timeline checkpoints, idle-stop, retention, and pruning of the op and rev logs.
+//! timeline checkpoints, idle-stop, retention, job wakes and line counts, and pruning of the op
+//! and rev logs.
 
 use std::time::Duration;
 
@@ -46,6 +47,7 @@ impl Core {
                 self.store.add_tombstone(id, now).map_err(internal)?;
             }
         }
+        self.jobs_tick()?;
         self.store
             .prune_ops(UnixMillis(now.0 - OP_RETENTION_MS))
             .map_err(internal)?;

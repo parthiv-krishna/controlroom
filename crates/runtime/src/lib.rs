@@ -22,14 +22,15 @@
 //! `commands`, `lifecycle` and `io` (agent processes and supervisor attachments),
 //! `policy` (the tick: idle-stop, retention, pruning), `timeline` (materialization), `store`
 //! (SQLite with versioned migrations), `preview`, `history` (start-fresh export), `raised`
-//! (requests the daemon raises itself, such as sandbox approvals).
+//! (requests the daemon raises itself, such as sandbox approvals), `jobs` (background jobs:
+//! supervised processes with log files and wakes).
 //!
 //! Agent runtime primitives (spec §8): `inject` (the single delivery path into the agent's
 //! next turn), `questions` (non-blocking `ask_user`), `todos` (the shared list), `auto`
 //! (auto-continue), `triggers` (run triggers from the runtime's own knowledge), `items`
 //! (daemon-made timeline items) and `agent` (the agent API the daemon's agent socket serves).
 //!
-//! **Not yet here** (later phases add them as new modules and migrations): jobs, children, the
+//! **Not yet here** (later phases add them as new modules and migrations): children, the
 //! mailbox and contact policy.
 
 mod agent;
@@ -42,6 +43,7 @@ mod ingest;
 mod inject;
 mod io;
 mod items;
+mod jobs;
 mod lifecycle;
 mod model;
 mod policy;
@@ -60,6 +62,7 @@ mod triggers;
 #[cfg(test)]
 mod tests;
 
+pub use jobs::{JobRun, JobStarted, KilledBy};
 pub use raised::{RaiseRequest, RaisedRequest};
 pub use runtime::{MachineSubscription, OpenError, Runtime, RuntimeConfig, SessionSubscription};
 pub use session::SessionUpdate;

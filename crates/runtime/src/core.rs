@@ -17,11 +17,12 @@ use controlroom_protocol::RpcError;
 use controlroom_protocol::Seq;
 use controlroom_protocol::agent::AgentState;
 use controlroom_protocol::daemon::{DaemonSettings, MachineChange, MachineEvent};
-use controlroom_protocol::ids::{DaemonId, RequestId, Rev, SessionId};
+use controlroom_protocol::ids::{DaemonId, JobId, RequestId, Rev, SessionId};
 use controlroom_protocol::session::{AttentionRollup, Request, SessionDetail, SessionSummary};
 use tokio::sync::{broadcast, oneshot};
 
 use crate::errors::{internal, unknown_session};
+use crate::jobs::JobLive;
 use crate::model::SessionData;
 use crate::ports::{Agents, Clock, SupervisorConn};
 use crate::session::{Live, Session, SessionUpdate};
@@ -95,6 +96,8 @@ pub(crate) struct Core {
     pub machine_tx: broadcast::Sender<MachineChange>,
     pub clock: Arc<dyn Clock>,
     pub agents: Arc<dyn Agents>,
+    /// Running jobs being followed (their records live with their sessions).
+    pub jobs: BTreeMap<JobId, JobLive>,
     /// Whoever raised a pending request learns its resolution here (after the commit).
     waiters: HashMap<WaiterKey, oneshot::Sender<Request>>,
     next_generation: u64,
@@ -119,6 +122,7 @@ impl Core {
             machine_tx: broadcast::channel(MACHINE_CAPACITY).0,
             clock,
             agents,
+            jobs: BTreeMap::new(),
             waiters: HashMap::new(),
             next_generation: 1,
             tx: TxState::default(),
@@ -356,7 +360,7 @@ impl Core {
         if session.agent.borrow().as_ref() != Some(&agent) {
             self.tx.fx.agent.push((id, agent));
         }
-        let detail = session.detail();
+        let detail = self.detail(session);
         let detail_changed = emitted.detail.as_ref() != Some(&detail);
         let head = session.live.processed_seq;
         let preview_pending = !changed && emitted.summary.as_ref() != Some(&summary);

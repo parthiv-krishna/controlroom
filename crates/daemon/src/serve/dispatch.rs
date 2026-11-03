@@ -1,13 +1,15 @@
 //! Routes one request (after `hello`) to the runtime or to the daemon's own handlers.
 //!
-//! Session, queue, request, todo and settings commands go to the runtime. `agents.list`,
-//! `fs.list` and `doctor.report` run here on blocking threads. Features of later phases
-//! (`job.*`, `sandbox.revoke`, `outbox.*`, `inbox.deliver`) answer `unsupported`.
+//! Session, queue, request, todo, job and settings commands go to the runtime (a `job.kill`
+//! here is the user's). `agents.list`, `fs.list` and `doctor.report` run here on blocking
+//! threads. Features of later phases (`sandbox.revoke`, `outbox.*`, `inbox.deliver`) answer
+//! `unsupported`.
 
 use std::sync::Arc;
 
 use controlroom_protocol::daemon::{AgentsListResult, DaemonRequest};
 use controlroom_protocol::{Ack, ErrorData, Resource, RpcError, RpcRequest};
+use controlroom_runtime::KilledBy;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -95,6 +97,12 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
 
         DaemonRequest::RequestRespond(p) => json(runtime.respond(p).await),
 
+        DaemonRequest::JobList(p) => json(runtime.job_list(p).await),
+        DaemonRequest::JobLogsMethod(p) => json(runtime.job_logs(p).await),
+        DaemonRequest::JobKill(p) => json(runtime.job_kill(p, KilledBy::User).await),
+        DaemonRequest::JobFollowMethod(p) => json(runtime.job_follow(p).await),
+        DaemonRequest::JobUnfollow(p) => json(runtime.job_unfollow(p).await),
+
         DaemonRequest::AgentsList(_) => {
             let dirs = conn.shared.dirs.clone();
             json(
@@ -127,12 +135,7 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         DaemonRequest::TodoRemove(p) => ack(runtime.todo_remove(p).await),
         DaemonRequest::TodoReorder(p) => ack(runtime.todo_reorder(p).await),
 
-        DaemonRequest::JobList(_)
-        | DaemonRequest::JobLogsMethod(_)
-        | DaemonRequest::JobKill(_)
-        | DaemonRequest::JobFollowMethod(_)
-        | DaemonRequest::JobUnfollow(_)
-        | DaemonRequest::SandboxRevoke(_)
+        DaemonRequest::SandboxRevoke(_)
         | DaemonRequest::OutboxSubscribe(_)
         | DaemonRequest::OutboxAck(_)
         | DaemonRequest::InboxDeliver(_) => unsupported(method),

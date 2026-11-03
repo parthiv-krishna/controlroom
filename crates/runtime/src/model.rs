@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 
 use controlroom_drivers::{LineTag, NativeRef};
-use controlroom_protocol::ids::{OpId, QueueId, RemotePath, RequestId, Seq, SessionId, UnixMillis};
+use controlroom_protocol::ids::{
+    JobId, OpId, QueueId, RemotePath, RequestId, Seq, SessionId, UnixMillis,
+};
 use controlroom_protocol::session::{
     AgentSession, AutoContinueStatus, ContentPart, DriverKind, PeerRef, PromptOrigin, QueueItem,
     Request, RequestKind, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec, StartedBy, Todo,
@@ -11,6 +13,8 @@ use controlroom_protocol::session::{
 };
 use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
 use serde::{Deserialize, Serialize};
+
+use crate::jobs::JobRecord;
 
 /// How a queue item was handed to the agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,6 +199,8 @@ pub(crate) struct SessionData {
     pub auto: AutoContinue,
     /// Triggers of the newest run-starting lines, oldest first.
     pub triggers: Vec<TriggerEntry>,
+    /// Background jobs, oldest first (job ids are ULIDs).
+    pub jobs: BTreeMap<JobId, JobRecord>,
 }
 
 impl SessionData {

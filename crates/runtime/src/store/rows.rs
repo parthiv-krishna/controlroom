@@ -1,4 +1,4 @@
-//! Sessions, agent sessions, queue, decisions and timeline items.
+//! Sessions, agent sessions, queue, decisions, raised requests, jobs and timeline items.
 
 use std::collections::BTreeMap;
 use std::str::FromStr;
@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 
 use super::{Store, json};
 use super::{int, int_usize, uint};
+use crate::jobs::JobRecord;
 use crate::model::{AgentSessionRow, Decision, Raised, SessionData};
 
 const SESSION_COLUMNS: &str = "id, agent, driver, cwd, name, created_at, closed_at, parent_id,
@@ -72,6 +73,7 @@ fn session_row(row: &Row<'_>) -> rusqlite::Result<SessionData> {
         raised: BTreeMap::new(),
         todos: Vec::new(),
         injections: Vec::new(),
+        jobs: BTreeMap::new(),
     })
 }
 
@@ -144,6 +146,13 @@ impl Store {
         }
         data.todos = self.list(&id, "todos", "todo")?;
         data.injections = self.list(&id, "injections", "injection")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT job FROM jobs WHERE session_id = ?1")?;
+        for raw in stmt.query_map([&id], |r| r.get::<_, String>(0))? {
+            let job: JobRecord = decode(&raw?)?;
+            data.jobs.insert(job.id, job);
+        }
         Ok(data)
     }
 
@@ -162,6 +171,7 @@ impl Store {
             b.raised.clone_from(&after.raised);
             b.todos.clone_from(&after.todos);
             b.injections.clone_from(&after.injections);
+            b.jobs.clone_from(&after.jobs);
             b != *after
         });
         if row_changed {
@@ -222,6 +232,15 @@ impl Store {
                 "INSERT OR REPLACE INTO raised_requests (session_id, request_id, raised)
                  VALUES (?1, ?2, ?3)",
                 params![id, request_id.as_str(), json(raised)],
+            )?;
+        }
+        for (job_id, job) in &after.jobs {
+            if before.is_some_and(|b| b.jobs.get(job_id) == Some(job)) {
+                continue;
+            }
+            self.conn.execute(
+                "INSERT OR REPLACE INTO jobs (session_id, job_id, job) VALUES (?1, ?2, ?3)",
+                params![id, job_id.to_string(), json(job)],
             )?;
         }
         Ok(())
@@ -312,6 +331,7 @@ impl Store {
             "queue",
             "decisions",
             "raised_requests",
+            "jobs",
             "timeline_items",
             "todos",
             "injections",

@@ -342,7 +342,17 @@ impl Session {
     /// mailbox asks). The hook for those features: each adds its count here, and
     /// auto-continue waits while any is non-zero ("not continuing: waiting on job").
     pub(crate) fn live_work(&self) -> LiveWork {
-        LiveWork::default()
+        let jobs = self.data.jobs.values().filter(|j| j.running()).count();
+        LiveWork {
+            jobs: u32::try_from(jobs).unwrap_or(u32::MAX),
+            ..LiveWork::default()
+        }
+    }
+
+    /// The first running job's name, for "waiting on job <name>".
+    pub(crate) fn running_job_name(&self) -> Option<&str> {
+        let mut running = self.data.jobs.values().filter(|j| j.running());
+        running.next().map(|j| j.name.as_str())
     }
 
     /// What the agent's extension sees (the `state` notification).
