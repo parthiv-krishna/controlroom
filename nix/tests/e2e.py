@@ -219,7 +219,16 @@ def start_fresh() -> None:
     assert "Hello from the mock model." in tool_result, f"pi couldn't read the history: {tool_result}"
 
 
+def schedules() -> None:
+    """A schedule's "Run now" sends its message to pi through the server's scheduler."""
+    mock(devbox, {"text": "Inbox is empty."})
+    Spec("schedules").finish()
+    mock_done(devbox)
+    assert "Check inbox/ and report" in last_message(mock_requests(devbox)[-1])
+
+
 def approvals() -> None:
+
     """git push needs an approval: allowed once in one tab, denied with a reason in the other."""
     as_alice(
         devbox,
@@ -314,6 +323,7 @@ try:
     add_devbox()
     sandboxed_session()
     start_fresh()
+    schedules()
     approvals()
     auto_upgrade()
     unreachable()
