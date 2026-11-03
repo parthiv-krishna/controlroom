@@ -57,6 +57,9 @@ fn queue_auto_advances_and_pauses_on_failure() {
 
 /// Prompts `first` (held at gate `hold` inside `reply`) and queues `second`; returns the
 /// session and the queue id.
+///
+/// The agent reaching the gate doesn't mean the daemon has folded its output yet: tests that
+/// depend on what the daemon saw of the run wait for it with [`wait_preview`].
 fn busy_with_queue(env: &Env, client: &Client) -> (String, String) {
     let id = client.create("fake", &env.work());
     client.wait_idle(&id);
@@ -64,6 +67,15 @@ fn busy_with_queue(env: &Env, client: &Client) -> (String, String) {
     env.wait_gate("hold");
     let queue_id = queued(&client.prompt(&id, "second"));
     (id, queue_id)
+}
+
+/// Waits until the daemon shows `preview` for the working session: it has folded the run's
+/// start and its output up to there (a send-now steers only into a run the daemon knows is
+/// active; before that it would wait for the run to start).
+fn wait_preview(client: &Client, id: &str, preview: &str) {
+    client.wait_session(id, &format!("preview {preview:?}"), |s| {
+        s["state"] == "working" && s["preview"] == preview
+    });
 }
 
 fn send_now(client: &Client, id: &str, queue_id: &str) -> Value {
@@ -79,6 +91,7 @@ fn send_now_during_text_steers() {
     let client = env.client();
     client.watch_machine();
     let (id, queue_id) = busy_with_queue(&env, &client);
+    wait_preview(&client, &id, "Writing");
     assert_eq!(send_now(&client, &id, &queue_id)["outcome"], "steered");
     env.release("hold");
     client.wait_turn(&id, 0);
@@ -102,6 +115,8 @@ fn send_now_during_a_tool_steers_after_the_tool() {
     let client = env.client();
     client.watch_machine();
     let (id, queue_id) = busy_with_queue(&env, &client);
+    // The running tool's title.
+    wait_preview(&client, &id, "make");
     assert_eq!(send_now(&client, &id, &queue_id)["outcome"], "steered");
     wait_until("the steer line", || {
         env.lines_in(&id).iter().any(|l| l["type"] == "steer")
