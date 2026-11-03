@@ -5,6 +5,7 @@ mod agent;
 mod approvals;
 mod clients;
 mod harness;
+mod jobs;
 mod queue;
 mod recovery;
 mod requests;
