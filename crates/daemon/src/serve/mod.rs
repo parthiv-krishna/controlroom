@@ -11,11 +11,13 @@
 //! connection and exit 0; agents keep running under their supervisors. SIGHUP is ignored.
 //!
 //! - [`host`], [`agents`]: the runtime's ports on this machine;
+//! - [`agent`]: the per-session agent sockets `@controlroom/pi` talks to;
 //! - [`conn`], [`controller`], [`dispatch`], [`feeds`], [`fs_list`]: the daemon API;
 //! - [`webhook`]: nono's approval requests, raised as `sandbox` requests on the session. It is
 //!   bound before the runtime opens (launches need its port); if it can't bind, approvals
 //!   fail closed (`approve` rules deny) and `hello` doesn't advertise `sandbox_approvals`.
 
+mod agent;
 mod agents;
 mod conn;
 mod controller;
@@ -143,16 +145,29 @@ async fn serve_async(
         .as_ref()
         .and_then(|l| l.local_addr().ok())
         .map(|a| a.port());
+    let sockets = agent::AgentSockets::new(dirs.clone(), tokio::runtime::Handle::current());
     let runtime = Runtime::open(RuntimeConfig {
         db_path: dirs.state().join("daemon.sqlite").as_path().to_owned(),
-        host: Arc::new(host::DaemonHost::new(dirs.clone(), exe)),
+        host: Arc::new(host::DaemonHost::new(dirs.clone(), exe, sockets.clone())),
         agents: Arc::new(agents::DaemonAgents::new(
             dirs.clone(),
             controlroomd,
             webhook_port,
+            sockets.clone(),
         )),
         clock: Arc::new(SystemClock),
     })?;
+    // Agents that outlived the previous daemon reconnect to their sockets.
+    let open = runtime
+        .subscribe_machine(None)
+        .map_err(|e| anyhow::anyhow!("listing sessions: {e}"))?
+        .snapshot
+        .map(|s| s.sessions)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| s.closed_at.is_none())
+        .map(|s| s.id);
+    sockets.serve(runtime.clone(), open);
     instance.listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(instance.listener)?;
     if detached {
@@ -182,7 +197,7 @@ async fn serve_async(
         }
     });
 
-    let mut capabilities = Vec::new();
+    let mut capabilities = vec![Capability::TODOS];
     let hooks = hooks.map(|listener| {
         capabilities.push(Capability::SANDBOX_APPROVALS);
         tokio::spawn(webhook::serve(listener, runtime.clone(), dirs.clone()))

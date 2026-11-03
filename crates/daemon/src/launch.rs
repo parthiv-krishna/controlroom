@@ -8,7 +8,8 @@
 //! 2. assembles the [`SessionSandboxSpec`]: routes for the configured providers that have a
 //!    key (or an OAuth token, given the OAuth helper), read access to the `agent/npm` link's
 //!    target, mediated commands pinned from the agent's `PATH`, the approval webhook (or, without
-//!    one, every `approve` rule turned into `deny`), and the protected controlroom paths;
+//!    one, every `approve` rule turned into `deny`), the session's agent socket, and the
+//!    protected controlroom paths;
 //! 3. generates, checks and writes `profile.json`;
 //! 4. builds `nono run … -- $SHELL -lc 'exec <command> <driver args>'` and an env file with
 //!    nono's own environment and a short `TMPDIR` (nono binds sockets there; `sun_path`);
@@ -16,6 +17,10 @@
 //!    socket is `<state>/run/<id>.sock`.
 //!
 //! Level off runs `$SHELL -lc '…'` directly with the user's own pi config.
+//!
+//! Every level's env file carries what `@controlroom/pi` needs to reach its session
+//! (`CONTROLROOM_SESSION_ID`, `CONTROLROOM_AGENT_SOCKET`, and a fresh `CONTROLROOM_AGENT_TOKEN`
+//! that the agent socket's listener checks against `<session>/agent.token`).
 //!
 //! Signals: the supervisor runs in its own session and ignores SIGHUP, and the agent is the
 //! leader of its own process group, so no HUP ever reaches pi (which exits on HUP). Inherited
@@ -147,10 +152,11 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
     }
     let command = agent_command(&launch.agent, &launch.args);
     let layout = SessionLayout::new(host.dirs.state(), &launch.session);
-    let (exec, env_file, sandbox) = if launch.policy.level == SandboxLevel::Off {
+    let mut env = agent_env(&host.dirs, &launch.session)?;
+    let (exec, sandbox) = if launch.policy.level == SandboxLevel::Off {
         store_hook_secret(&host.dirs, None, &launch.session)?;
         let cmd = LaunchCommand::new(None, &host.shell, &launch.cwd, &command);
-        (argv(&cmd), None, None)
+        (argv(&cmd), None)
     } else {
         let nono = Nono {
             binary: host.nono.clone().ok_or(LaunchError::NoNono)?,
@@ -176,17 +182,17 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
             &launch.cwd,
             &command,
         );
-        let mut env = cmd.env.clone();
+        env.extend(cmd.env.iter().cloned());
         env.push(("TMPDIR".to_owned(), host.sandbox.nono_tmp.to_string()));
-        let env_file = layout.root().join("launch.env");
-        write_env_file(&env_file, &env)?;
         let sandbox = PreparedSandbox {
             layout: layout.clone(),
             hook,
             built,
         };
-        (argv(&cmd), Some(env_file), Some(sandbox))
+        (argv(&cmd), Some(sandbox))
     };
+    let env_file = layout.root().join("launch.env");
+    write_env_file(&env_file, &env)?;
     let run = host.dirs.run();
     create_private_dir(&run).map_err(|source| LaunchError::Io {
         path: run.to_string(),
@@ -212,7 +218,7 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
                 kind: ProcessKind::Agent,
                 exec,
                 cwd: launch.cwd.as_path().to_owned(),
-                env_file: env_file.map(|f| f.as_path().to_owned()),
+                env_file: Some(env_file.as_path().to_owned()),
                 stdin: StdinMode::Pipe,
                 timeout_ms: None,
                 max_line_bytes: None,
@@ -333,8 +339,8 @@ fn sandbox_spec(
             .filter(|d| d.as_path().is_dir())
             .cloned()
             .collect(),
-        // The controller socket is not for agents; @controlroom/pi gets its own (P5).
-        daemon_socket: None,
+        // Not the controller socket: @controlroom/pi's own socket for this session only.
+        daemon_socket: Some(dirs.agent_socket(launch.session.as_str())),
         protected,
         credential_routes: host
             .sandbox
@@ -373,6 +379,40 @@ fn has_credential(host: &Host, built: &BuiltAgentDir, provider: &str) -> bool {
     let listed = |providers: &[String]| providers.iter().any(|p| p == provider);
     listed(&built.api_key_providers)
         || (host.oauth_helper.is_some() && listed(&built.oauth_providers))
+}
+
+/// The variables `@controlroom/pi` finds its session by: the agent socket and a fresh token,
+/// stored for the socket's listener (`<session>/agent.token`) before the agent starts.
+fn agent_env(dirs: &Dirs, session: &SessionId) -> Result<Vec<(String, String)>, LaunchError> {
+    let token = HookSecret::generate().map_err(|e| LaunchError::Secret(e.to_string()))?;
+    let path = dirs.agent_token(session.as_str());
+    let io = |source| LaunchError::Io {
+        path: path.to_string(),
+        source,
+    };
+    let root = SessionLayout::new(dirs.state(), session).root().clone();
+    create_private_dir(&root).map_err(io)?;
+    write_private_file(&path, token.as_str().as_bytes()).map_err(io)?;
+    Ok(vec![
+        (
+            "CONTROLROOM_SESSION_ID".to_owned(),
+            session.as_str().to_owned(),
+        ),
+        (
+            "CONTROLROOM_AGENT_SOCKET".to_owned(),
+            dirs.agent_socket(session.as_str()).to_string(),
+        ),
+        (
+            "CONTROLROOM_AGENT_TOKEN".to_owned(),
+            token.as_str().to_owned(),
+        ),
+    ])
+}
+
+/// The agent token of the session's current launch, if it has one.
+pub fn load_agent_token(dirs: &Dirs, session: &str) -> Option<HookSecret> {
+    let text = std::fs::read_to_string(dirs.agent_token(session).as_path()).ok()?;
+    HookSecret::parse(text.trim())
 }
 
 /// Writes `KEY=VALUE` lines with mode 0600, replacing the file atomically.

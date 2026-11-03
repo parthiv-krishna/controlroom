@@ -18,6 +18,7 @@ use controlroom_transcript::{Reader, Record};
 use futures::future::BoxFuture;
 use tokio::sync::mpsc;
 
+use super::agent::AgentSockets;
 use crate::dirs::{Dirs, expand_home};
 use crate::launch::supervisor_paths;
 
@@ -32,12 +33,18 @@ pub struct DaemonHost {
     dirs: Dirs,
     /// The `controlroomd` that runs supervisors (the immutable versioned binary).
     controlroomd: PathBuf,
+    /// The agent sockets (a deleted session's is stopped and removed).
+    sockets: Arc<AgentSockets>,
 }
 
 impl DaemonHost {
     /// A host for `dirs`, running supervisors from `controlroomd`.
-    pub fn new(dirs: Dirs, controlroomd: PathBuf) -> Self {
-        Self { dirs, controlroomd }
+    pub fn new(dirs: Dirs, controlroomd: PathBuf, sockets: Arc<AgentSockets>) -> Self {
+        Self {
+            dirs,
+            controlroomd,
+            sockets,
+        }
     }
 
     fn session_id(id: SessionId) -> Result<controlroom_sandbox::SessionId, HostError> {
@@ -161,6 +168,7 @@ impl Host for DaemonHost {
 
     fn remove(&self, session: SessionId) -> BoxFuture<'_, Result<(), HostError>> {
         Box::pin(async move {
+            self.sockets.forget(session);
             let id = Self::session_id(session)?;
             let paths = supervisor_paths(&self.dirs, &id);
             for result in [

@@ -9,7 +9,7 @@
 //! Launches get the approval webhook's port when its listener runs; without it, `approve` rules
 //! fail closed to `deny`.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use controlroom_drivers::{Driver, FakeDriver, PiDriver};
 use controlroom_protocol::session::{
@@ -24,6 +24,7 @@ use controlroom_sandbox::policy::{
 use controlroom_sandbox::{AbsPath, Domain, EffectivePolicy, Name, SandboxLevel, effective_policy};
 use controlroom_supervisor::SpawnSpec;
 
+use super::agent::AgentSockets;
 use crate::config::agents::{self as agents_config, AgentEntry};
 use crate::config::sandbox as sandbox_config;
 use crate::dirs::Dirs;
@@ -40,17 +41,26 @@ pub struct DaemonAgents {
     nono: Mutex<Option<AbsPath>>,
     /// The OAuth helper, once found (looked up again while missing).
     oauth_helper: Mutex<Option<AbsPath>>,
+    /// The agent sockets; a launch binds its session's first.
+    sockets: Arc<AgentSockets>,
 }
 
 impl DaemonAgents {
-    /// Agents of `dirs`, launched by `controlroomd`, with approvals sent to `webhook_port`.
-    pub fn new(dirs: Dirs, controlroomd: AbsPath, webhook_port: Option<u16>) -> Self {
+    /// Agents of `dirs`, launched by `controlroomd`, with approvals sent to `webhook_port`
+    /// and the extension's socket served by `sockets`.
+    pub fn new(
+        dirs: Dirs,
+        controlroomd: AbsPath,
+        webhook_port: Option<u16>,
+        sockets: Arc<AgentSockets>,
+    ) -> Self {
         Self {
             dirs,
             controlroomd,
             webhook_port,
             nono: Mutex::new(None),
             oauth_helper: Mutex::new(None),
+            sockets,
         }
     }
 
@@ -154,6 +164,10 @@ impl Agents for DaemonAgents {
             .map_err(|e| sandbox_unavailable(e.to_string()))?;
         let cwd =
             AbsPath::new(start.cwd.as_str()).map_err(|e| sandbox_unavailable(e.to_string()))?;
+        if let Err(e) = self.sockets.ensure(start.session) {
+            // The agent still runs; its extension keeps retrying the socket.
+            tracing::warn!("session {}: binding its agent socket: {e}", start.session);
+        }
         let launch = launch::AgentLaunch {
             session,
             cwd,

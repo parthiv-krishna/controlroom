@@ -136,6 +136,12 @@ fn strict_launch_runs_nono_with_a_written_profile() {
         get("XDG_STATE_HOME"),
         Some(state.join("nono/state").as_str())
     );
+    // @controlroom/pi finds its own socket and the launch's token.
+    let agent_socket = state.join(&format!("run/{SESSION}.agent.sock"));
+    assert_eq!(get("CONTROLROOM_SESSION_ID"), Some(SESSION));
+    assert_eq!(get("CONTROLROOM_AGENT_SOCKET"), Some(agent_socket.as_str()));
+    let token = load_agent_token(&f.host.dirs, SESSION).unwrap();
+    assert_eq!(get("CONTROLROOM_AGENT_TOKEN"), Some(token.as_str()));
 
     let profile: Value = serde_json::from_str(
         &std::fs::read_to_string(session_dir.join("profile.json").as_path()).unwrap(),
@@ -154,6 +160,11 @@ fn strict_launch_runs_nono_with_a_written_profile() {
     let text = profile.to_string();
     assert!(!text.contains("approve"), "{text}");
     assert!(!text.contains("daemon.sock"), "{text}");
+    // The sandbox may reach its own agent socket, and no other.
+    assert_eq!(
+        profile["filesystem"]["unix_socket"],
+        serde_json::json!([agent_socket.as_str()])
+    );
     // The fake credentials never contain the real key.
     let models = std::fs::read_to_string(session_dir.join("agent/models.json").as_path()).unwrap();
     assert!(!models.contains("sk-test-key"));
@@ -212,7 +223,25 @@ fn level_off_runs_the_login_shell_directly() {
         argv(&prepared),
         ["/bin/sh", "-lc", "exec pi --mode rpc --session-id 'a b'"]
     );
-    assert!(prepared.request.spec.env_file.is_none());
+    // The env file only carries what @controlroom/pi needs; a new launch has a new token.
+    let env = std::fs::read_to_string(prepared.request.spec.env_file.as_ref().unwrap()).unwrap();
+    let env = controlroom_supervisor::parse_env(&env).unwrap();
+    let keys: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            "CONTROLROOM_SESSION_ID",
+            "CONTROLROOM_AGENT_SOCKET",
+            "CONTROLROOM_AGENT_TOKEN"
+        ]
+    );
+    let token = load_agent_token(&f.host.dirs, SESSION).unwrap();
+    prepare(&f.host, &launch(&f, Some(SandboxLevel::Off), None)).unwrap();
+    assert!(
+        !load_agent_token(&f.host.dirs, SESSION)
+            .unwrap()
+            .matches(&token)
+    );
     assert!(prepared.sandbox.is_none());
     assert_eq!(prepared.request.spec.labels["sandbox"], "off");
 }

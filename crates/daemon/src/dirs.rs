@@ -7,9 +7,11 @@
 //!     daemon.log                                            stderr of a detached daemon
 //!     run/daemon.sock, run/daemon.lock                      the daemon socket and instance lock
 //!     run/<id>.sock                                         supervisor sockets
+//!     run/<id>.agent.sock                                   agent sockets (@controlroom/pi)
 //!     run/webhook.port                                      the approval webhook's loopback port
 //!     sessions/<id>/                                        transcript, supervisor files, sandbox dirs
 //!     sessions/<id>/hook.secret                             the running launch's webhook secret
+//!     sessions/<id>/agent.token                             the running launch's agent token
 //!     nono/{state,config}/                                  nono's own XDG dirs
 //! ~/.config/controlroom/{agents.toml,sandbox.toml}          configuration
 //! ```
@@ -122,6 +124,16 @@ impl Dirs {
         self.run().join(&format!("{id}.sock"))
     }
 
+    /// `<state>/run/<id>.agent.sock`: the session's agent socket, which its sandbox may reach.
+    pub fn agent_socket(&self, id: &str) -> AbsPath {
+        self.run().join(&format!("{id}.agent.sock"))
+    }
+
+    /// `<state>/sessions/<id>/agent.token`: the agent token of the session's current launch.
+    pub fn agent_token(&self, id: &str) -> AbsPath {
+        self.state.join("sessions").join(id).join("agent.token")
+    }
+
     /// `<state>/run/webhook.port`: the approval webhook's port, reused across restarts so
     /// running agents' profiles keep pointing at it.
     pub fn webhook_port(&self) -> AbsPath {
@@ -199,6 +211,8 @@ mod tests {
         );
         let sock = d.supervisor_socket("01HZY3K4M5N6P7Q8R9S0T1V2W3");
         assert!(sock.as_str().len() < controlroom_supervisor::SUN_PATH_MAX);
+        let agent = d.agent_socket("01HZY3K4M5N6P7Q8R9S0T1V2W3");
+        assert!(agent.as_str().len() < controlroom_supervisor::SUN_PATH_MAX);
         assert!(!sock.as_str().contains("/run/user/"));
     }
 

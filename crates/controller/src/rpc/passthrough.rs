@@ -26,7 +26,8 @@ pub(crate) enum Fill {
     PromptOrigin,
     /// `sandbox`: the session's refreshed defaults (machine and matching projects).
     Sandbox,
-    /// `by`: the deciding device is this connection's, always (a client's value is dropped).
+    /// `by`: the deciding (or editing) device is this connection's, always (a client's value
+    /// is dropped).
     Responder,
 }
 
@@ -90,10 +91,22 @@ const TABLE: &[Entry] = &[
         fill: Fill::Responder,
         ..plain("request.respond")
     },
-    plain("todo.add"),
-    plain("todo.update"),
-    plain("todo.remove"),
-    plain("todo.reorder"),
+    Entry {
+        fill: Fill::Responder,
+        ..plain("todo.add")
+    },
+    Entry {
+        fill: Fill::Responder,
+        ..plain("todo.update")
+    },
+    Entry {
+        fill: Fill::Responder,
+        ..plain("todo.remove")
+    },
+    Entry {
+        fill: Fill::Responder,
+        ..plain("todo.reorder")
+    },
     plain("job.list"),
     plain("job.logs"),
     plain("job.kill"),

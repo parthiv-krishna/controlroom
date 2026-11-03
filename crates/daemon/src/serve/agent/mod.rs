@@ -46,7 +46,11 @@ impl AgentSockets {
     }
 
     /// Starts serving with `runtime`, binding the socket of every session in `sessions`.
-    pub fn serve(self: &Arc<Self>, runtime: Runtime, sessions: impl IntoIterator<Item = SessionId>) {
+    pub fn serve(
+        self: &Arc<Self>,
+        runtime: Runtime,
+        sessions: impl IntoIterator<Item = SessionId>,
+    ) {
         if self.runtime.set(runtime).is_err() {
             return;
         }
@@ -97,7 +101,9 @@ impl AgentSockets {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<SessionId, AbortHandle>> {
-        self.listeners.lock().unwrap_or_else(PoisonError::into_inner)
+        self.listeners
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 

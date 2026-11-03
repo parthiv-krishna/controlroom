@@ -1,8 +1,8 @@
 //! Routes one request (after `hello`) to the runtime or to the daemon's own handlers.
 //!
-//! Session, queue, request and settings commands go to the runtime. `agents.list`,
+//! Session, queue, request, todo and settings commands go to the runtime. `agents.list`,
 //! `fs.list` and `doctor.report` run here on blocking threads. Features of later phases
-//! (`job.*`, `todo.*`, `sandbox.revoke`, `outbox.*`, `inbox.deliver`) answer `unsupported`.
+//! (`job.*`, `sandbox.revoke`, `outbox.*`, `inbox.deliver`) answer `unsupported`.
 
 use std::sync::Arc;
 
@@ -122,11 +122,12 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         DaemonRequest::SettingsGet(_) => json(Ok(runtime.settings())),
         DaemonRequest::SettingsSet(p) => json(runtime.set_settings(p).await),
 
-        DaemonRequest::TodoAdd(_)
-        | DaemonRequest::TodoUpdate(_)
-        | DaemonRequest::TodoRemove(_)
-        | DaemonRequest::TodoReorder(_)
-        | DaemonRequest::JobList(_)
+        DaemonRequest::TodoAdd(p) => json(runtime.todo_add(p).await),
+        DaemonRequest::TodoUpdate(p) => json(runtime.todo_update(p).await),
+        DaemonRequest::TodoRemove(p) => ack(runtime.todo_remove(p).await),
+        DaemonRequest::TodoReorder(p) => ack(runtime.todo_reorder(p).await),
+
+        DaemonRequest::JobList(_)
         | DaemonRequest::JobLogsMethod(_)
         | DaemonRequest::JobKill(_)
         | DaemonRequest::JobFollowMethod(_)
