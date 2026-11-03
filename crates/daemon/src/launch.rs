@@ -318,6 +318,14 @@ fn sandbox_spec(
         policy,
         read_only: host.sandbox.read_only.clone(),
         relaxed_reads: host.sandbox.relaxed_reads.clone(),
+        // nono refuses a missing executable directory.
+        exec_dirs: host
+            .sandbox
+            .exec_dirs
+            .iter()
+            .filter(|d| d.as_path().is_dir())
+            .cloned()
+            .collect(),
         // The controller socket is not for agents; @controlroom/pi gets its own (P5).
         daemon_socket: None,
         protected,

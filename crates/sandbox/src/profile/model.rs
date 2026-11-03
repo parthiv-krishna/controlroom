@@ -210,6 +210,9 @@ pub struct ApprovalDefaults {
 /// `command_policies`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CommandPolicies {
+    /// Directories scanned, like `PATH`'s, for executables the session may run.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub executable_dirs: Vec<String>,
     /// Approval backends for command and endpoint approvals.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub approval_backends: BTreeMap<&'static str, ApprovalBackend>,

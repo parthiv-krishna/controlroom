@@ -5,7 +5,8 @@
 //! and sets:
 //!
 //! - `CR_TEST_NONO`: the nono binary;
-//! - `CR_TEST_PATH`: a `PATH` with bash, coreutils, git, ssh, scp, curl and getent;
+//! - `CR_TEST_PATH`: a `PATH` with bash, coreutils-full (as on NixOS, where `/usr/bin/env` is
+//!   the plain coreutils, not on `PATH`), git, ssh, scp, curl, getent and node;
 //! - `CR_TEST_SHADOW_PATH`: a directory with a *different* git store copy;
 //! - `CR_TEST_CONTROLROOMD`: a built `controlroomd`;
 //! - `CR_TEST_PI` (optional): a pi binary, for the RPC check.
@@ -133,6 +134,11 @@ impl Host {
                     resolve_pin(r.command.as_str(), &self.path_var)?,
                 ))
             })
+            .collect();
+        // The daemon's defaults (`sandbox.toml` `exec_dirs`), minus missing directories.
+        spec.exec_dirs = [p("/usr/bin"), p("/bin")]
+            .into_iter()
+            .filter(|d| d.as_path().is_dir())
             .collect();
         spec
     }
@@ -635,4 +641,155 @@ fn pi_rpc_stdout_is_clean_jsonl() {
     }
     assert!(responded, "no get_state response: {stdout}");
     assert_eq!(out.status.code(), Some(0), "stderr: {}", text(&out.stderr));
+}
+
+/// Whether `/usr/bin/env` is the same file as an `env` on the test `PATH` (then it is runnable
+/// without `exec_dirs`, and the negative check below would prove nothing).
+fn usr_bin_env_on_path(path_var: &str) -> bool {
+    let Ok(env) = std::fs::canonicalize("/usr/bin/env") else {
+        return true;
+    };
+    resolve_pin("env", path_var).is_some_and(|pin| {
+        std::iter::once(&pin.executable)
+            .chain(&pin.shadows)
+            .any(|p| p.as_path() == env)
+    })
+}
+
+#[test]
+#[ignore = "needs nono 0.80.0 and Landlock; run crates/sandbox/scripts/validate-nono.sh"]
+fn programs_in_cwd_run_while_writes_stay_confined_and_git_stays_mediated() {
+    let host = Host::new();
+    let hook = HookServer::start(|req| match &req.subject {
+        ApprovalSubject::Command { args, .. } => args.iter().any(|a| a.ends_with(":granted")),
+        _ => false,
+    });
+    let mut spec = host.spec(&hook);
+    let outside = host.root.join("outside");
+    let script = format!(
+        r##"
+        printf '#!/bin/sh\necho sh\n' > sh.sh
+        printf '#!/usr/bin/env bash\necho env\n' > env.sh
+        printf '#!/bin/sh\necho x > {o}/from-script.txt\n' > escape.sh
+        chmod +x sh.sh env.sh escape.sh
+        [ "$(./sh.sh)" = sh ] && echo sh_script=ok
+        [ "$(./env.sh)" = env ] && echo env_script=ok
+        ./escape.sh 2>/dev/null && echo script_write=BAD || echo script_write=denied
+        mkdir -p node_modules/tool/bin node_modules/.bin
+        printf '#!/usr/bin/env node\nconsole.log("node")\n' > node_modules/tool/bin/cli.js
+        chmod +x node_modules/tool/bin/cli.js
+        ln -s ../tool/bin/cli.js node_modules/.bin/tool
+        [ "$(node_modules/.bin/tool)" = node ] && echo node_bin=ok
+        mkdir -p target/debug && cp "$(readlink -f "$(command -v curl)")" target/debug/app
+        target/debug/app --version >/dev/null && echo target_elf=ok
+        git init -q --bare remote.git && git init -q repo && cd repo
+        git -c user.email=alice@example.com -c user.name=alice commit -q --allow-empty -m init
+        git remote add origin ../remote.git
+        git push -q origin HEAD:granted 2>/dev/null; echo push_granted=$?
+        git push -q origin HEAD:denied 2>/dev/null; echo push_denied=$?
+        {git} push -q origin HEAD:abs 2>/dev/null; echo push_abs=$?
+        "##,
+        o = outside,
+        git = spec.pins[&name("git")].executable,
+    );
+    let out = host.run(&spec, &script, b"");
+    let r = results(&out);
+    for (k, v) in [
+        ("sh_script", "ok"),
+        ("env_script", "ok"),
+        ("script_write", "denied"),
+        ("node_bin", "ok"),
+        ("target_elf", "ok"),
+        ("push_granted", "0"),
+        ("push_denied", "126"),
+        ("push_abs", "126"),
+    ] {
+        assert_eq!(
+            r.get(k).map(String::as_str),
+            Some(v),
+            "{k}; stdout: {}; stderr: {}",
+            text(&out.stdout),
+            text(&out.stderr)
+        );
+    }
+    assert!(!outside.join("from-script.txt").as_path().exists());
+
+    // Without `exec_dirs`, `#!/usr/bin/env` fails wherever `/usr/bin/env` isn't on PATH
+    // (NixOS: it is coreutils, while the system PATH has coreutils-full).
+    if !usr_bin_env_on_path(&host.path_var) {
+        spec.exec_dirs.clear();
+        let script = "printf '#!/usr/bin/env bash\\n' > e.sh; chmod +x e.sh; ./e.sh; echo rc=$?";
+        let out = host.run(&spec, script, b"");
+        assert_eq!(results(&out).get("rc").map(String::as_str), Some("126"));
+    }
+}
+
+/// nono identifies mediated commands by file identity, and the session may execute anything
+/// under its writable directories. A *copy* of git in the working directory therefore runs
+/// unmediated, with the session's own grants: it can push without approval to a remote the
+/// session can write anyway, but it can't write elsewhere and reaches no host outside the
+/// session's network allowlist. This pins that behavior down: mediation is a policy layer;
+/// the sandbox's filesystem, network and credential limits are the boundary.
+#[test]
+#[ignore = "needs nono 0.80.0 and Landlock; run crates/sandbox/scripts/validate-nono.sh"]
+fn a_copied_git_in_cwd_is_unmediated_but_bounded_by_the_session_sandbox() {
+    let host = Host::new();
+    let hook = HookServer::start(|_| true);
+    let mut spec = host.spec(&hook);
+    // The session may read, not write, a remote outside its working directory.
+    spec.read_only.push(host.root.join("outside"));
+    let git = spec.pins[&name("git")].executable.clone();
+    let git_core = git
+        .parent()
+        .and_then(|bin| bin.parent())
+        .expect("store layout")
+        .join("libexec/git-core");
+    let outside_remote = host.root.join("outside/remote.git");
+    let init = std::process::Command::new(git.as_path())
+        .args(["init", "-q", "--bare", outside_remote.as_str()])
+        .status()
+        .expect("git init");
+    assert!(init.success());
+    let script = format!(
+        r##"
+        mkdir tools
+        for t in git git-receive-pack; do cp {git} tools/$t; done
+        cp -L {core}/git-remote-https tools/
+        export GIT_EXEC_PATH=$PWD/tools
+        git init -q --bare remote.git && git init -q repo && cd repo
+        git -c user.email=alice@example.com -c user.name=alice commit -q --allow-empty -m init
+        ../tools/git push -q ../remote.git HEAD:copied 2>/dev/null; echo copy_push_cwd=$?
+        ../tools/git push -q {outside} HEAD:copied 2>/dev/null; echo copy_push_outside=$?
+        ../tools/git ls-remote https://example.com/x.git >/dev/null 2>&1; echo copy_network=$?
+        "##,
+        core = git_core,
+        outside = outside_remote,
+    );
+    let out = host.run(&spec, &script, b"");
+    let r = results(&out);
+    let get = |k: &str| {
+        r.get(k).cloned().unwrap_or_else(|| {
+            panic!(
+                "{k} missing; stdout: {}; stderr: {}",
+                text(&out.stdout),
+                text(&out.stderr)
+            )
+        })
+    };
+    assert_eq!(get("copy_push_cwd"), "0", "the copy runs, unmediated");
+    assert_ne!(
+        get("copy_push_outside"),
+        "0",
+        "only with the session's grants"
+    );
+    assert_ne!(
+        get("copy_network"),
+        "0",
+        "and the session's network allowlist"
+    );
+    assert!(
+        hook.seen().is_empty(),
+        "no approval was asked: {:?}",
+        hook.seen()
+    );
 }

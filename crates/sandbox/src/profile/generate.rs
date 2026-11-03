@@ -414,6 +414,7 @@ fn command_policies(
         return None;
     }
     Some(CommandPolicies {
+        executable_dirs: strings(&spec.exec_dirs),
         approval_backends: backend
             .map(|b| BTreeMap::from([(BACKEND, b)]))
             .unwrap_or_default(),

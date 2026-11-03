@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use crate::paths::AbsPath;
-use crate::policy::{CommandDecision, SandboxLevel};
+use crate::policy::{Access, CommandDecision, SandboxLevel};
 use crate::spec::{Endpoint, SessionSandboxSpec};
 
 /// Why a spec or profile was rejected.
@@ -30,6 +30,15 @@ pub enum ProfileError {
         grant: AbsPath,
         /// The protected path it covers.
         protected: AbsPath,
+    },
+    /// An executable directory is writable by the session (nono refuses it: the session could
+    /// plant programs there).
+    #[error("executable directory {dir} is writable inside the sandbox (under {writable})")]
+    WritableExecDir {
+        /// The executable directory.
+        dir: AbsPath,
+        /// The writable directory it is in.
+        writable: AbsPath,
     },
     /// A credential route has no allow or approve rules.
     #[error("credential route for {0} has no endpoint policy")]
@@ -93,6 +102,7 @@ pub fn validate_spec(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
         return Err(ProfileError::RootWorkdir);
     }
     check_protected(spec)?;
+    check_exec_dirs(spec)?;
     check_routes(spec)?;
     check_approvals(spec)
 }
@@ -106,6 +116,7 @@ fn check_protected(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
     let relaxed = spec.active_relaxed_reads();
     let grants = std::iter::once(&spec.cwd)
         .chain(&spec.read_only)
+        .chain(&spec.exec_dirs)
         .chain(spec.policy.paths.iter().map(|g| &g.path))
         .chain(relaxed.iter().map(|g| &g.path));
     for grant in grants {
@@ -113,6 +124,28 @@ fn check_protected(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
             return Err(ProfileError::CoversProtected {
                 grant: grant.clone(),
                 protected: (*p).clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn check_exec_dirs(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
+    let writable_grants = spec
+        .policy
+        .paths
+        .iter()
+        .filter(|g| g.access == Access::ReadWrite)
+        .map(|g| g.path.clone());
+    let writable: Vec<AbsPath> = std::iter::once(spec.cwd.clone())
+        .chain(spec.layout.sandbox_dirs())
+        .chain(writable_grants)
+        .collect();
+    for dir in &spec.exec_dirs {
+        if let Some(w) = writable.iter().find(|w| w.contains(dir)) {
+            return Err(ProfileError::WritableExecDir {
+                dir: dir.clone(),
+                writable: w.clone(),
             });
         }
     }

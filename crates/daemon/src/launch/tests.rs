@@ -253,3 +253,31 @@ fn rejected_policies_write_nothing_runnable() {
             .exists()
     );
 }
+
+#[test]
+fn existing_exec_dirs_reach_the_profile_with_mediation() {
+    let mut f = fixture("");
+    let tools = f.root.join("tools");
+    std::fs::create_dir_all(tools.as_path()).unwrap();
+    f.host.sandbox.exec_dirs = vec![tools.clone(), f.root.join("missing")];
+    // A `git` on PATH turns mediation (and with it nono's exec gate) on.
+    let bin = f.root.join("bin");
+    std::fs::create_dir_all(bin.as_path()).unwrap();
+    let git = bin.join("git");
+    std::fs::write(git.as_path(), "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(git.as_path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+    f.host.path_var = bin.to_string();
+
+    prepare(&f.host, &launch(&f, None, None)).unwrap();
+    let path = f
+        .host
+        .dirs
+        .state()
+        .join(&format!("sessions/{SESSION}/profile.json"));
+    let profile: Value =
+        serde_json::from_str(&std::fs::read_to_string(path.as_path()).unwrap()).unwrap();
+    assert_eq!(
+        profile["command_policies"]["executable_dirs"],
+        serde_json::json!([tools.as_str()])
+    );
+}

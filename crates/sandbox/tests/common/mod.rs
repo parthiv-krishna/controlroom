@@ -62,6 +62,7 @@ pub fn minimal(state: &AbsPath, cwd: &AbsPath) -> SessionSandboxSpec {
         policy: effective_policy([], &ScopePolicy::default()),
         read_only: vec![p("/nix/store")],
         relaxed_reads: Vec::new(),
+        exec_dirs: Vec::new(),
         daemon_socket: None,
         protected: vec![state.clone()],
         credential_routes: Vec::new(),
@@ -111,6 +112,7 @@ pub fn full() -> SessionSandboxSpec {
     spec.policy = effective_policy([&machine, &project], &ScopePolicy::default());
     spec.read_only
         .push(p("/nix/store/bbbb-controlroom-pi-bundle"));
+    spec.exec_dirs = vec![p("/usr/bin"), p("/bin")];
     spec.daemon_socket = Some(state.join("daemon.sock"));
     spec.protected.push(p("/home/alice/.pi/agent"));
     spec.credential_routes = vec![

@@ -123,6 +123,44 @@ fn grants_must_not_cover_protected_paths() {
 }
 
 #[test]
+fn exec_dirs_must_not_be_writable_in_the_sandbox() {
+    type Mutation = fn(&mut SessionSandboxSpec);
+    let cases: [(&str, Mutation); 3] = [
+        ("a tool dir in cwd", |s| {
+            s.exec_dirs.push(p("/home/alice/project/node_modules/.bin"))
+        }),
+        ("the session home", |s| {
+            let home = s.layout.home();
+            s.exec_dirs.push(home.join("bin"))
+        }),
+        ("a read-write grant", |s| {
+            s.exec_dirs.push(p("/home/alice/shared/bin"))
+        }),
+    ];
+    for (what, mutate) in cases {
+        let mut spec = full();
+        mutate(&mut spec);
+        assert!(
+            matches!(
+                generate_profile(&spec),
+                Err(ProfileError::WritableExecDir { .. })
+            ),
+            "{what}"
+        );
+    }
+    // A read-only grant is fine.
+    let mut spec = full();
+    spec.exec_dirs.push(p("/home/alice/datasets/bin"));
+    let profile = generate_profile(&spec)
+        .expect("read-only exec dir")
+        .to_value();
+    assert_eq!(
+        profile["command_policies"]["executable_dirs"],
+        json!(["/usr/bin", "/bin", "/home/alice/datasets/bin"])
+    );
+}
+
+#[test]
 fn endpoint_policies_are_mandatory_and_narrow() {
     let mut spec = full();
     spec.credential_routes[0].endpoints = EndpointPolicy::default();

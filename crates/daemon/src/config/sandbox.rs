@@ -11,6 +11,7 @@
 //! npm = "/nix/store/…-bundle"       # target of the session's agent/npm link
 //! tmp_seed = "/nix/store/…-jiti"    # copied into a new session's TMPDIR (warm jiti cache)
 //! read_only = ["/nix/store"]        # readable system paths
+//! exec_dirs = ["/usr/bin", "/bin"]  # besides PATH, where the agent may run programs from (see below)
 //! relaxed_reads = [{ path = "~/.gitconfig", kind = "file" }]  # level relaxed only
 //! approval_timeout_secs = 600
 //! nono_tmp = "/tmp"                 # nono's own TMPDIR; short, because nono binds sockets in it
@@ -25,6 +26,13 @@
 //! allow = ["POST /v1/chat/completions"]
 //! approve = ["GET /model/info"]
 //! ```
+//!
+//! **Executables.** With command mediation, nono 0.80 lets a session run only the programs in
+//! its `PATH` directories, in `exec_dirs`, and under its writable directories (the working
+//! directory included, so `./script.sh`, `node_modules/.bin/*` and `target/*` builds run),
+//! plus their ELF and shebang interpreters. The defaults make `#!/usr/bin/env` and `#!/bin/sh`
+//! scripts work on NixOS, where `/usr/bin/env` is not the coreutils on `PATH`. Directories
+//! that don't exist are skipped; writable ones are refused.
 //!
 //! **Loopback upstreams** (`http://127.0.0.1:<port>`) are refused unless
 //! `allow_loopback_upstreams = true`: with such a route, nono 0.80 stops excluding loopback
@@ -60,6 +68,8 @@ pub struct SandboxConfig {
     pub tmp_seed: Option<String>,
     /// Readable system paths.
     pub read_only: Vec<String>,
+    /// Directories, besides `PATH`'s, whose programs the agent may run.
+    pub exec_dirs: Vec<String>,
     /// Read-only home config added at level relaxed.
     pub relaxed_reads: Vec<RelaxedRead>,
     /// How long nono waits for an approval before denying.
@@ -84,6 +94,7 @@ impl Default for SandboxConfig {
             npm: None,
             tmp_seed: None,
             read_only: vec!["/nix/store".to_owned()],
+            exec_dirs: vec!["/usr/bin".to_owned(), "/bin".to_owned()],
             relaxed_reads: Vec::new(),
             approval_timeout_secs: 600,
             nono_tmp: "/tmp".to_owned(),
@@ -142,6 +153,9 @@ pub struct SandboxSettings {
     pub agent_dir: AgentDirSpec,
     /// Readable system paths.
     pub read_only: Vec<AbsPath>,
+    /// Directories, besides `PATH`'s, whose programs the agent may run (as configured; the
+    /// launch skips missing ones).
+    pub exec_dirs: Vec<AbsPath>,
     /// Read-only grants at level relaxed.
     pub relaxed_reads: Vec<PathGrant>,
     /// Approval timeout.
@@ -190,6 +204,11 @@ impl SandboxConfig {
                 .read_only
                 .iter()
                 .map(|p| path("read_only", p))
+                .collect::<Result<_, _>>()?,
+            exec_dirs: self
+                .exec_dirs
+                .iter()
+                .map(|p| path("exec_dirs", p))
                 .collect::<Result<_, _>>()?,
             relaxed_reads: self
                 .relaxed_reads
@@ -287,6 +306,13 @@ mod tests {
             "/home/alice/.pi/agent"
         );
         assert_eq!(s.read_only, [AbsPath::new("/nix/store").unwrap()]);
+        assert_eq!(
+            s.exec_dirs,
+            [
+                AbsPath::new("/usr/bin").unwrap(),
+                AbsPath::new("/bin").unwrap()
+            ]
+        );
         assert_eq!(s.nono_tmp.as_str(), "/tmp");
         assert!(s.routes.is_empty());
 

@@ -151,6 +151,10 @@
     }
   },
   "command_policies": {
+    "executable_dirs": [
+      "/usr/bin",
+      "/bin"
+    ],
     "approval_backends": {
       "controlroom": {
         "type": "webhook",

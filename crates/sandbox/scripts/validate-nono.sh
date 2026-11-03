@@ -18,8 +18,9 @@ nix build -o "$work/env" --impure --expr '
   with import <nixpkgs> {};
   buildEnv {
     name = "cr-sandbox-test-env";
-    paths = [ bashInteractive coreutils findutils gnugrep git openssh curl getent util-linux ];
+    paths = [ bashInteractive coreutils-full findutils gnugrep git openssh curl getent util-linux nodejs ];
   }'
+# coreutils-full, as on a NixOS system PATH: /usr/bin/env (plain coreutils) is then not on PATH.
 # A second, different git store copy: calling it by absolute path must not bypass mediation.
 nix build -o "$work/shadow" nixpkgs#gitMinimal
 

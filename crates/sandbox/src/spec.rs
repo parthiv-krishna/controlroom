@@ -23,6 +23,12 @@ pub struct SessionSandboxSpec {
     pub read_only: Vec<AbsPath>,
     /// Read-only home configuration added at [`crate::SandboxLevel::Relaxed`].
     pub relaxed_reads: Vec<PathGrant>,
+    /// Existing, non-writable directories whose executables (with their ELF and shebang
+    /// interpreters) the session may run besides `PATH`'s, e.g. `/usr/bin` for
+    /// `#!/usr/bin/env` scripts. With command mediation, nono 0.80 lets the session execute
+    /// only `PATH` executables, these, and anything under its writable directories (the
+    /// working directory included); without mediation execution is not restricted.
+    pub exec_dirs: Vec<AbsPath>,
     /// The daemon socket the controlroom extension connects to.
     pub daemon_socket: Option<AbsPath>,
     /// Paths no grant may cover (the daemon state dir, the user's real pi agent dir).
