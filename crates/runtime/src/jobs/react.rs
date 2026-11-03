@@ -1,5 +1,6 @@
 //! Folding job transcript records, ending jobs, and delivering wakes (under the runtime's lock).
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use controlroom_protocol::RpcError;
@@ -245,13 +246,12 @@ impl Core {
             self.touch(*id);
         }
         let now = self.clock.now();
-        let mut due: Vec<SessionId> = self
+        let due: BTreeSet<SessionId> = self
             .jobs
             .values()
             .filter(|l| l.progress.due_at.is_some_and(|at| at <= now))
             .map(|l| l.session)
             .collect();
-        due.dedup();
         for id in due {
             self.flush_job_wakes(id, false)?;
         }
