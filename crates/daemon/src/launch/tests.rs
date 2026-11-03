@@ -40,6 +40,7 @@ fn fixture(sandbox_toml: &str) -> Fixture {
         path_var: String::new(),
         sandbox: config.resolve(&home, None).unwrap(),
         nono: Some(AbsPath::new("/nix/store/aaaa-nono-0.80.0/bin/nono").unwrap()),
+        oauth_helper: None,
     };
     Fixture {
         _tmp: tmp,
@@ -280,4 +281,66 @@ fn existing_exec_dirs_reach_the_profile_with_mediation() {
         profile["command_policies"]["executable_dirs"],
         serde_json::json!([tools.as_str()])
     );
+}
+
+#[test]
+fn oauth_providers_get_routes_with_the_helper_and_npm_is_readable() {
+    let toml = r#"
+npm = "~/.pi/agent/npm"
+[[routes]]
+provider = "sub"
+upstream = "https://api.example.com"
+allow = ["POST /v1/responses"]
+"#;
+    let mut f = fixture(toml);
+    let user_agent = f.host.dirs.home().join(".pi/agent");
+    std::fs::write(
+        user_agent.join("auth.json").as_path(),
+        r#"{"sub": {"type": "oauth", "access": "a", "refresh": "r", "expires": 1}}"#,
+    )
+    .unwrap();
+    let profile = |f: &Fixture| -> Value {
+        prepare(&f.host, &launch(f, None, None)).unwrap();
+        let path = f
+            .host
+            .dirs
+            .state()
+            .join(&format!("sessions/{SESSION}/profile.json"));
+        serde_json::from_str(&std::fs::read_to_string(path.as_path()).unwrap()).unwrap()
+    };
+
+    // Without the helper the token can't be served, so there is no route.
+    let without = profile(&f);
+    assert!(
+        without["network"]["custom_credentials"]
+            .get("cr_sub")
+            .is_none()
+    );
+
+    f.host.oauth_helper =
+        Some(AbsPath::new("/nix/store/aaaa-controlroom-pi/bin/controlroom-pi-oauth").unwrap());
+    let with = profile(&f);
+    let capture = &with["credential_capture"]["cr_sub"];
+    let command: Vec<&str> = capture["command"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(command[4..7], ["--valid-for-secs", "600", SESSION]);
+    assert_eq!(capture["timeout_secs"], 60);
+    // The manifest tells `controlroomd credential` where the helper is.
+    let manifest = std::fs::read_to_string(
+        f.host
+            .dirs
+            .state()
+            .join(&format!("sessions/{SESSION}/credentials.json"))
+            .as_path(),
+    )
+    .unwrap();
+    assert!(manifest.contains("controlroom-pi-oauth"), "{manifest}");
+
+    // The user's installed pi packages behind agent/npm are readable, not writable.
+    let read = with["filesystem"]["read"].as_array().unwrap();
+    assert!(read.contains(&Value::String(user_agent.join("npm").to_string())));
 }

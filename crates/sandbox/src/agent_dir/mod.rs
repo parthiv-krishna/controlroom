@@ -56,6 +56,8 @@ pub struct AgentDirSpec {
     pub oauth_claims: BTreeMap<String, Vec<String>>,
     /// A directory copied into `tmp/` without overwriting (a pre-warmed jiti cache).
     pub tmp_seed: Option<AbsPath>,
+    /// The OAuth helper `controlroomd credential` runs for OAuth providers.
+    pub oauth_helper: Option<AbsPath>,
 }
 
 /// What the build found in the user's auth.
@@ -156,6 +158,8 @@ pub fn build_session_dirs(
         let manifest = CredentialManifest {
             agent_dir: dir.clone(),
             api_key_providers: api_key_providers.clone(),
+            oauth_providers: fake.oauth_providers.clone(),
+            oauth_helper: spec.oauth_helper.clone(),
         };
         let bytes = serde_json::to_vec_pretty(&manifest).expect("manifest serializes");
         write_atomic(layout.credential_manifest().as_path(), &bytes, 0o600)?;

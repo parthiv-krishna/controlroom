@@ -1,85 +1,19 @@
-//! Host-side credential lookup for `controlroomd credential <session> <provider>` (§11.3).
-//!
-//! nono's `credential_capture` runs the helper unsandboxed and injects its stdout into
-//! requests on the provider's route. The helper reads the session's [`CredentialManifest`]
-//! (written next to, not inside, the sandboxed agent dir) and resolves the provider's API key
-//! from the user's real pi config exactly as pi would: `auth.json` first, then
-//! `models.json`'s `apiKey`, each value being a literal, `$ENV`/`${ENV}` template or
-//! `!command`. Keys never travel through argv. OAuth refresh is out of scope here.
+//! API keys: resolved from the user's real pi config exactly as pi would. `auth.json` first,
+//! then `models.json`'s `apiKey`; each value is a literal, a `$ENV`/`${ENV}` template or a
+//! `!command`. Keys never travel through argv.
 
 use std::collections::HashMap;
-use std::fmt;
-use std::io::Read;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::Command;
+use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::layout::SessionLayout;
+use super::{CredentialError, CredentialManifest, Secret, process};
 use crate::names::Name;
 use crate::paths::AbsPath;
 
 /// How long a `!command` key may take (pi uses the same limit).
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Written by the agent-dir builder; tells the helper where the real config lives.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CredentialManifest {
-    /// The user's real pi agent dir.
-    pub agent_dir: AbsPath,
-    /// Providers the helper may resolve.
-    pub api_key_providers: Vec<String>,
-}
-
-/// A resolved key. `Debug` does not print it.
-pub struct Secret(String);
-
-impl Secret {
-    /// The key. Write it only to the helper's stdout.
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for Secret {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Secret(<redacted>)")
-    }
-}
-
-/// Why no key was produced. Messages never contain key material.
-#[derive(Debug, thiserror::Error)]
-pub enum CredentialError {
-    /// The session has no manifest (not built, or no user agent dir).
-    #[error("no credential manifest for this session: {0}")]
-    NoManifest(String),
-    /// The provider is not an API-key provider of this session.
-    #[error("provider {0} has no API key in this session")]
-    UnknownProvider(String),
-    /// The configured value could not be resolved (missing env var, failing command).
-    #[error("the API key of provider {0} could not be resolved")]
-    Unresolved(String),
-    /// A config file could not be read or parsed.
-    #[error("{path}: {problem}")]
-    Config {
-        /// The file.
-        path: String,
-        /// What went wrong.
-        problem: String,
-    },
-}
-
-/// Reads the manifest of `layout`'s session.
-pub fn load_manifest(layout: &SessionLayout) -> Result<CredentialManifest, CredentialError> {
-    let path = layout.credential_manifest();
-    let bytes = std::fs::read(path.as_path())
-        .map_err(|e| CredentialError::NoManifest(format!("{path}: {e}")))?;
-    serde_json::from_slice(&bytes).map_err(|e| CredentialError::Config {
-        path: path.to_string(),
-        problem: e.to_string(),
-    })
-}
 
 /// Resolves `provider`'s API key from the user's real config.
 pub fn resolve_api_key(
@@ -229,45 +163,19 @@ fn env_name_prefix_len(s: &str) -> usize {
     len
 }
 
-/// Runs `command` with `/bin/sh -c`, stdin closed, stderr discarded, killed after
-/// [`COMMAND_TIMEOUT`]. Returns trimmed stdout on success.
+/// Runs `command` with `/bin/sh -c`, killed after [`COMMAND_TIMEOUT`]. Returns trimmed stdout
+/// on success.
 fn run_command(command: &str) -> Option<String> {
-    let mut child = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(command)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-    let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
-        let mut buf = String::new();
-        stdout.read_to_string(&mut buf).map(|_| buf)
-    });
-    let deadline = Instant::now() + COMMAND_TIMEOUT;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
-    };
-    let out = reader.join().ok()?.ok()?;
-    let out = out.trim();
-    (status.success() && !out.is_empty()).then(|| out.to_owned())
+    let mut sh = Command::new("/bin/sh");
+    sh.arg("-c").arg(command);
+    let out = process::run(sh, COMMAND_TIMEOUT).ok()?;
+    let stdout = out.stdout.trim();
+    (out.success && !stdout.is_empty()).then(|| stdout.to_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::names::SessionId;
 
     fn lookup(var: &str) -> Option<String> {
         match var {
@@ -309,6 +217,8 @@ mod tests {
         let m = CredentialManifest {
             agent_dir: AbsPath::from_path(t.path()).unwrap(),
             api_key_providers: providers,
+            oauth_providers: Vec::new(),
+            oauth_helper: None,
         };
         (t, m)
     }
@@ -337,30 +247,5 @@ mod tests {
         ));
         let secret = resolve_api_key(&m, &name("gateway")).unwrap();
         assert!(!format!("{secret:?}").contains("abc"));
-    }
-
-    #[test]
-    fn manifest_round_trip() {
-        let t = tempfile::tempdir().unwrap();
-        let state = AbsPath::from_path(t.path()).unwrap();
-        let layout = SessionLayout::new(
-            &state,
-            &SessionId::new("01HZY3K4M5N6P7Q8R9S0T1V2W3").unwrap(),
-        );
-        assert!(matches!(
-            load_manifest(&layout),
-            Err(CredentialError::NoManifest(_))
-        ));
-        std::fs::create_dir_all(layout.root().as_path()).unwrap();
-        let m = CredentialManifest {
-            agent_dir: AbsPath::new("/home/alice/.pi/agent").unwrap(),
-            api_key_providers: vec!["gateway".into()],
-        };
-        std::fs::write(
-            layout.credential_manifest().as_path(),
-            serde_json::to_vec(&m).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(load_manifest(&layout).unwrap(), m);
     }
 }

@@ -4,9 +4,10 @@
 //! For levels strict and relaxed, [`prepare`]:
 //!
 //! 1. builds the session dirs from the user's real pi agent dir (`agent/` with fake
-//!    credentials, `home/`, `tmp/`) and finds the API-key providers;
+//!    credentials, `home/`, `tmp/`) and finds the API-key and OAuth providers;
 //! 2. assembles the [`SessionSandboxSpec`]: routes for the configured providers that have a
-//!    key, mediated commands pinned from the agent's `PATH`, the approval webhook (or, without
+//!    key (or an OAuth token, given the OAuth helper), read access to the `agent/npm` link's
+//!    target, mediated commands pinned from the agent's `PATH`, the approval webhook (or, without
 //!    one, every `approve` rule turned into `deny`), and the protected controlroom paths;
 //! 3. generates, checks and writes `profile.json`;
 //! 4. builds `nono run … -- $SHELL -lc 'exec <command> <driver args>'` and an env file with
@@ -59,6 +60,9 @@ pub struct Host {
     pub sandbox: SandboxSettings,
     /// The nono binary, when available.
     pub nono: Option<AbsPath>,
+    /// The OAuth helper (`sandbox.toml` `oauth_helper`), when found. Without it, OAuth providers
+    /// get no credential route.
+    pub oauth_helper: Option<AbsPath>,
 }
 
 /// One agent start.
@@ -152,7 +156,9 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
             binary: host.nono.clone().ok_or(LaunchError::NoNono)?,
             dirs: NonoDirs::under(host.dirs.state()),
         };
-        let built = build_session_dirs(&layout, &host.sandbox.agent_dir)?;
+        let mut agent_dir = host.sandbox.agent_dir.clone();
+        agent_dir.oauth_helper = host.oauth_helper.clone();
+        let built = build_session_dirs(&layout, &agent_dir)?;
         let hook = match launch.webhook_port {
             Some(port) => Some(HookUrl {
                 port,
@@ -229,9 +235,10 @@ pub fn supervisor_paths(dirs: &Dirs, id: &SessionId) -> Paths {
     }
 }
 
-/// Finds nono from `sandbox.toml`'s `nono` setting: an absolute (or `~/`) path as is, a
-/// program name through the login shell; then canonicalized (store paths, not profile links).
-pub fn find_nono(shell: &AbsPath, setting: &str, home: &AbsPath) -> Result<AbsPath, String> {
+/// Finds a program from a `sandbox.toml` setting (`nono`, `oauth_helper`): an absolute (or `~/`)
+/// path as is, a program name through the login shell; then canonicalized (store paths, not
+/// profile links).
+pub fn find_program(shell: &AbsPath, setting: &str, home: &AbsPath) -> Result<AbsPath, String> {
     let path = if setting.starts_with('/') || setting.starts_with('~') {
         crate::dirs::expand_home(setting, home)
             .map_err(|e| e.to_string())?
@@ -316,7 +323,7 @@ fn sandbox_spec(
         layout: layout.clone(),
         cwd: launch.cwd.clone(),
         policy,
-        read_only: host.sandbox.read_only.clone(),
+        read_only: read_only(host),
         relaxed_reads: host.sandbox.relaxed_reads.clone(),
         // nono refuses a missing executable directory.
         exec_dirs: host
@@ -333,12 +340,7 @@ fn sandbox_spec(
             .sandbox
             .routes
             .iter()
-            .filter(|r| {
-                built
-                    .api_key_providers
-                    .iter()
-                    .any(|p| p == r.provider.as_str())
-            })
+            .filter(|r| has_credential(host, built, r.provider.as_str()))
             .cloned()
             .collect(),
         credential_helper: CredentialHelper {
@@ -351,6 +353,26 @@ fn sandbox_spec(
         }),
         pins,
     }
+}
+
+/// The configured read-only paths, plus the `agent/npm` link's target (e.g. the user's installed pi
+/// packages, which `controlroom-pi --keep npm:<name>` loads) unless they already cover it.
+fn read_only(host: &Host) -> Vec<AbsPath> {
+    let mut read_only = host.sandbox.read_only.clone();
+    if let Some(npm) = &host.sandbox.agent_dir.npm
+        && !read_only.iter().any(|r| r.contains(npm))
+    {
+        read_only.push(npm.clone());
+    }
+    read_only
+}
+
+/// Whether `provider` has a credential `controlroomd credential` can serve: an API key, or an
+/// OAuth token given the helper.
+fn has_credential(host: &Host, built: &BuiltAgentDir, provider: &str) -> bool {
+    let listed = |providers: &[String]| providers.iter().any(|p| p == provider);
+    listed(&built.api_key_providers)
+        || (host.oauth_helper.is_some() && listed(&built.oauth_providers))
 }
 
 /// Writes `KEY=VALUE` lines with mode 0600, replacing the file atomically.

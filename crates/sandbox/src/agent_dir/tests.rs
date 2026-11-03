@@ -101,6 +101,7 @@ fn spec(f: &Fixture) -> AgentDirSpec {
         copy: vec!["AGENTS.md".into(), "ext-config".into(), "missing.md".into()],
         oauth_claims: BTreeMap::new(),
         tmp_seed: None,
+        oauth_helper: None,
     }
 }
 

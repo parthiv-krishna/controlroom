@@ -201,6 +201,7 @@ allow = ["POST /v1/chat/completions"]
         path_var: std::env::var("PATH").expect("PATH"),
         sandbox: config.resolve(dirs.home(), None).expect("sandbox settings"),
         nono: Some(env_path("CR_TEST_NONO")),
+        oauth_helper: None,
         dirs,
     };
     let session = SessionId::new(&ulid::Ulid::generate().to_string()).expect("session id");

@@ -170,10 +170,20 @@ impl Env {
         std::fs::write(config.join("agents.toml"), toml).unwrap();
     }
 
-    /// `controlroomd` with this environment.
+    /// `controlroomd` with this environment. The fake agent's directory is on its `PATH`, as
+    /// agents must be for nono (`doctor` reports agents elsewhere as missing).
     pub fn command(&self) -> Command {
+        let agent_dir = fake_agent()
+            .parent()
+            .expect("the fake agent has a directory");
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path = std::env::join_paths(
+            std::iter::once(agent_dir.to_owned()).chain(std::env::split_paths(&path)),
+        )
+        .expect("PATH");
         let mut cmd = Command::new(BIN);
         cmd.env("SHELL", self.path().join("login-shell"))
+            .env("PATH", path)
             .env("HOME", self.path())
             .env_remove("PI_CODING_AGENT_DIR")
             .env("CONTROLROOMD_LOG", "debug");

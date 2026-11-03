@@ -38,6 +38,8 @@ pub struct DaemonAgents {
     webhook_port: Option<u16>,
     /// nono, once found (looked up again while missing).
     nono: Mutex<Option<AbsPath>>,
+    /// The OAuth helper, once found (looked up again while missing).
+    oauth_helper: Mutex<Option<AbsPath>>,
 }
 
 impl DaemonAgents {
@@ -48,6 +50,7 @@ impl DaemonAgents {
             controlroomd,
             webhook_port,
             nono: Mutex::new(None),
+            oauth_helper: Mutex::new(None),
         }
     }
 
@@ -79,10 +82,13 @@ impl DaemonAgents {
             .resolve(self.dirs.home(), pi_agent_dir.as_deref())
             .map_err(|e| sandbox_unavailable(e.to_string()))?;
         let shell = login_shell();
-        let nono = if sandboxed {
-            Some(self.nono(&shell, &sandbox.nono)?)
+        let (nono, oauth_helper) = if sandboxed {
+            (
+                Some(self.nono(&shell, &sandbox.nono)?),
+                self.oauth_helper(&shell, &sandbox.oauth_helper),
+            )
         } else {
-            None
+            (None, None)
         };
         Ok(Host {
             dirs: self.dirs.clone(),
@@ -91,7 +97,20 @@ impl DaemonAgents {
             path_var: std::env::var("PATH").unwrap_or_default(),
             sandbox,
             nono,
+            oauth_helper,
         })
+    }
+
+    /// The OAuth helper; OAuth providers get no credential route without it.
+    fn oauth_helper(&self, shell: &AbsPath, setting: &str) -> Option<AbsPath> {
+        let mut cached = self.oauth_helper.lock().unwrap_or_else(|e| e.into_inner());
+        if cached.is_none() {
+            match launch::find_program(shell, setting, self.dirs.home()) {
+                Ok(path) => *cached = Some(path),
+                Err(e) => tracing::debug!("no OAuth helper: {e}"),
+            }
+        }
+        cached.clone()
     }
 
     fn nono(&self, shell: &AbsPath, setting: &str) -> Result<AbsPath, RpcError> {
@@ -99,7 +118,7 @@ impl DaemonAgents {
         if let Some(path) = cached.as_ref() {
             return Ok(path.clone());
         }
-        let path = launch::find_nono(shell, setting, self.dirs.home())
+        let path = launch::find_program(shell, setting, self.dirs.home())
             .map_err(|e| sandbox_unavailable(format!("nono: {e} (see `controlroomd doctor`)")))?;
         *cached = Some(path.clone());
         Ok(path)

@@ -39,8 +39,12 @@ const DENY_VARS: [&str; 9] = [
 /// even though direct `ssh` is denied.
 const CHAINS: [(&str, &str); 1] = [("git", "ssh")];
 
-/// Timeout of the host-side credential helper.
-const CREDENTIAL_TIMEOUT_SECS: u32 = 10;
+/// Timeout of the host-side credential helper: an OAuth refresh may wait up to 30 s for pi's
+/// `auth.json` lock and 15 s for the provider (the helper gives up after 55 s).
+const CREDENTIAL_TIMEOUT_SECS: u32 = 60;
+
+/// How much longer than nono caches it an OAuth token must stay valid.
+const TOKEN_VALIDITY_MARGIN_SECS: u32 = 300;
 
 /// Generates the nono profile for `spec`, after validating it.
 pub fn generate_profile(spec: &SessionSandboxSpec) -> Result<NonoProfile, ProfileError> {
@@ -221,6 +225,8 @@ fn credential_capture(spec: &SessionSandboxSpec) -> BTreeMap<String, CredentialC
                 "credential".to_owned(),
                 "--state-dir".to_owned(),
                 helper.state_dir.to_string(),
+                "--valid-for-secs".to_owned(),
+                (r.cache_ttl_secs + TOKEN_VALIDITY_MARGIN_SECS).to_string(),
                 spec.layout.id().to_string(),
                 r.provider.to_string(),
             ];

@@ -8,14 +8,14 @@ use controlroom_sandbox::probe::{self, Landlock, NonoStatus, PINNED_NONO_VERSION
 
 use super::{check, unknown};
 use crate::dirs::Dirs;
-use crate::launch::find_nono;
+use crate::launch::find_program;
 
 /// Landlock ABI that filters TCP (nono's network confinement needs it).
 const NETWORK_ABI: u32 = 4;
 
-/// Finds nono (see [`find_nono`]) and checks its version against the pin.
+/// Finds nono (see [`find_program`]) and checks its version against the pin.
 pub fn nono(dirs: &Dirs, shell: &AbsPath, setting: &str) -> DoctorCheck {
-    let path = match find_nono(shell, setting, dirs.home()) {
+    let path = match find_program(shell, setting, dirs.home()) {
         Ok(path) => path,
         Err(e) => {
             return check(

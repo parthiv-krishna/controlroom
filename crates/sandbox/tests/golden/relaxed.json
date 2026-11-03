@@ -102,10 +102,12 @@
         "credential",
         "--state-dir",
         "/home/alice/.local/share/controlroom",
+        "--valid-for-secs",
+        "600",
         "01HZY3K4M5N6P7Q8R9S0T1V2W3",
         "gateway"
       ],
-      "timeout_secs": 10,
+      "timeout_secs": 60,
       "cache_ttl_secs": 300
     }
   },

@@ -5,10 +5,11 @@
 //!
 //! ```toml
 //! nono = "nono"                     # program found by the login shell, or an absolute path
+//! oauth_helper = "controlroom-pi-oauth"  # likewise; refreshes OAuth tokens (controlroom-pi bundle)
 //! pi_agent_dir = "~/.pi/agent"      # the user's real pi agent dir (default: $PI_CODING_AGENT_DIR or ~/.pi/agent)
 //! keep = ["npm:@controlroom/pi"]    # pi resources (packages, extensions, ...) kept in sessions
 //! copy = ["AGENTS.md"]              # extra files copied from the real agent dir
-//! npm = "/nix/store/…-bundle"       # target of the session's agent/npm link
+//! npm = "~/.pi/agent/npm"          # target of the session's agent/npm link (readable in the sandbox)
 //! tmp_seed = "/nix/store/…-jiti"    # copied into a new session's TMPDIR (warm jiti cache)
 //! read_only = ["/nix/store"]        # readable system paths
 //! exec_dirs = ["/usr/bin", "/bin"]  # besides PATH, where the agent may run programs from (see below)
@@ -26,6 +27,10 @@
 //! allow = ["POST /v1/chat/completions"]
 //! approve = ["GET /model/info"]
 //! ```
+//!
+//! **OAuth providers** (in the real `auth.json`) get credential routes like API-key providers,
+//! once `oauth_helper` is found: `controlroomd credential` then prints fresh access tokens that
+//! the helper refreshes with pi's own locked refresh. Without the helper they get no route.
 //!
 //! **Executables.** With command mediation, nono 0.80 lets a session run only the programs in
 //! its `PATH` directories, in `exec_dirs`, and under its writable directories (the working
@@ -56,6 +61,8 @@ use crate::dirs::{Dirs, expand_home};
 pub struct SandboxConfig {
     /// nono: a program name resolved by the login shell, or an absolute (or `~/`) path.
     pub nono: String,
+    /// The OAuth helper (`controlroom-pi-oauth`), found like `nono`.
+    pub oauth_helper: String,
     /// The user's real pi agent dir.
     pub pi_agent_dir: Option<String>,
     /// Resource sources to keep in session settings.
@@ -88,6 +95,7 @@ impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
             nono: "nono".to_owned(),
+            oauth_helper: "controlroom-pi-oauth".to_owned(),
             pi_agent_dir: None,
             keep: Vec::new(),
             copy: Vec::new(),
@@ -149,6 +157,8 @@ fn default_ttl() -> u32 {
 pub struct SandboxSettings {
     /// How to find nono.
     pub nono: String,
+    /// How to find the OAuth helper.
+    pub oauth_helper: String,
     /// Inputs of `build_session_dirs`.
     pub agent_dir: AgentDirSpec,
     /// Readable system paths.
@@ -192,6 +202,7 @@ impl SandboxConfig {
         };
         Ok(SandboxSettings {
             nono: self.nono.clone(),
+            oauth_helper: self.oauth_helper.clone(),
             agent_dir: AgentDirSpec {
                 user_agent_dir: Some(user_agent_dir),
                 keep: self.keep.clone(),
@@ -199,6 +210,8 @@ impl SandboxConfig {
                 copy: self.copy.clone(),
                 oauth_claims: self.oauth_claims.clone(),
                 tmp_seed: optional("tmp_seed", &self.tmp_seed)?,
+                // Found at launch time (see `launch::Host`).
+                oauth_helper: None,
             },
             read_only: self
                 .read_only
