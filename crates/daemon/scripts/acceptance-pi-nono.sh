@@ -6,7 +6,8 @@
 # checks the run completes with no duplicate prompt, and runs a mediated `git push` that the
 # test approves, then denies, through the daemon's approval webhook (needs git on PATH);
 # `acceptance_agent` runs pi through the real controlroom-pi bundle (with @controlroom/pi):
-# todos, auto-continue, a question and the answer that wakes the agent.
+# todos, auto-continue, a question and the answer that wakes the agent; and a background job
+# it runs, follows and is woken by.
 # Needs Nix, Landlock and pi:
 #
 #   crates/daemon/scripts/acceptance-pi-nono.sh             # pi from PATH

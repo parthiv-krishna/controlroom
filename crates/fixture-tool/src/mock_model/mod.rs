@@ -98,6 +98,11 @@ impl MockModel {
         self.addr.port()
     }
 
+    /// Appends scripted replies (for replies that depend on what the agent did so far).
+    pub fn push(&self, replies: impl IntoIterator<Item = Reply>) {
+        lock(&self.shared.replies).extend(replies);
+    }
+
     /// Let streams waiting at `gate` continue.
     pub fn release(&self, gate: &str) {
         self.shared.released.send_modify(|set| {

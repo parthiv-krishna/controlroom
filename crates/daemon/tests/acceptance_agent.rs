@@ -9,6 +9,10 @@
 //! 3. the user answers; the answer wakes the agent, which completes both todos (by their
 //!    numbers) and finishes with no open items left, so nothing continues.
 //!
+//! A second scenario runs a background job (a `./run-tests.sh` script in the cwd) with the `job`
+//! tool, follows it with a pattern, is woken by the matching line, reads the log in its sandbox
+//! and is woken by the exit.
+//!
 //! The extension reaches its own agent socket from inside the sandbox with the launch's token.
 //! The bundle lives in the Nix store, which the sandbox reads; its launcher runs from
 //! `sandbox.toml` `exec_dirs` (`CR_TEST_PI_BUNDLE`, built by the script).
@@ -107,6 +111,17 @@ allow = ["POST /v1/chat/completions"]
 /// nono's short `TMPDIR`; removes what a killed nono left when dropped (after the env).
 struct NonoTmp(tempfile::TempDir);
 
+impl NonoTmp {
+    fn new() -> Self {
+        NonoTmp(
+            tempfile::Builder::new()
+                .prefix("crn")
+                .tempdir_in("/tmp")
+                .unwrap(),
+        )
+    }
+}
+
 impl Drop for NonoTmp {
     fn drop(&mut self) {
         controlroom_sandbox::tempdirs::clean_leaked_nono_dirs(self.0.path(), Duration::ZERO);
@@ -148,13 +163,9 @@ async fn real_pi_with_the_extension_adds_todos_continues_asks_and_is_woken_by_th
             .exists(),
         "the bundle carries the real @controlroom/pi"
     );
+    // Declared before the env, so it is dropped (and cleaned) after the env killed nono.
+    let nono_tmp = NonoTmp::new();
     let mut env = Env::new_in(&root);
-    let nono_tmp = NonoTmp(
-        tempfile::Builder::new()
-            .prefix("crn")
-            .tempdir_in("/tmp")
-            .unwrap(),
-    );
     configure(&env, &mock, &bundle, nono_tmp.0.path());
     // The login shell runs inside the sandbox, so it must be readable there.
     std::fs::remove_file(env.path().join("login-shell")).unwrap();
@@ -242,6 +253,203 @@ async fn real_pi_with_the_extension_adds_todos_continues_asks_and_is_woken_by_th
     }
 
     // Closing stops pi; nono leaves no temp dirs behind.
+    client.call("session.close", json!({"op_id": op(), "id": id}));
+    client.wait_session(&id, "closed", |s| s["state"] == "closed");
+}
+
+/// Writes an executable file from a child shell (a test process forked while this process held
+/// the file open for writing would make executing it fail with ETXTBSY).
+fn write_executable(path: &Path, content: &str) {
+    let status = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg(r#"printf '%s' "$1" > "$2" && chmod 755 "$2""#)
+        .arg("sh")
+        .arg(content)
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+/// The job's FIFO gates: the job blocks reading one until the test writes it.
+fn mkfifo(path: &Path) {
+    let status = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+/// Acceptance for jobs (spec §8, §9, P5 "a job-triggered continuation works"): under nono
+/// strict, the agent starts a job with the `job` tool, follows it with a pattern, is woken by
+/// the matching line, reads the log in its sandbox, and is woken again by the exit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs nono 0.80.0, Landlock and pi; run crates/daemon/scripts/acceptance-pi-nono.sh"]
+async fn real_pi_runs_follows_and_is_woken_by_a_job() {
+    let root = PathBuf::from(env_var("CR_TEST_ROOT"));
+    let nono_tmp = NonoTmp::new();
+    let mut env = Env::new_in(&root);
+    let (fail, finish) = (
+        Path::new(&env.work()).join("fail.fifo"),
+        Path::new(&env.work()).join("finish.fifo"),
+    );
+    mkfifo(&fail);
+    mkfifo(&finish);
+    // A test script in the cwd, run as `./run-tests.sh` through `/usr/bin/env bash` (the session's
+    // cwd and `exec_dirs` are executable under nono strict).
+    let script = format!(
+        "#!/usr/bin/env bash\necho \"building with bash ${{BASH_VERSINFO[0]}}\"\nread a < {}\necho 'FAIL test_login: expected 200'\nread b < {}\nexit 1\n",
+        fail.display(),
+        finish.display()
+    );
+    write_executable(&Path::new(&env.work()).join("run-tests.sh"), &script);
+    let command = "./run-tests.sh";
+    let mock = MockModel::start(vec![
+        Reply::tool_call(
+            "call_run",
+            "job",
+            json!({"action": "run", "command": command, "name": "suite"}),
+        ),
+        Reply::text("The suite runs in the background."),
+    ])
+    .await
+    .expect("mock model");
+    let bundle = PathBuf::from(env_var("CR_TEST_PI_BUNDLE"));
+    configure(&env, &mock, &bundle, nono_tmp.0.path());
+    std::fs::remove_file(env.path().join("login-shell")).unwrap();
+    std::os::unix::fs::symlink("/bin/sh", env.path().join("login-shell")).unwrap();
+    env.start();
+
+    let client = env.client();
+    client.watch_machine();
+    let created = client.call(
+        "session.create",
+        json!({"op_id": op(), "agent": "pi", "cwd": env.work(),
+               "prompt": {"content": text("Run the test suite in the background.")}}),
+    );
+    let id = created["session"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(created["session"]["sandbox"]["level"], "strict");
+
+    // 1. The job runs under the session's sandbox; the turn ends while it runs.
+    let s = client.wait_session(&id, "the job running, the agent idle", |s| {
+        s["state"] == "idle" && s["live_work"]["jobs"] == 1 && s["last_turn_end_seq"] != 0
+    });
+    assert_eq!(s["live_work"]["jobs"], 1);
+    let jobs = client.call("job.list", json!({"id": id}))["jobs"].clone();
+    let job_id = jobs[0]["id"].as_str().unwrap().to_owned();
+    let log = jobs[0]["log_path"].as_str().unwrap().to_owned();
+    assert_eq!(
+        log,
+        format!("{}/.controlroom/jobs/{job_id}.log", env.work())
+    );
+    assert!(
+        conversation(&mock.requests(), 1).contains(&log),
+        "the tool result names the log"
+    );
+    // Its supervisor runs it under nono with the session's profile.
+    let job_transcript = env
+        .state()
+        .join(format!("sessions/{id}/jobs/{job_id}/transcript.jsonl"));
+    let meta = controlroom_transcript::read_all(&job_transcript, 0)
+        .unwrap()
+        .records[0]
+        .clone();
+    let controlroom_transcript::Body::Meta(meta) = meta.body else {
+        panic!("the job transcript starts with its meta record");
+    };
+    assert!(meta.argv[0].ends_with("/nono"), "{:?}", meta.argv);
+    assert!(
+        meta.argv.iter().any(|a| a.ends_with("profile.json")),
+        "{:?}",
+        meta.argv
+    );
+
+    // 2. The user asks it to watch for failures: it follows the job with a pattern.
+    mock.push([
+        Reply::tool_call(
+            "call_follow",
+            "job",
+            json!({"action": "follow", "job_id": job_id, "pattern": "FAIL", "buffer_seconds": 1}),
+        ),
+        Reply::text("Following the suite for failures."),
+    ]);
+    let mark = client.turn_mark(&id);
+    client.prompt(&id, "Tell me as soon as a test fails.");
+    client.wait_turn(&id, mark);
+    let job = client.call("job.list", json!({"id": id}))["jobs"][0].clone();
+    assert_eq!(job["follow"]["pattern"], "FAIL", "{job}");
+
+    // 3. A failing line wakes it (after the buffer); it reads the log in its sandbox.
+    mock.push([
+        Reply::tool_call(
+            "call_read",
+            "bash",
+            json!({"command": format!("grep -n FAIL {log}")}),
+        ),
+        Reply::text("test_login fails with a 500."),
+    ]);
+    let mark = client.turn_mark(&id);
+    std::fs::write(&fail, b"go\n").unwrap();
+    client.wait_turn(&id, mark);
+    let requests = mock.requests();
+    // The wake is the last message of the request that answered it (the job's command, which
+    // the conversation also holds, contains the failing line's text).
+    let woken = requests[requests.len() - 2]["messages"]
+        .as_array()
+        .and_then(|m| m.last())
+        .unwrap()
+        .to_string();
+    assert!(
+        woken.contains("[controlroom] Background job update"),
+        "{woken}"
+    );
+    assert!(woken.contains("matching /FAIL/ at line 2"), "{woken}");
+    assert!(
+        !woken.contains("expected 200"),
+        "the wake carries no log content: {woken}"
+    );
+    let read = conversation(&requests, requests.len() - 1);
+    assert!(read.contains("2:FAIL test_login: expected 200"), "{read}");
+    // The script's `/usr/bin/env bash` interpreter ran in the sandbox.
+    let first = std::fs::read_to_string(&log).unwrap();
+    assert!(first.starts_with("building with bash "), "{first}");
+
+    // 4. The exit wakes it once more.
+    mock.push([Reply::text("The suite failed; test_login needs a fix.")]);
+    let mark = client.turn_mark(&id);
+    std::fs::write(&finish, b"go\n").unwrap();
+    let s = client.wait_session(&id, "the exit's run", |s| {
+        s["state"] == "idle"
+            && s["live_work"]["jobs"] == 0
+            && s["last_turn_end_seq"].as_u64() > Some(mark)
+            && s["preview"]
+                .as_str()
+                .is_some_and(|p| p.contains("needs a fix"))
+    });
+    assert_eq!(s["live_work"]["jobs"], 0);
+    let requests = mock.requests();
+    let exit = conversation(&requests, requests.len() - 1);
+    assert!(exit.contains("exited with code 1"), "{exit}");
+
+    let (_, ops) = client.session_ops(&id, 0);
+    let triggers: Vec<Value> = ops
+        .iter()
+        .filter(|op| op["item"]["kind"] == "run")
+        .map(|op| op["item"]["trigger"].clone())
+        .collect();
+    let labels: Vec<String> = triggers
+        .iter()
+        .map(|t| match t["kind"].as_str().unwrap() {
+            "inject" => t["label"].as_str().unwrap().to_owned(),
+            kind => kind.to_owned(),
+        })
+        .collect();
+    assert_eq!(
+        labels,
+        ["user", "user", "job: suite (follow)", "job: suite (exit 1)"],
+        "{triggers:#?}"
+    );
+
     client.call("session.close", json!({"op_id": op(), "id": id}));
     client.wait_session(&id, "closed", |s| s["state"] == "closed");
 }
