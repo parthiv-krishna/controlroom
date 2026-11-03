@@ -331,9 +331,26 @@ impl PiDriver {
         });
     }
 
+    /// A run is about to start (see [`crate::AgentView::run_starting`]): pi said `started`
+    /// and `agent_start` hasn't come yet, or a run-starting `prompt` awaits its response.
+    pub(super) fn run_starting(&self) -> bool {
+        self.process.run.is_none()
+            && (self.process.cause.is_some()
+                || self.process.sent.values().any(|sent| {
+                    matches!(
+                        sent.command,
+                        SentCommand::User {
+                            starts_run: true,
+                            ..
+                        }
+                    )
+                }))
+    }
+
     /// Ends everything the process had open and resets its state. Returns whether a run
-    /// was in flight.
+    /// was in flight or about to start.
     fn end_process(&mut self, at: At, reason: &str, out: &mut FoldOut) -> bool {
+        let starting = self.run_starting();
         self.end_message(at, out);
         self.close_tools(at, out);
         self.close_dialogs(at, RequestState::Withdrawn, |_| true, out);
@@ -355,7 +372,7 @@ impl PiDriver {
                 self.finish_run(at, &run.item, RunOutcome::Failed, Some(error), out);
                 true
             }
-            None => false,
+            None => starting,
         };
         self.process = Process::default();
         self.view.ready = false;

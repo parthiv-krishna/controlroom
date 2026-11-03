@@ -36,6 +36,9 @@ pub struct FakeDriver {
     /// A written new-session line: once accepted, the native session is unknown until the
     /// agent reports the new one.
     switching: Option<LineTag>,
+    /// A prompt written while no run was active, until its run starts or the agent refuses it
+    /// ([`AgentView::run_starting`]).
+    starting: Option<LineTag>,
 }
 
 impl FakeDriver {
@@ -66,6 +69,7 @@ impl FakeDriver {
         self.close_requests(out, rec);
         self.requests.clear();
         self.switching = None;
+        self.starting = None;
         let capabilities = self.view.capabilities;
         let native = self.view.native.take();
         let options = std::mem::take(&mut self.view.options);
@@ -114,6 +118,10 @@ impl FakeDriver {
             self.view.unanswered.push(tag.clone());
             if matches!(input.command, Command::NewSession { .. }) {
                 self.switching = Some(tag.clone());
+            }
+            if matches!(input.command, Command::Prompt { .. }) && !self.view.run_active {
+                self.starting = Some(tag.clone());
+                self.view.run_starting = true;
             }
             out.events.push(DriverEvent::Written { tag });
         }
@@ -169,6 +177,10 @@ impl FakeDriver {
                     self.switching = None;
                     self.view.native = None;
                 }
+                if !ok && self.starting.as_ref() == Some(&tag) {
+                    self.starting = None;
+                    self.view.run_starting = false;
+                }
                 out.events.push(if ok {
                     DriverEvent::Accepted { tag }
                 } else {
@@ -204,6 +216,8 @@ impl FakeDriver {
                 out.ops.push(upsert(run.clone(), rec));
                 self.run = Some(run);
                 self.view.run_active = true;
+                self.starting = None;
+                self.view.run_starting = false;
                 out.events.push(DriverEvent::RunStarted { cause });
             }
             Output::RunEnd { outcome, error } => {
@@ -386,7 +400,7 @@ impl Driver for FakeDriver {
             Body::In(line) if line.truncated == 0 => self.fold_in(&line.raw, rec, &mut out),
             Body::Out(line) if line.truncated == 0 => self.fold_out(&line.raw, rec, &mut out),
             Body::Exit(exit) => {
-                let during_run = self.view.run_active;
+                let during_run = self.view.run_active || self.view.run_starting;
                 self.reset_process(&mut out, rec);
                 out.events.push(DriverEvent::Exited {
                     code: exit.code,

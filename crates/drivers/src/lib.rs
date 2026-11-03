@@ -207,7 +207,8 @@ pub enum DriverEvent {
         code: Option<i32>,
         /// Signal number, if it was killed.
         signal: Option<i32>,
-        /// Whether a run was in flight (the session becomes `interrupted`).
+        /// Whether a run was in flight, or about to start ([`AgentView::run_starting`]): the
+        /// session becomes `interrupted`.
         during_run: bool,
     },
 }
@@ -241,6 +242,9 @@ pub struct AgentView {
     pub ready: bool,
     /// A run is active (pi: from `agent_start` to `agent_settled`, across retries).
     pub run_active: bool,
+    /// A prompt reached the agent while no run was active and its run hasn't started yet
+    /// (nor was the prompt refused). A process that ends now ends that run with it.
+    pub run_starting: bool,
     /// Tool calls currently running (for send-now "wait for the tool" decisions).
     pub open_tools: usize,
     /// Requests awaiting an answer.

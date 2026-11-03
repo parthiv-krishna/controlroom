@@ -51,7 +51,12 @@ pub(crate) struct Sent {
 #[derive(Debug, Clone)]
 pub(crate) enum SentCommand {
     /// `prompt`, `steer` or `follow_up`: the user message shown once pi accepts it.
-    User { content: Vec<ContentPart> },
+    User {
+        content: Vec<ContentPart>,
+        /// A `prompt` written while no run was active: it starts one unless pi refuses it
+        /// (or an extension command handles it).
+        starts_run: bool,
+    },
     /// `abort`.
     Abort,
     /// The RPC `bash` command and its tool item.

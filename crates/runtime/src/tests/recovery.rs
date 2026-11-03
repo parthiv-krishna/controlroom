@@ -153,6 +153,36 @@ async fn supervisor_killed_mid_turn_is_interrupted() {
     assert!(s.unread);
 }
 
+/// The agent got a prompt, but nothing it answered was logged before it went away: the
+/// prompt counts as delivered (it is never sent twice), so the run it was starting is
+/// interrupted instead of the session looking dormant with the prompt gone. Both without an
+/// exit record (the supervisor died) and with one (the agent died), also after a restart.
+#[tokio::test]
+async fn a_run_cut_off_before_it_started_is_interrupted() {
+    let mut h = Harness::new(script()).await;
+    let gone = h.create().await;
+    let crashed = h.create().await;
+    for id in [gone, crashed] {
+        h.host.lose_output(id);
+        h.prompt(id, "slow").await;
+        h.host
+            .wait("the prompt logged", |host| host.prompts(id) == ["slow"])
+            .await;
+    }
+    h.host.kill_supervisor(gone);
+    h.host.kill_agent(crashed);
+    for id in [gone, crashed] {
+        let s = h.wait_state(id, SessionState::Interrupted).await;
+        assert_eq!(s.queue.len, 0, "the prompt was delivered");
+        assert!(s.unread);
+    }
+    let h = h.restart().await;
+    for id in [gone, crashed] {
+        assert_eq!(h.summary(id).state, SessionState::Interrupted);
+        assert_eq!(h.host.prompts(id), ["slow"]);
+    }
+}
+
 #[tokio::test]
 async fn reboot_leaves_interrupted_or_dormant_sessions() {
     let mut h = Harness::new(script()).await;

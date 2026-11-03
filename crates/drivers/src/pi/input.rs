@@ -30,8 +30,9 @@ impl PiDriver {
             self.view.unanswered.push(tag);
         }
         let command = match line.kind.as_str() {
-            "prompt" | "steer" | "follow_up" => SentCommand::User {
+            kind @ ("prompt" | "steer" | "follow_up") => SentCommand::User {
                 content: content::from_line(line.message.as_deref().unwrap_or(""), &line.images),
+                starts_run: kind == "prompt" && !self.view.run_active,
             },
             "abort" => {
                 self.process.aborts += 1;
@@ -222,7 +223,7 @@ impl PiDriver {
         let written = sent.is_some();
         if let Some(Sent {
             at: from,
-            command: SentCommand::User { content },
+            command: SentCommand::User { content, .. },
         }) = sent
         {
             let item = item_id("user", from.seq, None);

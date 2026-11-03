@@ -206,6 +206,7 @@ impl Driver for PiDriver {
             Body::Exit(exit) => self.on_exit(at, exit, &mut out),
             Body::Out(_) | Body::Stderr(_) | Body::Unknown(_) => {}
         }
+        self.view.run_starting = self.run_starting();
         self.view.last_seq = Some(at.seq);
         self.view.last_ts = Some(at.ts);
         out

@@ -598,6 +598,56 @@ fn exit_mid_run_interrupts_and_drops_unanswered_lines() {
     assert_eq!(view.last_outcome, Some(RunOutcome::Failed));
 }
 
+/// Logs pi's exit; returns its `during_run`.
+fn exit_during_run(session: &mut Session) -> bool {
+    let seq = session.next();
+    let out = session.fold(Record {
+        seq,
+        ts: seq * 10,
+        body: Body::Exit(controlroom_transcript::ExitInfo {
+            code: Some(1),
+            signal: None,
+            cause: None,
+        }),
+    });
+    assert!(!session.driver.view().run_starting);
+    match out.events.as_slice() {
+        [DriverEvent::Exited { during_run, .. }] => *during_run,
+        events => panic!("{events:?}"),
+    }
+}
+
+/// A prompt pi was given starts a run even before `agent_start`: if pi exits first, the run
+/// it was about to start is interrupted with it.
+#[test]
+fn exit_before_the_prompted_run_starts_interrupts_it() {
+    // Before pi answered the prompt.
+    let mut session = Session::new();
+    assert!(!session.driver.view().run_starting);
+    session.send(&prompt("go"), &op("p1"));
+    assert!(session.driver.view().run_starting);
+    assert!(exit_during_run(&mut session));
+
+    // After `started`, before `agent_start`; the run then clears it.
+    let mut session = Session::new();
+    session.send(&prompt("go"), &op("p2"));
+    session.ok("cr:op:0:p2", "prompt", json!({"disposition": "started"}));
+    assert!(session.driver.view().run_starting);
+    session.read(json!({"type": "agent_start"}));
+    let view = session.driver.view();
+    assert!(view.run_active && !view.run_starting);
+
+    // A refused prompt starts nothing.
+    let mut session = Session::new();
+    session.send(&prompt("go"), &op("p3"));
+    session.read(
+        json!({"id": "cr:op:0:p3", "type": "response", "command": "prompt",
+                        "success": false, "error": "busy"}),
+    );
+    assert!(!session.driver.view().run_starting);
+    assert!(!exit_during_run(&mut session));
+}
+
 /// A killed supervisor leaves no `exit` record: the next `meta` ends what the old process
 /// had open without an `Exited` (the runtime detects the dead supervisor itself), and the new
 /// process reports its native session again even when it resumed the same one.

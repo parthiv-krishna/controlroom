@@ -88,6 +88,8 @@ struct Proc {
     /// Writes are accepted but not logged until released (a supervisor busy with fsyncs).
     hold: bool,
     held: Vec<Held>,
+    /// What the agent answers is never logged (a supervisor about to die).
+    lose_output: bool,
 }
 
 struct State {
@@ -182,6 +184,12 @@ impl FakeHost {
             }
         }
         self.bump();
+    }
+
+    /// From now on the agent's answers are lost: the supervisor logs what it writes to the
+    /// agent but dies before logging the agent's output.
+    pub(crate) fn lose_output(&self, id: SessionId) {
+        self.lock().procs.entry(id).or_default().lose_output = true;
     }
 
     /// Number of writes waiting to be logged.
@@ -287,7 +295,9 @@ impl Proc {
         };
         let out = agent.input(&line);
         let seq = self.append(now, Body::In(Line::new(line)));
-        self.output(out, now);
+        if !self.lose_output {
+            self.output(out, now);
+        }
         Ok(seq)
     }
 

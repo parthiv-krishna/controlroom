@@ -200,13 +200,16 @@ impl Core {
     }
 
     /// The agent process is gone without an `exit` record (its supervisor died): the run, if
-    /// any, ends at the last record.
+    /// any, ends at the last record. So does a run a logged prompt was about to start: the
+    /// prompt counts as delivered (it is never sent twice), so the user must learn it was cut
+    /// off.
     pub(crate) fn agent_gone(&mut self, id: SessionId) -> Result<(), RpcError> {
         let session = self.session_mut(id)?;
         if !session.derived.process.live {
             return Ok(());
         }
-        let during_run = session.view().run_active;
+        let view = session.view();
+        let during_run = view.run_active || view.run_starting;
         let seq = session.live.processed_seq;
         let ts = session.view().last_ts.unwrap_or_default();
         let ready = session.derived.process.ready;
