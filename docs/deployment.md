@@ -77,7 +77,7 @@ Generate each secret once and store it with your secrets tool.
 | Secret | Command | Notes |
 | --- | --- | --- |
 | Master key | `openssl rand -base64 32` | 32 random bytes; raw, hex or base64. Back it up with the database: without it, the stored SSH keys can't be unsealed and every machine has to be added again. |
-| VAPID private key | `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256` | A PKCS#8 PEM key (multi-line; YAML block scalars work). Changing it invalidates every device's push subscription: devices turn push on again. |
+| VAPID private key | `openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256` | A PKCS#8 PEM key (multi-line; YAML block scalars work). Changing it invalidates every push subscription: each device has to turn push off and on again. |
 | OIDC client id | `authelia crypto rand --length 72 --charset rfc3986` | Or any fixed name with `clientId`. |
 | OIDC client secret | `authelia crypto hash generate pbkdf2 --variant sha512 --random --random.length 72 --random.charset rfc3986` | Prints the random secret (`Random Password`, for controlroom) and its hash (`Digest`, for Authelia's client registration). |
 
