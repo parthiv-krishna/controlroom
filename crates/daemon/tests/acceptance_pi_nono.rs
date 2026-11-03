@@ -7,7 +7,9 @@
 //!
 //! - `CR_TEST_ROOT`: the scratch root (`HOME` is inside it);
 //! - `CR_TEST_NONO`: the nono binary;
-//! - `CR_TEST_PI`: the pi binary.
+//! - `CR_TEST_PI`: the pi binary;
+//! - `CR_TEST_BUNDLE`: the controlroom-pi bundle built with the stub @controlroom/pi, whose `bin` is
+//!   also on `PATH`.
 //!
 //! The model is the fixture tool's local mock; no real provider or key is involved.
 
@@ -62,7 +64,8 @@ fn write_user_agent_dir(dir: &AbsPath, mock: &MockModel) {
     );
 }
 
-/// The agent command: pi, after pointing the mock provider at nono's reverse proxy.
+/// The agent command: `program` (pi, or a pi launcher) after pointing the mock provider at nono's
+/// reverse proxy.
 ///
 /// A loopback upstream is only reachable through the route's reverse-proxy URL
 /// (`$CR_MOCK_BASE_URL`, which authenticates with the route's phantom token): pi's Node fetch
@@ -70,13 +73,13 @@ fn write_user_agent_dir(dir: &AbsPath, mock: &MockModel) {
 /// Real providers are HTTPS and need none of this. The phantom token is referenced as
 /// `$CR_MOCK_PHANTOM`, which pi resolves itself, so no token is written to disk; nono swaps
 /// it for the key that `controlroomd credential` reads host-side.
-fn agent_command(pi: &AbsPath, mock: &MockModel) -> String {
+fn agent_command(program: &str, mock: &MockModel) -> String {
     let origin = format!("http://127.0.0.1:{}", mock.port());
     let placeholder = controlroom_sandbox::agent_dir::PLACEHOLDER;
     let script = format!(
         r##"m="$PI_CODING_AGENT_DIR/models.json"
 sed -e "s#{origin}#$CR_MOCK_BASE_URL#" -e 's#"{placeholder}"#"$CR_MOCK_PHANTOM"#' "$m" > "$m.tmp" && mv "$m.tmp" "$m" || exit 1
-PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 exec {pi} "$@""##
+PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 exec {program} "$@""##
     );
     format!(
         "sh -c {} pi",
@@ -210,7 +213,7 @@ allow = ["POST /v1/chat/completions"]
         cwd: cwd.clone(),
         agent_name: "pi".into(),
         agent: AgentEntry {
-            command: agent_command(&pi, &mock),
+            command: agent_command(pi.as_str(), &mock),
             driver: DriverKind::Pi,
         },
         args: [
@@ -354,4 +357,190 @@ async fn wait_exit(records: &mut RecordStream, seen: &mut Vec<Record>) -> Option
     .await
     .expect("timed out waiting for the exit record");
     exit.expect("the stream ended without an exit record")
+}
+
+/// Every file under `dir` with its contents, for "untouched" comparisons.
+fn snapshot(dir: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_owned()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d).expect("read_dir").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let contents = std::fs::read(&path).unwrap_or_default();
+                out.push((path.display().to_string(), contents));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// A pi package with one extension that registers the command `command`.
+fn write_package(dir: &AbsPath, name: &str, command: &str) {
+    write(
+        &dir.join("package.json"),
+        &json!({"name": name, "version": "1.0.0", "pi": {"extensions": ["./index.ts"]}})
+            .to_string(),
+    );
+    write(
+        &dir.join("index.ts"),
+        &format!(
+            "export default function (pi: any) {{ pi.registerCommand({command:?}, {{ handler: async () => {{}} }}); }}\n"
+        ),
+    );
+}
+
+/// The controlroom-pi bundle (`CR_TEST_BUNDLE`, built with the stub @controlroom/pi): real pi
+/// through the launcher, under nono strict, with a mock model. Only @controlroom/pi and the
+/// keep-list load, the agent runs a script from its working directory, and the user's real
+/// agent dir is left exactly as it was.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs nono 0.80.0, Landlock and the controlroom-pi bundle; run crates/daemon/scripts/acceptance-pi-nono.sh"]
+async fn the_bundle_launcher_under_nono_loads_only_controlroom_and_the_keep_list() {
+    let root = env_path("CR_TEST_ROOT");
+    let bundle = env_path("CR_TEST_BUNDLE");
+    let dirs = Dirs::from_env(None).expect("dirs");
+    assert!(
+        root.contains(dirs.home()),
+        "HOME must be isolated inside CR_TEST_ROOT"
+    );
+    let cwd = root.join("work-bundle");
+    let nono_tmp = root.join("tb");
+    for dir in [&cwd, &nono_tmp] {
+        std::fs::create_dir_all(dir.as_path()).expect("mkdir");
+    }
+
+    let mock = MockModel::start(vec![
+        Reply::tool_call(
+            "call_script",
+            "bash",
+            json!({"command": "printf '#!/usr/bin/env bash\\necho script-ran\\n' > s.sh && chmod +x s.sh && ./s.sh"}),
+        ),
+        Reply::text("done"),
+    ])
+    .await
+    .expect("mock model");
+    // Its own user agent dir: the other test, which may run in parallel, writes ~/.pi/agent.
+    let user_agent = root.join("bundle-user/.pi/agent");
+    write_user_agent_dir(&user_agent, &mock);
+    let npm = user_agent.join("npm/node_modules");
+    write_package(&npm.join("kept-ext"), "kept-ext", "kept-ext");
+    write_package(
+        &npm.join("pi-subagents"),
+        "pi-subagents",
+        "excluded-subagents",
+    );
+    write(
+        &user_agent.join("extensions/auto.ts"),
+        "export default function (pi: any) { pi.registerCommand(\"auto-discovered\", { handler: async () => {} }); }\n",
+    );
+    let before = snapshot(user_agent.as_path());
+
+    let config: SandboxConfig = toml::from_str(&format!(
+        r#"
+nono_tmp = "{nono_tmp}"
+pi_agent_dir = "{user_agent}"
+npm = "{user_agent}/npm"
+exec_dirs = ["/usr/bin", "/bin", "{bundle}/libexec/controlroom-pi/tools"]
+allow_loopback_upstreams = true
+[[routes]]
+provider = "mock"
+upstream = "http://127.0.0.1:{port}"
+allow = ["POST /v1/chat/completions"]
+"#,
+        port = mock.port(),
+    ))
+    .expect("sandbox.toml");
+    // The launcher is on PATH (the script puts it there), as on an execution host
+    // (home.packages): nono, which inherits this PATH, only runs programs from PATH directories.
+    let path_var = std::env::var("PATH").expect("PATH");
+    assert!(
+        path_var
+            .split(':')
+            .any(|dir| dir == bundle.join("bin").as_str()),
+        "the bundle's bin must be on PATH"
+    );
+    let host = Host {
+        controlroomd: AbsPath::new(env!("CARGO_BIN_EXE_controlroomd")).expect("bin path"),
+        shell: AbsPath::new("/bin/sh").expect("shell"),
+        path_var,
+        sandbox: config.resolve(dirs.home(), None).expect("sandbox settings"),
+        nono: Some(env_path("CR_TEST_NONO")),
+        oauth_helper: None,
+        dirs,
+    };
+    let session = SessionId::new(&ulid::Ulid::generate().to_string()).expect("session id");
+    let request = AgentLaunch {
+        session,
+        cwd: cwd.clone(),
+        agent_name: "pi".into(),
+        agent: AgentEntry {
+            command: agent_command("controlroom-pi --keep npm:kept-ext@1.0.0 --", &mock),
+            driver: DriverKind::Pi,
+        },
+        args: ["--mode", "rpc", "--no-themes"].map(str::to_owned).to_vec(),
+        policy: effective_policy(
+            [&ScopePolicy {
+                commands: default_command_rules(),
+                ..ScopePolicy::default()
+            }],
+            &ScopePolicy::default(),
+        ),
+        webhook_port: None,
+    };
+    let prepared = launch::prepare(&host, &request).expect("prepare");
+    let info = launch::start(&host, &prepared).await.expect("start");
+    let mut guard = Terminate(Some(info.socket.clone()));
+
+    let client = Client::connect(&info.socket, true).await.expect("connect");
+    let mut records = client.read(0).await.expect("read");
+    let mut seen = Vec::new();
+    client
+        .write(r#"{"id":"commands-1","type":"get_commands"}"#)
+        .await
+        .expect("write get_commands");
+    let commands = wait_out(&mut records, &mut seen, "the get_commands response", |v| {
+        v["id"] == "commands-1" && v["type"] == "response"
+    })
+    .await;
+    let mut names: Vec<&str> = commands["data"]["commands"]
+        .as_array()
+        .expect("commands")
+        .iter()
+        .filter(|c| c["source"] == "extension")
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(names, ["controlroom", "kept-ext"], "{commands}");
+
+    client
+        .write(r#"{"id":"prompt-1","type":"prompt","message":"run a script"}"#)
+        .await
+        .expect("write prompt");
+    wait_out(&mut records, &mut seen, "agent_settled", |v| {
+        v["type"] == "agent_settled"
+    })
+    .await;
+    assert_eq!(mock.requests().len(), 2, "every scripted reply was used");
+    let result = mock.requests()[1].to_string();
+    assert!(result.contains("script-ran"), "{result}");
+
+    assert!(
+        !client
+            .terminate(Some(Duration::from_secs(5)))
+            .await
+            .expect("terminate")
+    );
+    guard.0 = None;
+    wait_exit(&mut records, &mut seen).await;
+    clean_leaked_nono_dirs(nono_tmp.as_path(), Duration::ZERO);
+
+    assert_eq!(
+        snapshot(user_agent.as_path()),
+        before,
+        "the user's agent dir changed"
+    );
 }
