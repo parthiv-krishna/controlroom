@@ -234,8 +234,23 @@ fn start_fresh_with_history() {
         sent[1].contains(&path) && sent[1].contains("again"),
         "{sent:?}"
     );
-    let (sub, _) = client.session_ops(&id, 0);
-    assert_eq!(sub["detail"]["agent_sessions"].as_array().unwrap().len(), 2);
+    // pi names the new agent session only when asked (a state query after `new_session`), and
+    // that answer may arrive after the turn already ended.
+    wait_until("the new agent session", || {
+        agent_sessions(&client, &id) == 2
+    });
+}
+
+/// How many agent sessions the session's detail lists, via a fresh subscription.
+fn agent_sessions(client: &Client, session: &str) -> usize {
+    let result = client.call("session.subscribe", json!({"id": session, "since_seq": 0}));
+    client.call(
+        "unsubscribe",
+        json!({"subscription_id": result["subscription_id"]}),
+    );
+    result["detail"]["agent_sessions"]
+        .as_array()
+        .map_or(0, Vec::len)
 }
 
 #[test]
