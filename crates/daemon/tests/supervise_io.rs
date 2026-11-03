@@ -225,3 +225,43 @@ async fn index_is_correct_after_recovery() {
         assert_eq!(&first, expected, "from {from}");
     }
 }
+
+#[tokio::test]
+async fn a_job_writes_a_plain_log_with_one_line_per_output_record() {
+    let state = tempfile::tempdir().unwrap();
+    let log = state.path().join("job.log");
+    let script =
+        r#"printf '\033[1;31mred\033[0m\n10%%\r50%%\r100%%\r\n'; echo oops >&2; printf 'tail'"#;
+    let mut spec = shell_spec(state.path(), script);
+    spec.kind = controlroom_transcript::ProcessKind::Job;
+    spec.stdin = controlroom_transcript::StdinMode::Null;
+    spec.plain_log = Some(log.clone());
+    let sup = Sup::start_in(state, &spec);
+    let transcript = sup.transcript();
+    let _state = sup.wait_exit();
+
+    let records = read_all(&transcript, 0).unwrap().records;
+    let output: Vec<&str> = records
+        .iter()
+        .filter(|r| matches!(dir(r), "out" | "stderr"))
+        .filter_map(|r| r.raw())
+        .collect();
+    assert_eq!(output.len(), 4, "{records:#?}");
+    // Line n of the log is output record n (stdout and stderr may interleave either way).
+    let plain = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = plain.lines().collect();
+    let expected: Vec<String> = output
+        .iter()
+        .map(|raw| controlroom_supervisor::plain::plain_line(raw).into_owned())
+        .collect();
+    assert_eq!(lines, expected);
+    for line in ["red", "100%", "oops", "tail"] {
+        assert!(lines.contains(&line), "{line} in {lines:?}");
+    }
+    // Output records are seqs 2..=5: the log's line n is seq n + 1.
+    assert!(
+        records[1..5]
+            .iter()
+            .all(|r| matches!(dir(r), "out" | "stderr"))
+    );
+}
