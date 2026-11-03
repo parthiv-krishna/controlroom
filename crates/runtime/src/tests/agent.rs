@@ -576,3 +576,33 @@ async fn run_triggers_name_the_device_queue_and_schedule() {
     let h = h.restart().await;
     assert_eq!(h.run_triggers(id).await, expected);
 }
+
+#[tokio::test]
+async fn an_answer_resumes_an_agent_that_was_idle_stopped_meanwhile() {
+    let mut h = Harness::new(FakeScript::default()).await;
+    h.rt.set_settings(controlroom_protocol::daemon::SettingsSetParams {
+        op_id: OpId::generate(),
+        idle_timeout_h: Some(1),
+        retention: None,
+    })
+    .await
+    .unwrap();
+    let id = h.create().await;
+    let question = ask(&h, id, "c1", "Which database?").await;
+    // The open question doesn't keep the agent up.
+    h.clock.advance(2 * 3600 * 1000);
+    h.rt.tick();
+    let s = h.wait_state(id, SessionState::Dormant).await;
+    assert_eq!(s.attention, Some(Attention::Question));
+
+    h.rt.respond(answer(id, &question, "Postgres"))
+        .await
+        .unwrap();
+    h.host
+        .wait("the answer after the resume", |host| {
+            host.prompts(id).iter().any(|p| p.contains("→ Postgres"))
+        })
+        .await;
+    h.wait_state(id, SessionState::Idle).await;
+    assert!(h.summary(id).requests.is_empty());
+}

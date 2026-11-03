@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use controlroom_protocol::RpcError;
 use controlroom_protocol::ids::{SessionId, UnixMillis};
+use controlroom_protocol::session::LiveWork;
 
 use crate::core::{Core, Task};
 use crate::errors::internal;
@@ -52,8 +53,9 @@ impl Core {
         Ok(())
     }
 
-    /// Idle-stop (spec §6.6): only a resumable, ready, idle agent with an empty queue, no
-    /// pending requests and no live work, idle for the configured hours (0 disables it).
+    /// Idle-stop (spec §6.6): only a resumable, ready, idle agent with an empty queue, nothing
+    /// to inject, no pending approval and no live work, idle for the configured hours (0
+    /// disables it).
     fn idle_stop_due(&self, id: SessionId, now: UnixMillis) -> bool {
         let hours = i64::from(self.settings.idle_timeout_h);
         let session = &self.sessions[&id];
@@ -64,7 +66,10 @@ impl Core {
             && view.ready
             && !session.busy()
             && session.data.queue.is_empty()
-            && session.pending_requests().is_empty()
+            && session.data.injections.is_empty()
+            // An open question doesn't keep the agent up: its answer resumes it.
+            && !session.pending_requests().iter().any(|r| r.blocking)
+            && session.live_work() == LiveWork::default()
             && session.resumable()
             && view
                 .last_ts
