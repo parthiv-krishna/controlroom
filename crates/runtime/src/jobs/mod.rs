@@ -15,16 +15,18 @@
 //! - **Restarts.** Jobs outlive the agent and the daemon. At recovery the daemon re-reads each
 //!   running job's transcript (rebuilding [`progress::Progress`]) and reattaches to its
 //!   supervisor; a job whose supervisor vanished without an exit record ends as `failed`.
-//! - **Live work.** Running jobs count in the summary's `live_work.jobs` and keep idle-stop
-//!   away.
+//! - **Live work.** Running jobs count in the summary's `live_work.jobs`: auto-continue waits
+//!   for them ("waiting on job <name>"; their wakes continue the work) and idle-stop leaves
+//!   their agent alone.
 //!
 //! Modules: `model` (persisted records), `progress` (in-memory output tracking), `wake` (wake
 //! text), `commands` (run, kill, follow, unfollow, list), `react` (folding job records, wakes,
-//! the tick), `io` (supervisors: launch, readers, rescans, recovery), `api` (the [`Runtime`]
-//! methods).
+//! the tick), `io` (supervisors: launch, readers, rescans, recovery), `api` and `agent` (the
+//! [`Runtime`] methods of the daemon API and of the agent's `job` tool).
 //!
 //! [`Runtime`]: crate::Runtime
 
+mod agent;
 mod api;
 mod commands;
 mod io;
@@ -40,10 +42,8 @@ use controlroom_protocol::ids::{ItemId, JobId, Seq, SessionId};
 use controlroom_protocol::session::{Job, SessionDetail};
 use controlroom_protocol::timeline::{Actor, ItemBody, TimelineItem, TimelineOp};
 
-pub use api::{JobRun, JobStarted};
 pub(crate) use io::recover_jobs;
 pub(crate) use model::JobRecord;
-pub use model::KilledBy;
 
 use crate::core::Core;
 use crate::errors::internal;

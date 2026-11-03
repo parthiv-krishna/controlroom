@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use controlroom_protocol::daemon::{AgentsListResult, DaemonRequest};
 use controlroom_protocol::{Ack, ErrorData, Resource, RpcError, RpcRequest};
-use controlroom_runtime::KilledBy;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -99,7 +98,7 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
 
         DaemonRequest::JobList(p) => json(runtime.job_list(p).await),
         DaemonRequest::JobLogsMethod(p) => json(runtime.job_logs(p).await),
-        DaemonRequest::JobKill(p) => json(runtime.job_kill(p, KilledBy::User).await),
+        DaemonRequest::JobKill(p) => json(runtime.job_kill(p).await),
         DaemonRequest::JobFollowMethod(p) => json(runtime.job_follow(p).await),
         DaemonRequest::JobUnfollow(p) => json(runtime.job_unfollow(p).await),
 

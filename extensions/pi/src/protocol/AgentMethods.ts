@@ -2,10 +2,17 @@
 import type { Ack } from "./Ack";
 import type { AgentHelloParams } from "./AgentHelloParams";
 import type { AgentHelloResult } from "./AgentHelloResult";
+import type { AgentJobFollowParams } from "./AgentJobFollowParams";
+import type { AgentJobParams } from "./AgentJobParams";
+import type { AgentJobs } from "./AgentJobs";
 import type { AgentState } from "./AgentState";
 import type { AgentTodoAddParams } from "./AgentTodoAddParams";
 import type { AgentTodoUpdateParams } from "./AgentTodoUpdateParams";
 import type { AgentTodos } from "./AgentTodos";
+import type { Job } from "./Job";
+import type { JobRunParams } from "./JobRunParams";
+import type { JobRunResult } from "./JobRunResult";
+import type { JobStatusParams } from "./JobStatusParams";
 import type { NoParams } from "./NoParams";
 import type { NotifyParams } from "./NotifyParams";
 import type { QuestionAskParams } from "./QuestionAskParams";
@@ -45,6 +52,26 @@ export type AgentMethods = {
    * Tell the user something without asking (`notify_user`).
    */
   "notify": { params: NotifyParams, result: Ack },
+  /**
+   * Start a background job (`job run`).
+   */
+  "job.run": { params: JobRunParams, result: JobRunResult },
+  /**
+   * Wake on a job's new or matching lines (`job follow`).
+   */
+  "job.follow": { params: AgentJobFollowParams, result: Job },
+  /**
+   * Stop following a job; the exit wake stays (`job unfollow`).
+   */
+  "job.unfollow": { params: AgentJobParams, result: Job },
+  /**
+   * The session's jobs, or one (`job status`).
+   */
+  "job.status": { params: JobStatusParams, result: AgentJobs },
+  /**
+   * Kill a job; no exit wake follows (`job kill`).
+   */
+  "job.kill": { params: AgentJobParams, result: Job },
 };
 
 /**

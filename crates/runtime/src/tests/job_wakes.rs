@@ -13,9 +13,9 @@ use controlroom_protocol::session::{AutoContinueStatus, JobStatus, SessionState}
 use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
 use controlroom_transcript::StopCause;
 
-use super::jobs::{ended, follow, op, run, settle};
+use super::jobs::{agent_op, ended, follow, op, run, settle};
 use super::{Harness, caps};
-use crate::{JobRun, KilledBy};
+use controlroom_protocol::agent::JobRunParams;
 
 const WAKE: &str = "Background job update";
 
@@ -40,9 +40,9 @@ fn gated() -> FakeScript {
 }
 
 async fn start(h: &Harness, id: SessionId, name: &str) -> JobId {
-    h.rt.job_run(
+    h.rt.agent_job_run(
         id,
-        JobRun {
+        JobRunParams {
             name: Some(name.into()),
             ..run(&format!("./{name}.sh"))
         },
@@ -216,11 +216,11 @@ async fn kills_and_timeouts_wake_unless_the_agent_killed_the_job() {
     let mut h = Harness::new(gated()).await;
     let id = h.create().await;
     let own = start(&h, id, "watch").await;
-    h.rt.job_kill(op(id, own), KilledBy::Agent).await.unwrap();
+    h.rt.agent_job_kill(id, agent_op(own)).await.unwrap();
     assert_eq!(ended(&h, id, own).await.status, JobStatus::Killed);
 
     let users = start(&h, id, "server").await;
-    h.rt.job_kill(op(id, users), KilledBy::User).await.unwrap();
+    h.rt.job_kill(op(id, users)).await.unwrap();
     let wakes = wait_wakes(&mut h, id, 1).await;
     assert!(
         wakes[0].contains("`server` was killed by the user"),

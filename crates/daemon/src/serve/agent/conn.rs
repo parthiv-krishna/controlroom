@@ -155,6 +155,11 @@ async fn handle(
         AgentRequest::TodoAdd(p) => json(runtime.agent_todo_add(id, p).await),
         AgentRequest::TodoUpdate(p) => json(runtime.agent_todo_update(id, p).await),
         AgentRequest::Notify(p) => json(runtime.agent_notify(id, p).await.map(|()| Ack {})),
+        AgentRequest::JobRun(p) => json(runtime.agent_job_run(id, p).await),
+        AgentRequest::JobFollow(p) => json(runtime.agent_job_follow(id, p).await),
+        AgentRequest::JobUnfollow(p) => json(runtime.agent_job_unfollow(id, p).await),
+        AgentRequest::JobStatus(p) => json(runtime.agent_job_status(id, p).await),
+        AgentRequest::JobKill(p) => json(runtime.agent_job_kill(id, p).await),
     }
 }
 

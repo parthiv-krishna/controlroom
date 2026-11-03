@@ -9,12 +9,12 @@ use controlroom_protocol::{Resource, RpcError};
 use regex::{Regex, RegexBuilder};
 
 use super::JobLive;
-use super::api::{JobRun, JobStarted};
 use super::model::{FollowSpec, JobEnd, JobRecord, KilledBy};
 use super::progress::Matcher;
 use crate::core::{Core, Task};
 use crate::errors::{invalid_params, invalid_state, not_found};
 use crate::ports::{JobLaunch, JobRef};
+use controlroom_protocol::agent::{JobRunParams, JobRunResult};
 
 /// SIGTERM to SIGKILL for a killed job.
 const KILL_GRACE: Duration = Duration::from_secs(5);
@@ -42,9 +42,9 @@ impl Core {
     pub(crate) fn job_start(
         &mut self,
         id: SessionId,
-        run: &JobRun,
+        run: &JobRunParams,
         cwd: RemotePath,
-    ) -> Result<(JobStarted, JobLaunch), RpcError> {
+    ) -> Result<(JobRunResult, JobLaunch), RpcError> {
         if run.command.trim().is_empty() {
             return Err(invalid_params("the command is empty"));
         }
@@ -86,7 +86,7 @@ impl Core {
         };
         self.publish_job(id, &job)?;
         Ok((
-            JobStarted {
+            JobRunResult {
                 job_id: job,
                 log_path,
             },

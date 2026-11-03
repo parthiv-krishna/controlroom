@@ -12,13 +12,13 @@ use controlroom_transcript::StopCause;
 
 use super::{Harness, TIMEOUT};
 use crate::ports::Clock;
-use crate::{JobRun, JobStarted, KilledBy};
+use controlroom_protocol::agent::{AgentJobParams, JobRunParams, JobRunResult};
 
 const HOUR_MS: i64 = 3600 * 1000;
 
-pub(super) fn run(command: &str) -> JobRun {
-    JobRun {
-        op_id: OpId::generate(),
+pub(super) fn run(command: &str) -> JobRunParams {
+    JobRunParams {
+        call_id: OpId::generate().to_string(),
         command: command.into(),
         cwd: None,
         timeout_s: None,
@@ -30,6 +30,14 @@ pub(super) fn op(id: SessionId, job: JobId) -> JobOpParams {
     JobOpParams {
         op_id: OpId::generate(),
         id,
+        job_id: job,
+    }
+}
+
+/// An agent call on one job (`job.kill`, `job.unfollow`).
+pub(super) fn agent_op(job: JobId) -> AgentJobParams {
+    AgentJobParams {
+        call_id: OpId::generate().to_string(),
         job_id: job,
     }
 }
@@ -135,10 +143,10 @@ async fn job_item(h: &Harness, id: SessionId, job_id: JobId) -> Job {
 async fn a_job_runs_writes_its_log_and_exits() {
     let mut h = Harness::new(FakeScript::default()).await;
     let id = h.create().await;
-    let JobStarted { job_id, log_path } =
-        h.rt.job_run(
+    let JobRunResult { job_id, log_path } =
+        h.rt.agent_job_run(
             id,
-            JobRun {
+            JobRunParams {
                 cwd: Some(RemotePath::new("web")),
                 timeout_s: Some(600),
                 name: Some("tests".into()),
@@ -207,9 +215,9 @@ async fn bad_runs_are_refused() {
     let id = h.create().await;
     let err = |e: controlroom_protocol::RpcError| e.data.unwrap();
     let outside =
-        h.rt.job_run(
+        h.rt.agent_job_run(
             id,
-            JobRun {
+            JobRunParams {
                 cwd: Some(RemotePath::new("../other")),
                 ..run("make")
             },
@@ -217,12 +225,9 @@ async fn bad_runs_are_refused() {
         .await
         .unwrap_err();
     assert_eq!(err(outside), ErrorData::InvalidParams);
-    let empty = h.rt.job_run(id, run("  ")).await.unwrap_err();
+    let empty = h.rt.agent_job_run(id, run("  ")).await.unwrap_err();
     assert_eq!(err(empty), ErrorData::InvalidParams);
-    let unknown =
-        h.rt.job_kill(op(id, JobId::generate()), KilledBy::User)
-            .await
-            .unwrap_err();
+    let unknown = h.rt.job_kill(op(id, JobId::generate())).await.unwrap_err();
     assert!(matches!(
         unknown.data.unwrap(),
         ErrorData::NotFound {
@@ -233,7 +238,7 @@ async fn bad_runs_are_refused() {
 
     // A launch that fails ends the job at once and reports the error.
     h.jobs.fail_spec(Some("nono is missing"));
-    let failed = h.rt.job_run(id, run("make")).await.unwrap_err();
+    let failed = h.rt.agent_job_run(id, run("make")).await.unwrap_err();
     assert!(matches!(
         failed.data.unwrap(),
         ErrorData::SandboxUnavailable { .. }
@@ -246,7 +251,7 @@ async fn bad_runs_are_refused() {
     // Closed sessions run nothing.
     h.jobs.fail_spec(None);
     h.rt.close(h.op(id)).await.unwrap();
-    let closed = h.rt.job_run(id, run("make")).await.unwrap_err();
+    let closed = h.rt.agent_job_run(id, run("make")).await.unwrap_err();
     assert!(matches!(
         closed.data.unwrap(),
         ErrorData::InvalidState { .. }
@@ -258,8 +263,8 @@ async fn a_replayed_run_starts_one_job() {
     let mut h = Harness::new(FakeScript::default()).await;
     let id = h.create().await;
     let params = run("make");
-    let first = h.rt.job_run(id, params.clone()).await.unwrap();
-    let again = h.rt.job_run(id, params).await.unwrap();
+    let first = h.rt.agent_job_run(id, params.clone()).await.unwrap();
+    let again = h.rt.agent_job_run(id, params).await.unwrap();
     assert_eq!(first, again);
     assert_eq!(h.jobs.launches().len(), 1);
     assert_eq!(jobs(&h, id).await.len(), 1);
@@ -270,8 +275,12 @@ async fn kill_timeout_and_a_lost_supervisor() {
     let mut h = Harness::new(FakeScript::default()).await;
     let id = h.create().await;
 
-    let killed = h.rt.job_run(id, run("sleep 100")).await.unwrap().job_id;
-    let job = h.rt.job_kill(op(id, killed), KilledBy::User).await.unwrap();
+    let killed =
+        h.rt.agent_job_run(id, run("sleep 100"))
+            .await
+            .unwrap()
+            .job_id;
+    let job = h.rt.job_kill(op(id, killed)).await.unwrap();
     assert_eq!(
         job.status,
         JobStatus::Running,
@@ -283,11 +292,19 @@ async fn kill_timeout_and_a_lost_supervisor() {
         (JobStatus::Killed, Some("SIGTERM"))
     );
 
-    let slow = h.rt.job_run(id, run("sleep 100")).await.unwrap().job_id;
+    let slow =
+        h.rt.agent_job_run(id, run("sleep 100"))
+            .await
+            .unwrap()
+            .job_id;
     h.jobs.stop(slow, None, Some(15), Some(StopCause::Timeout));
     assert_eq!(ended(&h, id, slow).await.status, JobStatus::TimedOut);
 
-    let lost = h.rt.job_run(id, run("sleep 100")).await.unwrap().job_id;
+    let lost =
+        h.rt.agent_job_run(id, run("sleep 100"))
+            .await
+            .unwrap()
+            .job_id;
     h.jobs.output(lost, &["one line"]);
     h.jobs.kill_supervisor(lost);
     let job = ended(&h, id, lost).await;
@@ -296,7 +313,7 @@ async fn kill_timeout_and_a_lost_supervisor() {
         (JobStatus::Failed, None, 1)
     );
 
-    let crashed = h.rt.job_run(id, run("./crash")).await.unwrap().job_id;
+    let crashed = h.rt.agent_job_run(id, run("./crash")).await.unwrap().job_id;
     h.jobs.stop(crashed, None, Some(11), None);
     let job = ended(&h, id, crashed).await;
     assert_eq!(
@@ -310,7 +327,7 @@ async fn kill_timeout_and_a_lost_supervisor() {
 async fn following_buffers_matching_lines_until_unfollowed() {
     let mut h = Harness::new(FakeScript::default()).await;
     let id = h.create().await;
-    let job_id = h.rt.job_run(id, run("e2e")).await.unwrap().job_id;
+    let job_id = h.rt.agent_job_run(id, run("e2e")).await.unwrap().job_id;
     h.jobs.output(job_id, &["ok", "FAIL one"]);
     h.clock.advance(1000);
     settle(&h, job_id).await;
@@ -378,7 +395,11 @@ async fn following_buffers_matching_lines_until_unfollowed() {
 async fn a_daemon_restart_reattaches_a_running_job() {
     let mut h = Harness::new(FakeScript::default()).await;
     let id = h.create().await;
-    let job_id = h.rt.job_run(id, run("cargo build")).await.unwrap().job_id;
+    let job_id =
+        h.rt.agent_job_run(id, run("cargo build"))
+            .await
+            .unwrap()
+            .job_id;
     h.rt.job_follow(follow(id, job_id, Some("error"), FollowFrom::Unseen))
         .await
         .unwrap();
@@ -397,16 +418,18 @@ async fn a_daemon_restart_reattaches_a_running_job() {
     })
     .await;
     assert_eq!(job.follow.unwrap().pattern.as_deref(), Some("error"));
-    h.rt.job_kill(op(id, job_id), KilledBy::Agent)
-        .await
-        .unwrap();
+    h.rt.agent_job_kill(id, agent_op(job_id)).await.unwrap();
     let job = ended(&h, id, job_id).await;
     assert_eq!((job.status, job.lines), (JobStatus::Killed, 3));
 
     // A job that ended while the daemon was down is seen at recovery; one whose supervisor
     // vanished (a reboot) ends as failed.
-    let exited = h.rt.job_run(id, run("true")).await.unwrap().job_id;
-    let rebooted = h.rt.job_run(id, run("sleep 100")).await.unwrap().job_id;
+    let exited = h.rt.agent_job_run(id, run("true")).await.unwrap().job_id;
+    let rebooted =
+        h.rt.agent_job_run(id, run("sleep 100"))
+            .await
+            .unwrap()
+            .job_id;
     let h = h.restart_after(|_| {}).await;
     h.jobs.exit(exited, 0);
     h.jobs.kill_supervisor(rebooted);
@@ -426,7 +449,11 @@ async fn idle_stop_waits_for_running_jobs() {
     .await
     .unwrap();
     let id = h.create().await;
-    let job_id = h.rt.job_run(id, run("make watch")).await.unwrap().job_id;
+    let job_id =
+        h.rt.agent_job_run(id, run("make watch"))
+            .await
+            .unwrap()
+            .job_id;
     h.clock.advance(3 * HOUR_MS);
     h.rt.tick();
     assert!(h.host.supervisor_running(id), "a running job is live work");
@@ -448,12 +475,16 @@ async fn idle_stop_waits_for_running_jobs() {
 async fn closing_or_deleting_a_session_kills_its_jobs() {
     let mut h = Harness::new(FakeScript::default()).await;
     let id = h.create().await;
-    let job_id = h.rt.job_run(id, run("serve")).await.unwrap().job_id;
+    let job_id = h.rt.agent_job_run(id, run("serve")).await.unwrap().job_id;
     h.rt.close(h.op(id)).await.unwrap();
     assert_eq!(ended(&h, id, job_id).await.status, JobStatus::Killed);
 
     let other = h.create().await;
-    let job_id = h.rt.job_run(other, run("serve")).await.unwrap().job_id;
+    let job_id =
+        h.rt.agent_job_run(other, run("serve"))
+            .await
+            .unwrap()
+            .job_id;
     h.rt.delete(h.op(other)).await.unwrap();
     h.jobs.wait("the job killed", |j| !j.running(job_id)).await;
 }

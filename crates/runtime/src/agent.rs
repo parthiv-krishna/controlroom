@@ -21,7 +21,7 @@ use crate::todos::Edit;
 const MAX_NOTICE: usize = 4000;
 
 /// The op id of an agent call: scoped to the session, so call ids can't collide across agents.
-fn op_id(id: SessionId, call_id: &str) -> OpId {
+pub(crate) fn op_id(id: SessionId, call_id: &str) -> OpId {
     OpId::new(format!("agent:{id}:{call_id}"))
 }
 

@@ -10,7 +10,7 @@ use super::progress::Progress;
 /// Who asked to kill a job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum KilledBy {
+pub(crate) enum KilledBy {
     /// The agent (`job kill`): it knows, so no exit wake.
     Agent,
     /// The user (`job.kill` from the UI): the exit wake tells the agent.

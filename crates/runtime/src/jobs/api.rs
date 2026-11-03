@@ -1,21 +1,18 @@
-//! The [`Runtime`]'s job methods: `job run` for the agent, `job.*` for the daemon API.
+//! The [`Runtime`]'s `job.*` methods of the daemon API (the user's side).
 
 use controlroom_protocol::RpcError;
 use controlroom_protocol::daemon::{
     JobFollowParams, JobListParams, JobListResult, JobLogs, JobLogsParams, JobOpParams,
 };
-use controlroom_protocol::ids::{JobId, OpId, RemotePath, Seq, SessionId};
+use controlroom_protocol::ids::Seq;
 use controlroom_protocol::session::Job;
 use controlroom_supervisor::plain::plain_line;
 use controlroom_transcript::Body;
-use serde::{Deserialize, Serialize};
 
-use super::commands::job_cwd;
 use super::io;
 use super::model::KilledBy;
 use super::progress::line_seq;
 use crate::Runtime;
-use crate::commands::params_hash;
 use crate::errors::internal;
 use crate::ports::JobRef;
 
@@ -24,59 +21,7 @@ const DEFAULT_LOG_LINES: u32 = 200;
 /// The most lines one `job.logs` returns.
 const MAX_LOG_LINES: u32 = 2000;
 
-/// `job run` from the agent.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JobRun {
-    /// Idempotency key (e.g. derived from the tool call).
-    pub op_id: OpId,
-    /// The command line, run by the login shell under the session's sandbox.
-    pub command: String,
-    /// Its working directory: absolute or relative to the session's, and inside it.
-    pub cwd: Option<RemotePath>,
-    /// Stop it after this many seconds (`timed_out`).
-    pub timeout_s: Option<u32>,
-    /// A short display name; default: the command.
-    pub name: Option<String>,
-}
-
-/// What `job run` returns.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JobStarted {
-    /// The job.
-    pub job_id: JobId,
-    /// Its plain-text log, for the agent to read.
-    pub log_path: RemotePath,
-}
-
 impl Runtime {
-    /// `job run`: starts a background job in the session and returns once its supervisor
-    /// runs. A replayed op id returns the first result without starting anything.
-    pub async fn job_run(&self, id: SessionId, run: JobRun) -> Result<JobStarted, RpcError> {
-        const METHOD: &str = "job.run";
-        self.recovered().await;
-        let hash = params_hash(&(id, &run));
-        let inner = self.inner();
-        if let Some(started) = inner.with_core(|core| core.stored_op(METHOD, &run.op_id, &hash))? {
-            return Ok(started);
-        }
-        let session_cwd =
-            inner.with_core(|core| Ok::<_, RpcError>(core.session(id)?.data.cwd.clone()))?;
-        let cwd = job_cwd(&session_cwd, run.cwd.as_ref())?;
-        let cwd = inner.host.resolve_cwd(&cwd).await?;
-        let mut launch = None;
-        let started = inner.transact(|core| {
-            core.with_op(METHOD, &run.op_id, &(id, &run), |core| {
-                let (started, job) = core.job_start(id, &run, cwd)?;
-                launch = Some(job);
-                Ok(started)
-            })
-        })?;
-        if let Some(launch) = launch {
-            io::launch(inner, launch).await?;
-        }
-        Ok(started)
-    }
-
     /// `job.list`: every job of the session, newest first.
     pub async fn job_list(&self, params: JobListParams) -> Result<JobListResult, RpcError> {
         self.recovered().await;
@@ -134,19 +79,27 @@ impl Runtime {
         })
     }
 
-    /// `job.kill`. The agent's own kills (`by: agent`) don't wake it.
-    pub async fn job_kill(&self, params: JobOpParams, by: KilledBy) -> Result<Job, RpcError> {
+    /// `job.kill` by the user: the exit wakes the agent.
+    pub async fn job_kill(&self, params: JobOpParams) -> Result<Job, RpcError> {
         self.command("job.kill", &params.op_id, &params, |core| {
-            core.job_kill(params.id, &params.job_id, by)
+            core.job_kill(params.id, &params.job_id, KilledBy::User)
         })
         .await
     }
 
     /// `job.follow`: wake the agent on the job's new or matching lines.
     pub async fn job_follow(&self, params: JobFollowParams) -> Result<Job, RpcError> {
+        self.follow_job("job.follow", params).await
+    }
+
+    pub(super) async fn follow_job(
+        &self,
+        method: &str,
+        params: JobFollowParams,
+    ) -> Result<Job, RpcError> {
         let mut rescan = None;
         let job = self
-            .command("job.follow", &params.op_id, &params, |core| {
+            .command(method, &params.op_id, &params, |core| {
                 let (job, scan) = core.job_follow(&params)?;
                 rescan = scan;
                 Ok(job)

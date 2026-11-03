@@ -26,8 +26,10 @@
 //! snapshot on the extension's own connection needs none of that, and a reconnect simply gets
 //! the current state again.
 
+mod jobs;
 mod types;
 
+pub use jobs::*;
 pub use types::*;
 
 use crate::jsonrpc::Ack;
@@ -54,6 +56,16 @@ pub mod methods {
         TodoUpdate = "todo.update" (AgentTodoUpdateParams) -> AgentTodos;
         /// Tell the user something without asking (`notify_user`).
         Notify = "notify" (NotifyParams) -> Ack;
+        /// Start a background job (`job run`).
+        JobRun = "job.run" (JobRunParams) -> JobRunResult;
+        /// Wake on a job's new or matching lines (`job follow`).
+        JobFollow = "job.follow" (AgentJobFollowParams) -> crate::session::Job;
+        /// Stop following a job; the exit wake stays (`job unfollow`).
+        JobUnfollow = "job.unfollow" (AgentJobParams) -> crate::session::Job;
+        /// The session's jobs, or one (`job status`).
+        JobStatus = "job.status" (JobStatusParams) -> AgentJobs;
+        /// Kill a job; no exit wake follows (`job kill`).
+        JobKill = "job.kill" (AgentJobParams) -> crate::session::Job;
     }
 }
 

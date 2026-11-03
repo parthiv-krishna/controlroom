@@ -62,7 +62,6 @@ mod triggers;
 #[cfg(test)]
 mod tests;
 
-pub use jobs::{JobRun, JobStarted, KilledBy};
 pub use raised::{RaiseRequest, RaisedRequest};
 pub use runtime::{MachineSubscription, OpenError, Runtime, RuntimeConfig, SessionSubscription};
 pub use session::SessionUpdate;
