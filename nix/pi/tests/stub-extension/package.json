@@ -1,0 +1,7 @@
+{
+  "name": "@controlroom/pi",
+  "version": "0.0.0-stub",
+  "description": "Test stand-in for @controlroom/pi until extensions/pi exists",
+  "keywords": ["pi-package"],
+  "pi": { "extensions": ["./index.ts"] }
+}

@@ -35,6 +35,7 @@
         );
       webFor = pkgs: import ./nix/web.nix { inherit pkgs; };
       nonoFor = pkgs: import ./nix/nono.nix { inherit pkgs; };
+      piFor = pkgs: import ./nix/pi.nix { inherit pkgs; };
       e2eFor =
         pkgs:
         import ./nix/tests/e2e.nix {
@@ -67,6 +68,8 @@
           controlroomd-aarch64-linux = rust.controlroomdStatic.aarch64;
           # The sandbox, pinned to the version the profiles are validated against.
           nono = nonoFor pkgs;
+          # pi pinned for controlroom: launcher, @controlroom/pi, OAuth helper.
+          controlroom-pi = (piFor pkgs).bundle;
           # The Playwright runner of the VM test and the VM test run ($out has its logs).
           vm-e2e-runner = web.e2eVm;
         }
@@ -97,6 +100,7 @@
           # Builds the pinned nono; its install check asserts `nono --version`.
           nono = nonoFor pkgs;
         }
+        // (piFor pkgs).checks
         # The browser end-to-end test in NixOS VMs (needs KVM): x86_64 only.
         // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
           vm-e2e = (e2eFor pkgs).check;
