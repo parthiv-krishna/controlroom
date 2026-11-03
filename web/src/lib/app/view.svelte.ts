@@ -74,6 +74,8 @@ export class View {
   expanded = $state<Record<string, boolean>>({});
   /** The open raw view per session key, and the records it was opened at. */
   raw = $state<Record<string, RawFocus>>({});
+  /** The job open in the jobs strip, by session key (a timeline job item opens it too). */
+  jobOpen = $state<Record<string, string | null>>({});
   /** A timeline item to scroll to and flash (a raw record's link back). */
   focusItem = $state<{ key: string; id: string } | null>(null);
 
