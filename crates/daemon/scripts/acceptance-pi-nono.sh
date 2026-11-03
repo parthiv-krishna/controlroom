@@ -4,7 +4,9 @@
 # (plain pi, and pi through the controlroom-pi bundle's launcher);
 # `acceptance_serve` drives it through `controlroomd serve`, SIGKILLs the daemon mid-run and
 # checks the run completes with no duplicate prompt, and runs a mediated `git push` that the
-# test approves, then denies, through the daemon's approval webhook (needs git on PATH).
+# test approves, then denies, through the daemon's approval webhook (needs git on PATH);
+# `acceptance_agent` loads @controlroom/pi into pi: todos, auto-continue, a question and the
+# answer that wakes the agent.
 # Needs Nix, Landlock and pi:
 #
 #   crates/daemon/scripts/acceptance-pi-nono.sh             # pi from PATH
@@ -38,9 +40,10 @@ version=$("$CR_TEST_NONO" --version)
 
 cd "$repo"
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-cargo test -q -p controlroomd --test acceptance_pi_nono --test acceptance_serve --no-run
+cargo test -q -p controlroomd --test acceptance_pi_nono --test acceptance_serve --test acceptance_agent --no-run
 cargo build -q -p controlroom-fake-agent
 mkdir -p "$work/home" "$work/xdg"/{config,data,state,cache}
 HOME="$work/home" XDG_CONFIG_HOME="$work/xdg/config" XDG_DATA_HOME="$work/xdg/data" \
   XDG_STATE_HOME="$work/xdg/state" XDG_CACHE_HOME="$work/xdg/cache" PI_CODING_AGENT_DIR="" \
-  cargo test -p controlroomd --test acceptance_pi_nono --test acceptance_serve -- --ignored --nocapture "$@"
+  cargo test -p controlroomd --test acceptance_pi_nono --test acceptance_serve --test acceptance_agent -- \
+  --ignored --nocapture "$@"

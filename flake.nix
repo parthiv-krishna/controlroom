@@ -36,6 +36,7 @@
       webFor = pkgs: import ./nix/web.nix { inherit pkgs; };
       nonoFor = pkgs: import ./nix/nono.nix { inherit pkgs; };
       piFor = pkgs: import ./nix/pi.nix { inherit pkgs; };
+      extensionFor = pkgs: import ./nix/extension.nix { inherit pkgs; };
       e2eFor =
         pkgs:
         import ./nix/tests/e2e.nix {
@@ -97,6 +98,8 @@
           controlroom-web = rust.controlroomWeb;
           protocol-ts-drift = rust.protocolTsDrift;
           web-check = web.check;
+          # @controlroom/pi's unit tests.
+          extension-pi = (extensionFor pkgs).check;
           # Builds the pinned nono; its install check asserts `nono --version`.
           nono = nonoFor pkgs;
         }
