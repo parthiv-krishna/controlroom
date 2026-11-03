@@ -8,8 +8,13 @@ use serde_json::json;
 use crate::harness::*;
 use crate::sessions::alive;
 
+/// SIGKILLs `pid` if it still runs: an agent may exit by itself once its supervisor is gone
+/// (its stdin closes), and an exited process is gone from the table once reaped.
 fn kill(pid: u32) {
-    kill_process(Pid::from_raw(pid as i32).unwrap(), Signal::KILL).unwrap();
+    match kill_process(Pid::from_raw(pid as i32).unwrap(), Signal::KILL) {
+        Ok(()) | Err(rustix::io::Errno::SRCH) => {}
+        Err(e) => panic!("killing {pid}: {e}"),
+    }
 }
 
 /// Whether the transcript shows pi settling a run `n` times.
