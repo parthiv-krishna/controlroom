@@ -148,9 +148,9 @@ fn a_job_logs_survives_a_daemon_restart_and_its_exit_wakes_the_agent() {
     assert_eq!(item["item"]["job"]["status"], "failed");
     let trigger = ops
         .iter()
-        .filter(|op| op["item"]["kind"] == "run")
+        .rev()
+        .find(|op| op["item"]["kind"] == "run")
         .map(|op| op["item"]["trigger"].clone())
-        .last()
         .unwrap();
     assert_eq!(trigger["origin"], "job");
     assert_eq!(trigger["label"], "job: suite (exit 3)");
