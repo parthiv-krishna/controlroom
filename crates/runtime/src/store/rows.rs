@@ -7,6 +7,7 @@ use controlroom_protocol::ids::{ItemId, RemotePath, Seq, SessionId, UnixMillis};
 use controlroom_protocol::session::AgentSession;
 use controlroom_protocol::timeline::TimelineItem;
 use rusqlite::{OptionalExtension, Row, params};
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use super::{Store, json};
@@ -16,7 +17,7 @@ use crate::model::{AgentSessionRow, Decision, Raised, SessionData};
 const SESSION_COLUMNS: &str = "id, agent, driver, cwd, name, created_at, closed_at, parent_id,
     spawned_by, sandbox_level, sandbox, read_seq, last_turn_end_seq, last_outcome, last_error,
     queue_paused, auto_send, pending_start, history_note, resume_failed, applied_seq,
-    timeline_seq";
+    timeline_seq, auto_continue, run_triggers";
 
 fn decode<T: DeserializeOwned>(raw: &str) -> rusqlite::Result<T> {
     serde_json::from_str(raw).map_err(|e| {
@@ -63,10 +64,14 @@ fn session_row(row: &Row<'_>) -> rusqlite::Result<SessionData> {
         resume_failed: row.get(19)?,
         applied_seq: Seq(uint(row.get(20)?)),
         timeline_seq: Seq(uint(row.get(21)?)),
+        auto: decode_opt(row.get(22)?)?.unwrap_or_default(),
+        triggers: decode_opt(row.get(23)?)?.unwrap_or_default(),
         agent_sessions: Vec::new(),
         queue: Vec::new(),
         decisions: BTreeMap::new(),
         raised: BTreeMap::new(),
+        todos: Vec::new(),
+        injections: Vec::new(),
     })
 }
 
@@ -137,6 +142,8 @@ impl Store {
             let raised: Raised = decode(&raw?)?;
             data.raised.insert(raised.request.id.clone(), raised);
         }
+        data.todos = self.list(&id, "todos", "todo")?;
+        data.injections = self.list(&id, "injections", "injection")?;
         Ok(data)
     }
 
@@ -153,6 +160,8 @@ impl Store {
             b.queue.clone_from(&after.queue);
             b.decisions.clone_from(&after.decisions);
             b.raised.clone_from(&after.raised);
+            b.todos.clone_from(&after.todos);
+            b.injections.clone_from(&after.injections);
             b != *after
         });
         if row_changed {
@@ -189,6 +198,12 @@ impl Store {
                 )?;
             }
         }
+        if before.is_none_or(|b| b.todos != after.todos) {
+            self.save_list(&id, "todos", "todo", &after.todos)?;
+        }
+        if before.is_none_or(|b| b.injections != after.injections) {
+            self.save_list(&id, "injections", "injection", &after.injections)?;
+        }
         for (request_id, decision) in &after.decisions {
             if before.is_some_and(|b| b.decisions.get(request_id) == Some(decision)) {
                 continue;
@@ -217,7 +232,7 @@ impl Store {
             &format!(
                 "INSERT OR REPLACE INTO sessions ({SESSION_COLUMNS}) VALUES
                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                  ?18, ?19, ?20, ?21, ?22)"
+                  ?18, ?19, ?20, ?21, ?22, ?23, ?24)"
             ),
             params![
                 d.id.to_string(),
@@ -242,8 +257,49 @@ impl Store {
                 d.resume_failed,
                 int(d.applied_seq.0),
                 int(d.timeline_seq.0),
+                json(&d.auto),
+                json(&d.triggers),
             ],
         )?;
+        Ok(())
+    }
+
+    /// A per-session list stored one JSON row per position (`table` has `session_id`,
+    /// `position` and `column`).
+    fn list<T: DeserializeOwned>(
+        &self,
+        id: &str,
+        table: &str,
+        column: &str,
+    ) -> rusqlite::Result<Vec<T>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {column} FROM {table} WHERE session_id = ?1 ORDER BY position"
+        ))?;
+        let mut out = Vec::new();
+        for raw in stmt.query_map([id], |r| r.get::<_, String>(0))? {
+            out.push(decode(&raw?)?);
+        }
+        Ok(out)
+    }
+
+    /// Replaces a per-session list (see [`Store::list`]).
+    fn save_list<T: Serialize>(
+        &self,
+        id: &str,
+        table: &str,
+        column: &str,
+        items: &[T],
+    ) -> rusqlite::Result<()> {
+        self.conn
+            .execute(&format!("DELETE FROM {table} WHERE session_id = ?1"), [id])?;
+        for (position, item) in items.iter().enumerate() {
+            self.conn.execute(
+                &format!(
+                    "INSERT INTO {table} (session_id, position, {column}) VALUES (?1, ?2, ?3)"
+                ),
+                params![id, int_usize(position), json(item)],
+            )?;
+        }
         Ok(())
     }
 
@@ -257,6 +313,8 @@ impl Store {
             "decisions",
             "raised_requests",
             "timeline_items",
+            "todos",
+            "injections",
         ] {
             let column = if table == "sessions" {
                 "id"

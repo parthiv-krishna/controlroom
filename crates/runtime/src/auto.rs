@@ -22,9 +22,7 @@ use controlroom_drivers::LineTag;
 use controlroom_protocol::RpcError;
 use controlroom_protocol::daemon::SessionUpdateParams;
 use controlroom_protocol::ids::SessionId;
-use controlroom_protocol::session::{
-    AutoContinueInfo, AutoContinueStatus, RunOutcome, TodoStatus,
-};
+use controlroom_protocol::session::{AutoContinueInfo, AutoContinueStatus, RunOutcome, TodoStatus};
 use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
 
 use crate::core::Core;

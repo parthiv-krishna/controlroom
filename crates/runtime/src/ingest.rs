@@ -15,6 +15,7 @@ use controlroom_transcript::{Body, Record};
 
 use crate::core::Core;
 use crate::errors::internal;
+use crate::inject::is_injection;
 use crate::model::{Delivery, QueueEntry, SessionData, Via};
 use crate::session::{Ended, Session, SessionUpdate, raw_frame};
 
@@ -53,7 +54,8 @@ impl Core {
         let loading = session.live.loading;
         let session = self.session_mut(id)?;
         let before = session.data.clone();
-        let out = session.fold(record);
+        let mut out = session.fold(record);
+        crate::triggers::enrich(session, &mut out);
         if let Body::Meta(_) = &record.body {
             session.derived.process = crate::session::Process {
                 meta_seq: Some(seq),
@@ -127,6 +129,11 @@ impl Core {
         };
         let data = &mut session.data;
         match event {
+            DriverEvent::Written { tag } if is_injection(tag) => self.injection_written(id, tag),
+            DriverEvent::Accepted { tag } if is_injection(tag) => self.injection_accepted(id, tag),
+            DriverEvent::Rejected { tag, error } if is_injection(tag) => {
+                self.injection_rejected(id, tag, error);
+            }
             // The transcript is the truth: the item reached the agent.
             DriverEvent::Written { tag } => {
                 if let Some(entry) = data.queue.iter_mut().find(|e| e.has_tag(tag)) {
@@ -147,6 +154,7 @@ impl Core {
                 data.last_outcome = Some(*outcome);
                 data.last_error.clone_from(error);
                 data.last_turn_end_seq = seq;
+                crate::auto::run_settled(data);
                 if *outcome != RunOutcome::Completed {
                     pause_after_bad_end(data);
                 }
@@ -181,8 +189,8 @@ impl Core {
                 let ready = session.derived.process.ready;
                 end_process(data, seq, ts, *during_run, ready, &exit_error(event));
             }
+            DriverEvent::RunStarted { cause } => crate::auto::run_started(data, cause.as_ref()),
             DriverEvent::Ready
-            | DriverEvent::RunStarted { .. }
             | DriverEvent::RequestOpened(_)
             | DriverEvent::RequestClosed { .. }
             | DriverEvent::Context(_)
@@ -312,6 +320,8 @@ fn end_process(
     // delivered, and are never sent again.
     data.queue
         .retain(|e| !matches!(e.delivery, Some(Delivery::Written(_))));
+    data.injections
+        .retain(|i| !matches!(i.delivery, Some(Delivery::Written(_))));
     if !ready {
         if data.pending_start == Some(controlroom_protocol::session::StartedBy::Resume) {
             data.resume_failed = true;

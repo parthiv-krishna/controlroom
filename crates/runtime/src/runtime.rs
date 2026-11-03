@@ -184,7 +184,7 @@ impl Runtime {
         let finished = self.inner.transact(|core| {
             let ids: Vec<SessionId> = core.sessions.keys().copied().collect();
             for id in ids {
-                core.end_pending_raised(id, RequestState::Expired)?;
+                core.end_pending_raised(id, RequestState::Expired, false)?;
                 core.touch(id);
             }
             Ok(())
@@ -226,13 +226,13 @@ impl Runtime {
         }
     }
 
-    async fn recovered(&self) {
+    pub(crate) async fn recovered(&self) {
         let mut recovered = self.inner.recovered.subscribe();
         let _ = recovered.wait_for(|done| *done).await;
     }
 
     /// Runs a mutating command once per op id.
-    async fn command<P: Serialize, R: Serialize + DeserializeOwned>(
+    pub(crate) async fn command<P: Serialize, R: Serialize + DeserializeOwned>(
         &self,
         method: &str,
         op_id: &controlroom_protocol::ids::OpId,
@@ -572,7 +572,6 @@ impl Runtime {
         .await
     }
 
-    #[cfg(test)]
     pub(crate) fn inner(&self) -> &Arc<Inner> {
         &self.inner
     }

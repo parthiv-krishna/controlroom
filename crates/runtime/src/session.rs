@@ -5,18 +5,19 @@
 //!   a transaction snapshots it with the data and restores both on failure.
 //! - [`Derived`] is observed from the fold only and rebuilt by a re-fold.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use controlroom_drivers::{AgentView, Driver, FoldOut, LineTag};
-use controlroom_protocol::ids::{OpId, RequestId, Seq, UnixMillis};
+use controlroom_protocol::agent::AgentState;
+use controlroom_protocol::ids::{ItemId, OpId, RequestId, Seq, UnixMillis};
 use controlroom_protocol::session::{
-    AgentSession, Attention, AutoContinueInfo, AutoContinueStatus, ContextUsage, Request,
-    RequestKind, RequestState, SessionDetail, SessionState, SessionSummary,
+    AgentSession, Attention, AutoContinueStatus, ContextUsage, LiveWork, Request, RequestKind,
+    RequestState, SessionDetail, SessionState, SessionSummary,
 };
-use controlroom_protocol::timeline::{RawFrame, RawStream, TimelineOp};
+use controlroom_protocol::timeline::{RawFrame, RawStream, RunTrigger, TimelineOp};
 use controlroom_transcript::{Body, Record};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::AbortHandle;
 
 use crate::model::SessionData;
@@ -125,6 +126,8 @@ pub(crate) struct Derived {
     pub title: Option<String>,
     pub process: Process,
     pub preview: PreviewSource,
+    /// Run items with the trigger the runtime recorded for them (see `triggers`).
+    pub run_triggers: HashMap<ItemId, RunTrigger>,
 }
 
 /// What the machine and session feeds last saw.
@@ -147,6 +150,8 @@ pub(crate) struct Session {
     pub needs_reload_on_failure: bool,
     pub timeline: TimelineCache,
     pub updates: broadcast::Sender<SessionUpdate>,
+    /// What the agent's extension sees; changed only after a commit.
+    pub agent: watch::Sender<Option<AgentState>>,
     pub emitted: Emitted,
     /// The attachment's tasks (reader, writer, barrier).
     pub tasks: Vec<AbortHandle>,
@@ -162,6 +167,7 @@ impl Session {
             needs_reload_on_failure: false,
             timeline: TimelineCache::default(),
             updates: broadcast::channel(UPDATES_CAPACITY).0,
+            agent: watch::channel(None).0,
             emitted: Emitted::default(),
             tasks: Vec::new(),
         }
@@ -218,9 +224,11 @@ impl Session {
             && self.view().ready
     }
 
-    /// A run is active or a prompt is on its way.
+    /// A run is active or a prompt (a queue item or an injection) is on its way.
     pub(crate) fn busy(&self) -> bool {
-        self.view().run_active || self.data.delivering()
+        self.view().run_active
+            || self.data.delivering()
+            || crate::inject::prompt_on_its_way(&self.data)
     }
 
     /// The agent session can be reattached after its process stops.
@@ -233,6 +241,13 @@ impl Session {
     /// Pending requests: the agent's (raised, still open in the agent, and undecided), then
     /// the daemon's own.
     pub(crate) fn pending_requests(&self) -> Vec<Request> {
+        let mut pending = self.pending_agent_requests();
+        pending.extend(self.pending_raised().cloned());
+        pending
+    }
+
+    /// The agent's own pending requests (raised in the transcript, still open, undecided).
+    pub(crate) fn pending_agent_requests(&self) -> Vec<Request> {
         let mut pending = Vec::new();
         if self.derived.process.live {
             let open = &self.view().open_requests;
@@ -248,7 +263,6 @@ impl Session {
                     .cloned(),
             );
         }
-        pending.extend(self.pending_raised().cloned());
         pending
     }
 
@@ -305,12 +319,42 @@ impl Session {
             Some(Attention::Approval)
         } else if !pending.is_empty() {
             Some(Attention::Question)
-        } else if matches!(state, SessionState::Failed | SessionState::Interrupted) {
+        } else if matches!(state, SessionState::Failed | SessionState::Interrupted)
+            || self.auto_continue_paused()
+        {
             Some(Attention::Problem)
         } else if self.unread() {
             Some(Attention::Unread)
         } else {
             None
+        }
+    }
+
+    /// Auto-continue paused with attention (only blocked entries, stalled, budget, cancel).
+    pub(crate) fn auto_continue_paused(&self) -> bool {
+        !matches!(
+            self.data.auto.status(),
+            AutoContinueStatus::On | AutoContinueStatus::Off
+        )
+    }
+
+    /// Work that continues without the agent running and will wake it (jobs, children,
+    /// mailbox asks). The hook for those features: each adds its count here, and
+    /// auto-continue waits while any is non-zero ("not continuing: waiting on job").
+    pub(crate) fn live_work(&self) -> LiveWork {
+        LiveWork::default()
+    }
+
+    /// What the agent's extension sees (the `state` notification).
+    pub(crate) fn agent_state(&self) -> AgentState {
+        AgentState {
+            todos: self.data.todos.clone(),
+            questions: self
+                .pending_raised()
+                .filter(|r| r.kind == RequestKind::Question)
+                .cloned()
+                .collect(),
+            auto_continue: crate::auto::info(self),
         }
     }
 
@@ -355,13 +399,8 @@ impl Session {
                 .map(|row| row.session.clone())
                 .collect::<Vec<AgentSession>>(),
             queue: self.data.queue.iter().map(|e| e.to_item()).collect(),
-            todos: Vec::new(),
-            auto_continue: AutoContinueInfo {
-                status: AutoContinueStatus::Off,
-                reason: None,
-                runs_used: 0,
-                budget: 0,
-            },
+            todos: self.data.todos.clone(),
+            auto_continue: crate::auto::info(self),
             jobs: Vec::new(),
             peers: Vec::new(),
         }

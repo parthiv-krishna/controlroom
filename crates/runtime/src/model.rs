@@ -5,9 +5,11 @@ use std::collections::BTreeMap;
 use controlroom_drivers::{LineTag, NativeRef};
 use controlroom_protocol::ids::{OpId, QueueId, RemotePath, RequestId, Seq, SessionId, UnixMillis};
 use controlroom_protocol::session::{
-    AgentSession, ContentPart, DriverKind, PeerRef, PromptOrigin, QueueItem, Request, RunOutcome,
-    SandboxInfo, SandboxLevel, SandboxSpec, StartedBy,
+    AgentSession, AutoContinueStatus, ContentPart, DriverKind, PeerRef, PromptOrigin, QueueItem,
+    Request, RequestKind, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec, StartedBy, Todo,
+    TodoStatus,
 };
+use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
 use serde::{Deserialize, Serialize};
 
 /// How a queue item was handed to the agent.
@@ -123,6 +125,14 @@ pub(crate) struct Raised {
     pub seq: Seq,
 }
 
+impl Raised {
+    /// A question the agent asked (`ask_user`): non-blocking, nobody waits for it, and its
+    /// answer is injected into the agent's next turn. Everything else is an approval.
+    pub(crate) fn is_question(&self) -> bool {
+        self.request.kind == RequestKind::Question
+    }
+}
+
 /// One agent session, with the native file needed to resume it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AgentSessionRow {
@@ -178,6 +188,13 @@ pub(crate) struct SessionData {
     pub decisions: BTreeMap<RequestId, Decision>,
     /// Requests the daemon raised, pending or resolved.
     pub raised: BTreeMap<RequestId, Raised>,
+    /// The shared todo list, in display order.
+    pub todos: Vec<Todo>,
+    /// Items waiting to be delivered into the agent's next turn, in order.
+    pub injections: Vec<Injection>,
+    pub auto: AutoContinue,
+    /// Triggers of the newest run-starting lines, oldest first.
+    pub triggers: Vec<TriggerEntry>,
 }
 
 impl SessionData {
@@ -225,5 +242,200 @@ impl SessionData {
 
     pub(crate) fn closed(&self) -> bool {
         self.closed_at.is_some()
+    }
+}
+
+/// Key prefix of an injection's line tag: `inject:<injection id>`.
+pub(crate) const INJECT: &str = "inject:";
+
+/// An item delivered into the agent's next turn (spec §8, Injection): the single path for
+/// answers to questions, user edits of the todo list and auto-continue (later also job wakes,
+/// child results and messages). While a run is active it is steered in; while the agent is
+/// idle a waking item starts a run (its trigger names the origin) and a non-waking one waits
+/// for the next run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Injection {
+    /// A ULID; the line tag is `inject:<id>`.
+    pub id: String,
+    pub origin: InjectOrigin,
+    /// Shown as the run's trigger, e.g. "answer: Which database?".
+    pub label: String,
+    pub content: Vec<ContentPart>,
+    /// Starts a run when the agent is idle.
+    pub wake: bool,
+    pub created_at: UnixMillis,
+    /// The agent refused it as a steer: deliver it as a prompt once the run ends.
+    pub no_steer: bool,
+    /// Times the agent refused it; it is dropped after [`Injection::MAX_ATTEMPTS`].
+    pub attempts: u32,
+    pub delivery: Option<Delivery>,
+}
+
+impl Injection {
+    /// Refusals before an injection is dropped.
+    pub(crate) const MAX_ATTEMPTS: u32 = 3;
+
+    pub(crate) fn new(
+        origin: InjectOrigin,
+        label: String,
+        text: String,
+        wake: bool,
+        now: UnixMillis,
+    ) -> Self {
+        Injection {
+            id: ulid::Ulid::generate().to_string(),
+            origin,
+            label,
+            content: vec![ContentPart::text(text)],
+            wake,
+            created_at: now,
+            no_steer: false,
+            attempts: 0,
+            delivery: None,
+        }
+    }
+
+    /// The tag of the line that delivers it.
+    pub(crate) fn tag(&self) -> LineTag {
+        LineTag::Internal {
+            key: format!("{INJECT}{}", self.id),
+            part: 0,
+        }
+    }
+
+    /// The run trigger when it starts a run.
+    pub(crate) fn trigger(&self) -> RunTrigger {
+        match self.origin {
+            InjectOrigin::Continue => RunTrigger::AutoContinue,
+            origin => RunTrigger::Inject {
+                origin,
+                label: self.label.clone(),
+            },
+        }
+    }
+}
+
+/// Why auto-continue paused (spec §8). Each pause comes with attention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Pause {
+    /// Only blocked entries remain, or the user cancelled a run.
+    Paused,
+    /// Runs made no progress.
+    Stalled,
+    /// The run budget is used up.
+    Budget,
+}
+
+/// What asks auto-continue to decide whether to start a continue run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Due {
+    /// A run settled (continues only after a completed one).
+    Settled,
+    /// The user turned auto-continue on or resumed it.
+    Resumed,
+}
+
+/// The per-session auto-continue state (spec §8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AutoContinue {
+    pub enabled: bool,
+    /// Continue runs allowed per user instruction.
+    pub budget: u32,
+    /// Continue runs started since the user last started a run.
+    pub runs_used: u32,
+    /// Consecutive continue runs that closed no todo entry.
+    pub stalls: u32,
+    pub pause: Option<(Pause, String)>,
+    /// A decision is pending (made by the reconcile loop once the agent is idle).
+    pub due: Option<Due>,
+    /// The active run was started by auto-continue.
+    pub continuing: bool,
+    /// A todo entry was closed (done, blocked or skipped) during the active run.
+    pub progress: bool,
+}
+
+impl AutoContinue {
+    /// The default budget of a new session.
+    pub(crate) const DEFAULT_BUDGET: u32 = 10;
+    /// Continue runs without progress before auto-continue stalls.
+    pub(crate) const STALL_RUNS: u32 = 3;
+
+    pub(crate) fn status(&self) -> AutoContinueStatus {
+        match (self.enabled, &self.pause) {
+            (false, _) => AutoContinueStatus::Off,
+            (true, None) => AutoContinueStatus::On,
+            (true, Some((Pause::Paused, _))) => AutoContinueStatus::Paused,
+            (true, Some((Pause::Stalled, _))) => AutoContinueStatus::Stalled,
+            (true, Some((Pause::Budget, _))) => AutoContinueStatus::Budget,
+        }
+    }
+}
+
+impl Default for AutoContinue {
+    fn default() -> Self {
+        AutoContinue {
+            enabled: true,
+            budget: Self::DEFAULT_BUDGET,
+            runs_used: 0,
+            stalls: 0,
+            pause: None,
+            due: None,
+            continuing: false,
+            progress: false,
+        }
+    }
+}
+
+/// The trigger of a run-starting line the runtime wrote, by its tag. The driver only knows the
+/// tag's kind; the runtime puts the real trigger (device, schedule, injection origin) on the
+/// run item. Persisted, so a re-fold after a restart shows the same trigger.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct TriggerEntry {
+    pub tag: String,
+    pub trigger: RunTrigger,
+}
+
+/// Run triggers kept per session: the newest few (only runs not yet settled and checkpointed
+/// can need them).
+pub(crate) const TRIGGERS_KEPT: usize = 32;
+
+/// A stable string for a tag (part 0 lines start runs).
+pub(crate) fn tag_key(tag: &LineTag) -> String {
+    match tag {
+        LineTag::Op { op_id, .. } => format!("op:{op_id}"),
+        LineTag::Queue { queue_id, .. } => format!("queue:{queue_id}"),
+        LineTag::Internal { key, .. } => format!("internal:{key}"),
+    }
+}
+
+impl SessionData {
+    /// The trigger recorded for a run-starting line.
+    pub(crate) fn trigger_for(&self, tag: &LineTag) -> Option<&RunTrigger> {
+        let key = tag_key(tag);
+        self.triggers
+            .iter()
+            .rev()
+            .find(|e| e.tag == key)
+            .map(|e| &e.trigger)
+    }
+
+    /// Records the trigger of a run-starting line (keeping the newest few).
+    pub(crate) fn record_trigger(&mut self, tag: &LineTag, trigger: RunTrigger) {
+        self.triggers.push(TriggerEntry {
+            tag: tag_key(tag),
+            trigger,
+        });
+        let excess = self.triggers.len().saturating_sub(TRIGGERS_KEPT);
+        self.triggers.drain(..excess);
+    }
+
+    /// Todo entries still to do: pending or in progress.
+    pub(crate) fn open_todos(&self) -> usize {
+        self.todos
+            .iter()
+            .filter(|t| matches!(t.status, TodoStatus::Pending | TodoStatus::InProgress))
+            .count()
     }
 }

@@ -8,6 +8,8 @@ mod queue;
 mod requests;
 mod session;
 
+pub(crate) use session::start_mode_of;
+
 use controlroom_protocol::ids::{OpId, SessionId};
 use controlroom_protocol::session::{ContentPart, StartedBy};
 use controlroom_protocol::{ErrorData, RpcError};

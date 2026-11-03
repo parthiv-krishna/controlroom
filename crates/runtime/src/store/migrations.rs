@@ -2,7 +2,7 @@
 //!
 //! Daemons upgrade themselves in the field, so the schema only ever moves forward: each entry
 //! of [`MIGRATIONS`] upgrades version `i` to `i + 1` and runs in its own transaction. Never edit
-//! a released migration; append a new one. Later features (todos, jobs, children, outbox) add
+//! a released migration; append a new one. Later features (jobs, children, outbox) add
 //! their tables as new migrations.
 
 use rusqlite::Connection;
@@ -97,6 +97,23 @@ const MIGRATIONS: &[&str] = &[
         raised TEXT NOT NULL,
         PRIMARY KEY (session_id, request_id)
     );
+    "#,
+    // 3: the todo list, injections, auto-continue and run triggers.
+    r#"
+    CREATE TABLE todos (
+        session_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        todo TEXT NOT NULL,
+        PRIMARY KEY (session_id, position)
+    );
+    CREATE TABLE injections (
+        session_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        injection TEXT NOT NULL,
+        PRIMARY KEY (session_id, position)
+    );
+    ALTER TABLE sessions ADD COLUMN auto_continue TEXT;
+    ALTER TABLE sessions ADD COLUMN run_triggers TEXT;
     "#,
 ];
 

@@ -81,6 +81,10 @@ impl Core {
         request.state = RequestState::Answered;
         request.answer = Some(self.answer(&request, params));
         self.settle_raised(params.id, request.clone())?;
+        if request.kind == RequestKind::Question {
+            let now = self.clock.now();
+            self.question_answered(params.id, &request, now)?;
+        }
         Ok(request)
     }
 

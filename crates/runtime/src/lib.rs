@@ -24,26 +24,38 @@
 //! (SQLite with versioned migrations), `preview`, `history` (start-fresh export), `raised`
 //! (requests the daemon raises itself, such as sandbox approvals).
 //!
-//! **Not yet here** (later phases add them as new modules and migrations): injection beyond
-//! the intent, jobs, todos and auto-continue, children, the mailbox and contact policy.
+//! Agent runtime primitives (spec §8): `inject` (the single delivery path into the agent's
+//! next turn), `questions` (non-blocking `ask_user`), `todos` (the shared list), `auto`
+//! (auto-continue), `triggers` (run triggers from the runtime's own knowledge), `items`
+//! (daemon-made timeline items) and `agent` (the agent API the daemon's agent socket serves).
+//!
+//! **Not yet here** (later phases add them as new modules and migrations): jobs, children, the
+//! mailbox and contact policy.
 
+mod agent;
+mod auto;
 mod commands;
 mod core;
 mod errors;
 mod history;
 mod ingest;
+mod inject;
 mod io;
+mod items;
 mod lifecycle;
 mod model;
 mod policy;
 pub mod ports;
 mod preview;
+mod questions;
 mod raised;
 mod reconcile;
 mod runtime;
 mod session;
 mod store;
 mod timeline;
+mod todos;
+mod triggers;
 
 #[cfg(test)]
 mod tests;

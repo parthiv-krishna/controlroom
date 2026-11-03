@@ -1,5 +1,6 @@
 //! Requests the daemon raises for a session itself, outside the agent's transcript: sandbox
-//! approvals from nono's webhook (spec §11.4), and later ones of the same shape.
+//! approvals from nono's webhook (spec §11.4), and the agent's own questions (`ask_user`, see
+//! `questions`).
 //!
 //! A raised request is persisted with the session, shown like any other request (summary
 //! `requests[]`, attention, state `awaiting_permission`, a timeline `request` item) and
@@ -8,29 +9,26 @@
 //! withdrawal (the run was cancelled or the session closed) or an expiry (the handle gave up or
 //! was dropped, e.g. because the HTTP request behind it died).
 //!
-//! Raised requests don't survive the daemon: whoever waited for them is gone, so recovery
-//! expires every request still pending.
+//! Raised approvals don't survive the daemon: whoever waited for them is gone, so recovery
+//! expires every approval still pending. Questions have no waiter (their answer is injected)
+//! and stay open across restarts.
 //!
-//! **Timeline placement.** A raised request has no transcript seq of its own. Its item sits at
-//! the transcript head when it was raised, and every change to it is stored as changed *after*
-//! the current head, so `session.subscribe {since_seq: head}` (a reconnect, or a feed catching
-//! up after it lagged) still delivers it.
+//! Timeline placement: see `items`.
 
 use std::sync::Arc;
 
 use controlroom_protocol::RpcError;
-use controlroom_protocol::ids::{ItemId, RequestId, Seq, SessionId};
+use controlroom_protocol::ids::{ItemId, RequestId, SessionId};
 use controlroom_protocol::session::{
     Request, RequestBody, RequestKind, RequestOption, RequestState, SessionState,
 };
-use controlroom_protocol::timeline::{Actor, ItemBody, TimelineItem, TimelineOp};
+use controlroom_protocol::timeline::ItemBody;
 use tokio::sync::oneshot;
 
 use crate::core::Core;
-use crate::errors::{internal, invalid_state};
+use crate::errors::invalid_state;
 use crate::model::Raised;
 use crate::runtime::Inner;
-use crate::session::SessionUpdate;
 
 /// What the daemon asks the user. Raised requests are always blocking approvals.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,14 +202,24 @@ impl Core {
         Ok(Some(request))
     }
 
-    /// Ends every pending raised request of the session with `state`: `withdrawn` when a
-    /// cancel or close made them moot, `expired` after a restart (nobody waits for them).
+    /// Ends the session's pending approvals (and with `questions`, its open questions too)
+    /// with `state`: `withdrawn` when a cancel or close made them moot, `expired` after a
+    /// restart (nobody waits for them).
     pub(crate) fn end_pending_raised(
         &mut self,
         id: SessionId,
         state: RequestState,
+        questions: bool,
     ) -> Result<(), RpcError> {
-        let pending: Vec<Request> = self.session(id)?.pending_raised().cloned().collect();
+        let pending: Vec<Request> = self
+            .session(id)?
+            .data
+            .raised
+            .values()
+            .filter(|r| r.request.state == RequestState::Pending)
+            .filter(|r| questions || !r.is_question())
+            .map(|r| r.request.clone())
+            .collect();
         for mut request in pending {
             request.state = state;
             self.settle_raised(id, request)?;
@@ -220,34 +228,19 @@ impl Core {
     }
 
     /// Writes the raised request's timeline item and sends it to the session's subscribers.
-    fn publish_raised(&mut self, id: SessionId, raised: &Raised) -> Result<(), RpcError> {
-        let head = self.head(id);
-        let item = TimelineItem {
-            id: ItemId::new(raised.request.id.as_str()),
-            seq_from: raised.seq,
-            seq_to: raised.seq,
-            actor: Actor::Root,
-            ts: raised.request.created_at,
-            streaming: false,
-            body: ItemBody::Request {
+    pub(crate) fn publish_raised(
+        &mut self,
+        id: SessionId,
+        raised: &Raised,
+    ) -> Result<(), RpcError> {
+        self.put_item_at(
+            id,
+            ItemId::new(raised.request.id.as_str()),
+            ItemBody::Request {
                 request: raised.request.clone(),
             },
-        };
-        // Changed "after" the head: see the module docs.
-        self.store
-            .put_timeline_item(id, &item, Seq(head.0 + 1))
-            .map_err(internal)?;
-        self.publish(
-            id,
-            SessionUpdate {
-                head_seq: head,
-                ops: vec![TimelineOp::Upsert {
-                    item: Box::new(item),
-                }],
-                raw: None,
-                detail: None,
-            },
-        );
-        Ok(())
+            raised.seq,
+            raised.request.created_at,
+        )
     }
 }

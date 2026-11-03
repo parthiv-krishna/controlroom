@@ -73,6 +73,10 @@ impl Core {
             queue: Vec::new(),
             decisions: BTreeMap::new(),
             raised: BTreeMap::new(),
+            todos: Vec::new(),
+            injections: Vec::new(),
+            auto: Default::default(),
+            triggers: Vec::new(),
         };
         let driver = self.agents.driver(driver);
         self.insert_session(Session::new(data, driver));
@@ -188,6 +192,7 @@ impl Core {
             return Ok(());
         }
         session.live.cancel_requested = Some(params.op_id.clone());
+        self.auto_continue_cancelled(params.id)?;
         self.reconcile(params.id);
         Ok(())
     }
@@ -205,7 +210,7 @@ impl Core {
             let conn = attachment.conn.clone();
             self.task(Task::Terminate(conn, STOP_GRACE));
         }
-        self.end_pending_raised(params.id, RequestState::Withdrawn)
+        self.end_pending_raised(params.id, RequestState::Withdrawn, true)
     }
 
     /// `session.reopen`: a closed session becomes dormant.
@@ -301,11 +306,7 @@ impl Core {
 
     /// `session.update`.
     pub(crate) fn update(&mut self, params: &SessionUpdateParams) -> Result<(), RpcError> {
-        if params.auto_continue.is_some() || params.auto_continue_budget.is_some() {
-            return Err(unsupported(
-                "auto-continue isn't available on this daemon yet",
-            ));
-        }
+        self.update_auto_continue(params)?;
         let data = &mut self.session_mut(params.id)?.data;
         if let Some(name) = &params.name {
             data.name = Some(name.clone()).filter(|n| !n.is_empty());
@@ -398,7 +399,7 @@ impl Core {
 
 /// How a stopped session's agent starts next: a pending start, a new session if none started
 /// yet, else a resume (`not_resumable` when that's impossible).
-pub(super) fn start_mode_of(session: &Session) -> Result<StartedBy, RpcError> {
+pub(crate) fn start_mode_of(session: &Session) -> Result<StartedBy, RpcError> {
     if let Some(by) = session.data.pending_start {
         return Ok(by);
     }

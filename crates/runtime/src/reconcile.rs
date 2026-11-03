@@ -13,6 +13,8 @@
 //!    the run is cancelled at a safe point (no open tool, a pending request, or "interrupt
 //!    now"); while it is idle, the head item is sent if it is a send-now item or the queue
 //!    auto-sends and isn't paused.
+//! 6. injections (`inject`): steered into an active run, or a waking one as a prompt;
+//! 7. auto-continue (`auto`), once the agent is idle after a run settled.
 //!
 //! Every line carries a [`LineTag`]; a tag that was handed over or seen in the transcript is
 //! never sent again.
@@ -59,6 +61,8 @@ impl Core {
         self.write_answers(id);
         self.write_cancel(id);
         self.advance_queue(id);
+        self.deliver_injections(id);
+        self.auto_continue(id);
     }
 
     /// Encodes and stages `intent`; returns whether it was staged.
@@ -142,7 +146,7 @@ impl Core {
             }
             let safe_point = view.open_tools == 0
                 || !view.open_requests.is_empty()
-                || session.pending_raised().next().is_some()
+                || session.pending_raised().any(|r| r.blocking)
                 || head.interrupt;
             let tag = internal_tag(format!("{SEND_NOW_CANCEL}{}", head.id));
             if safe_point
@@ -168,6 +172,7 @@ impl Core {
         let delivered = self.write(id, &Intent::Prompt { content }, head.tag());
         if let Ok(session) = self.session_mut(id) {
             if delivered {
+                crate::triggers::record_queue_entry(&mut session.data, &head);
                 session.data.queue[index].delivery = Some(Delivery::Handed(Via::Prompt));
                 session.data.history_note = None;
             } else {
@@ -181,14 +186,14 @@ impl Core {
     /// A cancel was handed over: the run's undecided requests become moot, so a late answer
     /// learns that instead of being sent. Raised requests are withdrawn (their waiters deny).
     fn cancelled(&mut self, id: SessionId) {
-        if let Err(e) = self.end_pending_raised(id, RequestState::Withdrawn) {
+        if let Err(e) = self.end_pending_raised(id, RequestState::Withdrawn, false) {
             tracing::warn!("session {id}: withdrawing raised requests: {e}");
         }
         let Ok(session) = self.session_mut(id) else {
             return;
         };
         session.live.cancel_sent = true;
-        for mut request in session.pending_requests() {
+        for mut request in session.pending_agent_requests() {
             request.state = RequestState::Withdrawn;
             let decision = Decision {
                 request,
@@ -238,6 +243,11 @@ impl Core {
                     entry.send_now = false;
                     entry.interrupt = false;
                 }
+            }
+        }
+        for injection in &mut session.data.injections {
+            if let Some(Delivery::Handed(_)) = injection.delivery {
+                injection.delivery = None;
             }
         }
         if returned && write_failed {

@@ -15,11 +15,10 @@ use std::time::Duration;
 
 use controlroom_protocol::RpcError;
 use controlroom_protocol::Seq;
+use controlroom_protocol::agent::AgentState;
 use controlroom_protocol::daemon::{DaemonSettings, MachineChange, MachineEvent};
 use controlroom_protocol::ids::{DaemonId, RequestId, Rev, SessionId};
-use controlroom_protocol::session::{
-    AttentionRollup, Request, SessionDetail, SessionSummary, TodoRollup,
-};
+use controlroom_protocol::session::{AttentionRollup, Request, SessionDetail, SessionSummary};
 use tokio::sync::{broadcast, oneshot};
 
 use crate::errors::{internal, unknown_session};
@@ -59,6 +58,8 @@ struct Effects {
     updates: Vec<(SessionId, SessionUpdate)>,
     /// What the feeds will have seen: (session, new summary, new detail).
     emitted: Vec<(SessionId, Option<SessionSummary>, Option<SessionDetail>)>,
+    /// New agent states, for the agents' extensions.
+    agent: Vec<(SessionId, AgentState)>,
     /// Raised requests resolved in this transaction, for their waiters.
     resolved: Vec<(SessionId, Request)>,
     tasks: Vec<Task>,
@@ -351,6 +352,10 @@ impl Core {
                 force || without_preview != *last || now.0 - emitted.at.0 >= PREVIEW_THROTTLE_MS
             }
         };
+        let agent = session.agent_state();
+        if session.agent.borrow().as_ref() != Some(&agent) {
+            self.tx.fx.agent.push((id, agent));
+        }
         let detail = session.detail();
         let detail_changed = emitted.detail.as_ref() != Some(&detail);
         let head = session.live.processed_seq;
@@ -429,6 +434,11 @@ impl Core {
         // Waiters of deleted sessions learn it from their closed channel.
         let sessions = &self.sessions;
         self.waiters.retain(|(id, _), _| sessions.contains_key(id));
+        for (id, state) in fx.agent {
+            if let Some(session) = self.sessions.get(&id) {
+                session.agent.send_replace(Some(state));
+            }
+        }
         for (id, summary, detail) in fx.emitted {
             let Some(session) = self.sessions.get_mut(&id) else {
                 continue;
@@ -547,8 +557,8 @@ impl Core {
                 send_now_pending,
             },
             requests,
-            todo: None::<TodoRollup>,
-            live_work: Default::default(),
+            todo: crate::todos::rollup(data),
+            live_work: session.live_work(),
             options: view.options.clone(),
             agent_live: session.agent_live(),
             sandbox: data.sandbox_info(),

@@ -186,10 +186,12 @@ impl Core {
         };
         old.abort_tasks();
         let updates = old.updates.clone();
+        let agent = old.agent.clone();
         let emitted = old.emitted.clone();
         let driver = self.agents.driver(data.driver);
         let mut session = Session::new(data, driver);
         session.updates = updates;
+        session.agent = agent;
         session.emitted = emitted;
         session.live.loading = true;
         self.sessions.insert(id, session);

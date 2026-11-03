@@ -269,7 +269,10 @@ pub(crate) fn rollup(data: &SessionData) -> Option<TodoRollup> {
     if data.todos.is_empty() {
         return None;
     }
-    let counted = data.todos.iter().filter(|t| t.status != TodoStatus::Skipped);
+    let counted = data
+        .todos
+        .iter()
+        .filter(|t| t.status != TodoStatus::Skipped);
     let (done, total) = counted.fold((0u32, 0u32), |(done, total), t| {
         (done + u32::from(t.status == TodoStatus::Done), total + 1)
     });
