@@ -16,7 +16,7 @@ use crate::{JobRun, JobStarted, KilledBy};
 
 const HOUR_MS: i64 = 3600 * 1000;
 
-fn run(command: &str) -> JobRun {
+pub(super) fn run(command: &str) -> JobRun {
     JobRun {
         op_id: OpId::generate(),
         command: command.into(),
@@ -26,7 +26,7 @@ fn run(command: &str) -> JobRun {
     }
 }
 
-fn op(id: SessionId, job: JobId) -> JobOpParams {
+pub(super) fn op(id: SessionId, job: JobId) -> JobOpParams {
     JobOpParams {
         op_id: OpId::generate(),
         id,
@@ -34,7 +34,12 @@ fn op(id: SessionId, job: JobId) -> JobOpParams {
     }
 }
 
-fn follow(id: SessionId, job: JobId, pattern: Option<&str>, from: FollowFrom) -> JobFollowParams {
+pub(super) fn follow(
+    id: SessionId,
+    job: JobId,
+    pattern: Option<&str>,
+    from: FollowFrom,
+) -> JobFollowParams {
     JobFollowParams {
         op_id: OpId::generate(),
         id,
@@ -45,16 +50,21 @@ fn follow(id: SessionId, job: JobId, pattern: Option<&str>, from: FollowFrom) ->
     }
 }
 
-async fn jobs(h: &Harness, id: SessionId) -> Vec<Job> {
+pub(super) async fn jobs(h: &Harness, id: SessionId) -> Vec<Job> {
     h.rt.job_list(JobListParams { id }).await.unwrap().jobs
 }
 
-async fn job(h: &Harness, id: SessionId, job: JobId) -> Job {
+pub(super) async fn job(h: &Harness, id: SessionId, job: JobId) -> Job {
     jobs(h, id).await.into_iter().find(|j| j.id == job).unwrap()
 }
 
 /// Waits until the job satisfies `pred`; wakes on the session's feed.
-async fn wait_job(h: &Harness, id: SessionId, job_id: JobId, pred: impl Fn(&Job) -> bool) -> Job {
+pub(super) async fn wait_job(
+    h: &Harness,
+    id: SessionId,
+    job_id: JobId,
+    pred: impl Fn(&Job) -> bool,
+) -> Job {
     let mut updates =
         h.rt.subscribe_session(id, Some(Seq(u64::MAX)), None)
             .await
@@ -81,7 +91,7 @@ async fn wait_job(h: &Harness, id: SessionId, job_id: JobId, pred: impl Fn(&Job)
 /// Waits until the runtime has folded every record the job wrote, then ticks (which publishes
 /// the line count). The runtime's folding has no event of its own, so this yields until it
 /// caught up, bounded by the timeout.
-async fn settle(h: &Harness, job_id: JobId) {
+pub(super) async fn settle(h: &Harness, job_id: JobId) {
     let target = h.jobs.last_seq(job_id);
     let caught_up = || {
         h.rt.inner().with_core(|core| {
@@ -101,7 +111,7 @@ async fn settle(h: &Harness, job_id: JobId) {
     h.rt.tick();
 }
 
-async fn ended(h: &Harness, id: SessionId, job_id: JobId) -> Job {
+pub(super) async fn ended(h: &Harness, id: SessionId, job_id: JobId) -> Job {
     wait_job(h, id, job_id, |j| j.ended_at.is_some()).await
 }
 
@@ -422,8 +432,14 @@ async fn idle_stop_waits_for_running_jobs() {
     assert!(h.host.supervisor_running(id), "a running job is live work");
     assert_eq!(h.summary(id).state, SessionState::Idle);
 
+    // The exit wakes the agent; idle-stop waits for that run to be old enough too.
     h.jobs.exit(job_id, 0);
     ended(&h, id, job_id).await;
+    h.wait(id, "the exit wake's run", |s| {
+        s.state == SessionState::Idle && s.last_turn_end_seq > Seq(0)
+    })
+    .await;
+    h.clock.advance(2 * HOUR_MS);
     h.rt.tick();
     h.wait_state(id, SessionState::Dormant).await;
 }

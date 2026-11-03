@@ -6,6 +6,7 @@ mod agent;
 mod auto_continue;
 mod host;
 mod job_host;
+mod job_wakes;
 mod jobs;
 mod lifecycle;
 mod queue;

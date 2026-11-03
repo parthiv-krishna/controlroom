@@ -5,6 +5,7 @@ use std::sync::Arc;
 use controlroom_protocol::RpcError;
 use controlroom_protocol::ids::{JobId, SessionId, UnixMillis};
 use controlroom_protocol::session::JobStatus;
+use controlroom_protocol::timeline::InjectOrigin;
 use controlroom_transcript::Record;
 
 use super::JobLive;
@@ -12,6 +13,7 @@ use super::model::{JobEnd, KilledBy};
 use super::progress::{Folded, Matcher};
 use super::wake::{self, WakeEntry, WakeKind};
 use crate::core::{Core, Task};
+use crate::model::Injection;
 use crate::ports::{JobRef, SupervisorConn};
 
 impl Core {
@@ -256,9 +258,11 @@ impl Core {
         Ok(())
     }
 
-    /// Hands a wake to the session's injection path.
+    /// Hands a wake to the session's injection path: it starts a run when the agent is idle
+    /// (resuming a stopped one) and is steered in when it is busy.
     fn deliver_job_wake(&mut self, id: SessionId, wake: wake::Wake) -> Result<(), RpcError> {
-        tracing::info!("session {id}: {}: {}", wake.label, wake.text);
-        Ok(())
+        let now = self.clock.now();
+        let injection = Injection::new(InjectOrigin::Job, wake.label, wake.text, true, now);
+        self.inject(id, injection)
     }
 }
