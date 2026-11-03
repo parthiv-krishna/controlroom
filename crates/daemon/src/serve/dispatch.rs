@@ -101,7 +101,11 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
                 blocking(move || {
                     let agents = agents_config::load(&dirs).value;
                     Ok(AgentsListResult {
-                        agents: doctor::check_agents(&login_shell(), &agents),
+                        agents: doctor::check_agents(
+                            &login_shell(),
+                            &std::env::var("PATH").unwrap_or_default(),
+                            &agents,
+                        ),
                     })
                 })
                 .await,

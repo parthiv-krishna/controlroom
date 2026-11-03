@@ -5,7 +5,7 @@
 //! - start at boot: linger plus a systemd user unit, else `crontab @reboot`, else lazily on the
 //!   next connection;
 //! - the sandbox: nono available and pinned to 0.80.0, the kernel's Landlock ABI;
-//! - agent dependencies, resolved through the login shell;
+//! - agent dependencies, resolved through the login shell, each in a `PATH` directory (nono);
 //! - sftp availability (a placeholder for file browsing).
 //!
 //! The default output is the protocol's [`DoctorReport`] as JSON (what `doctor.report`
@@ -63,6 +63,8 @@ pub struct Diagnosis {
 /// Runs every check.
 pub fn diagnose(dirs: &Dirs) -> Diagnosis {
     let shell = login_shell();
+    // Sandboxed launches run nono with controlroomd's own PATH.
+    let path_var = std::env::var("PATH").unwrap_or_default();
     let id = persistence::identity();
     let persistence = persistence::persistence(&id);
     let boot = persistence::boot_start(&persistence);
@@ -80,7 +82,7 @@ pub fn diagnose(dirs: &Dirs) -> Diagnosis {
             landlock_abi,
             agents_config: agents.path.as_ref().map(|p| p.as_str().into()),
             agents_config_error: agents.error,
-            agents: check_agents(&shell, &agents.value),
+            agents: check_agents(&shell, &path_var, &agents.value),
             checked_at: UnixMillis::now(),
         },
         persistence: persistence.details,
