@@ -1,8 +1,8 @@
-# The browser end-to-end test (spec §17 P4) in NixOS VMs: `server` runs controlroom-web
-# (dev-token mode on loopback) and drives the UI with headless Chromium (web/e2e-vm); `devbox`
-# and `buildbox` are execution hosts (./execution-host.nix). The test script (./e2e.py) runs one
-# Playwright spec per scenario and does what a user would do on the hosts in between (install
-# the key, block the network, ...).
+# The browser end-to-end test (spec §17 P4) in NixOS VMs: `server` runs controlroom-web through
+# the NixOS module (../module.nix; dev-token mode on loopback) next to a mock push service, and
+# drives the UI with headless Chromium (web/e2e-vm); `devbox` and `buildbox` are execution hosts
+# (./execution-host.nix). The test script (./e2e.py) runs one Playwright spec per scenario and
+# does what a user would do on the hosts in between (install the key, block the network, ...).
 #
 # `run` always succeeds: its $out holds `status` plus, on failure, the Playwright traces and the
 # server, daemon and mock-model logs. `check` fails unless the run passed, pointing at them. A
@@ -14,6 +14,7 @@
 #                                              # outside the sandbox (faster to iterate)
 {
   pkgs,
+  module,
   rust,
   web,
   nono,
@@ -44,6 +45,47 @@ let
     '';
   };
 
+  # The server's throwaway secrets.
+  secrets = "/var/lib/controlroom-e2e";
+
+  pushAddress = "11.0.0.1";
+  pushTls = pkgs.runCommand "push-mock-tls" { nativeBuildInputs = [ pkgs.openssl ]; } ''
+    mkdir $out
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+      -subj /CN=push.example.com -addext subjectAltName=DNS:push.example.com \
+      -keyout $out/key.pem -out $out/cert.pem
+  '';
+  # Logs the server name of each TLS handshake and how it ended (the server, not trusting the
+  # certificate, gives up).
+  pushMock = pkgs.writers.writePython3 "push-mock" { flakeIgnore = [ "E501" ]; } ''
+    import socket
+    import ssl
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain("${pushTls}/cert.pem", "${pushTls}/key.pem")
+    context.num_tickets = 0
+    server_name = None
+
+
+    def remember(_socket, name, _context):
+        global server_name
+        server_name = name
+
+
+    context.sni_callback = remember
+    listener = socket.create_server(("${pushAddress}", 443))
+    while True:
+        connection, _ = listener.accept()
+        server_name = None
+        try:
+            with context.wrap_socket(connection, server_side=True) as tls:
+                tls.recv(1)
+                outcome = "closed"
+        except (ssl.SSLError, OSError) as e:
+            outcome = str(e)
+        print(f"TLS handshake for {server_name}: {outcome}", flush=True)
+  '';
+
   host = import ./execution-host.nix {
     inherit pkgs nono;
     fixtureTool = rust.workspace;
@@ -53,7 +95,10 @@ let
     name = "controlroom-e2e";
 
     nodes = {
+      # controlroom-web through the NixOS module (../module.nix), so its hardening is what runs
+      # SSH to the hosts and Web Push. Dev-token mode on loopback, throwaway secrets.
       server = {
+        imports = [ module ];
         virtualisation = {
           memorySize = 3072;
           cores = 2;
@@ -64,29 +109,49 @@ let
         ];
         # The test flips this link to switch the bundled daemons, then restarts the server.
         systemd.tmpfiles.rules = [ "L+ /run/controlroom-e2e/daemons - - - - ${bundles.current}" ];
-        systemd.services.controlroom-web = {
-          wantedBy = [ "multi-user.target" ];
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
-          environment.RUST_LOG = "info,controlroom_controller=debug";
-          # A throwaway master key, kept across restarts (it seals the SSH keys in the store).
-          preStart = ''
-            if [ ! -s "$STATE_DIRECTORY/master-key" ]; then
-              (umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$STATE_DIRECTORY/master-key")
-            fi
-          '';
-          serviceConfig = {
-            DynamicUser = true;
-            StateDirectory = "controlroom";
-            ExecStart = lib.concatStringsSep " " [
-              "${rust.controlroomWeb}/bin/controlroom-web"
-              "--listen 127.0.0.1:8080"
-              "--state-dir /var/lib/controlroom"
-              "--master-key-file /var/lib/controlroom/master-key"
-              "--auth-mode dev-token"
-              "--bundled-daemons-dir /run/controlroom-e2e/daemons"
-            ];
+        services.controlroom = {
+          enable = true;
+          package = rust.controlroomWeb;
+          auth.mode = "dev-token";
+          masterKeyFile = "${secrets}/master-key";
+          push = {
+            vapidPrivateKeyFile = "${secrets}/vapid-key";
+            subject = "mailto:alice@example.com";
           };
+          settings.bundled_daemons_dir = "/run/controlroom-e2e/daemons";
+        };
+        systemd.services.controlroom = {
+          requires = [ "controlroom-e2e-secrets.service" ];
+          after = [ "controlroom-e2e-secrets.service" ];
+          environment.RUST_LOG = "info,controlroom_controller=debug";
+        };
+        # Root-only secrets, made once per VM as a deployer would (kept across restarts: the
+        # master key seals the SSH keys in the store).
+        systemd.services.controlroom-e2e-secrets = {
+          path = [ pkgs.openssl ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+          script = ''
+            umask 077
+            mkdir -p ${secrets}
+            [ -s ${secrets}/master-key ] || openssl rand -base64 32 > ${secrets}/master-key
+            [ -s ${secrets}/vapid-key ] \
+              || openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 > ${secrets}/vapid-key
+          '';
+        };
+
+        # The mock push service: push.example.com resolves to an address the server's SSRF guard
+        # counts as public, which exists only on this VM's loopback. Its certificate isn't
+        # trusted (the server only trusts the public web PKI), so a push ends after the TLS
+        # handshake; the mock logs the name each handshake asked for.
+        networking.hosts.${pushAddress} = [ "push.example.com" ];
+        systemd.services.push-mock = {
+          wantedBy = [ "multi-user.target" ];
+          path = [ pkgs.iproute2 ];
+          preStart = "ip address replace ${pushAddress}/32 dev lo";
+          serviceConfig.ExecStart = pushMock;
         };
       };
       devbox = host;

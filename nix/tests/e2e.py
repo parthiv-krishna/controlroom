@@ -117,7 +117,7 @@ def host_key(machine: Any) -> str:
 
 def use_bundle(path: str) -> None:
     """Restarts the server with another bundled daemons directory."""
-    server.succeed(f"ln -sfn {path} /run/controlroom-e2e/daemons", "systemctl restart controlroom-web")
+    server.succeed(f"ln -sfn {path} /run/controlroom-e2e/daemons", "systemctl restart controlroom")
     server.wait_until_succeeds(f"curl -sf {BASE_URL}/healthz")
 
 
@@ -134,7 +134,8 @@ def agent_pids(machine: Any) -> list[str]:
 def collect_logs() -> None:
     """Copies the Playwright results and the server, daemon and mock logs to $out."""
     server.execute(f"mkdir -p {E2E}")
-    server.execute(f"journalctl -u controlroom-web --no-pager > {E2E}/server.log")
+    server.execute(f"journalctl -u controlroom --no-pager > {E2E}/server.log")
+    server.execute(f"journalctl -u push-mock --no-pager > {E2E}/push-mock.log")
     server.copy_from_machine(E2E, "server")
     for machine in (devbox, buildbox):
         machine.execute("journalctl -u mock-model --no-pager > /tmp/mock-model.log")
@@ -154,7 +155,8 @@ def collect_logs() -> None:
 
 def boot() -> None:
     start_all()
-    server.wait_for_unit("controlroom-web.service")
+    server.wait_for_unit("controlroom.service")
+    server.wait_for_unit("push-mock.service")
     server.wait_until_succeeds(f"curl -sf {BASE_URL}/healthz")
     for machine in (devbox, buildbox):
         machine.wait_for_unit("sshd.service")
@@ -225,6 +227,22 @@ def schedules() -> None:
     Spec("schedules").finish()
     mock_done(devbox)
     assert "Check inbox/ and report" in last_message(mock_requests(devbox)[-1])
+
+
+def push_subscribe() -> None:
+    """A device (iPhone) turns Web Push on; its subscription points at the mock push service."""
+    Spec("push").finish()
+
+
+def web_push() -> None:
+    """The approval was pushed to the iPhone: the hardened server resolved push.example.com,
+    passed its SSRF guard, and completed TLS up to rejecting the mock push service's certificate
+    (only the public web PKI is trusted), with which the push fails."""
+    server.wait_until_succeeds(
+        "journalctl -u push-mock | grep -Eq 'TLS handshake for push.example.com: .*(CERTIFICATE|UNKNOWN_CA)'",
+        timeout=timedelta(minutes=2),
+    )
+    server.succeed("journalctl -u controlroom | grep -q 'push failed'")
 
 
 def approvals() -> None:
@@ -324,7 +342,9 @@ try:
     sandboxed_session()
     start_fresh()
     schedules()
+    push_subscribe()
     approvals()
+    web_push()
     auto_upgrade()
     unreachable()
     rollback()

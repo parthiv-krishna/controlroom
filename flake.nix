@@ -41,6 +41,7 @@
         pkgs:
         import ./nix/tests/e2e.nix {
           inherit pkgs;
+          module = ./nix/module.nix;
           rust = rustFor pkgs;
           web = webFor pkgs;
           nono = nonoFor pkgs;
