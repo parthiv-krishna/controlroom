@@ -73,8 +73,6 @@ async fn terminate_sends_sigterm() {
     let exit = exit_of(records_until(&mut stream, is_exit).await.last().unwrap());
     assert_eq!(exit.signal, Some(15));
     assert_eq!(exit.cause, Some(StopCause::Terminate));
-    drop((client, stream));
-    let _state = sup.wait_exit();
 }
 
 #[tokio::test]
@@ -140,9 +138,11 @@ async fn job_timeout_terminates_the_group_and_is_recorded() {
 #[tokio::test]
 async fn leftover_group_members_are_killed_when_the_child_exits() {
     let sup = Sup::start("sleep 600 & echo $!; exit 0");
-    let client = sup.connect(false).await;
-    let mut stream = client.read(0).await.unwrap();
-    let records = records_until(&mut stream, is_exit).await;
+    // The child exits at once, so the supervisor may be gone before a reader could connect:
+    // read the transcript it leaves behind.
+    let transcript = sup.transcript();
+    let _state = sup.wait_exit();
+    let records = read_all(&transcript, 0).unwrap().records;
     let leftover: u32 = records
         .iter()
         .find(|r| dir(r) == "out")
@@ -151,8 +151,6 @@ async fn leftover_group_members_are_killed_when_the_child_exits() {
         .expect("background pid");
     assert_eq!(exit_of(records.last().unwrap()).code, Some(0));
     wait_until("the background process to die", || is_dead(leftover));
-    drop((client, stream));
-    let _state = sup.wait_exit();
 }
 
 #[tokio::test]
