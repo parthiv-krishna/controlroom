@@ -141,7 +141,7 @@ async fn state_cursor_catches_up_or_snapshots() {
 }
 
 #[tokio::test]
-async fn devices_preferences_sandbox_profiles_and_schedules() {
+async fn devices_preferences_and_sandbox_profiles() {
     let setup = controller(None, None);
     let mut a = ui(&setup.controller, "laptop").await;
     // The server's label wins on re-register.
@@ -205,39 +205,20 @@ async fn devices_preferences_sandbox_profiles_and_schedules() {
     )
     .await;
 
-    let schedule = a
-        .ok(
-            "schedules.create",
-            json!({"machine_id": "01HZY3K6W8Q9X2V4N7B5C1D3E6",
-                   "session_id": "01HZY3K6W8Q9X2V4N7B5C1D3E7", "name": "inbox",
-                   "spec": {"kind": "cron", "expr": "0 9 * * 1-5"}, "timezone": "Etc/UTC",
-                   "message": "Check inbox/"}),
-        )
-        .await;
-    assert_eq!(schedule["enabled"], true);
-    assert_eq!(schedule["if_busy"], "queue");
-    let sid = schedule["id"].clone();
-    let updated = a
-        .ok(
-            "schedules.update",
-            json!({"schedule_id": sid, "enabled": false}),
-        )
-        .await;
-    assert_eq!(
-        (updated["enabled"].clone(), updated["name"].clone()),
-        (json!(false), json!("inbox"))
-    );
+    // Schedules need a known machine (the rest is in tests/schedules.rs).
     a.err(
-        "schedules.run_now",
-        json!({"schedule_id": sid}),
-        "unsupported",
+        "schedules.create",
+        json!({"machine_id": "01HZY3K6W8Q9X2V4N7B5C1D3E6",
+               "session_id": "01HZY3K6W8Q9X2V4N7B5C1D3E7", "name": "inbox",
+               "spec": {"kind": "cron", "expr": "0 9 * * 1-5"}, "timezone": "Etc/UTC",
+               "message": "Check inbox/"}),
+        "not_found",
     )
     .await;
-    a.wait("the feed carries devices and schedules", |m| {
-        m.devices["laptop"]["label"] == "Laptop" && m.schedules.len() == 1
+    a.wait("the feed carries devices", |m| {
+        m.devices["laptop"]["label"] == "Laptop"
     })
     .await;
-    a.ok("schedules.delete", json!({"schedule_id": sid})).await;
 }
 
 #[tokio::test]

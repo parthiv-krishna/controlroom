@@ -65,6 +65,8 @@ pub(crate) struct Hub {
     state: Mutex<HubState>,
     /// Serializes key rotations.
     pub rotation: tokio::sync::Mutex<()>,
+    /// Fires the owner's schedules.
+    pub scheduler: crate::schedules::Scheduler,
     next_client: AtomicU64,
 }
 
@@ -92,6 +94,7 @@ impl Hub {
                 bus,
             }),
             rotation: tokio::sync::Mutex::new(()),
+            scheduler: crate::schedules::Scheduler::default(),
             next_client: AtomicU64::new(1),
         });
         if let Some(push) = services.push.clone() {
@@ -101,6 +104,7 @@ impl Hub {
         for record in records {
             hub.spawn_machine(record, None, InstallPolicy::IfMissing);
         }
+        hub.scheduler.start(&hub);
         Ok(hub)
     }
 
@@ -168,6 +172,8 @@ impl Hub {
             st.emit(StateEvent::MachineRemoved { machine_id: id });
             entry.task.take()
         };
+        // Its schedules are disabled on the next pass.
+        self.scheduler.wake();
         if let Some(task) = task {
             stop_task(task).await;
         }
@@ -175,6 +181,7 @@ impl Hub {
 
     /// Stops every machine task.
     pub(crate) async fn shutdown(&self) {
+        self.scheduler.stop().await;
         let tasks: Vec<_> = {
             let mut st = self.lock();
             for client in st.clients.values() {

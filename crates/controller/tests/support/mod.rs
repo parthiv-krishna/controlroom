@@ -16,6 +16,8 @@ use controlroom_protocol::ui::AuthMode;
 use futures::future::BoxFuture;
 use serde_json::{Value, json};
 
+pub mod relay;
+
 /// A controller's scratch directory and its bundled daemons.
 pub struct Setup {
     pub controller: Controller,
@@ -92,9 +94,15 @@ pub async fn controlroom_key(ui: &mut UiDriver) -> String {
 /// Adds `host` (authorizing the controlroom key first); returns the machine id once it is
 /// connected.
 pub async fn add_machine(ui: &mut UiDriver, host: &RemoteHost, name: &str) -> String {
+    add_machine_at(ui, host, name, host.port()).await
+}
+
+/// Like [`add_machine`], reaching the host's SSH server on `port` (e.g. through a [`relay::Relay`]).
+pub async fn add_machine_at(ui: &mut UiDriver, host: &RemoteHost, name: &str, port: u16) -> String {
     let key = controlroom_key(ui).await;
     host.authorize(&key);
-    let new = host.new_machine(name);
+    let mut new = host.new_machine(name);
+    new["port"] = json!(port);
     let added = ui.ok("machines.add", new.clone()).await;
     let mut confirm = new;
     confirm["host_key_fingerprint"] = added["host_key"]["fingerprint"].clone();

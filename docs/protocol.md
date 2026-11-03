@@ -159,7 +159,8 @@ Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.
 | `grants.revoke` | contact grants |
 | `devices.register` · `rename` · `remove` | devices (remove signs the device out) |
 | `notifications.preferences` · `set_preferences {attention?, questions?, turn_end?}` · `subscribe {device_id, subscription}` · `unsubscribe` | Web Push |
-| `schedules.create` · `update` · `delete` · `run_now` | schedules (§8.1) |
+| `schedules.create` · `update` · `delete` · `run_now` | schedules (§8.1, capability `schedules`): `Schedule {spec: cron{expr}·interval{every_s ≥ 60}, timezone (IANA), message, enabled, if_busy, missed, next_run, pending_run, recent_runs[{at, until, outcome: fired·queued·skipped·missed·failed, detail, count}]}`. The scheduler fires `session.prompt` with `origin: schedule` and `op_id = <schedule id>:<due ms>`; a due time whose machine is unreachable stays `pending_run` until `next_run`, then is missed. `run_now` sends at once (`machine_unavailable` when offline) and records the outcome. Enabling on a closed session is `invalid_params`; closing or deleting the session (or removing the machine) disables its schedules |
+
 | `sandbox.profiles` · `sandbox.set_profile {scope, change}` | sandbox defaults (§11.6) |
 | `client.focus {device_id, session?, visible}` | push deduplication |
 

@@ -53,9 +53,15 @@ if_busy: IfBusy,
  */
 missed: MissedPolicy, 
 /**
- * The next due time, while enabled.
+ * The next due time, while enabled. While a run is pending, it is also that run's
+ * deadline.
  */
 next_run: UnixMillis | null, 
+/**
+ * A due time that hasn't been delivered yet because the machine is unreachable. It is
+ * retried until `next_run`, then recorded as missed.
+ */
+pending_run: UnixMillis | null, 
 /**
  * Recent due times, newest first (bounded).
  */

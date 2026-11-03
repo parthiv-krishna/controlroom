@@ -7,7 +7,7 @@
 //! - a session-scoped command (`machine_id` and `id`): that session;
 //! - any other machine-scoped command: that machine;
 //! - the handshake, heartbeat and the slow SSH flows (`machines.add`, `machines.add_confirm`,
-//!   `keys.rotate`): none;
+//!   `keys.rotate`), and `schedules.run_now` (a daemon call that names no machine): none;
 //! - everything else (controller data, subscriptions, focus): one shared key.
 //!
 //! So two edits of the same session's queue, or a task create followed by a task move, are
@@ -33,7 +33,12 @@ pub(crate) enum OrderKey {
 pub(crate) fn order_key(method: &str, params: &Value) -> Option<OrderKey> {
     if matches!(
         method,
-        "hello" | "ping" | "machines.add" | "machines.add_confirm" | "keys.rotate"
+        "hello"
+            | "ping"
+            | "machines.add"
+            | "machines.add_confirm"
+            | "keys.rotate"
+            | "schedules.run_now"
     ) {
         return None;
     }

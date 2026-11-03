@@ -3,7 +3,8 @@ import type { ScheduleOutcome } from "./ScheduleOutcome";
 import type { UnixMillis } from "./UnixMillis";
 
 /**
- * One due time of a schedule. Consecutive misses collapse into one entry ("missed ×3").
+ * One due time of a schedule (or a "run now"). Consecutive misses collapse into one entry
+ * ("missed ×3").
  */
 export type ScheduleRun = { 
 /**
@@ -11,11 +12,15 @@ export type ScheduleRun = {
  */
 at: UnixMillis, 
 /**
+ * The last scheduled time of collapsed misses; `null` for a single due time.
+ */
+until: UnixMillis | null, 
+/**
  * What happened.
  */
 outcome: ScheduleOutcome, 
 /**
- * Details, e.g. the error.
+ * Details, e.g. the error or why it was missed.
  */
 detail: string | null, 
 /**

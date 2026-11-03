@@ -70,7 +70,7 @@ pub(super) async fn dispatch(
         UiRequest::SchedulesCreate(p) => reply(schedules::create(conn, p)?),
         UiRequest::SchedulesUpdate(p) => reply(schedules::update(conn, p)?),
         UiRequest::SchedulesDelete(p) => reply(schedules::delete(conn, p)?),
-        UiRequest::SchedulesRunNow(p) => reply(schedules::run_now(conn, p)?),
+        UiRequest::SchedulesRunNow(p) => reply(schedules::run_now(conn, p).await?),
 
         UiRequest::SandboxProfiles(_) => reply(sandbox::profiles(conn)?),
         UiRequest::SandboxSetProfile(p) => reply(sandbox::set_profile(conn, p)?),

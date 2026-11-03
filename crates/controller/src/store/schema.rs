@@ -12,7 +12,7 @@ use rusqlite::Connection;
 use super::{StoreError, StoreResult};
 
 /// The schema version, kept in `PRAGMA user_version`.
-pub(super) const VERSION: u32 = 2;
+pub(super) const VERSION: u32 = 3;
 
 const SCHEMA: &str = r#"
 CREATE TABLE installation (
@@ -212,6 +212,7 @@ CREATE TABLE schedules (
     if_busy      TEXT NOT NULL,
     missed       TEXT NOT NULL,
     next_run     INTEGER,
+    pending_run  INTEGER,
     recent_runs  TEXT NOT NULL,
     created_at   INTEGER NOT NULL
 ) STRICT;

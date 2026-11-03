@@ -47,7 +47,7 @@ pub use prefs::Prefs;
 pub use projects::Projects;
 pub use push::{Delivery, PushSubscriptionRow, PushSubscriptions};
 pub use sandbox::SandboxProfiles;
-pub use schedules::{NewSchedule, Schedules};
+pub use schedules::{NewSchedule, Schedules, Timing};
 pub use tasks::{NewTask, Tasks};
 
 /// Errors from the client store.

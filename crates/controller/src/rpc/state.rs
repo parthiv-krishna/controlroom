@@ -46,7 +46,7 @@ pub(super) fn hello(conn: &Conn, p: UiHelloParams) -> Result<UiHelloResult, RpcE
         push: services.push.as_ref().map(|p| PushInfo {
             vapid_public_key: p.vapid_public_key.clone(),
         }),
-        capabilities: Vec::new(),
+        capabilities: vec![controlroom_protocol::Capability::SCHEDULES],
     })
 }
 

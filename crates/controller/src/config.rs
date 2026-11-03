@@ -11,6 +11,7 @@ use controlroom_protocol::ids::ControllerId;
 
 use crate::auth::AuthPolicy;
 use crate::notify::PushConfig;
+use crate::schedules::Clock;
 use crate::store::Store;
 
 /// Everything the shell provides to [`crate::Controller::start`].
@@ -61,6 +62,11 @@ pub struct Tuning {
     pub client_buffer: usize,
     /// How long a login session lasts without use (sliding).
     pub auth_session_ttl: Duration,
+    /// The scheduler's clock (the system clock by default; tests use a manual one).
+    pub clock: Clock,
+    /// How long the scheduler waits before delivering a due schedule again after its machine
+    /// couldn't be reached (it also retries as soon as the machine connects).
+    pub schedule_retry: Duration,
 }
 
 impl Default for Tuning {
@@ -82,6 +88,8 @@ impl Default for Tuning {
             max_concurrent_requests: 8,
             client_buffer: 4096,
             auth_session_ttl: Duration::from_secs(30 * 24 * 60 * 60),
+            clock: Clock::system(),
+            schedule_retry: Duration::from_secs(30),
         }
     }
 }

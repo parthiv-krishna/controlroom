@@ -48,7 +48,9 @@
 //!   auto-upgrade) and the daemon link;
 //! - `rpc`: the UI API (connection handling, ordering contract, handlers by namespace,
 //!   table-driven pass-through);
-//! - `attention` and `notify`: server-owned attention and Web Push delivery.
+//! - `attention` and `notify`: server-owned attention and Web Push delivery;
+//! - `schedules`: the scheduler that wakes sessions on cron or interval specs ([`Clock`] in
+//!   [`Tuning`] is its time source).
 
 mod attention;
 mod auth;
@@ -61,6 +63,7 @@ mod machines;
 mod notify;
 mod rotation;
 mod rpc;
+mod schedules;
 pub mod store;
 #[cfg(all(unix, feature = "test-support"))]
 pub mod test_support;
@@ -74,4 +77,5 @@ pub use controlroom_client_core::MasterKey;
 pub use hub::CloseReason;
 pub use notify::{PushConfig, PushOutcome, PushSender, VapidKey, VapidKeyError, WebPushSender};
 pub use rpc::{Closed, UiClient, UiReceiver, UiSender};
+pub use schedules::{Clock, ManualClock};
 pub use store::OwnerId;

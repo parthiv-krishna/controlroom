@@ -63,14 +63,17 @@ pub enum ScheduleOutcome {
     Unknown,
 }
 
-/// One due time of a schedule. Consecutive misses collapse into one entry ("missed ×3").
+/// One due time of a schedule (or a "run now"). Consecutive misses collapse into one entry
+/// ("missed ×3").
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ScheduleRun {
     /// The scheduled time (the first one, for collapsed misses).
     pub at: UnixMillis,
+    /// The last scheduled time of collapsed misses; `null` for a single due time.
+    pub until: Option<UnixMillis>,
     /// What happened.
     pub outcome: ScheduleOutcome,
-    /// Details, e.g. the error.
+    /// Details, e.g. the error or why it was missed.
     pub detail: Option<String>,
     /// How many due times this entry covers (more than 1 only for collapsed misses).
     pub count: u32,
@@ -99,8 +102,12 @@ pub struct Schedule {
     pub if_busy: IfBusy,
     /// What to do with runs missed during controller downtime.
     pub missed: MissedPolicy,
-    /// The next due time, while enabled.
+    /// The next due time, while enabled. While a run is pending, it is also that run's
+    /// deadline.
     pub next_run: Option<UnixMillis>,
+    /// A due time that hasn't been delivered yet because the machine is unreachable. It is
+    /// retried until `next_run`, then recorded as missed.
+    pub pending_run: Option<UnixMillis>,
     /// Recent due times, newest first (bounded).
     pub recent_runs: Vec<ScheduleRun>,
     /// When it was created.
