@@ -1,26 +1,29 @@
-//! Drift check for the generated TypeScript in `web/src/lib/protocol/`.
+//! Drift check for the generated TypeScript: `web/src/lib/protocol/` (daemon and UI APIs) and
+//! `extensions/pi/src/protocol/` (agent API).
 //!
-//! - `cargo test -p controlroom-protocol --test typescript` regenerates into a temp dir and fails
+//! - `cargo test -p controlroom-protocol --test typescript` regenerates into memory and fails
 //!   when the checked-in files differ.
 //! - `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --test typescript` rewrites the
 //!   checked-in files instead.
 //! - With `CONTROLROOM_TS_DRIFT_REQUIRED` set (the `protocol-ts-drift` Nix check), a source tree
 //!   without the checked-in files is an error instead of a skip.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use controlroom_protocol::typescript::{self, REGENERATE_COMMAND};
+use controlroom_protocol::typescript::{self, AGENT_DIR, REGENERATE_COMMAND, WEB_DIR};
 
-fn checked_in_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/src/lib/protocol")
+fn checked_in_dir(relative: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(relative)
 }
 
-#[test]
-fn typescript_bindings_are_up_to_date() {
-    let checked_in = checked_in_dir();
+fn check_drift(relative: &str, expected: BTreeMap<PathBuf, String>) {
+    let checked_in = checked_in_dir(relative);
 
     if std::env::var_os("CONTROLROOM_UPDATE_TS").is_some() {
-        typescript::write_to(&checked_in).expect("write TypeScript bindings");
+        typescript::write_to(&checked_in, expected).expect("write TypeScript bindings");
         eprintln!("regenerated {}", checked_in.display());
         return;
     }
@@ -45,7 +48,6 @@ fn typescript_bindings_are_up_to_date() {
         return;
     }
 
-    let expected = typescript::generate().expect("generate TypeScript bindings");
     let mut problems = Vec::new();
     for (path, want) in &expected {
         if !actual.contains(path) {
@@ -64,10 +66,20 @@ fn typescript_bindings_are_up_to_date() {
 
     assert!(
         problems.is_empty(),
-        "web/src/lib/protocol/ is out of date with crates/protocol:\n  {}\n\nRun `{}` to regenerate.",
+        "{relative}/ is out of date with crates/protocol:\n  {}\n\nRun `{}` to regenerate.",
         problems.join("\n  "),
         REGENERATE_COMMAND
     );
+}
+
+#[test]
+fn typescript_bindings_are_up_to_date() {
+    check_drift(WEB_DIR, typescript::generate().expect("generate"));
+}
+
+#[test]
+fn agent_typescript_bindings_are_up_to_date() {
+    check_drift(AGENT_DIR, typescript::generate_agent().expect("generate"));
 }
 
 #[test]
@@ -75,6 +87,10 @@ fn generation_is_deterministic() {
     assert_eq!(
         typescript::generate().unwrap(),
         typescript::generate().unwrap()
+    );
+    assert_eq!(
+        typescript::generate_agent().unwrap(),
+        typescript::generate_agent().unwrap()
     );
 }
 
@@ -105,8 +121,20 @@ fn generated_files_cover_the_api() {
     ] {
         assert!(files.contains_key(Path::new(name)), "{name} not generated");
     }
+    let agent = typescript::generate_agent().unwrap();
+    for name in [
+        "index.ts",
+        "AgentMethods.ts",
+        "versions.ts",
+        "AgentState.ts",
+        "QuestionAskParams.ts",
+        "Todo.ts",
+    ] {
+        assert!(agent.contains_key(Path::new(name)), "{name} not generated");
+    }
+    assert!(!agent.contains_key(Path::new("DaemonMethods.ts")));
     // Ids, cursors and timestamps are plain TS types, never bigint or JsonValue.
-    for (path, source) in &files {
+    for (path, source) in files.iter().chain(&agent) {
         assert!(!source.contains("bigint"), "{} uses bigint", path.display());
         assert!(
             !source.contains("JsonValue"),

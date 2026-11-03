@@ -1,0 +1,21 @@
+{
+  "name": "@controlroom/pi",
+  "version": "0.0.5",
+  "description": "controlroom's pi extension: ask_user, todo and notify_user tools backed by the session's controlroom daemon",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts"
+  }
+}

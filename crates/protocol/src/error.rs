@@ -210,7 +210,8 @@ pub enum ErrorData {
         /// When it connected.
         connected_since: UnixMillis,
     },
-    /// UI API: the request was not authenticated (or the login session was revoked).
+    /// UI API: the request was not authenticated (or the login session was revoked). Agent API:
+    /// the `hello` token is wrong.
     Unauthenticated,
     /// UI API: the machine's daemon can't be reached, so a pass-through command was not
     /// delivered.

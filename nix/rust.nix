@@ -101,8 +101,8 @@ let
         }
       );
 
-  # The TypeScript drift test, with the checked-in bindings in the source so it
-  # compares instead of skipping (the plain `test` check doesn't see web/).
+  # The TypeScript drift test, with the checked-in bindings (web UI and pi extension) in the
+  # source so it compares instead of skipping (the plain `test` check doesn't see them).
   protocolTsDrift = craneLib.cargoTest (
     commonArgs
     // {
@@ -112,6 +112,7 @@ let
         fileset = lib.fileset.unions [
           (craneLib.fileset.commonCargoSources ../.)
           ../web/src/lib/protocol
+          ../extensions/pi/src/protocol
         ];
       };
       inherit cargoArtifacts;

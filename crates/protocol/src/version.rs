@@ -47,6 +47,10 @@ pub const DAEMON_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1,
 /// the daemon API: the UI ships with its controller, while daemons upgrade independently.
 pub const UI_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
 
+/// The agent API version (`@controlroom/pi` ↔ `controlroomd`), sent in the agent `hello`.
+/// Versioned separately from the daemon API: the extension ships in the agent bundle.
+pub const AGENT_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
+
 /// An optional feature a peer advertises in `hello.capabilities`.
 ///
 /// Capabilities are plain strings, so a peer keeps (and can show) ones it doesn't know. A

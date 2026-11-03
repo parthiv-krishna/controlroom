@@ -51,6 +51,10 @@ pub struct TodoAddParams {
     /// Insert position; default: the end.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<u32>,
+    /// The editing device, recorded as the entries' [`crate::session::Author`]. Filled in by
+    /// the controller like [`RequestRespondParams::by`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
 }
 
 /// Result of `todo.add`.
@@ -78,6 +82,9 @@ pub struct TodoUpdateParams {
     /// New reason (for `blocked` or `skipped`); `""` clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// The editing device (see [`TodoAddParams::by`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
 }
 
 /// Params of `todo.remove`.
@@ -89,6 +96,9 @@ pub struct TodoRemoveParams {
     pub id: SessionId,
     /// The entry.
     pub todo_id: TodoId,
+    /// The editing device (see [`TodoAddParams::by`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
 }
 
 /// Params of `todo.reorder`.
@@ -102,6 +112,9 @@ pub struct TodoReorderParams {
     pub todo_id: TodoId,
     /// Its new 0-based index, clamped to the list length.
     pub to_index: u32,
+    /// The editing device (see [`TodoAddParams::by`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
 }
 
 /// Params of `job.list`.
