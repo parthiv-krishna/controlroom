@@ -80,8 +80,8 @@ async fn wait_messages(ui: &mut UiDriver, machine: &str, session: &str, needle: 
     }
 }
 
-/// The user messages in the session's timeline that contain `needle`.
-async fn user_messages(ui: &mut UiDriver, machine: &str, session: &str, needle: &str) -> usize {
+/// The session's timeline backlog: one upsert per item.
+async fn timeline(ui: &mut UiDriver, machine: &str, session: &str) -> Vec<Value> {
     let sub = ui
         .ok(
             "session.subscribe",
@@ -99,9 +99,13 @@ async fn user_messages(ui: &mut UiDriver, machine: &str, session: &str, needle: 
         json!({"subscription_id": sub["subscription_id"]}),
     )
     .await;
-    let mut ids: Vec<String> = backlog["params"]["ops"]
-        .as_array()
-        .unwrap()
+    backlog["params"]["ops"].as_array().unwrap().clone()
+}
+
+/// The user messages in the session's timeline that contain `needle`.
+async fn user_messages(ui: &mut UiDriver, machine: &str, session: &str, needle: &str) -> usize {
+    let mut ids: Vec<String> = timeline(ui, machine, session)
+        .await
         .iter()
         .filter(|op| {
             op["item"]["kind"] == "message"
@@ -200,6 +204,19 @@ async fn a_due_time_fires_once_across_restarts() {
         1,
         "the retried due time didn't prompt again"
     );
+    // Both runs show the schedule as their trigger (the runtime maps the prompt's origin).
+    let triggers: Vec<Value> = timeline(&mut b, &machine, &session)
+        .await
+        .iter()
+        .filter(|op| op["item"]["kind"] == "run")
+        .map(|op| op["item"]["trigger"].clone())
+        .collect();
+    assert_eq!(triggers.len(), 2, "{triggers:?}");
+    for trigger in &triggers {
+        assert_eq!(trigger["kind"], "schedule", "{trigger}");
+        assert_eq!(trigger["schedule_id"], json!(id));
+        assert_eq!(trigger["name"], "inbox");
+    }
     second.shutdown().await;
 }
 

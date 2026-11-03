@@ -24,6 +24,8 @@ test('a schedule runs now and shows in the overview', async ({ page }) => {
   const tl = timeline(page);
   await expect(tl.locator('.msg.r-user').last()).toHaveText('Check inbox/ and report');
   await expect(tl.locator('.msg.r-agent').last()).toHaveText('Inbox is empty.');
+  // The run is badged with the schedule (the daemon maps the prompt's origin to its trigger).
+  await expect(tl.locator('.trig.t-schedule').last()).toHaveText('schedule: Inbox');
 
   await page.getByRole('button', { name: 'Settings' }).click();
   const settings = page.getByRole('dialog', { name: 'Settings' });
