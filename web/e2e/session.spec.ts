@@ -68,9 +68,11 @@ test('todo panel and auto-continue; jobs strip', async ({ page }) => {
   await todo.getByRole('button', { name: 'Turn off' }).click();
   await page.getByRole('button', { name: /tests/ }).first().click();
   await expect(page.getByLabel('Log tail')).toContainText('FAIL e2e/queue.spec.ts');
+  await expect(page.getByText(/next wake in \d+s/)).toBeVisible();
   await page.getByRole('button', { name: 'Unfollow' }).click();
+  await page.getByRole('button', { name: 'Kill' }).click();
   const methods = (await calls(page)).map((c) => c.method);
-  expect(methods).toEqual(expect.arrayContaining(['todo.add', 'session.update', 'job.logs', 'job.unfollow']));
+  expect(methods).toEqual(expect.arrayContaining(['todo.add', 'session.update', 'job.logs', 'job.unfollow', 'job.kill']));
 });
 
 test('notifications: blocking and non-blocking tiers; Dismiss answers declined', async ({ page }) => {
