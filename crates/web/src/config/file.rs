@@ -61,6 +61,9 @@ pub struct OidcConfig {
     pub issuer: Option<String>,
     /// The client id.
     pub client_id: Option<String>,
+    /// A file holding the client id instead (for identity providers whose client ids are
+    /// generated secrets); relative paths are systemd credentials.
+    pub client_id_file: Option<PathBuf>,
     /// The client secret file; relative paths are systemd credentials.
     pub client_secret_file: Option<PathBuf>,
     /// Subjects that may sign in.

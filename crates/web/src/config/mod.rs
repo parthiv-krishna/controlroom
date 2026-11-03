@@ -20,7 +20,7 @@
 //!
 //! [auth.oidc]
 //! issuer = "https://id.example.com"
-//! client_id = "controlroom"
+//! client_id = "controlroom"           # or client_id_file = "oidc-client-id"
 //! client_secret_file = "oidc-client-secret"
 //! allowed_groups = ["controlroom-users"]
 //!
@@ -132,7 +132,7 @@ pub struct OidcSettings {
     /// The issuer URL.
     pub issuer: String,
     /// The client id.
-    pub client_id: String,
+    pub client_id: ClientIdSource,
     /// The client secret file.
     pub client_secret_file: PathBuf,
     /// Subjects that may sign in.
@@ -141,6 +141,15 @@ pub struct OidcSettings {
     pub allowed_groups: Vec<String>,
     /// Scopes requested besides `openid`.
     pub scopes: Vec<String>,
+}
+
+/// Where the OIDC client id comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClientIdSource {
+    /// Configured inline.
+    Value(String),
+    /// Read from a file (a credential) at start.
+    File(PathBuf),
 }
 
 /// Web Push settings.
@@ -298,7 +307,16 @@ fn resolve_oidc(oidc: OidcConfig, env: &Env) -> Result<OidcSettings, ConfigError
     let missing = |field: &str| ConfigError::Invalid(format!("auth.oidc.{field} is required"));
     let issuer = oidc.issuer.ok_or_else(|| missing("issuer"))?;
     Url::parse(&issuer).map_err(|e| ConfigError::Invalid(format!("auth.oidc.issuer: {e}")))?;
-    let client_id = oidc.client_id.ok_or_else(|| missing("client_id"))?;
+    let client_id = match (oidc.client_id, oidc.client_id_file) {
+        (Some(id), None) => ClientIdSource::Value(id),
+        (None, Some(path)) => ClientIdSource::File(env.secret_path(&path)?),
+        (None, None) => return Err(missing("client_id (or client_id_file)")),
+        (Some(_), Some(_)) => {
+            return Err(ConfigError::Invalid(
+                "auth.oidc: set client_id or client_id_file, not both".into(),
+            ));
+        }
+    };
     let client_secret_file = env.secret_path(
         &oidc
             .client_secret_file
@@ -490,6 +508,36 @@ mod tests {
             .unwrap();
         assert_eq!(s.listen, Listen::Tcp("127.0.0.1:9000".parse().unwrap()));
         assert!(matches!(s.auth, AuthSettings::DevToken));
+    }
+
+    #[test]
+    fn the_client_id_can_come_from_a_credential() {
+        let env = Env {
+            credentials_directory: Some("/run/credentials/controlroom.service".into()),
+            state_directory: None,
+        };
+        let from_file = OIDC.replace(
+            "client_id = \"controlroom\"",
+            "client_id_file = \"oidc-client-id\"",
+        );
+        let s = Config::from_toml(&from_file)
+            .unwrap()
+            .resolve(&env)
+            .unwrap();
+        let AuthSettings::Oidc(oidc) = s.auth else {
+            panic!("oidc expected")
+        };
+        assert_eq!(
+            oidc.client_id,
+            ClientIdSource::File("/run/credentials/controlroom.service/oidc-client-id".into())
+        );
+        let both = OIDC.replace(
+            "client_id = \"controlroom\"",
+            "client_id = \"controlroom\"\nclient_id_file = \"/run/keys/id\"",
+        );
+        assert!(resolve(&both).is_err());
+        let neither = OIDC.replace("client_id = \"controlroom\"", "");
+        assert!(resolve(&neither).is_err());
     }
 
     #[test]

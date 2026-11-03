@@ -129,14 +129,16 @@ pub async fn oidc_server_with(
     idp: &MockIdp,
     allowed: &str,
 ) -> TestServer {
+    // The client id comes from a file too, as with identity providers that generate it.
+    let id = dir.path().join("client-id");
+    std::fs::write(&id, format!("{}\n", idp.client_id)).unwrap();
     let secret = dir.path().join("client-secret");
     std::fs::write(&secret, format!("{}\n", idp.client_secret)).unwrap();
     let toml = format!(
-        "{}public_url = \"{PUBLIC_ORIGIN}\"\n[auth.oidc]\nissuer = \"{}\"\nclient_id = \"{}\"\n\
+        "{}public_url = \"{PUBLIC_ORIGIN}\"\n[auth.oidc]\nissuer = \"{}\"\nclient_id_file = {id:?}\n\
          client_secret_file = {secret:?}\n{allowed}\n",
         base_toml(&dir),
         idp.issuer,
-        idp.client_id,
     );
     let server = start_toml(&toml).await;
     TestServer {

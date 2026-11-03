@@ -157,6 +157,7 @@ impl IntoResponse for LoginError {
 /// The OIDC relying party.
 pub struct Oidc {
     settings: OidcSettings,
+    client_id: ClientId,
     client_secret: ClientSecret,
     redirect_url: RedirectUrl,
     http: reqwest::Client,
@@ -166,9 +167,11 @@ pub struct Oidc {
 }
 
 impl Oidc {
-    /// A relying party for `settings`, redirected back to `<public_origin>/auth/callback`.
+    /// A relying party for `settings` with the resolved client id and secret, redirected back
+    /// to `<public_origin>/auth/callback`.
     pub fn new(
         settings: OidcSettings,
+        client_id: String,
         client_secret: String,
         public_origin: &str,
     ) -> Result<Self, LoginError> {
@@ -182,6 +185,7 @@ impl Oidc {
             .map_err(|e| LoginError::Internal(format!("HTTP client: {e}")))?;
         Ok(Self {
             settings,
+            client_id: ClientId::new(client_id),
             client_secret: ClientSecret::new(client_secret),
             redirect_url,
             http,
@@ -215,7 +219,7 @@ impl Oidc {
         };
         Ok(OidcClient::from_provider_metadata(
             metadata,
-            ClientId::new(self.settings.client_id.clone()),
+            self.client_id.clone(),
             Some(self.client_secret.clone()),
         )
         .set_redirect_uri(self.redirect_url.clone()))

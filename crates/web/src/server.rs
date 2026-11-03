@@ -21,7 +21,7 @@ use crate::auth::cookies::Cookies;
 use crate::auth::dev_token::{self, DevToken};
 use crate::auth::oidc::{self, Oidc};
 use crate::auth::{self, AuthRuntime};
-use crate::config::{AuthSettings, Listen, Settings};
+use crate::config::{AuthSettings, ClientIdSource, Listen, Settings};
 use crate::csp::Csp;
 use crate::hardening;
 use crate::origin::OriginPolicy;
@@ -171,13 +171,17 @@ pub async fn start(settings: Settings, options: StartOptions) -> anyhow::Result<
             },
         ),
         AuthSettings::Oidc(oidc) => {
+            let client_id = match &oidc.client_id {
+                ClientIdSource::Value(id) => id.clone(),
+                ClientIdSource::File(path) => read_text_secret(path)?,
+            };
             let secret = read_text_secret(&oidc.client_secret_file)?;
             let policy = AuthPolicy {
                 mode: AuthMode::Oidc,
                 allowed_subjects: oidc.allowed_subjects.clone(),
                 allowed_groups: oidc.allowed_groups.clone(),
             };
-            let oidc = Oidc::new(oidc.clone(), secret, &origin.public_origin)?;
+            let oidc = Oidc::new(oidc.clone(), client_id, secret, &origin.public_origin)?;
             (AuthRuntime::Oidc(Box::new(oidc)), policy)
         }
     };
