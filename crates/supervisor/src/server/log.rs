@@ -75,7 +75,8 @@ impl Log {
         }
         let record = state.writer.append(body)?;
         self.last_seq.send_replace(record.seq);
-        if let (Body::Out(line) | Body::Stderr(line), Some(plain)) = (&record.body, &mut state.plain)
+        if let (Body::Out(line) | Body::Stderr(line), Some(plain)) =
+            (&record.body, &mut state.plain)
         {
             let text = format!("{}\n", plain_line(&line.raw));
             if let Err(e) = plain.write_all(text.as_bytes())

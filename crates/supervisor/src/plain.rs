@@ -90,7 +90,10 @@ mod tests {
 
     #[test]
     fn colors_cursor_moves_and_titles_are_removed() {
-        assert_eq!(plain_line("\u{1b}[1;31merror\u{1b}[0m: boom"), "error: boom");
+        assert_eq!(
+            plain_line("\u{1b}[1;31merror\u{1b}[0m: boom"),
+            "error: boom"
+        );
         assert_eq!(plain_line("\u{1b}]0;title\u{7}after"), "after");
         assert_eq!(
             plain_line("\u{1b}]8;;https://example.com\u{1b}\\link\u{1b}]8;;\u{1b}\\"),
