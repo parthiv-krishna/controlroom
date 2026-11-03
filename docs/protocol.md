@@ -92,7 +92,7 @@ Answers are `Response`: `choice {option_id, reason?}` · `answers {answers[]}` �
 | `todo` | `items[]` (snapshot after a change) |
 | `request` | the `Request` fields inline |
 | `subagent` | `child: PeerRef, title, agent, state, outcome?, usage?, result?` |
-| `job` | the `Job` fields inline (`id, name, command, cwd, status, exit?, signal?, started_at, ended_at?, timeout_s?, log_path, lines, follow?`) |
+| `job` | `job: Job` (nested, because the job's `id` would collide with the item's: `id, name, command, cwd, status, exit?, signal?, started_at, ended_at?, timeout_s?, log_path, lines, follow?`); upserted when the job starts, changes its follow, and ends |
 | `session_message` | `message_id, direction, peer, text, reply_to?, expects_reply, outcome?` (delivered · queued · connection_lost · denied · expired), `late` |
 | `usage` | `scope, tokens {input, output, cache_read, cache_write}, cost?, context?` |
 | `compaction` / `retry` | `reason, phase, tokens_before?, tokens_after?, error?` / `attempt, max_attempts?, phase, delay_ms?, error?` |
@@ -128,7 +128,7 @@ Lifecycle: `hello` first (else `hello_required`), then subscriptions. Disconnect
 | `queue.send_now {queue_id, interrupt?}` (→ `sent · steered · interrupting · queued`) · `queue.edit` · `queue.remove` · `queue.reorder` · `queue.resume` | queue. Send-now steers, or cancels at a safe point (no tool running); `interrupt: true` cancels at once and sends the item as the next prompt; `queued` while the agent isn't ready |
 | `request.respond {request_id, response, then?, by?}` | answer any request kind; first answer wins (`already_resolved` carries the winner). `by` is the deciding device, filled in by the controller (it overwrites a client's value) |
 | `todo.add {texts[], index?, by?}` · `todo.update {todo_id, text?, status?, reason?, by?}` · `todo.remove` · `todo.reorder` | shared todo list (`todos`); `by` is the editing device, filled in by the controller like `request.respond.by`. Every user edit reaches the agent as a short notice in its next turn |
-| `job.list` · `job.logs {from_line?, max_lines?}` · `job.kill` · `job.follow {buffer_seconds?, pattern?, from?}` · `job.unfollow` | jobs (`jobs`) |
+| `job.list` · `job.logs {from_line?, max_lines?}` · `job.kill` · `job.follow {buffer_seconds?, pattern?, from?}` · `job.unfollow` | jobs (`jobs`). `job.logs` returns plain-text lines (ANSI-stripped, carriage returns collapsed) read from the job's transcript, default the last 200, at most 2000. `job.kill` (the user's) sends SIGTERM, SIGKILL after 5 s; the exit wakes the agent. `job.follow` (default `buffer_seconds` 15, `from: unseen`) starts or updates the agent's follow subscription and ends with the job; `job.unfollow` leaves only the exit wake. An ended job returns unchanged |
 | `sandbox.revoke {grant_id}` | remove a session grant ("Remove · restarts agent") |
 | `agents.list` · `fs.list {path, include_files?}` · `doctor.report` · `settings.get` · `settings.set` | machine queries and settings |
 | `outbox.subscribe {since}` · `outbox.ack {item, outcome}` · `inbox.deliver {op_id, id, delivery}` | durable mailbox, controller only (`mailbox`) |
@@ -224,3 +224,4 @@ Regenerate both: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --t
 22. **Todo notices don't wake the agent.** A user's todo edit is delivered into the agent's next turn (steered into a running one), never starting a run by itself; with a driver that can't steer it waits until the agent is idle and then starts one. Answers and continuations wake the agent.
 23. **Auto-continue defaults.** On for every session, budget 10 continue runs per user instruction: a run the user starts (prompt or queue) and turning auto-continue on reset the count. Progress means a todo closed (done, blocked or skipped) during the run.
 24. **`notify`** only adds a timeline notice; it doesn't change attention or push.
+25. **Job items and logs.** A `job` item has no transcript record either: like a raised request it sits at the session's transcript head when the job started, and each change counts as changed after the current head. A job's log is `<session cwd>/.controlroom/jobs/<id>.log` (the session's cwd, not the job's, so one `.controlroom/.gitignore` covers every log); line `n` of the log is output record `n` of the job's transcript. `SessionDetail.jobs` lists running jobs and the latest 10 finished ones (`job.list` has all), and its `lines` count is refreshed at most once a second.
