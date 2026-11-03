@@ -68,6 +68,7 @@ pub fn shell_spec(state: &Path, command: &str) -> SpawnSpec {
         timeout_ms: None,
         max_line_bytes: None,
         labels: BTreeMap::new(),
+        plain_log: None,
     }
 }
 

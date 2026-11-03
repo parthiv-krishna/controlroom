@@ -223,6 +223,7 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
                 timeout_ms: None,
                 max_line_bytes: None,
                 labels,
+                plain_log: None,
             },
         },
         sandbox,

@@ -1,11 +1,15 @@
 //! The supervisor's transcript handle, shared by pumps, the stdin logger and the
 //! socket server.
 
-use std::io;
+use std::fs::File;
+use std::io::{self, Write as _};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use controlroom_transcript::{Body, Line, Record, Syncer, Writer};
 use tokio::sync::watch;
+
+use crate::diag::diag;
+use crate::plain::plain_line;
 
 /// Why an append was refused.
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +26,11 @@ pub(crate) enum AppendError {
 
 struct State {
     writer: Writer,
+    /// The plain-text copy of the output (`SpawnSpec::plain_log`), written under the same
+    /// lock as the transcript so both have the same line order.
+    plain: Option<File>,
+    /// A plain-log write failed (reported once).
+    plain_failed: bool,
     child_reaped: bool,
     closed: bool,
 }
@@ -40,12 +49,14 @@ pub(crate) struct Log {
 }
 
 impl Log {
-    pub(crate) fn new(writer: Writer) -> io::Result<Self> {
+    pub(crate) fn new(writer: Writer, plain: Option<File>) -> io::Result<Self> {
         let last = writer.last_seq();
         Ok(Self {
             syncer: writer.syncer()?,
             state: Mutex::new(State {
                 writer,
+                plain,
+                plain_failed: false,
                 child_reaped: false,
                 closed: false,
             }),
@@ -64,6 +75,15 @@ impl Log {
         }
         let record = state.writer.append(body)?;
         self.last_seq.send_replace(record.seq);
+        if let (Body::Out(line) | Body::Stderr(line), Some(plain)) = (&record.body, &mut state.plain)
+        {
+            let text = format!("{}\n", plain_line(&line.raw));
+            if let Err(e) = plain.write_all(text.as_bytes())
+                && !std::mem::replace(&mut state.plain_failed, true)
+            {
+                diag!("writing the plain log failed: {e}");
+            }
+        }
         Ok(record)
     }
 
@@ -136,7 +156,7 @@ mod tests {
     fn ordering_rules() {
         let dir = tempfile::tempdir().unwrap();
         let (writer, _) = Writer::open(&dir.path().join("t.jsonl")).unwrap();
-        let log = Log::new(writer).unwrap();
+        let log = Log::new(writer, None).unwrap();
         assert_eq!(log.append_in("a".into()).unwrap().seq, 1);
         assert_eq!((log.last_seq(), log.durable_seq()), (1, 0));
         assert_eq!(log.sync().unwrap(), 1);
@@ -154,5 +174,24 @@ mod tests {
             Err(AppendError::Closed)
         ));
         assert_eq!(log.sync().unwrap(), 3);
+    }
+
+    #[test]
+    fn the_plain_log_has_one_line_per_output_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let (writer, _) = Writer::open(&dir.path().join("t.jsonl")).unwrap();
+        let plain = dir.path().join("plain.log");
+        let file = File::options()
+            .create(true)
+            .append(true)
+            .open(&plain)
+            .unwrap();
+        let log = Log::new(writer, Some(file)).unwrap();
+        log.append(Body::Out(Line::new("\u{1b}[32mok\u{1b}[0m")))
+            .unwrap();
+        log.append_in("stdin is not logged".into()).unwrap();
+        log.append(Body::Stderr(Line::new("10%\r100%"))).unwrap();
+        log.append(Body::Out(Line::new(""))).unwrap();
+        assert_eq!(std::fs::read_to_string(&plain).unwrap(), "ok\n100%\n\n");
     }
 }

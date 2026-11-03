@@ -39,6 +39,12 @@ pub struct SpawnSpec {
     /// Opaque labels recorded in the `meta` record (for example `driver=pi`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
+    /// Also append every stdout/stderr line, as [`plain_line`](crate::plain::plain_line)
+    /// text, to this file (created if missing, never truncated): line `n` of the file is the
+    /// `n`th output record. Absolute; its directory must exist. Jobs use it for the log the
+    /// agent reads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plain_log: Option<PathBuf>,
 }
 
 /// The program a supervisor executes.
@@ -68,6 +74,9 @@ pub enum SpecError {
     /// `env_file` is not absolute.
     #[error("env file {0:?} is not absolute")]
     RelativeEnvFile(PathBuf),
+    /// `plain_log` is not absolute.
+    #[error("plain log {0:?} is not absolute")]
+    RelativePlainLog(PathBuf),
     /// The stdin mode is unknown.
     #[error("unsupported stdin mode")]
     UnsupportedStdin,
@@ -110,6 +119,11 @@ impl SpawnSpec {
             && !env_file.is_absolute()
         {
             return Err(SpecError::RelativeEnvFile(env_file.clone()));
+        }
+        if let Some(plain_log) = &self.plain_log
+            && !plain_log.is_absolute()
+        {
+            return Err(SpecError::RelativePlainLog(plain_log.clone()));
         }
         if self.stdin == StdinMode::Unknown {
             return Err(SpecError::UnsupportedStdin);
@@ -186,6 +200,7 @@ mod tests {
             timeout_ms: None,
             max_line_bytes: None,
             labels: BTreeMap::new(),
+            plain_log: None,
         }
     }
 
@@ -247,6 +262,13 @@ mod tests {
                     ..spec(Exec::Shell("x".into()))
                 },
                 "cap",
+            ),
+            (
+                SpawnSpec {
+                    plain_log: Some("log.txt".into()),
+                    ..spec(Exec::Shell("x".into()))
+                },
+                "plain log",
             ),
             (
                 SpawnSpec {

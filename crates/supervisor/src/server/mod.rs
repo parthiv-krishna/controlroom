@@ -216,7 +216,18 @@ async fn start(config: Config) -> anyhow::Result<Running> {
     let group = Arc::new(Group::new(child_pid));
     guard.group = Some(group.clone());
 
-    let log = Arc::new(Log::new(writer)?);
+    let plain = match &spec.plain_log {
+        Some(path) => Some(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o644)
+                .open(path)
+                .with_context(|| format!("opening the plain log {}", path.display()))?,
+        ),
+        None => None,
+    };
+    let log = Arc::new(Log::new(writer, plain)?);
     let max_line_bytes = spec.line_cap();
     log.append(Body::Meta(Box::new(Meta {
         format: FORMAT_VERSION,

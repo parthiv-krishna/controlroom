@@ -70,6 +70,7 @@ impl Agents for FakeAgents {
             timeout_ms: None,
             max_line_bytes: None,
             labels: Default::default(),
+            plain_log: None,
         })
     }
 }

@@ -16,9 +16,13 @@
 //! # API (for the daemon)
 //!
 //! - [`SpawnSpec`]: `{kind: agent|job (pty reserved), exec: {argv}|{shell}, cwd,
-//!   env_file?, stdin: pipe|null, timeout_ms?, max_line_bytes?, labels}`. The
-//!   supervisor is sandbox-agnostic: a sandboxed launch is a plain argv such as
-//!   `nono run ... -- $SHELL -lc '<cmd>'`.
+//!   env_file?, stdin: pipe|null, timeout_ms?, max_line_bytes?, labels, plain_log?}`.
+//!   The supervisor is sandbox-agnostic: a sandboxed launch is a plain argv such as
+//!   `nono run ... -- $SHELL -lc '<cmd>'`. `plain_log` (jobs) also appends every output
+//!   line as [`plain::plain_line`] text to a file, under the transcript's lock, so line
+//!   `n` of that file is the `n`th output record.
+//! - [`plain`]: ANSI stripping and carriage-return collapsing, shared with the daemon
+//!   (follow patterns match the same text the agent reads).
 //! - [`Paths`]: the process directory and the socket path (mind [`SUN_PATH_MAX`]).
 //! - [`launch`] starts a detached supervisor and returns its [`SupervisorInfo`];
 //!   [`read_info`] finds the one a running supervisor left in its directory.
@@ -106,6 +110,7 @@ mod client;
 mod diag;
 mod launch;
 mod paths;
+pub mod plain;
 mod proto;
 mod server;
 mod spec;
