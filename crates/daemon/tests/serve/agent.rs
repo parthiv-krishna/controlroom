@@ -185,6 +185,10 @@ fn the_agent_socket_takes_only_its_session_token_and_survives_a_restart() {
     // The daemon restarts; the agent outlives it and reconnects to the same socket.
     env.kill_daemon();
     env.start();
+    // The daemon binds agent sockets once its runtime is open; like the extension, retry.
+    wait_until("the agent socket", || {
+        std::os::unix::net::UnixStream::connect(&socket).is_ok()
+    });
     let agent = Client::connect(&socket);
     agent.call("hello", agent_hello(&token));
     let todos = agent.call(
