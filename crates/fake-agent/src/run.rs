@@ -524,6 +524,22 @@ async fn execute(
             }
         }
     }
+    if let Some(call) = &tool.agent {
+        let mut params = call.params.clone();
+        if let Some(map) = params.as_object_mut() {
+            map.entry("call_id")
+                .or_insert_with(|| tool.id.clone().into());
+        }
+        let (text, is_error) = match crate::controlroom::call(&call.method, &params).await {
+            Ok(result) => (result, false),
+            Err(e) => (format!("{e:#}"), true),
+        };
+        return ToolOutcome {
+            text,
+            is_error,
+            duration_ms: Some(elapsed()),
+        };
+    }
     ToolOutcome {
         text: tool.result.clone(),
         is_error: tool.is_error,

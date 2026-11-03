@@ -19,6 +19,7 @@
 
 mod agent;
 mod commands;
+mod controlroom;
 pub mod gates;
 mod ids;
 mod out;

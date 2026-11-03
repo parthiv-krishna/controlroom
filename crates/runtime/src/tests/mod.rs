@@ -2,6 +2,8 @@
 //! runtime with the fake driver and an in-memory host. Ordered by gates and feed events; there
 //! are no sleeps (timeouts only turn a hang into a failure).
 
+mod agent;
+mod auto_continue;
 mod host;
 mod lifecycle;
 mod queue;
@@ -235,4 +237,57 @@ impl Harness {
 
 pub(crate) fn text(s: &str) -> Vec<ContentPart> {
     vec![ContentPart::text(s)]
+}
+
+impl Harness {
+    /// The session's whole materialized timeline, ordered by `seq_from`.
+    pub(crate) async fn timeline(
+        &self,
+        id: SessionId,
+    ) -> Vec<controlroom_protocol::timeline::TimelineItem> {
+        self.rt
+            .subscribe_session(id, Some(controlroom_protocol::Seq(0)), None)
+            .await
+            .unwrap()
+            .backlog
+    }
+
+    /// The triggers of the session's runs, in order.
+    pub(crate) async fn run_triggers(
+        &self,
+        id: SessionId,
+    ) -> Vec<controlroom_protocol::timeline::RunTrigger> {
+        self.timeline(id)
+            .await
+            .into_iter()
+            .filter_map(|item| match item.body {
+                controlroom_protocol::timeline::ItemBody::Run { trigger, .. } => Some(trigger),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The session's detail now.
+    pub(crate) async fn detail(
+        &self,
+        id: SessionId,
+    ) -> controlroom_protocol::session::SessionDetail {
+        self.rt
+            .subscribe_session(id, None, None)
+            .await
+            .unwrap()
+            .detail
+    }
+
+    /// Waits until the agent was given a line satisfying `pred` (a gate on the host).
+    pub(crate) async fn wait_command(
+        &self,
+        id: SessionId,
+        what: &str,
+        pred: impl Fn(&controlroom_drivers::fake::wire::Command) -> bool,
+    ) {
+        self.host
+            .wait(what, |host| host.commands(id).iter().any(&pred))
+            .await;
+    }
 }

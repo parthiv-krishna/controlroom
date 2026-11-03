@@ -298,6 +298,10 @@ pub struct ToolCallStep {
     /// Tools this tool runs through `ctx.executeTool` (`parentToolCallId`).
     #[serde(default)]
     pub nested: Vec<NestedCall>,
+    /// Call the controlroom agent API like `@controlroom/pi` would; its JSON result (or
+    /// error) becomes the tool result. `call_id` defaults to the tool call id.
+    #[serde(default)]
+    pub agent: Option<AgentCall>,
 }
 
 /// One thing a running tool does.
@@ -328,6 +332,15 @@ fn default_permission_options() -> Vec<String> {
 
 fn default_allow() -> String {
     "Allow".into()
+}
+
+/// A call on the controlroom agent socket.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentCall {
+    pub method: String,
+    #[serde(default)]
+    pub params: Value,
 }
 
 /// A nested tool call.
