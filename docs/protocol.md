@@ -32,7 +32,7 @@ Everything else is a major change.
 
 **Capabilities.** `hello.capabilities` lists optional features as free strings; unknown ones are kept.
 Daemon: `jobs` (`job.*`), `todos` (`todo.*`), `subagents`, `mailbox` (`outbox.*`, `inbox.deliver`), `sandbox_approvals` (the approval webhook runs: sandbox approvals reach the user as `sandbox` requests; without it, commands that need an approval are denied). Controller: `schedules`.
-Today's daemon advertises `todos` and `sandbox_approvals` (when its webhook listener is up).
+Today's daemon advertises `todos`, `jobs` and `sandbox_approvals` (when its webhook listener is up).
 A client calls a feature's methods only when the peer advertised it.
 **Terminals (§22) and files (§23) are deliberately not designed yet.** They will arrive as later minor versions behind `terminals` / `files` capabilities, new methods, and new enum variants (e.g. a `privileged` request kind, a `terminal` request body), which 1.0 peers already decode as `unknown`.
 
@@ -186,11 +186,16 @@ Mutating calls carry `call_id` (pi's tool call id) as their idempotency key: a c
 | `question.withdraw {call_id, question_id}` | → `{state, answer?}`: `withdrawn`, or how the user resolved it first |
 | `todo.list` · `todo.add {call_id, texts[]}` · `todo.update {call_id, todo_id, text?, status?, reason?}` | → `{todos[]}`, attributed to the agent |
 | `notify {call_id, text, level?}` | a `notice` item in the session's timeline |
+| `job.run {call_id, command, cwd?, timeout_s?, name?}` | → `{job_id, log_path}` once the job's supervisor runs (under the session's sandbox; `cwd` inside the session's). The log is `<session cwd>/.controlroom/jobs/<id>.log`, ANSI-stripped |
+| `job.follow {call_id, job_id, buffer_seconds?, pattern?, from?}` · `job.unfollow {call_id, job_id}` | → `Job`. Follow wakes batch new (or matching) lines for `buffer_seconds` (default 15) |
+| `job.status {job_id?}` · `job.kill {call_id, job_id}` | → `{jobs[]}` · `Job`. The agent's own kill sends no exit wake |
 
 Notification: `state {todos[], questions[], auto_continue}` (the open questions and the auto-continue details).
 Daemon → extension traffic goes through this socket rather than `/controlroom <verb>` commands on pi's stdin: those would be transcript lines that need a ready agent, follow the in-doubt rules, and make pi wait for the handler. Answers, todo notices and continuations reach the model through the agent's own RPC (injection: `steer` while it works, a `prompt` while it is idle), never through the socket.
 
 **Runtime rules behind it** (spec §8): an injection carries its origin, which becomes the run's trigger (`inject {origin, label}`; a continuation is `auto_continue`). Auto-continue (on by default, budget 10 runs per user instruction) starts a continue run when the agent ends its turn with pending or in-progress todos, unless a question or an approval is open, background work is running, the run failed or was cancelled, or the queue (or another injection) has items. It pauses with attention when only blocked items remain (`paused`), after 3 continue runs that closed no item (`stalled`), when the budget is used (`budget`), and on a user cancel (`paused`). `session.update {auto_continue: true}` resumes it with a fresh budget; raising `auto_continue_budget` resumes a `budget` pause.
+
+**Job wakes** (spec §8): a job's exit always wakes the agent (unless the agent killed it) with the job id, exit code or signal, duration, line count and log path; a followed job also wakes it with the new or matching line ranges once its buffer elapses. Wakes of a session's jobs that are due together (any exit, or a follow whose buffer elapsed, takes the other jobs' buffered lines along) are merged into one injection with origin `job` (label `job: tests (exit 0)` or `jobs: …`). Log content never enters a wake. A wake is recorded in the same transaction that queues its injection, so it is delivered exactly once across restarts. Running jobs are live work: auto-continue says "waiting on job <name>" and idle-stop leaves the agent alone.
 
 ## 7. TypeScript
 
