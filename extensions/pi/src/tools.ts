@@ -1,9 +1,10 @@
-// The tools the extension registers (spec §9): `ask_user`, `todo` and `notify_user`. Each is a
-// plain definition (name, description, JSON Schema parameters) plus an `execute` that talks to
-// the daemon, so they run and test without pi. Results carry model-facing text and `details`
-// for rendering.
+// The tools the extension registers (spec §9): `ask_user`, `todo`, `notify_user` and `job` (in
+// `job.ts`). Each is a plain definition (name, description, JSON Schema parameters) plus an
+// `execute` that talks to the daemon, so they run and test without pi. Results carry
+// model-facing text and `details` for rendering.
 
 import type { AgentClient } from './client.ts';
+import { job } from './job.ts';
 import type { AgentQuestion } from './protocol/AgentQuestion.ts';
 import type { NoticeLevel } from './protocol/NoticeLevel.ts';
 import type { Todo } from './protocol/Todo.ts';
@@ -280,4 +281,4 @@ export const notifyUser: Tool<NotifyParams, NotifyDetails> = {
 };
 
 /** Every tool. */
-export const TOOLS = [askUser, todo, notifyUser] as const;
+export const TOOLS = [askUser, todo, notifyUser, job] as const;

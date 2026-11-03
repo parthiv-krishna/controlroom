@@ -45,7 +45,7 @@ test('outside controlroom nothing is registered', () => {
 test('registers the tools and adds the prompt section', () => {
   const pi = new FakePi();
   const client = activate(pi, env())!;
-  assert.deepEqual([...pi.tools.keys()], ['ask_user', 'todo', 'notify_user']);
+  assert.deepEqual([...pi.tools.keys()], ['ask_user', 'todo', 'notify_user', 'job']);
   const event = { systemPromptOptions: { sections: { other: 'x' } as Record<string, string> } };
   pi.fire('before_agent_start', event);
   assert.equal(event.systemPromptOptions.sections.other, 'x');
@@ -124,4 +124,49 @@ test('the terminal widget summarizes the state', () => {
   assert.deepEqual(widget({ todos: [todo('a', 'x', 'done'), todo('b', 'y'), todo('c', 'z', 'skipped')], questions: [{} as never], auto_continue: ac }), [
     'controlroom: todo 1/2 · 1 open question · auto-continue stalled',
   ]);
+});
+
+test('job runs, follows, reports status and kills through the agent API', async () => {
+  const running = {
+    id: 'J1',
+    name: 'tests',
+    command: 'npm test',
+    cwd: '/home/alice/app',
+    status: 'running',
+    exit: null,
+    signal: null,
+    started_at: 1,
+    ended_at: null,
+    timeout_s: 600,
+    log_path: '/home/alice/app/.controlroom/jobs/J1.log',
+    lines: 12,
+    follow: null,
+  };
+  const followed = { ...running, follow: { buffer_seconds: 15, pattern: 'FAIL', next_wake_at: null } };
+  daemon.handlers.set('job.run', () => ({ result: { job_id: 'J1', log_path: running.log_path } }));
+  daemon.handlers.set('job.follow', () => ({ result: followed }));
+  daemon.handlers.set('job.status', () => ({ result: { jobs: [followed] } }));
+  daemon.handlers.set('job.kill', () => ({ result: running }));
+  const pi = new FakePi();
+  activate(pi, env());
+  pi.fire('session_start', {});
+
+  const run = await pi.run('job', { action: 'run', command: 'npm test', name: 'tests', timeout: 600, cwd: 'web' }, 'tc-run');
+  assert.match(run.text, /Job J1 started; its log is \/home\/alice\/app\/\.controlroom\/jobs\/J1\.log\. Its exit will wake you/);
+  assert.deepEqual(daemon.calls.findLast((c) => c.method === 'job.run')!.params, {
+    call_id: 'tc-run',
+    command: 'npm test',
+    cwd: 'web',
+    timeout_s: 600,
+    name: 'tests',
+  });
+  const follow = await pi.run('job', { action: 'follow', job_id: 'J1', pattern: 'FAIL' }, 'tc-f');
+  assert.match(follow.text, /Following job J1: new lines matching \/FAIL\/ wake you after 15s/);
+  assert.deepEqual(daemon.calls.findLast((c) => c.method === 'job.follow')!.params, { call_id: 'tc-f', job_id: 'J1', pattern: 'FAIL' });
+  const status = await pi.run('job', { action: 'status' });
+  assert.equal(status.text, 'Job J1 `tests`: running, followed /FAIL/, 12 lines, log /home/alice/app/.controlroom/jobs/J1.log');
+  assert.match((await pi.run('job', { action: 'kill', job_id: 'J1' })).text, /Stopping job J1/);
+  await assert.rejects(pi.run('job', { action: 'run' }), /needs a command/);
+  await assert.rejects(pi.run('job', { action: 'unfollow' }), /needs a job_id/);
+  pi.fire('session_shutdown', {});
 });
