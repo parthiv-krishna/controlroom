@@ -8,7 +8,16 @@
 //!
 //! Entries replace the built-in entry of the same name; other built-ins remain. The built-in
 //! `pi` entry runs the `pi` found by the login shell. Execution hosts point it at the
-//! controlroom-pi launcher once that exists (P5).
+//! controlroom-pi bundle's launcher (spec §14), which pins pi and loads only @controlroom/pi and
+//! the keep-list:
+//!
+//! ```toml
+//! [agents.pi]
+//! command = "controlroom-pi --keep /nix/store/…-provider-extension --keep npm:pi-lens"
+//! ```
+//!
+//! The program must be in a `PATH` directory: sandboxed sessions (nono) can't start it otherwise
+//! (`doctor` checks this).
 
 use std::collections::BTreeMap;
 
