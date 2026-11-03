@@ -110,3 +110,25 @@ test('schedules panel: recent runs and run now', async ({ page }) => {
   const [call] = await calls(page, 'schedules.run_now');
   expect(call.params).toEqual({ schedule_id: '01JAC000000000000000000001' });
 });
+
+test('a question with several parts is answered in one go', async ({ page }) => {
+  await start(page, { machine: M.devbox, id: S.blog });
+  const card = page.getByRole('main').locator('[data-request="req-12"]');
+  await expect(card.getByText('Which sections should it cover?')).toBeVisible();
+  await card.getByRole('button', { name: 'Operators' }).click();
+  await card.getByRole('button', { name: 'Setup' }).click();
+  await card.getByRole('button', { name: 'Benchmarks' }).click();
+  await card.getByRole('button', { name: 'Answer' }).click();
+  const [call] = await calls(page, 'request.respond');
+  expect(call.params).toMatchObject({
+    id: S.blog,
+    request_id: 'req-12',
+    response: {
+      kind: 'answers',
+      answers: [
+        { question_id: 'q1', selected: ['Operators'], text: null },
+        { question_id: 'q2', selected: ['Setup', 'Benchmarks'], text: null },
+      ],
+    },
+  });
+});

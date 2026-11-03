@@ -10,7 +10,7 @@
   import { displayName } from '../model/filters';
   import { textContent } from '../model/misc';
   import { sessionKey } from '../model/projects';
-  import type { MachineSession, QuestionAnswer, Request, Response } from '../protocol';
+  import type { MachineSession, Question, QuestionAnswer, Request, Response } from '../protocol';
   import Icon from '../ui/Icon.svelte';
   import Markdown from '../ui/Markdown.svelte';
   import RequestBody from './RequestBody.svelte';
@@ -25,13 +25,16 @@
   const live = $derived(app.client.online && !s.stale);
   const pending = $derived(req.state === 'pending');
   const deny = $derived(req.options.find((o) => o.style === 'deny'));
-  const q = $derived(req.questions[0] ?? null);
+  const questions = $derived(req.questions);
+  /** One single-choice question: picking an option answers at once. */
+  const quick = $derived(questions.length === 1 && !questions[0].multi);
 
   /** The open text box under the options: steer after rejecting, or the reason of a denial. */
   let steering = $state<'steer' | 'reason' | null>(null);
   let steer = $state('');
-  let free = $state('');
-  let selected = $state<string[]>([]);
+  /** Per question: the typed answer and the selected option labels. */
+  let free = $state<Record<string, string>>({});
+  let selected = $state<Record<string, string[]>>({});
   let busy = $state(false);
 
   /** The answering device's current label, falling back to the label at the time. */
@@ -59,21 +62,26 @@
   }
   const choose = (option_id: string) => respond({ kind: 'choice', option_id });
 
+  /** The answers given so far, one per question that has one. */
+  const answers = $derived(
+    questions
+      .map((q): QuestionAnswer => ({ question_id: q.id, selected: selected[q.id] ?? [], text: free[q.id]?.trim() || null }))
+      .filter((a) => a.selected.length || a.text),
+  );
   function answer() {
-    if (!q) return;
-    const a: QuestionAnswer = { question_id: q.id, selected, text: free.trim() || null };
-    if (!selected.length && !a.text) return;
-    void respond({ kind: 'answers', answers: [a] }).then((ok) => {
+    if (!answers.length) return;
+    void respond({ kind: 'answers', answers }).then((ok) => {
       if (ok) {
-        free = '';
-        selected = [];
+        free = {};
+        selected = {};
       }
     });
   }
-  function pickOption(label: string) {
-    if (!q) return;
-    if (q.multi) selected = selected.includes(label) ? selected.filter((x) => x !== label) : [...selected, label];
-    else void respond({ kind: 'answers', answers: [{ question_id: q.id, selected: [label], text: null }] });
+  function pickOption(q: Question, label: string) {
+    if (quick) return void respond({ kind: 'answers', answers: [{ question_id: q.id, selected: [label], text: null }] });
+    const now = selected[q.id] ?? [];
+    if (q.multi) selected[q.id] = now.includes(label) ? now.filter((x) => x !== label) : [...now, label];
+    else selected[q.id] = now.includes(label) ? [] : [label];
   }
   async function sendSteer() {
     if (!deny || !steer.trim()) return;
@@ -121,20 +129,29 @@
   {#if req.body}<RequestBody body={req.body} {compact} />{/if}
 
   {#if pending}
-    {#if q}
-      {#if !compact && q.text !== req.title}<div class="detail"><Markdown text={q.text} /></div>{/if}
-      <div class="acts">
+    {#if questions.length}
+      {#each questions as q (q.id)}
+        {#if !compact && (q.text !== req.title || questions.length > 1)}<div class="detail"><Markdown text={q.text} /></div>{/if}
+        {#if !compact || quick}
+          <div class="acts">
+            {#each q.options as o (o.label)}
+              {@const on = (selected[q.id] ?? []).includes(o.label)}
+              <button class="btn" class:sm={compact} class:on title={o.description ?? undefined} disabled={!live || busy} onclick={() => pickOption(q, o.label)}>{q.multi ? (on ? '☑ ' : '☐ ') : ''}{o.label}</button>
+            {/each}
+          </div>
+        {/if}
+        {#if q.free_text && !compact}
+          <input placeholder={q.options.length ? 'Or type an answer…' : 'Type an answer…'} aria-label="Answer" disabled={!live} bind:value={free[q.id]} onkeydown={freeKey} />
+        {/if}
+      {/each}
+      <div class="acts end">
         {#if !req.blocking}<button class="btn ghost" class:sm={compact} title="Answers “declined”; the agent decides on its own" disabled={!live || busy} onclick={() => respond({ kind: 'dismiss' })}>Dismiss</button>{/if}
-        {#each q.options as o (o.label)}
-          <button class="btn" class:sm={compact} class:on={selected.includes(o.label)} title={o.description ?? undefined} disabled={!live || busy} onclick={() => pickOption(o.label)}>{q.multi ? (selected.includes(o.label) ? '☑ ' : '☐ ') : ''}{o.label}</button>
-        {/each}
+        {#if compact && !quick}
+          <button class="btn sm" onclick={() => app.open({ machine_id: s.machine_id, id: targetId })}>Answer…</button>
+        {:else if !compact && (!quick || questions.some((q) => q.free_text))}
+          <button class="btn primary" disabled={!live || busy || !answers.length} onclick={answer}><span class="kbd">↵</span> Answer</button>
+        {/if}
       </div>
-      {#if q.free_text && !compact}
-        <input placeholder={q.options.length ? 'Or type an answer…' : 'Type an answer…'} aria-label="Answer" disabled={!live} bind:value={free} onkeydown={freeKey} />
-      {/if}
-      {#if !compact && (q.multi || q.free_text)}
-        <div class="acts end"><button class="btn primary" disabled={!live || busy || (!free.trim() && !selected.length)} onclick={answer}><span class="kbd">↵</span> Answer</button></div>
-      {/if}
     {:else}
       <div class="acts">
         {#each req.options as o (o.id)}

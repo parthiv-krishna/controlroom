@@ -975,6 +975,26 @@
         ],
         "multi": false,
         "free_text": true
+       },
+       {
+        "id": "q2",
+        "text": "Which sections should it cover?",
+        "options": [
+         {
+          "label": "Setup",
+          "description": null
+         },
+         {
+          "label": "Internals",
+          "description": null
+         },
+         {
+          "label": "Benchmarks",
+          "description": null
+         }
+        ],
+        "multi": true,
+        "free_text": false
        }
       ],
       "answer": null,

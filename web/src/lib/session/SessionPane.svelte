@@ -18,6 +18,8 @@
   const detail = $derived(app.detail(s));
   const key = $derived(keyOf(s));
   const hasSchedules = $derived(app.client.feed.scheduleList.some((x) => x.machine_id === s.machine_id && x.session_id === s.id));
+  // Auto-continue is on by default: the panel shows once there are todos, or while it is paused.
+  const PAUSED = new Set(['paused', 'stalled', 'budget']);
   const showSchedules = $derived(app.view.panels['schedules:' + key] ?? hasSchedules);
 </script>
 
@@ -26,7 +28,7 @@
   <Banners {s} m={app.client.feed.machines.get(s.machine_id)} />
   {#if detail?.jobs.length}<JobsStrip {s} jobs={detail.jobs} />{/if}
   {#key key}<Timeline {s} />{/key}
-  {#if detail && (detail.todos.length || detail.auto_continue.status !== 'off')}<TodoPanel {s} {detail} />{/if}
+  {#if detail && (detail.todos.length || PAUSED.has(detail.auto_continue.status))}<TodoPanel {s} {detail} />{/if}
   {#if showSchedules}<SchedulesPanel {s} />{/if}
   {#if detail?.queue.length || s.queue.paused}<QueuePanel {s} items={detail?.queue ?? []} />{/if}
   <Composer {s} />
