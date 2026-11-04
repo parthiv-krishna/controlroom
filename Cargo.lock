@@ -674,6 +674,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "controlroom-e2e"
+version = "0.0.11"
+dependencies = [
+ "controlroom-client-core",
+ "controlroom-controller",
+ "controlroom-protocol",
+ "rustix",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "controlroom-fake-agent"
 version = "0.0.11"
 dependencies = [
