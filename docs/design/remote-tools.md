@@ -1,7 +1,9 @@
 # Design: pi on the server, tools on the hosts
 
-Status: proposal (W9s spike, branch `spike/remote-tools`). It rewrites the model of `docs/architecture.html`;
-the proposed edits to that file and to `docs/protocol.md` are on this branch as a reviewable diff.
+Status: accepted (W9s spike, branch `spike/remote-tools`); this note is the rationale. The model is in
+`docs/architecture.html`, and the contract in `docs/protocol.md` (source of truth: `crates/protocol`), which
+supersedes the protocol sketches of §3 where they differ (R0 kept the shapes but, e.g., routes host
+notifications generically through `hostops.notify` instead of `request.raise`; see `docs/protocol.md` §11).
 Evidence: `spike/remote-tools/` (throwaway code) and §11 (measurements).
 
 ## 0. Decisions in one screen

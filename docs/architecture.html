@@ -68,13 +68,13 @@ th{background:var(--panel)}
 <main>
 <h1>controlroom: architecture and build plan</h1>
 <p class="sub">This document is the build spec: a supervisor agent should be able to build controlroom from it alone. A <b>prototype</b> at <code>../controlroom-old</code> validated many of these ideas; proven parts of it are ported selectively (see "Port map from the prototype"). Status: <b>draft for review</b>.</p>
-<div class="call warn"><b>Model change (proposal, W9s):</b> <b>pi runs only on the controlroom server</b>, in a new <b>agent daemon</b> (<code>controlroom-agentd</code>); execution hosts run only <code>controlroomd</code> in a <b>host role</b> (workspaces, named PTY shells, a tool executor with a journal, jobs, files) plus nono. A session has one or more <b>workspaces</b> (<code>machine:path</code>), the agent addresses files as <code>machine:path</code>, and projects are groups of tasks. Rationale, protocols, spike evidence and the phased plan: <code>docs/design/remote-tools.md</code>. Sections marked <span class="tag ext">REVISED</span> below follow that model.</div>
+<div class="call ok"><b>Model (remote tools, accepted):</b> <b>pi runs only on the controlroom server</b>, in the <b>agent daemon</b> (<code>controlroom-agentd</code>); execution hosts run only <code>controlroomd</code> in the <b>host role</b> (workspaces, named PTY shells, a tool executor with a journal, jobs, files) plus nono. A session has one or more <b>workspaces</b> (<code>machine:path</code>), the agent addresses files as <code>machine:path</code>, and projects are groups of tasks. The wire contract is <code>docs/protocol.md</code> (source of truth: <code>crates/protocol</code>); rationale, spike evidence and the phased plan are in <code>docs/design/remote-tools.md</code>.</div>
 
 <h2 id="summary">0. Summary</h2>
 <p>controlroom is a self-hosted web app for supervising pi coding-agent sessions that run on many Linux machines, reached over SSH. Its architecture:</p>
 <ul>
 <li><b>One deployment model:</b> a persistent web server (PWA, OIDC). The desktop app is gone.</li>
-<li><span class="tag ext">REVISED</span> <b>pi on the server, tools on the hosts:</b> the agent daemon on the server runs every pi session; hosts only execute tools in the session's workspaces, reached through the controller over SSH. A link blip pauses a tool call; it never reruns or loses one.</li>
+<li><b>pi on the server, tools on the hosts:</b> the agent daemon on the server runs every pi session; hosts only execute tools in the session's workspaces, reached through the controller over SSH. A link blip pauses a tool call; it never reruns or loses one.</li>
 <li><b>Agent-neutral core:</b> a <b>driver</b> (native pi RPC) folds raw stdio into one <b>timeline model</b>. The protocol and UI never see agent-specific payloads.</li>
 <li><b>The agent daemon as the agent runtime:</b> jobs, subagents as child sessions, a mailbox, injection, a shared todo list with auto-continue, and non-blocking questions. Agents reach these through the controlroom pi extension.</li>
 <li><b>Sandboxed by default</b> with <b>nono</b>, twice: pi on the server sees only the model hosts and its agent socket (no project files); on each host, shells, jobs and file tools are confined to the workspace, with credentials injected outside the sandbox, an egress allowlist, and approvals routed to controlroom.</li>
@@ -88,7 +88,7 @@ th{background:var(--panel)}
 <li>Reliable attention signals:
 <ul><li>needs an approval (blocking) or has an open question (non-blocking, a lighter tier);</li><li>failed or interrupted;</li><li>finished and unread.</li></ul>
 Connectivity is shown separately from agent state, and silence is never treated as failure.</li>
-<li>Remote work continues independently of clients: the laptop sleeps, the browser closes, the daemon restarts or upgrades, and the agent keeps going.</li>
+<li>Remote work continues independently of clients: the laptop sleeps, the browser closes, the web server or a host daemon restarts or upgrades, a host's link drops, and the agent keeps going (a tool call on an unreachable host waits; it never reruns).</li>
 <li>Deliberate control: start, queue, send now, cancel and close are explicit. Disconnecting never cancels. Reconnecting never duplicates prompts or decisions.</li>
 <li>Agents collaborate under user control: subagents, background jobs, shared todos, and messaging across machines within an explicit sandbox and contact policy.</li>
 <li>User ownership: agents use the machine's own environment and the user's chosen harness. No hosted execution.</li>
@@ -99,22 +99,22 @@ Connectivity is shown separately from agent state, and silence is never treated 
 <tr><th>Area</th><th>Decision</th></tr>
 <tr><td>Deployment</td><td><b>One persistent web server</b> (OIDC, with dev-token for development), reached from any browser or as an installable PWA. Separate contexts (e.g. personal and work machines) run separate, unsynced instances. No desktop app. The controller keeps a thin shell boundary, so a native shell stays possible later.</td></tr>
 <tr><td>Languages</td><td>Rust (daemon, controller, web server). TypeScript + Svelte 5 + Vite for the UI, embedded in the web binary. Protocol types are defined in Rust; TS is generated (ts-rs) and drift-checked in CI.</td></tr>
-<tr><td>Transport</td><td>Browser ↔ server: one WebSocket per tab carrying JSON-RPC. <span class="tag ext">REVISED</span> Controller ↔ agent daemon: a local unix socket. Controller ↔ host daemon: in-process <code>russh</code> with a per-owner controlroom key and an exec channel running <code>controlroomd connect</code>, bridged to a unix socket. Further SSH channels are reserved for SFTP and PTYs. The controller routes the agent daemon's host calls.</td></tr>
-<tr><td>Topology <span class="tag ext">REVISED</span></td><td><b>pi runs only on the server</b> (agent daemon, own user and unit, survives web restarts and upgrades). <b>Execution hosts run only tools</b>: <code>controlroomd</code> host role plus nono; no pi, Node, bundle, extensions or model credentials on hosts.</td></tr>
-<tr><td>Workspaces <span class="tag ext">REVISED</span></td><td>A session has one or more workspaces, each <code>machine:path</code>, on any machines. Each workspace has named, stateful shells. Two sessions may use the same <code>machine:path</code> at once, each with its own shells (the UI warns). The agent addresses files as <code>machine:path</code>.</td></tr>
-<tr><td>Projects <span class="tag ext">REVISED</span></td><td><b>Projects are groups of tasks.</b> A session belongs to the projects of its linked tasks; unlinked sessions show as <b>Unassigned</b>. There are no location prefixes.</td></tr>
+<tr><td>Transport</td><td>Browser ↔ server: one WebSocket per tab carrying JSON-RPC. Controller ↔ agent daemon: a local unix socket. Controller ↔ host daemon: in-process <code>russh</code> with a per-owner controlroom key and an exec channel running <code>controlroomd connect</code>, bridged to a unix socket. Further SSH channels are reserved for SFTP and PTYs. The controller routes the agent daemon's host calls.</td></tr>
+<tr><td>Topology</td><td><b>pi runs only on the server</b> (agent daemon, own user and unit, survives web restarts and upgrades). <b>Execution hosts run only tools</b>: <code>controlroomd</code> host role plus nono; no pi, Node, bundle, extensions or model credentials on hosts.</td></tr>
+<tr><td>Workspaces</td><td>A session has one or more workspaces, each <code>machine:path</code>, on any machines. Each workspace has named, stateful shells. Two sessions may use the same <code>machine:path</code> at once, each with its own shells (the UI warns). The agent addresses files as <code>machine:path</code>.</td></tr>
+<tr><td>Projects</td><td><b>Projects are groups of tasks.</b> A session belongs to the projects of its linked tasks; unlinked sessions show as <b>Unassigned</b>. There are no location prefixes.</td></tr>
 <tr><td>Agents</td><td><b>pi only, through the native PiDriver</b> (<code>pi --mode rpc</code>) plus <code>@controlroom/pi</code>. The deep integration (our own bash, terminals, privileged commands, runtime tools) relies on owning the harness, so <b>ACP is out of scope</b>. The <code>Driver</code> trait stays (for <code>FakeDriver</code> tests and to keep the option open). There's no AcpDriver, no <code>controlroomd mcp</code> and no pi-acp.</td></tr>
-<tr><td>Source of truth</td><td><span class="tag ext">REVISED</span> The agent daemon owns sessions (global, not per machine). Each session's raw stdio transcript is authoritative, and the timeline and state are derived from it. Host daemons own workspaces, shells, jobs and the tool-call journal. The controller owns client data: machines, keys, projects, tasks, grants and push subscriptions.</td></tr>
+<tr><td>Source of truth</td><td>The agent daemon owns sessions (global, not per machine). Each session's raw stdio transcript is authoritative, and the timeline and state are derived from it. Host daemons own workspaces, shells, jobs and the tool-call journal. The controller owns client data: machines, keys, projects, tasks, grants and push subscriptions.</td></tr>
 <tr><td>Sandboxing</td><td><b>nono 0.80.0 (pinned)</b>, wrapped around every pi process on the server and around every shell, job and file worker of a workspace on the hosts. The daemons generate absolute-path profiles. Registry packs are <b>never</b> used, because their wiring mutates the user's agent config.</td></tr>
 <tr><td>Agent runtime</td><td>The agent daemon is the runtime. The <code>@controlroom/pi</code> extension is a thin front end. Third-party pi-subagents, pi-intercom, pi-background-tasks and pi-goal are <b>not</b> loaded in controlroom-launched pi.</td></tr>
 <tr><td>Contact policy</td><td>Sessions on the same task can see and message each other on any machine. A parent and its child always can. Anything else needs user approval. Messaging fails closed and always reports the outcome to the agent, including <code>connection_lost</code>.</td></tr>
 <tr><td>Upgrades</td><td>Host daemons upgrade automatically when idle (the agent daemon upgrades with the server's deploy) (a per-machine opt-out exists) and never downgrade. Every daemon change bumps the version. Each install is verified by running it, with rollback.</td></tr>
-<tr><td>Compatibility</td><td>Starts at <b>protocol 1.0</b>, with no compatibility with the prototype. Client-store schema changes are edited in place until the first release, with no migration code (the user fixes dev databases by hand). The daemon database uses real versioned migrations from day one, because daemons upgrade themselves in the field.</td></tr>
+<tr><td>Compatibility</td><td>Starts at <b>protocol 1.0</b>, with no compatibility with the prototype (the remote-tools model redefines the APIs in place as 1.0, since nothing is deployed). Client-store schema changes are edited in place until the first release, with no migration code (the user fixes dev databases by hand). The agent daemon's and the host daemons' databases use real versioned migrations from day one, because host daemons upgrade themselves in the field.</td></tr>
 <tr><td>Conventions</td><td>American spelling. No real hostnames, usernames, domains or deployment contexts in code, docs, tests, fixtures or commit messages (use example.com, alice, devbox). <code>README.md</code> is human-only.</td></tr>
 </table>
 
 <h2 id="arch">3. Architecture</h2>
-<p><span class="tag ext">REVISED</span> Proposed topology (the previous diagram follows for reference until the model change is accepted):</p>
+
 <pre><code>Browser ──WS──► controlroom-web (axum: OIDC, UI API, push, static)                 server (always on)
                   └─ controller: store · machine manager · hub · broker · scheduler · host router
                        │ unix socket (agent daemon API)        │ russh, one connection per host
@@ -127,17 +127,14 @@ Connectivity is shown separately from agent state, and silence is never treated 
                                           └─ @controlroom/pi ⇄ agent socket (read/write/edit/bash/grep/find/ls
                                                                with machine:path, routed to the hosts)
                                                        exec: controlroomd pty attach · sftp</code></pre>
-<pre><code>Browser / PWA ──WS JSON-RPC──► controlroom-web  (axum shell: OIDC, hardening, push, static UI)
-                                    │  controller: client store · machine manager · hub/event bus
-                                    │              UI API router · attention · broker + policy
-                                    └─ russh (one connection per machine) ─┬─ exec: controlroomd connect  (daemon JSON-RPC)
-                                                                           ├─ sftp  (future: files)
-                                                                           └─ exec: controlroomd pty attach (future)
-controlroomd serve  (per user, per machine; runtime library + RPC server)
-   ├─ runtime: sessions · queue · requests · reconcile · injection · jobs · todos · children · outbox
-   ├─ drivers: pi (native RPC)         →  fold(raw) → timeline + agent view;  encode(intent) → lines
-   └─ supervisors (one per agent/job; detached; transcript.jsonl) ──► nono run -s --profile … ──► pi --mode rpc
-                                                                                        └─ @controlroom/pi ⇄ daemon socket</code></pre>
+<table>
+<tr><th>Piece</th><th>Lives on</th><th>Role</th></tr>
+<tr><td><code>controlroom-web</code> + controller</td><td>server, hardened <code>DynamicUser</code></td><td>Auth, UI API, client store, keys, machine manager, hub, scheduler, and the <b>host router</b> (the agent daemon's <code>hostops</code> bridge). Restarts on deploys; tool calls only pause meanwhile.</td></tr>
+<tr><td><code>controlroom-agentd</code></td><td>server, own user and unit (<code>KillMode=process</code>)</td><td>The runtime (sessions, queue, reconcile, injection, todos, questions, mailbox, subagents, job wakes, transcripts), drivers and <code>agent</code> supervisors. Owns model credentials. Outlives web restarts and its own upgrades.</td></tr>
+<tr><td>pi + <code>@controlroom/pi</code></td><td>server, one nono sandbox per session</td><td>Model hosts and the agent socket only: no project files, no SSH, no host network.</td></tr>
+<tr><td><code>controlroomd</code> (host role)</td><td>each execution host, per user, bootstrapped over SSH</td><td>Workspaces with a nono profile each, PTY shells, the tool executor and its journal, jobs and their event log, the fs worker, approvals, doctor. No pi, Node, bundle or model credentials.</td></tr>
+</table>
+<p>The controller routes host traffic because it already owns sealed keys, host-key confirmation, bootstrap with verify-run and rollback, auto-upgrade and connectivity state: one key custodian and one connection per host. The agent daemon never calls the controller; it publishes the host requests it needs and the controller carries them (protocol §5).</p>
 <h3>Invariants (carried over from the prototype; they must hold)</h3>
 <ol>
 <li><b>Log before write:</b> every line sent to an agent goes into the transcript (and is fsynced) before the agent sees it.</li>
@@ -145,28 +142,32 @@ controlroomd serve  (per user, per machine; runtime library + RPC server)
 <li><b>Exactly once:</b> every mutating command carries an <code>op_id</code>, deduplicated in the same transaction as its effect. A failed commit discards its outbound writes. Prompts are never resent automatically, and decisions are never reused.</li>
 <li><b>One reconcile loop</b> per session decides what to write next. While the state is in doubt (just after a restart), <b>no</b> writes happen at all, answers included, until a supervisor barrier confirms that earlier writes have been logged.</li>
 <li><b>Disconnecting does nothing.</b> No action is ever triggered by a client going away.</li>
-<li><b>Detached supervisors:</b> agents survive client loss and daemon restarts or upgrades. Supervisors run from immutable versioned paths.</li>
-<li><span class="tag ext">REVISED</span> <b>Tool calls on hosts are keyed by the tool call id:</b> reads are idempotent, writes are journaled, atomic and compare-and-swap, and <code>bash</code> is at-most-once (journaled before it runs; a resend attaches to the running command or returns its result, never reruns). A link loss pauses a call; it never duplicates or silently drops one.</li>
+<li><b>Detached supervisors:</b> agents survive client loss, web restarts and agent-daemon restarts or upgrades; shells and jobs survive host-daemon restarts and upgrades. Supervisors run from immutable versioned paths.</li>
+<li><b>Tool calls on hosts are keyed by the tool call id:</b> reads are idempotent, writes are journaled, atomic and compare-and-swap, and <code>bash</code> is at-most-once (journaled before it runs; a resend attaches to the running command or returns its result, never reruns). A link loss pauses a call; it never duplicates or silently drops one.</li>
 </ol>
 
 <h2 id="layout">4. Repository layout (new repo)</h2>
-<pre><code>Cargo.toml  flake.nix  AGENTS.md  docs/architecture.html  docs/adapters.md
+<pre><code>Cargo.toml  flake.nix  AGENTS.md  docs/architecture.html  docs/protocol.md  docs/design/
 crates/
-  protocol/      wire types (daemon API, UI API, timeline), tolerant decoding, TS export
+  protocol/      wire types (agent daemon, host, agent and UI APIs, timeline), tolerant
+                 decoding, TS export
   transcript/    record format, writer (flock, fsync), reader/tail, seq→offset index   [port]
   supervisor/    detached per-process pipe: spawn spec (agent | job | pty), socket proto  [port+ext]
   drivers/       trait Driver; pi/ (rpc fold, commands); FakeDriver for tests
-  runtime/       session registry, queue, requests, reconcile, intents, timeline store,
-                 injection, jobs, todos/auto-continue, children, outbox; DB migrations.
+  runtime/       the agent daemon's core: session registry, queue, requests, reconcile,
+                 intents, timeline store, injection, job wakes, todos/auto-continue, children,
+                 mailbox, host-call port (pending calls, grace, late results); DB migrations.
                  Library only: no sockets, IO via traits; FakeDriver unit tests
-  sandbox/       nono profile generation + validation, per-session agent-dir builder,
-                 credential helpers, approval-webhook server types
-  daemon/        bin controlroomd: serve, supervise, connect, ctl, doctor, credential
-                 (REVISED: splits into agentd/ = bin controlroom-agentd, server-side runtime + pi,
-                  and daemon/ = bin controlroomd host role: workspaces, shells, tools, jobs)
-  client-core/   russh, keys/seal/master key, bootstrap (verify-run + rollback), daemon client  [port]
+  sandbox/       nono profile generation + validation (per session on the server, per
+                 workspace on hosts), agent-dir builder, credential helpers, webhook types
+  agentd/        bin controlroom-agentd: serve (agent daemon API, agent sockets), supervise,
+                 ctl, doctor, credential, login
+  daemon/        bin controlroomd, host role: serve (host API: workspaces, shells, tool
+                 executor + journal, jobs + event log, approvals), connect, supervise,
+                 workspace-exec (fs worker), pty attach, doctor
+  client-core/   russh, keys/seal/master key, bootstrap (verify-run + rollback), host client  [port]
   controller/    client store, machine manager, hub (+ event bus), rpc/* (split), attention,
-                 broker + policy                                                          [port+fresh]
+                 host router (hostops bridge), agent daemon client, policy             [port+fresh]
   web/           axum shell: OIDC/dev-token, hardening, ws, push, static                   [port]
   fake-agent/    scriptable pi-RPC agent; gate steps for deterministic tests
   fixture-tool/  record + sanitize real pi-RPC transcripts
@@ -185,59 +186,74 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 <li>a response whose body doesn't parse fails its own request id, never the connection;</li>
 <li>every call has a default timeout.</li>
 </ul></li>
-<li><b>Versioning:</b> major.minor, where a major mismatch means <code>incompatible</code> and minor versions only add. Optional features are negotiated through <code>hello.capabilities</code> (e.g. <code>"jobs"</code>, <code>"mailbox"</code>).</li>
+<li><b>Versioning:</b> major.minor, where a major mismatch means <code>incompatible</code> and minor versions only add. Optional features are negotiated through <code>hello.capabilities</code> (e.g. <code>"jobs"</code>, <code>"shells"</code>, <code>"remote_tools"</code>).</li>
 <li><b>Agent-neutral:</b> no pi types on the wire. Raw frames go out only on an explicit debug subscription (<code>raw: true</code>).</li>
 <li><b>Ids:</b> ULID strings. <code>RemotePath</code> is a POSIX string newtype, never <code>std::path</code>. Timestamps are unix ms.</li>
 </ul>
 <h3>5.2 Session model</h3>
+<p>Sessions are <b>global</b>: the agent daemon owns them and their ids, and nothing session-scoped carries a machine. A session reaches files only through its workspaces.</p>
 <table>
 <tr><th>Field</th><th>Notes</th></tr>
-<tr><td><code>id, name, cwd: RemotePath, agent, created_at, updated_at, closed_at</code></td><td><span class="tag ext">REVISED</span> <code>cwd</code> is replaced by <code>workspaces: [{id, machine_id, path, root, primary, availability}]</code> and <code>shells: [{name, workspace_id, cwd, state}]</code>. Session ids are global (no <code>machine_id</code>)</td></tr>
+<tr><td><code>id, name, title, created_at, updated_at, closed_at</code></td><td>Clients show <code>name</code>, else <code>title</code>, else the primary workspace</td></tr>
+<tr><td><code>workspaces: [{id, machine_id, path, root, primary, added_at, availability}]</code></td><td>One or more <code>machine:path</code>s on any machines; the first is primary (relative paths and new shells default to it). <code>root</code> is resolved by the host. <code>availability</code> is the machine's connectivity and since when: a session never goes stale, a workspace becomes unavailable</td></tr>
+<tr><td><code>shells: [{name, workspace_id, cwd, state: idle|running{call_id}|waiting_input{call_id}|gone, reset_pending, foreground}]</code></td><td>Named PTYs on the workspaces' hosts; one terminal tab each. <code>reset_pending</code>: reopened, variables lost. <code>foreground</code>: the PTY's foreground process (terminal key pass-through)</td></tr>
 <tr><td><code>agent_sessions: [{driver: pi, native_id, started_at, ended_at, started_by: new|resume|fresh}]</code></td><td>Replaces the prototype's <code>acp_session_id</code>. <code>driver</code> is an open enum (pi today)</td></tr>
-<tr><td><code>parent_id?, spawned_by?</code></td><td>Subagent tree. <span class="tag ext">REVISED</span> <code>spawned_by</code> goes away: every child is a local session of the agent daemon</td></tr>
+<tr><td><code>parent_id?</code></td><td>Subagent tree; every child is a session of the agent daemon</td></tr>
 <tr><td><code>state</code>: starting · idle · working · awaiting_permission · awaiting_input · failed · dormant · interrupted · closed</td><td><b>working</b> means a run is active, whoever started it (user, queue, steer, job completion, message, auto-continue)</td></tr>
 <tr><td><code>last_outcome</code>: completed · cancelled · failed · max_tokens · refusal · unknown (+ error)</td><td>Neutral. Replaces the prototype's ACP <code>StopReason</code></td></tr>
 <tr><td><code>read_seq, last_turn_end_seq, unread</code></td><td>Every way a run can end sets <code>last_turn_end_seq</code> (completed, failed, interrupted, reboot)</td></tr>
-<tr><td><code>preview</code></td><td>One line of at most 200 chars, chosen in this order: pending request, then error, then the running tool, then the last agent text. The daemon <b>strips Markdown</b> (links become their label; no backticks or emphasis). Throttled to at most 1/s</td></tr>
+<tr><td><code>preview</code></td><td>One line of at most 200 chars, chosen in this order: pending request, then error, then the running tool, then the last agent text. The agent daemon <b>strips Markdown</b> (links become their label; no backticks or emphasis). Throttled to at most 1/s</td></tr>
 <tr><td><code>context: {used, size, cost?}</code></td><td>From usage events</td></tr>
 <tr><td><code>queue[], queue_paused, auto_send, send_now_pending</code></td><td>Queued items are shown even while in flight (flag <code>sending</code>), and <code>state</code> is reported as <code>working</code> from the hand-over on. The UI derives nothing.</td></tr>
-<tr><td><code>requests[]</code>: <code>{id, kind: permission|question|dialog|sandbox|contact|spawn, blocking (false for questions, true for approvals), state, title, options|questions, origin_child?}</code></td><td>Non-blocking questions are a separate, lighter attention tier. They show in the rail as a hollow ring, and push only if the user opts in (in-app by default). The user can answer or dismiss them (dismiss answers "declined"). Escalate and withdraw are agent-side.</td></tr>
-<tr><td><code>todo: {done, total, auto_continue: on|off|paused|stalled|budget}</code>, <code>live_work: {jobs, children, asks}</code></td><td>Roll-ups. <code>total</code> excludes skipped items</td></tr>
+<tr><td><code>requests[]</code>: <code>{id, kind: permission|question|dialog|sandbox|contact|spawn|terminal_input|privileged, blocking (false for questions, true for approvals), state, title, options|questions, origin_child?}</code></td><td>Non-blocking questions are a separate, lighter attention tier. They show in the rail as a hollow ring, and push only if the user opts in (in-app by default). The user can answer or dismiss them (dismiss answers "declined"). Escalate and withdraw are agent-side. <code>sandbox</code> requests come from a workspace's sandbox on its host; <code>terminal_input</code> is a command waiting for the user to type in its terminal</td></tr>
+<tr><td><code>todo: {done, total, auto_continue: on|off|paused|stalled|budget}</code>, <code>live_work: {jobs, children, asks, host_calls}</code></td><td>Roll-ups. <code>total</code> excludes skipped items. <code>host_calls</code>: tool calls waiting for an unreachable host</td></tr>
 <tr><td><code>options: [{id, label, kind: select|bool, value, choices}]</code></td><td>Model and thinking level as neutral options</td></tr>
-<tr><td><code>sandbox: {level: strict|relaxed|off, grants[]}</code></td><td></td></tr>
+<tr><td><code>sandbox: {level: strict|relaxed|off, default_level, explicit, looser_than_default, grants[]}</code></td><td>One level for the agent's server sandbox and every workspace's host sandbox</td></tr>
 <tr><td><code>resumable</code></td><td></td></tr>
 </table>
-<h3>5.3 Daemon API (controller ↔ controlroomd)</h3>
-<div class="call warn"><span class="tag ext">REVISED</span> This becomes the <b>agent daemon API</b> (controller ↔ <code>controlroom-agentd</code>, local socket): the same session methods, with <code>machine.subscribe</code> renamed <code>sessions.subscribe</code>, <code>session.create {workspaces[], …}</code> instead of <code>cwd</code>, <code>session.workspace_add|remove</code>, and pull-style host routing (<code>hostops.subscribe</code> → <code>hostops.request</code> notifications, answered by <code>hostops.respond</code>; agentd never calls the controller). The outbox/inbox broker disappears (messaging is local). A new <b>host API</b> (controller ↔ <code>controlroomd</code> host role over <code>controlroomd connect</code>) carries <code>workspace.open|close</code>, <code>shell.open|close|list</code>, <code>tool.run|attach|cancel</code> (idempotent by <code>call_id</code>), <code>journal.ack</code>, <code>job.*</code>, <code>fs.list</code> and approvals. Details: <code>docs/design/remote-tools.md</code> §3 and <code>docs/protocol.md</code> §5b.</div>
+<h3>5.3 Agent daemon API (controller ↔ controlroom-agentd)</h3>
 <ul>
 <li><code>hello</code> (versions, capabilities, daemon id, controller id, role). <b>A daemon serves exactly one controller at a time:</b> a hello from a different controller is rejected while one is connected (a typed conflict error); a hello from the same controller replaces its old connection, so reconnects work. A local debugging client (<code>ctl</code>) connects with a debug role and is not the controller.</li>
-<li><code>machine.subscribe {since_rev}</code>: summaries feed, with a snapshot fallback. A persisted rev log survives restarts.</li>
+<li><code>sessions.subscribe {since_rev}</code>: summaries feed, with a snapshot fallback. A persisted rev log survives restarts.</li>
 <li><code>session.subscribe {id, since_seq, raw?}</code> (the UI asks for raw only on demand, when the raw view or a seq link is opened): <b>timeline ops</b> (<code>upsert</code> / <code>append_text</code> / <code>end</code>, each with a source seq range). Served from the materialized timeline, not by re-folding the whole transcript.</li>
 <li><b>Commands</b> (all carry an <code>op_id</code>):
 <ul>
-<li><b>session lifecycle:</b> <code>session.create {agent, cwd, name?, parent?, sandbox?}</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>reopen</code>, <code>resume</code>, <code>start_fresh</code>, <code>delete</code>;</li>
+<li><b>session lifecycle:</b> <code>session.create {workspaces[{machine_id, path}], name?, parent_id?, sandbox?, prompt?}</code> (every workspace's machine must be connected), <code>session.workspace_add|remove</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>reopen</code>, <code>resume</code>, <code>start_fresh</code>, <code>delete</code>;</li>
 <li><b>session state:</b> <code>update</code> (name, auto_send, auto_continue, budget), <code>mark_read</code>, <code>mark_unread</code>, <code>set_option</code>;</li>
 <li><b>queue:</b> <code>queue.send_now|edit|remove|reorder|resume</code>;</li>
-<li><b>requests:</b> <code>request.respond {request_id, choice|answers, then?}</code>, one method for permissions, questions, dialogs and sandbox approvals;</li>
+<li><b>requests:</b> <code>request.respond {request_id, choice|answers, then?}</code>, one method for permissions, questions, dialogs, host sandbox approvals and waits for terminal input;</li>
 <li><b>todos:</b> <code>todo.add|update|remove|reorder</code>;</li>
-<li><b>jobs:</b> <code>job.list|logs|kill</code>;</li>
-<li><b>misc:</b> <code>agents.list</code>, <code>fs.list</code>, <code>doctor.report</code>, <code>settings.get|set</code>.</li>
+<li><b>jobs:</b> <code>job.list|logs|kill|follow|unfollow</code>;</li>
+<li><b>misc:</b> <code>agents.list</code>, <code>doctor.report</code>, <code>settings.get|set</code>.</li>
 </ul></li>
-<li><b>Outbox (daemon → controller):</b> <code>outbox.subscribe {since}</code>, then <code>outbox.ack {item, outcome}</code>. Deliveries come back as <code>inbox.deliver {op_id, …}</code>. This is a durable, idempotent channel, and the daemon never makes RPC calls to the controller.</li>
-<li><b>Errors:</b> typed kinds (busy, already_resolved, deleted, not_resumable, unknown_session, invalid_state, invalid_params, unsupported, agent_unavailable, sandbox_unavailable, incompatible_version, …) plus <code>Unknown</code>.</li>
+<li><b>Host bridge, pull-style</b> (the agent daemon never calls the controller): the controller calls <code>hostops.subscribe</code> and gets every pending host request, then <code>hostops.request</code> / <code>hostops.withdraw</code> notifications; it sends each request to its host when connected (again on the next connection if the response was lost: every host method is idempotent) and answers with <code>hostops.respond {id, result|error}</code>. It forwards every host notification with <code>hostops.notify</code> and reports its machines (names, availability, host epochs, grace) with <code>hostops.machines</code>.</li>
+<li>The mailbox is local to the agent daemon: no outbox or inbox.</li>
+<li><b>Errors:</b> typed kinds (busy, already_resolved, deleted, not_resumable, unknown_session, invalid_state, invalid_params, unsupported, agent_unavailable, sandbox_unavailable, incompatible_version, machine_unavailable, conflict, lost, shell_gone, connection_lost, …) plus <code>Unknown</code>.</li>
+</ul>
+<h3>5.3b Host API (controller ↔ controlroomd host role)</h3>
+<ul>
+<li><code>hello</code> (same single-controller rule) → host version, daemon id, <b>epoch</b> (new on every daemon start), capabilities (<code>shells</code>, <code>pty</code>, <code>jobs</code>, <code>sandbox_approvals</code>).</li>
+<li><code>workspace.open {workspace_id, session_id, path, sandbox}</code> → root, home, instruction files (AGENTS.override.md / AGENTS.md / CLAUDE.md from <code>/</code> down to the root) and skills; <code>workspace.close</code>.</li>
+<li><code>shell.open {workspace_id, name, cwd?}</code> (idempotent by name), <code>shell.close</code>, <code>shell.list</code>; notification <code>shell.changed</code>.</li>
+<li><code>tool.run {call_id, workspace_id, op}</code> with <code>op</code> one of <code>read · read_bytes · stat · write (CAS by expect_sha256) · ls · find · grep · bash {shell, command, timeout_s} · job_run · job_follow · job_unfollow · job_kill · job_status</code>; <code>tool.attach</code>, <code>tool.cancel</code>, <code>journal.ack</code>; notifications <code>tool.output</code>, <code>tool.waiting_input</code>.</li>
+<li><code>jobs.subscribe {since}</code> + <code>jobs.event</code> + <code>jobs.ack {rev}</code>: the persisted job event log (§8 Job).</li>
+<li><code>approvals.subscribe</code> + <code>approval.request</code> / <code>approval.closed</code> + <code>approval.respond</code>: sandbox approvals of the host's workspaces.</li>
+<li><code>fs.list</code> (the user's own access, for the new-session dialog and file browser) and <code>doctor.report</code>.</li>
 </ul>
 <h3>5.4 UI API (browser ↔ controller)</h3>
 <ul>
 <li><code>hello</code> (server version, protocol, <code>user</code>, push capability).</li>
-<li><code>state.subscribe</code> (epoch+rev cursor): one aggregated feed of machines (incl. connectivity and doctor), sessions (with machine_id; stale while unreachable), projects, tasks, grants and contact requests. <span class="tag ext">REVISED</span> Sessions are global, each with its workspaces and their availability (a session never goes stale; a workspace does), plus <code>overlaps[]</code> (workspaces shared by several sessions, for the warning).</li>
-<li><b>Pass-through</b> of every session/todo/job/request command with <code>machine_id</code> added. <span class="tag ext">REVISED</span> Session commands pass through to the agent daemon without <code>machine_id</code>.</li>
+<li><code>state.subscribe</code> (epoch+rev cursor): one aggregated feed of machines (incl. connectivity and doctor), sessions (global, each with its workspaces, their availability and its shells, plus its project membership: the projects of its linked tasks, else "Unassigned"), <code>overlaps[]</code> (directories used by several open sessions, for the warning), projects, tasks, grants, schedules, devices and contact requests.</li>
+<li><b>Pass-through</b> of every session/queue/todo/job/request command to the agent daemon, unchanged (no <code>machine_id</code>). <code>fs.list</code> names a machine; <code>doctor.report</code> a machine or the server.</li>
 <li><code>session.subscribe</code>: ref-counted, shared by tabs, resumed without duplicates.</li>
-<li><code>machines.*</code> (add → add_confirm, confirm_host_key, remove, reconnect, upgrade, set_settings incl. auto_upgrade), <code>keys.*</code> (incl. rotate), <code>projects.*</code> (<span class="tag ext">REVISED</span> name and color only: projects are task groups), <code>tasks.*</code> (project_ids, links, checklist), <code>grants.*</code>, <code>notifications.*</code> (web push only), <code>client.focus</code>.</li>
-<li>Connectivity per machine: connected · connecting · unreachable · incompatible · action_required{host_key_changed | auth_failed | host_key_unconfirmed} · plus <code>update_available</code>.</li>
+<li><code>machines.*</code> (add → add_confirm, confirm_host_key, remove, reconnect, upgrade, set_settings incl. auto_upgrade), <code>keys.*</code> (incl. rotate), <code>projects.*</code> (name and color: projects are task groups), <code>tasks.*</code> (project_ids, session links, checklist), <code>grants.*</code>, <code>notifications.*</code> (web push only), <code>schedules.*</code>, <code>sandbox.*</code>, <code>client.focus</code>.</li>
+<li>Connectivity per machine: connected · connecting · unreachable · incompatible · action_required{host_key_changed | auth_failed | host_key_unconfirmed | controller_conflict} · plus <code>update_available</code>.</li>
 </ul>
+<h3>5.5 Agent API (extension ↔ agent daemon)</h3>
+<p>A per-session unix socket and token (spec §9). Besides questions, todos, notices and jobs it carries the <b>remote tools</b> (capability <code>remote_tools</code>): <code>session.info</code> (workspaces with their instruction files and skills, shells; also pushed on change), <code>host.call {call_id, machine, op}</code> (one host operation of a tool; the agent daemon checks <code>machine</code> is one of the session's workspaces), <code>host.cancel</code>, <code>shell.open|list|close</code>, and the notifications <code>host.output</code> and <code>host.waiting_input</code>. Details: <code>docs/protocol.md</code> §8.</p>
 
-<h2 id="daemon">6. Daemon: supervisor, runtime, drivers</h2>
-<div class="call warn"><span class="tag ext">REVISED</span> The runtime, drivers and <code>agent</code>-kind supervisors move to the <b>agent daemon</b> on the server (<code>agent.sqlite</code>, the same migrations discipline). The host daemon keeps <code>pty</code> and <code>job</code> supervisors, the tool executor, the journal (<code>host.sqlite</code>) and doctor. pi is launched as <code>pi --mode rpc --no-builtin-tools --no-context-files --no-skills</code> in an empty per-session scratch cwd; the extension provides the tools, the workspace context and the skills.</div>
+<h2 id="daemon">6. Daemons: supervisor, runtime, drivers, tool executor</h2>
+<p>The runtime, the drivers and the <code>agent</code>-kind supervisors run in the <b>agent daemon</b> on the server (<code>agent.sqlite</code>). The <b>host daemon</b> keeps the <code>pty</code> and <code>job</code> supervisors, the tool executor and its journal, the job event log (<code>host.sqlite</code>), the fs worker and doctor. Both stores use versioned migrations.</p>
 <h3>6.1 Supervisor (port from the prototype, extend)</h3>
 <ul>
 <li><b>Keep:</b> flock single writer, log-then-fsync-then-write, partial-tail recovery, one writer role, exit drain, setsid re-exec, SIGHUP ignored, <code>meta</code> record, <code>sync</code>.</li>
@@ -252,6 +268,7 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 <li>later: PTY byte records, raw writes and resize.</li>
 </ul></li>
 <li><b>Launch:</b> under nono (see "Sandboxing"), keeping <code>$SHELL -lc</code> for PATH. Login-shell noise on stdout is non-JSON and the drivers ignore it.</li>
+<li><b>Kinds by place:</b> <code>agent</code> on the server (pi); <code>pty</code> (shells, with byte records) and <code>job</code> on hosts, under the workspace's profile.</li>
 </ul>
 <h3>6.2 Driver trait</h3>
 <pre><code>trait Driver {
@@ -270,7 +287,8 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
 <p>Every written line embeds its <code>op_id</code>/<code>queue_id</code> so exactly-once can be derived from the transcript. The id floor is persisted.</p>
 <h3>6.3 PiDriver (new)</h3>
 <ul>
-<li><b>Launch:</b> <code>pi --mode rpc --session-id …</code>, or <code>--session &lt;abs file&gt;</code> to resume. Strict LF JSONL (never Node-readline semantics), correlated by <code>id</code>.</li>
+<li><b>Launch:</b> <code>pi --mode rpc --no-builtin-tools --no-context-files --no-skills --session-id …</code>, or <code>--session &lt;abs file&gt;</code> to resume, in an empty per-session scratch cwd (<code>--session-dir</code> under the agent daemon's session dir); the extension provides the tools, the workspace context and the skills. Strict LF JSONL (never Node-readline semantics), correlated by <code>id</code>.</li>
+<li><b>Remote tools keep pi's names</b> (<code>read write edit bash grep find ls</code>) and argument shapes, so the timeline mapping (titles, kinds, diffs) is unchanged.</li>
 <li><b>Runs:</b> from <code>agent_start</code> to <code>agent_settled{aborted}</code>.</li>
 <li><b>Outcome:</b> taken from the assistant <code>stopReason</code> (error → failed, length → max_tokens, aborted → cancelled) plus <code>auto_retry_end</code>. No <code>end_turn</code> heuristics.</li>
 <li><b>Commands:</b> <code>prompt</code> after the run settles or with <code>streamingBehavior:"followUp"</code>; <code>steer</code>, <code>abort</code>, <code>clear_queue</code>; model and thinking setters; <code>get_state</code>, <code>get_commands</code>, <code>get_session_stats</code>; <code>new_session{parentSession}</code> for start fresh; <code>extension_ui_response</code>.</li>
@@ -280,20 +298,29 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
 </ul>
 <h3>6.4 FakeDriver</h3>
 <p>A deterministic in-process driver for runtime unit tests (no processes). ACP and the prototype's AcpDriver are dropped: controlroom integrates deeply with pi only.</p>
-<h3>6.5 Runtime store</h3>
+<h3>6.5 Stores</h3>
 <ul>
-<li><code>daemon.sqlite</code> with versioned migrations (<code>user_version</code>) from day one.</li>
-<li>Tables: sessions, agent_sessions, queue, ops (pruned), requests, timeline items (materialized by session/item, with checkpoints), todos, jobs, children, outbox, grants cache, settings, and a persisted rev log.</li>
+<li><b>Agent daemon:</b> <code>agent.sqlite</code> with versioned migrations (<code>user_version</code>) from day one. Tables: sessions, workspaces, shells, agent_sessions, queue, ops (pruned), requests, timeline items (materialized by session/item, with checkpoints), todos, jobs, per-host job cursors and pending follow matches, children, grants cache, settings, and a persisted rev log. Pending host calls are kept in memory and rebuilt from the transcript at restart.</li>
+<li><b>Host daemon:</b> <code>host.sqlite</code>: workspaces <code>{id, session_id, path, root, profile}</code>, shells <code>{id = &lt;session&gt;/&lt;name&gt;, workspace_id, supervisor, log, cwd}</code>, jobs, the job event log, and the <b>journal</b> <code>{call_id, session_id, op, args_hash, state: running|done|lost, result, output_ref, acked}</code> (acked rows dropped, others after 24 h).</li>
 <li>Bind the socket <i>before</i> recovery. Attach supervisors concurrently. Slow work stays off the connection loop.</li>
+</ul>
+<h3>6.5b Tool executor (host)</h3>
+<ul>
+<li><b>Exactly once per tool:</b> reads are idempotent; <code>write</code> is journaled, atomic (temp file, fsync, rename) and compare-and-swap; <code>bash</code> is at-most-once (journaled before it reaches the shell; a resend attaches or returns the result, never reruns); jobs are at-most-once by call id. After a daemon restart, a write is resolved by the file's hash and a command by its PTY supervisor's log, else it is <code>lost</code>.</li>
+<li><b>Shell integration:</b> the agent's command is written to a file and the shell runs <code>__cr_run &lt;call id&gt;</code>, which echoes it for humans, emits OSC 133 <code>C</code>, sources the file and lets <code>PROMPT_COMMAND</code> emit <code>D;&lt;exit&gt;</code> and OSC 7. The result is the bytes between <code>C</code> and <code>D</code>.</li>
+<li><b>Timeouts</b> (default 600 s) are enforced on the host, so they hold while the link is down. <b>Cancel</b> is ETX into the PTY, SIGKILL of the foreground group after 5 s.</li>
+<li><b>Waiting for input:</b> the PTY's foreground group sleeping in a tty read for 2 s without output (<code>tcgetpgrp</code> + <code>/proc/&lt;pgrp&gt;/wchan</code>) flags the call.</li>
+<li><b>Search</b> embeds ripgrep's crates (<code>ignore</code>, <code>grep-searcher</code>, <code>globset</code>), so hosts need nothing but bash and nono; windowed reads use a per-file line-offset index keyed by (inode, size, mtime).</li>
 </ul>
 <h3>6.6 Lifecycle (finish what the prototype left undone)</h3>
 <ul>
-<li><b>Idle-stop</b> (default 48 h): only when resumable, the queue is empty, and there's <b>no live work</b> (jobs, children, asks).</li>
+<li><b>Idle-stop</b> (default 48 h): only when resumable, the queue is empty, and there's <b>no live work</b> (jobs, children, asks, pending host calls).</li>
 <li><b>Retention:</b> closed sessions are purged after N days. The default is to keep everything forever.</li>
 <li><b>Reboot handling:</b> dead supervisor → <code>interrupted</code> or <code>dormant</code>.</li>
 <li><b>Resume:</b> via the driver.</li>
 <li><b>Start fresh:</b> optionally includes a history export.</li>
-<li><b>Boot start:</b> linger plus a systemd user unit, else <code>@reboot</code>, else lazy start (reported by <code>doctor</code>).</li>
+<li><b>Boot start</b> (host daemons): linger plus a systemd user unit, else <code>@reboot</code>, else lazy start (reported by <code>doctor</code>). The agent daemon is a system unit on the server.</li>
+<li><b>Link loss pauses, it doesn't fail:</b> a tool call on an unreachable host waits up to the machine's grace (default 10 min) and is resent by call id after the reconnect; after the grace it fails with <code>connection_lost</code> and its late result is injected when the host returns. A host-daemon restart (new epoch) reopens dead shells in their last cwd with a reset notice.</li>
 </ul>
 
 <h2 id="timeline">7. Timeline model</h2>
@@ -314,17 +341,18 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
 <tr><td>notice / error / session_info</td><td>level, text; title, model, thinking</td><td>notify/setStatus, extension_error, session_info_changed</td></tr>
 </table>
 
-<h2 id="runtime">8. Agent runtime primitives (daemon)</h2>
+<h2 id="runtime">8. Agent runtime primitives (agent daemon)</h2>
 <table>
 <tr><th>Primitive</th><th>Implementation</th></tr>
-<tr><td><b>Injection</b></td><td>Delivers an item into a session's next turn, with an <code>origin</code> (user, job, child, message, answer, todo, continue). pi uses <code>steer</code>/<code>follow_up</code>. It's the single path for job completion, child results, inbound messages, non-blocking answers, todo edits made by the user, and late replies.</td></tr>
-<tr><td><b>Job</b> (background task)</td><td><span class="tag ext">REVISED</span> Jobs run on the host of a workspace (<code>job run {command, at: machine:path}</code>), under that workspace's sandbox; the host reports line counts, follow matches and exits through a persisted job event log, and the agent daemon decides the wakes. Jobs keep running and logging while the link or the server is down; after a reconnect the agent daemon resyncs from its cursor and delivers each pending wake exactly once (<code>docs/design/remote-tools.md</code> §3.6). The log path is a <code>machine:path</code>. A supervised process (supervisor kind <code>job</code>, sandboxed, with an optional timeout). Jobs survive pi and daemon restarts. Their output goes to the job's transcript <b>and</b> to a plain-text <b>log file</b> the agent can read inside its sandbox: <code>&lt;cwd&gt;/.controlroom/jobs/&lt;job-id&gt;.log</code> (stdout and stderr interleaved, append-only; <code>.controlroom/</code> is git-ignored automatically).
+<tr><td><b>Injection</b></td><td>Delivers an item into a session's next turn, with an <code>origin</code> (user, job, child, message, answer, todo, continue, tool_late, workspace). pi uses <code>steer</code>/<code>follow_up</code>. It's the single path for job completion, child results, inbound messages, non-blocking answers, todo edits made by the user, late replies, late tool results and workspace notices (host unreachable past the grace, workspace added or removed).</td></tr>
+<tr><td><b>Job</b> (background task)</td><td>A supervised process on the host of a workspace (<code>job run {command, machine?, cwd?, timeout?}</code>; supervisor kind <code>job</code>, under that workspace's sandbox, with an optional timeout). Jobs survive pi, agent-daemon and host-daemon restarts and keep running while the link or the server is down. Their output goes to the job's transcript <b>and</b> to a plain-text <b>log file</b> on that machine, which the agent reads with <code>read</code>/<code>grep</code>: <code>&lt;workspace root&gt;/.controlroom/jobs/&lt;job-id&gt;.log</code>, shown as <code>machine:path</code> (stdout and stderr interleaved, append-only; <code>.controlroom/</code> is git-ignored automatically).
+<br><b>Event log and exactly-once wakes:</b> the host follows each job's output and appends <code>started · progress {lines, offset, matches} · follow · unfollow · killed · exit</code> to a persisted event log (<code>started</code> before the process exists; <code>exit {lost}</code> when its supervisor died with the host). The host never decides wakes. The agent daemon keeps a cursor per host, resubscribes from it after every connection, and commits the new cursor, the pending follow matches and the wakes they produce in one transaction, with deterministic wake ids, so each wake is delivered exactly once (<code>docs/design/remote-tools.md</code> §3.6). While a host is unreachable nothing is invented: running jobs still count as live work and one notice per outage is injected after the grace.
 <br><b>Wakes:</b>
 <ul>
 <li><b>Exit wake (always on):</b> when the job exits, the agent is woken with the job id, exit code or signal, duration, total line count and the log path.</li>
 <li><b>Following is a separate, optional subscription:</b> <code>job.follow {job_id, buffer_seconds = 15, pattern?, from = "unseen" | "now"}</code> and <code>job.unfollow {job_id}</code>.
 <ul>
-<li>When followed lines appear (any line, or only lines matching <code>pattern</code>, a regex such as <code>ERROR|FAIL|panicked</code>), the daemon waits <code>buffer_seconds</code> to batch them. It then wakes the agent with the job id, the number of new or matching lines and their line ranges, and the log path, plus a hint to read it with <code>grep</code>/<code>tail</code>/<code>sed -n 'a,bp'</code>.</li>
+<li>When followed lines appear (any line, or only lines matching <code>pattern</code>, a regex such as <code>ERROR|FAIL|panicked</code>), the agent daemon waits <code>buffer_seconds</code> (measured from the first match's host timestamp) to batch them. It then wakes the agent with the job id, the number of new or matching lines and their line ranges, and the log path, plus a hint to read it with <code>grep</code>/<code>tail</code>/<code>sed -n 'a,bp'</code>.</li>
 <li><code>from: "unseen"</code> (default) covers all output the agent hasn't been told about, so following right after <code>run</code> can't miss lines.</li>
 <li>Calling <code>follow</code> again updates the settings. Following ends automatically when the job exits, and the exit wake still fires.</li>
 <li>Wakes from several followed jobs that land in the same buffer window are merged into <b>one</b> wake.</li>
@@ -332,33 +360,33 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
 </ul></li>
 <li><b>Logs are never dumped into the context.</b> Wakes carry only metadata and the path, and the agent reads what it needs. Wakes use injection: they start a turn when the agent is idle, or arrive as a steer or follow-up when it's busy.</li>
 </ul></td></tr>
-<tr><td><b>Subagent</b></td><td>A child controlroom session (<code>parent_id</code>) with any agent and model. It has its own transcript, sandbox (cwd inside the parent's directory or a worktree) and requests. <span class="tag ext">REVISED</span> A child inherits (a subset of) the parent's workspaces; a child that would get a workspace the parent doesn't have needs approval. Attention rolls up to the parent. <code>await</code> resolves with its result (or <code>connection_lost</code>) by injection.</td></tr>
+<tr><td><b>Subagent</b></td><td>A child controlroom session (<code>parent_id</code>) with any model. It has its own transcript, sandbox, shells and requests. A child inherits (a subset of) the parent's workspaces, or a directory or worktree inside one; a child that would get a workspace the parent doesn't have needs approval (a <code>spawn</code> request). Attention rolls up to the parent. <code>await</code> resolves with its result (or <code>connection_lost</code>) by injection.</td></tr>
 <tr><td><b>Request</b></td><td><b>Questions are non-blocking only.</b> <code>ask_user</code> returns immediately with a question id and the reminder: <i>"Question sent; the user will answer asynchronously. Keep working on other items. End your turn only if you truly can't make progress; the answer will wake you."</i> The answer (or a Dismiss, which counts as "declined") is injected. The agent can withdraw a question. There's no escalation and no blocking variant.
-<br><b>Approvals stay blocking</b> by nature, because they gate an action already in progress: <code>permission</code>, <code>sandbox</code>, <code>spawn</code> and <code>contact</code>. pi's own native blocking dialogs (<code>extension_ui_request</code> select/confirm/input) are shown as a <code>dialog</code> and answered as usual, but the agent instructions steer agents to use <code>ask_user</code> instead.</td></tr>
+<br><b>Approvals stay blocking</b> by nature, because they gate an action already in progress: <code>permission</code>, <code>sandbox</code> (raised by a workspace's sandbox on its host), <code>spawn</code>, <code>contact</code>, <code>privileged</code> and <code>terminal_input</code> (a command waiting for the user to type in its terminal). pi's own native blocking dialogs (<code>extension_ui_request</code> select/confirm/input) are shown as a <code>dialog</code> and answered as usual, but the agent instructions steer agents to use <code>ask_user</code> instead.</td></tr>
 <tr><td><b>Todo list</b></td><td>Per-session and shared: both the agent and the user edit it, and every change records who made it. Items: pending · in_progress · done · blocked(reason) · skipped. Can be seeded from a task's checklist.</td></tr>
-<tr><td><b>Auto-continue</b></td><td>When the agent ends its turn and open todo items remain (pending or in progress), the daemon <b>automatically restarts it</b> with a <code>continue</code> run, <b>unless</b>:
+<tr><td><b>Auto-continue</b></td><td>When the agent ends its turn and open todo items remain (pending or in progress), the agent daemon <b>automatically restarts it</b> with a <code>continue</code> run, <b>unless</b>:
 <ul>
 <li>a <b>question is open</b> (its answer will wake the agent instead);</li>
-<li>a <b>background task is running</b> (its follow or exit wake will wake the agent instead). Awaited subagents and outstanding message asks count as background work too;</li>
+<li>a <b>background task is running</b> (its follow or exit wake will wake the agent instead). Awaited subagents, outstanding message asks and tool calls waiting for an unreachable host count as background work too;</li>
 <li>an approval is pending, the run failed or was cancelled by the user, or the queue has items (queued prompts go first);</li>
 <li>auto-continue is off for the session.</li>
 </ul>
 It pauses with attention when only blocked items remain, after 3 runs with no progress (stalled), or when the budget runs out. A user cancel pauses it too.</td></tr>
-<tr><td><b>Mailbox</b></td><td>Per-session outbox and inbox: send, ask (expects a reply), reply. Brokered by the controller with policy. Every operation returns an explicit outcome. <span class="tag ext">REVISED</span> All sessions live in the agent daemon, so delivery is local (the policy stays); <code>connection_lost</code> remains only for host-bound work.</td></tr>
+<tr><td><b>Mailbox</b></td><td>Per-session outbox and inbox: send, ask (expects a reply), reply. Every session lives in the agent daemon, so delivery is local, under the contact policy (§10). Every operation returns an explicit outcome; <code>connection_lost</code> remains only for host-bound work.</td></tr>
 </table>
 
 <h3 id="schedules">8.1 Schedules (owned by the web server)</h3>
 <ul>
 <li><b>What they are:</b> a schedule is attached to <b>one session</b> and wakes its agent with a <b>canned message</b> on a configurable schedule. Example: every weekday at 09:00, "Check inbox/ and process anything new".</li>
-<li><b>Owned by the controller, not the daemon.</b> The web server is the always-on component and already knows every session, so schedules live in the controller store: <code>schedules {id, owner, machine_id, session_id, name, spec: cron | interval, timezone, message, enabled, if_busy, missed, next_run, last_run, last_outcome}</code>. No daemon changes and no boot-start requirement on execution hosts.</li>
+<li><b>Owned by the controller, not the agent daemon.</b> The web server already knows every session, so schedules live in the controller store: <code>schedules {id, owner, session_id, name, spec: cron | interval, timezone, message, enabled, if_busy, missed, next_run, last_run, last_outcome}</code> (session ids are global). No boot-start requirement on execution hosts.</li>
 <li><b>Firing:</b> the controller's scheduler sends <code>session.prompt</code> with <b>deterministic</b> <code>op_id = schedule_id + scheduled_time</code>, so a controller restart or retry can never double-fire.
 <ul>
-<li>Dormant sessions are resumed lazily by the daemon as usual.</li>
+<li>Dormant sessions are resumed lazily by the agent daemon as usual.</li>
 <li>The run's trigger shows as <code>schedule: &lt;name&gt;</code>.</li>
 <li>The agent sees it as a normal prompt with origin <code>schedule</code>.</li>
 </ul></li>
 <li><b>If busy</b> (<code>if_busy</code>): <code>queue</code> (default) or <code>skip</code>.</li>
-<li><b>If the machine is unreachable</b> at fire time, retry until the next scheduled time, then record <code>missed</code>.</li>
+<li><b>If the agent daemon is unreachable</b> at fire time, retry until the next scheduled time, then record <code>missed</code>. An unreachable workspace host doesn't block the prompt; the agent's tool calls there wait.</li>
 <li><b>After controller downtime</b> (<code>missed</code>): <code>skip</code> (default) or <code>run_once</code>.</li>
 <li><b>Closed sessions</b> disable their schedules.</li>
 <li><b>UI:</b> a <b>Schedules</b> panel on the session (add, edit, enable/disable, "run now", next and last run with outcome), a <b>Settings › Schedules</b> overview, and schedule-triggered runs badged in the timeline.</li>
@@ -370,13 +398,13 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <ul>
 <li><b>Tools</b> (only things the agent initiates). These are grouped tools, each taking an action, provided by <code>@controlroom/pi</code>:
 <ul>
-<li><span class="tag ext">REVISED</span> <b>File and search tools on the hosts:</b> <code>read {path, offset?, limit?}</code>, <code>write {path, content}</code>, <code>edit {path, edits[]}</code>, <code>grep</code>, <code>find</code>, <code>ls</code> replace pi's built-ins under the same names and argument shapes, with paths as <code>machine:path</code> (e.g. <code>devbox:~/src/api/main.rs</code>; relative paths resolve against that machine's workspace). pi runs with <code>--no-builtin-tools</code>. Shells are named per session (default: the machine name) and belong to a workspace; <code>shell_new {name, at: machine:path}</code>.</li>
-<li><code>bash {command, shell?, timeout?}</code>: <b>replaces pi's built-in bash</b>. It runs in a <b>persistent shell</b> (default <code>main</code>) in the session's collaborative terminal ("Terminals"), sandboxed. <code>shell_new {name?, cwd?}</code> gives a fresh shell; <code>shell_list</code>, <code>shell_close {shell}</code>;</li>
+<li><b>File and search tools on the hosts:</b> <code>read {path, offset?, limit?}</code>, <code>write {path, content}</code>, <code>edit {path, edits[]}</code>, <code>grep</code>, <code>find</code>, <code>ls</code> replace pi's built-ins under the same names and argument shapes, with paths as <code>machine:path</code> (e.g. <code>devbox:~/src/api/main.rs</code>; <code>~</code> is the remote home, relative paths resolve against that machine's workspace root, a bare path is accepted only with a single workspace). pi runs with <code>--no-builtin-tools</code>. Each is served by <code>host.call</code> (agent API); <code>edit</code> runs pi's own edit logic over <code>read_bytes</code> and a compare-and-swap <code>write</code>, so a concurrent change is a <code>conflict</code>, never a lost update;</li>
+<li><code>bash {command, shell?, timeout?}</code>: <b>replaces pi's built-in bash</b>. It runs in a <b>persistent, named shell</b> on a workspace's host (default: the machine name, or <code>&lt;machine&gt;-&lt;dir&gt;</code> with several workspaces there), in the session's collaborative terminal ("Terminals"), sandboxed by the workspace's profile. Every result starts with <code>[shell devbox · devbox:~/src/api · exit 0]</code>. <code>shell_new {name, at: machine:path}</code> gives a fresh shell; <code>shell_list</code>;</li>
 <li><code>terminal_read {shell?, last_lines | since_mark}</code>: reads the session terminal, including commands the <i>user</i> ran;</li>
 <li><code>bash_privileged {command, reason, cwd?}</code>: unsandboxed, and <b>every call needs human approval</b> ("Terminals");</li>
 <li><code>ask_user {questions}</code>: always non-blocking; <code>withdraw {question_id}</code>;</li>
 <li><code>todo {list|add|update|complete|block}</code>;</li>
-<li><code>job {run {command, cwd?, timeout?} | follow {job_id, buffer_seconds?, pattern?, from?} | unfollow {job_id} | status | kill}</code>. <code>run</code> returns <code>{job_id, log_path}</code>, and the exit wake is always on. There's no <code>logs</code> action: the agent reads the log file;</li>
+<li><code>job {run {command, at?: machine:path, timeout?} | follow {job_id, buffer_seconds?, pattern?, from?} | unfollow {job_id} | status | kill}</code>. <code>run</code> returns <code>{job_id, log_path}</code>, and the exit wake is always on. There's no <code>logs</code> action: the agent reads the log file;</li>
 <li><code>subagent {spawn|await|steer|cancel}</code>;</li>
 <li><code>message {peers|send|ask|reply, queue_if_offline?}</code>;</li>
 <li><code>notify_user</code>.</li>
@@ -386,7 +414,7 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <ul>
 <li>approving the agent's own requests;</li>
 <li>widening contact (same-task links, grants);</li>
-<li>cross-machine spawns;</li>
+<li>giving a subagent a workspace its parent doesn't have;</li>
 <li>auto-continue settings or budget;</li>
 <li>sandbox grants;</li>
 <li>anything in sessions the agent can't reach.</li>
@@ -394,9 +422,10 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 </ul>
 <p><b><code>@controlroom/pi</code></b> (TypeScript, pinned in the bundle):</p>
 <ul>
-<li>Registers the tools natively and renders them nicely in pi's TUI.</li>
-<li>Talks to the daemon over a unix socket granted in the sandbox, authenticated with a per-session token from the env-file.</li>
-<li><b>Daemon → extension:</b> <code>/controlroom &lt;verb&gt; &lt;json&gt;</code> commands, which run without a model turn.</li>
+<li>Registers the tools natively and renders them in pi's TUI (the remote tools reuse pi's own renderers, so <code>$ cmd</code>, edit diffs and <code>read path:range</code> look as usual).</li>
+<li>Talks to the agent daemon over the session's unix socket, the only socket granted in the sandbox, authenticated with a per-session token from the env-file.</li>
+<li><b>Agent daemon → extension:</b> notifications on that socket (<code>state</code>, <code>session.info</code>, <code>host.output</code>), never commands on pi's stdin.</li>
+<li><b>System prompt:</b> in <code>before_agent_start</code> (re-read every run) the extension adds the workspaces' instruction files as project context with <code>machine:path</code> names, a <code>&lt;workspaces&gt;</code> section (machines, roots, shells and their cwd) and the workspace skills; pi's own context-file and skill discovery is off.</li>
 <li><b>Durable extension state:</b> <code>appendEntry</code>.</li>
 <li><b>Telemetry:</b> tagged widget lines.</li>
 <li>Bridges permission provenance from pi-permission-system (<code>permissions:*</code> events).</li>
@@ -426,13 +455,12 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <h2 id="policy">10. Contact policy</h2>
 <ul>
 <li><b>Default deny.</b> Agents can only list sessions they're allowed to reach.</li>
-<li><b>Same task:</b> sessions linked to the same kanban task can see and message each other on any machine. Linking a session is the user's affirmative act.</li>
+<li><b>Same task:</b> sessions linked to the same kanban task can see and message each other, wherever their workspaces are. Linking a session is the user's affirmative act.</li>
 <li><b>Parent and child:</b> they can always talk to each other.</li>
 <li><b>Anything else</b> raises a <code>contact</code> request to the user (allow once / allow this pair / deny). It behaves like a permission (attention and push). Grants are stored by the controller and can be revoked.</li>
-<li><b>Spawning on another machine:</b> always needs approval, raised as a <code>spawn</code> request with Allow or Deny. <span class="tag ext">REVISED</span> Read as: a child with a workspace its parent doesn't have.</li>
+<li><b>Spawning with new reach:</b> a child that would get a workspace its parent doesn't have always needs approval, raised as a <code>spawn</code> request with Allow or Deny. Children within the parent's workspaces follow a per-session or per-project setting (default: allowed).</li>
 <li><b>Who sees a contact request:</b> it sits on the requesting session, which waits for the answer. The target session sees nothing until it's granted; then both timelines show a grant notice. Task detail lists pending contact requests among its sessions.</li>
-<li><b>Same-machine spawns</b> Same-machine spawns follow a per-session or per-project setting (default: allowed).</li>
-<li><b>The broker is the controller</b> (the single controller connected to each daemon). If the controller or the peer's machine is unreachable, the operation fails closed with <code>connection_lost{scope, since}</code>. It's queued only when the agent asked for <code>queue_if_offline</code>, with an expiry. In-flight asks and awaits resolve with <code>connection_lost</code> instead of hanging. Late replies are injected and marked late.</li>
+<li><b>Delivery is local to the agent daemon</b>, which holds every session; the controller supplies the policy inputs it owns (task links, grants). Messaging fails closed and always reports the outcome. A peer can't be unreachable, but an ask can still expire; in-flight asks and awaits resolve instead of hanging. Late replies are injected and marked late.</li>
 <li>Message contents are visible in both sessions' timelines.</li>
 </ul>
 
@@ -447,44 +475,51 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <li>exit codes passed through, and it ran detached;</li>
 <li>overhead was about 50 ms at launch and about 0.25 s added to pi's startup.</li>
 </ul></div>
-<div class="call warn"><span class="tag ext">REVISED</span> Two sandboxes. <b>Server, per session:</b> pi under nono with an empty scratch workdir, read-only <code>/nix/store</code> and bundle, the session's agent/home/tmp, the agent socket as the only unix socket, and only the model routes on the network (the spike ran pi 1.2.0 this way). <b>Host, per workspace:</b> the workspace root read-write plus the level's reads, the session's domains, mediated commands and job secrets; shells, jobs and a per-workspace fs worker (serving the agent's file tools) all run inside it. Approvals travel nono → host webhook → controller → agent daemon (a session request) and back. The layout below moves to the agent daemon's state dir.</div>
-<h3>11.1 Per-session layout (owned by controlroomd)</h3>
+<p>There are <b>two sandboxes</b>, both generated nono profiles:</p>
+<ul>
+<li><b>Server, per session (pi):</b> an empty scratch workdir, read-only <code>/nix/store</code> and the bundle, the session's agent/home/tmp, the session's agent socket as the only unix socket, and only the model routes on the network (credentials injected by <code>cmd://</code>). No project files, no SSH keys, no route to hosts. <code>--no-builtin-tools</code> means pi can't start shells. The spike ran pi 1.2.0 exactly like this.</li>
+<li><b>Host, per workspace:</b> the workspace root read-write plus the level's reads, the session's domains, mediated commands and job secrets (injected by the host's nono proxy). <b>Everything the agent triggers on that host runs inside it:</b> PTY shells, jobs, and the per-workspace fs worker (<code>controlroomd workspace-exec</code>) that serves the file and search tools, so the unsandboxed host daemon never touches project files on the agent's behalf. Two sessions on one path get two profiles, each with its own grants.</li>
+</ul>
+<p>Model credentials never leave the server; host secrets never reach the server's sandbox.</p>
+<h3>11.1 Per-session layout (owned by the agent daemon)</h3>
 <pre><code>sessions/&lt;id&gt;/agent/   PI_CODING_AGENT_DIR: generated settings.json (keep-list, "transport":"sse"),
                         sanitized models.json (no literal keys), auth.json with FAKE tokens,
                         npm → pinned extension bundle, pi sessions/
-sessions/&lt;id&gt;/home/    HOME (pi-lens etc.)       sessions/&lt;id&gt;/tmp/  TMPDIR (seed jiti cache; cold = ~30 s)
+sessions/&lt;id&gt;/home/    HOME                      sessions/&lt;id&gt;/tmp/  TMPDIR (seed jiti cache; cold = ~30 s)
+sessions/&lt;id&gt;/scratch/ pi's cwd (empty)
 sessions/&lt;id&gt;/profile.json   generated nono profile (absolute path; never registry/ns names; no extends)</code></pre>
-<h3>11.2 Profile (generated)</h3>
+<p>On a host, each workspace has its own generated profile and webhook secret under the host daemon's state dir (<code>workspaces/&lt;id&gt;/profile.json</code>).</p>
+<h3>11.2 Profiles (generated)</h3>
 <p>The spike's validated template is in <code>controlroom-artifacts/research/nono-spike.md</code>. In short:</p>
 <ul>
-<li>read-write: the working directory;</li>
-<li>read: <code>/nix/store</code> and the extension bundle;</li>
-<li>allow: session <code>agent/home/tmp</code> and the daemon socket;</li>
+<li>read-write: the working directory (server: the empty scratch dir; host: the workspace root);</li>
+<li>read: <code>/nix/store</code> (server: and the extension bundle; host: and the level's reads, e.g. home config when relaxed);</li>
+<li>allow (server): session <code>agent/home/tmp</code> and the session's agent socket;</li>
 <li><code>af_unix_mediation: pathname</code>, which closes the nscd DNS channel;</li>
 <li><code>linux_sysfs_read</code>;</li>
-<li>proxy mode with <code>allow_domain</code> set to the active providers' hosts (npm and GitHub opt-in per session);</li>
+<li>proxy mode with <code>allow_domain</code> set to the active providers' hosts on the server, and to the session's domains on hosts (npm and GitHub opt-in);</li>
 <li><code>custom_credentials</code> routes (<code>cr_*</code> names) with <code>credential_key: cmd://…</code> and a <b>mandatory endpoint_policy</b>;</li>
-<li><code>credential_capture</code> runs <code>controlroomd credential &lt;session&gt; &lt;provider&gt;</code> host-side;</li>
-<li><code>security.capability_elevation</code> plus webhook approval backends (security and command_policies);</li>
-<li>a few mediated commands (e.g. <code>git push</code> → approve), pinned to exact store paths.</li>
+<li><code>credential_capture</code> runs <code>controlroom-agentd credential &lt;session&gt; &lt;provider&gt;</code> outside the sandbox (server);</li>
+<li><code>security.capability_elevation</code> plus webhook approval backends (security and command_policies) (host);</li>
+<li>a few mediated commands (e.g. <code>git push</code> → approve), pinned to exact store paths (host).</li>
 </ul>
 <h3>11.3 Credentials</h3>
 <ul>
-<li><b>API-key providers:</b> <code>cmd://</code> → <code>controlroomd credential</code>, which prints the key read from the user's real config, host-side.</li>
-<li><b>OAuth subscriptions:</b> the sandbox <code>auth.json</code> holds a synthetic unsigned JWT that carries only the non-secret claims pi needs (e.g. the account id), with a far-future expiry. <b>controlroomd is the only process that refreshes the token</b>, using pi-ai's locked refresh against the real <code>auth.json</code>, so it coordinates with the user's own pi processes. A refresh attempted inside the sandbox fails closed.</li>
+<li><b>API-key providers:</b> <code>cmd://</code> → <code>controlroom-agentd credential</code>, which prints the key from the agent daemon's credentials (<code>LoadCredential</code>/sops), outside the sandbox.</li>
+<li><b>OAuth subscriptions:</b> a one-time <code>controlroom-agentd login &lt;provider&gt;</code> on the server (a UI flow later). The sandbox <code>auth.json</code> holds a synthetic unsigned JWT that carries only the non-secret claims pi needs (e.g. the account id), with a far-future expiry. <b>The agent daemon is the only process that refreshes the token</b>, using pi-ai's locked refresh against its real <code>auth.json</code>. A refresh attempted inside the sandbox fails closed.</li>
 <li><b>Residual risk:</b> sandboxed processes can <i>use</i> the injected credential on allowed hosts, so endpoint policies are mandatory. Never put secrets in argv, because <code>/proc/*/cmdline</code> is readable.</li>
 </ul>
 <h3>11.4 Approvals</h3>
 <ul>
-<li>The webhook URL is <code>http://127.0.0.1:&lt;port&gt;/nono/v1/&lt;session&gt;/&lt;secret&gt;</code>. Correlate on the URL, because endpoint requests carry no session id. The sandbox can't reach loopback TCP.</li>
-<li>Requests map to <code>request{kind: sandbox, blocking: true}</code>:
+<li>Approvals come from the <b>host</b> sandboxes. The webhook URL is <code>http://127.0.0.1:&lt;port&gt;/nono/v1/&lt;workspace&gt;/&lt;secret&gt;</code> on the host. Correlate on the URL, because endpoint requests carry no session id. The sandbox can't reach loopback TCP.</li>
+<li>The path: nono → host webhook → host daemon <code>approval.request</code> → controller (<code>hostops.notify</code>) → agent daemon, which raises <code>request{kind: sandbox, blocking: true}</code> on the workspace's session (attention, push) → user → agent daemon → controller → host <code>approval.respond</code> → nono. Requests map to:
 <ul>
 <li><code>command</code> → "run …?"</li>
 <li><code>capability</code> → "read/write path?"</li>
 <li><code>endpoint</code> → "call METHOD path?"</li>
 </ul></li>
 <li>The reply is <code>{"decision":"granted"|"denied","reason"}</code>. A timeout means deny. Use a long <code>timeout_secs</code> for human waits, or deny fast and let the agent retry after the user grants.</li>
-<li><b>Grants:</b> a path granted at runtime is remembered for the nono session. Standing grants (paths, domains, commands) are <b>profile changes and need a restart</b> plus a <code>--session</code> resume. Domains can't be approved at runtime in 0.80.</li>
+<li><b>Grants:</b> a path granted at runtime is remembered for the nono session. Standing grants (paths, domains, commands) are <b>profile changes</b>: the workspace's profile is rewritten (<code>workspace.open</code> again) and shells and jobs started afterwards use it. Domains can't be approved at runtime in 0.80.</li>
 </ul>
 <h3>11.5 Hard rules and risks</h3>
 <div class="call bad">
@@ -497,13 +532,13 @@ sessions/&lt;id&gt;/profile.json   generated nono profile (absolute path; never 
 <li>Clean up leaked <code>/tmp/nono-*</code> directories.</li>
 <li><b>Known limitation (accepted): command mediation is a policy layer, not a security boundary.</b> nono 0.80 grants execute on every directory the session can write (including the working directory), and mediated commands are identified by file identity. An agent can therefore copy <code>git</code> and its helpers into its cwd and push without the approval card. What still bounds it: writes stay confined (Landlock), only allowlisted hosts are reachable, and only the credentials the session holds work. Treat the <code>git push</code> approval as a policy aid. <i>Possible fix (not scheduled):</i> give git-host domains and git credentials only to the mediated <code>git</code>/<code>gh</code> command sandboxes (command-scoped domains and credentials in sandbox profiles, a protocol change), deny proxy <code>CONNECT</code> to port 22 for the session, and keep SSH keys out of the session HOME (a nono agent-socket credential for git&rarr;ssh).</li>
 </ul></div>
-<p><b>Per-session sandbox levels:</b></p>
+<p><b>Per-session sandbox levels</b> (one level for the session; it shapes every workspace's host profile, while pi's server profile stays fixed):</p>
 <ul>
-<li><code>strict</code> (default once the grant flow exists): the working directory and session dirs only;</li>
+<li><code>strict</code> (the default): the workspace root and the session's own dirs only;</li>
 <li><code>relaxed</code>: adds read-only home config such as git;</li>
-<li><code>off</code>: shown with a warning badge.</li>
+<li><code>off</code>: shown with a warning badge (shells, jobs and file tools on the hosts run unsandboxed).</li>
 </ul>
-<p><code>doctor</code> reports the Landlock ABI and whether nono is available.</p>
+<p><code>doctor</code> (of the agent daemon and of each host) reports the Landlock ABI and whether nono is available.</p>
 <h3>11.5b Default mediated commands</h3>
 <p>nono <b>command mediation</b> runs a listed command (resolved by a PATH shim, kernel-enforced; calling the binary directly is blocked) under its <i>own</i> policy: files, network, credentials, and a decision of run, approve-each-time or deny. The default set is kept deliberately small:</p>
 <table>
@@ -521,8 +556,8 @@ sessions/&lt;id&gt;/profile.json   generated nono profile (absolute path; never 
 
 <h3>11.6 Sandbox defaults (Settings › Sandbox)</h3>
 <ul>
-<li><b>RPCs:</b> <code>sandbox.profiles</code> and <code>sandbox.set_profile {scope: machine|project, id, level | clear_level | add_domain | remove_domain | remove_grant}</code>. The controller stores them and passes them to the daemon when a session is created or restarted.</li>
-<li><b>The effective profile for a session</b> combines the defaults of its machine and of <b>every project it belongs to</b> (a session can be in several):
+<li><b>RPCs:</b> <code>sandbox.profiles</code> and <code>sandbox.set_profile {scope: machine|project, id, level | clear_level | add_domain | remove_domain | remove_grant}</code>. The controller stores them and passes them to the agent daemon when a session is created or restarted; the agent daemon passes the effective profile to each workspace's host (<code>workspace.open</code>).</li>
+<li><b>The effective profile for a session</b> combines the defaults of its workspaces' machines and of <b>every project it belongs to</b> (the projects of its linked tasks; a session can be in several):
 <ul>
 <li><b>level:</b> the <b>strictest</b> of the matching scopes;</li>
 <li><b>standing grants and allowed domains:</b> the union, so access is never widened implicitly beyond what some scope granted.</li>
@@ -535,11 +570,13 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <h2 id="controller">12. Controller and web server</h2>
 <ul>
 <li><b>Port</b> the prototype's client store (owner-scoped repos, sealed keys, dangling task links allowed), keys and rotation, machine manager, attention, push and dedup, OIDC, hardening and static serving. Fix the review findings on the way in.</li>
-<li><b>Hub:</b> split it into modules and add an <b>event bus</b> (connectivity, summary changes). The broker, policy and timeline cache subscribe to the bus instead of growing a monolithic state.</li>
+<li><b>Hub:</b> split it into modules and add an <b>event bus</b> (connectivity, summary changes). Sessions come from the agent daemon (global), machines from the host connections. Policy, project membership, workspace overlaps and the timeline cache subscribe to the bus instead of growing a monolithic state.</li>
+<li><b>Host router:</b> carries the agent daemon's host requests (<code>hostops.*</code>, protocol §5): sends each pending request to its connected host, resends unanswered ones after a reconnect (every host method is idempotent), forwards every host notification, and reports machines (names, availability, epochs, grace). It decides nothing about calls; a web restart only pauses them.</li>
+<li><b>Agent daemon client:</b> one local socket connection; resubscribes (<code>sessions.subscribe</code>, <code>hostops.subscribe</code>, open sessions) after a reconnect; the scheduler fires <code>session.prompt</code> on it.</li>
 <li><b>RPC:</b> split by namespace and make pass-through methods table-driven. Cap concurrency per WebSocket connection, define the ordering contract, and close sockets on logout or expiry.</li>
 <li><b>Store writes</b> touch only the columns that changed. Whole-row read-modify-write across an <code>await</code> caused the prototype's lost-update bug.</li>
 <li><b>Auth:</b> sessions are tagged with the auth mode and subject, and the allow-list is re-checked on every request.</li>
-<li><b>Daemon client:</b> per-call timeouts, cancellable post-connect steps, the controller id in <code>hello</code> (single-controller rule), and outbox pull/ack.</li>
+<li><b>Host client:</b> per-call timeouts (except <code>tool.run</code>, which lasts as long as the command), cancellable post-connect steps, the controller id in <code>hello</code> (single-controller rule), and the host's epoch.</li>
 <li><b>Bootstrap:</b> run the new binary and check <code>--version</code> before swapping <code>current</code>. Keep the previous target for rollback if <code>hello</code> fails. Confirm the old daemon actually stopped. Pin the host-key algorithm.</li>
 </ul>
 
@@ -550,7 +587,10 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <ul>
 <li>a <b>timeline renderer</b> with one component per kind and windowed rendering;</li>
 <li>a <b>session-stream store</b> (several concurrent subscriptions for the parent and children, per-item fine-grained state, in-place text appends, eviction);</li>
-<li>one <b>RequestCard</b> for permission, question, dialog, sandbox, spawn and contact requests. Questions are always non-blocking (the lighter tier); approvals are blocking;</li>
+<li>one <b>RequestCard</b> for permission, question, dialog, sandbox, spawn, contact, privileged and terminal-input requests. Questions are always non-blocking (the lighter tier); approvals are blocking;</li>
+<li><b>workspaces:</b> the new-session dialog picks one or more <code>machine:path</code>s (<code>fs.list</code> per machine); the session header shows each workspace with its availability ("devbox unreachable since 10:42") and an <b>overlap warning</b> when another open session uses the same directory;</li>
+<li><b>project rail by task groups:</b> a session appears under each project of its linked tasks, else under <b>Unassigned</b>; no location prefixes;</li>
+<li><b>terminals per shell</b> (one tab per named shell, with its machine and cwd) in the terminal dock;</li>
 <li>a <b>todo panel</b> with an auto-continue control;</li>
 <li>a <b>subagent tree</b>, a jobs strip and message entries;</li>
 <li>a raw view (opt-in raw frames).</li>
@@ -571,7 +611,7 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <ul>
 <li><b>Pane focus with <code>Ctrl-h/j/k/l</code></b>, like vim-tmux-navigator. It moves focus spatially between visible panes (rail, session list, timeline, todo, terminal, files, notifications, tasks board) and works from inside text fields, the editor and the terminal.
 <ul>
-<li><b>Inside a terminal</b> it behaves like tmux-navigator: the keys go to the PTY when the terminal's foreground process is on a pass-through list (default: <code>vim</code>, <code>nvim</code>, <code>vi</code>, <code>fzf</code>, <code>less</code>, <code>man</code>, <code>htop</code>, <code>lazygit</code>). The daemon reports the PTY's foreground process name. Otherwise they navigate.</li>
+<li><b>Inside a terminal</b> it behaves like tmux-navigator: the keys go to the PTY when the terminal's foreground process is on a pass-through list (default: <code>vim</code>, <code>nvim</code>, <code>vi</code>, <code>fzf</code>, <code>less</code>, <code>man</code>, <code>htop</code>, <code>lazygit</code>). The host daemon reports the PTY's foreground process name (<code>Shell.foreground</code>). Otherwise they navigate.</li>
 <li><code>Ctrl-\</code> followed by a key always sends that key to the terminal, as an escape hatch (e.g. for the shell's <code>Ctrl-l</code> clear).</li>
 <li>Browsers let pages override <code>Ctrl-h/j/k/l</code> (unlike <code>Ctrl-w/t/n</code>). The installed PWA avoids browser shortcuts entirely.</li>
 </ul></li>
@@ -586,22 +626,22 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <ul>
 <li><b>Nix flake</b> (crane plus rust-overlay):
 <ul>
-<li>static musl <code>controlroomd</code> for x86_64 and aarch64;</li>
+<li>static musl <code>controlroomd</code> (host role) for x86_64 and aarch64;</li>
+<li><code>controlroom-agentd</code> for the server;</li>
 <li><code>web-dist</code> (pnpm fetchDeps);</li>
-<li><code>controlroom-web</code> with the UI and both daemon binaries bundled;</li>
-<li><code>controlroom-pi</code> (pinned pi, <code>@controlroom/pi</code>, a launcher that applies the keep-list);</li>
+<li><code>controlroom-web</code> with the UI and the host daemon binaries bundled (for bootstrap and auto-upgrade);</li>
+<li><code>controlroom-pi</code> (pinned pi, <code>@controlroom/pi</code>, a launcher that applies the keep-list), used by the agent daemon only;</li>
 <li>nono pinned;</li>
 <li>checks: clippy, fmt, tests, web-check, TS drift, NixOS VM tests.</li>
 </ul></li>
 <li><b>NixOS module</b> <code>services.controlroom</code>:
 <ul>
-<li>hardened <code>DynamicUser</code>;</li>
-<li><code>LoadCredential</code> for the master key (required), the OIDC secret and the VAPID key;</li>
-<li><code>listenAddress</code>/<code>port</code>/<code>publicUrl</code>.</li>
+<li>the web server: hardened <code>DynamicUser</code>; <code>LoadCredential</code> for the master key (required), the OIDC secret and the VAPID key; <code>listenAddress</code>/<code>port</code>/<code>publicUrl</code>;</li>
+<li><code>services.controlroom.agent</code>, the agent daemon: static user and group <code>controlroom-agent</code>, <code>StateDirectory</code>, <code>KillMode=process</code> (detached supervisors outlive restarts), no <code>MemoryDenyWriteExecute</code> (Node needs W^X), Landlock available, the <code>controlroom-pi</code> bundle and nono on its <code>PATH</code>, model credentials via <code>LoadCredential</code>/sops; its socket <code>/run/controlroom-agent/agentd.sock</code> is shared with the web unit through a common supplementary group; both units are backed up.</li>
 </ul>
 The reverse proxy, TLS and IdP registration live in the deployer's own config.</li>
-<li><b>Execution hosts:</b> the daemon installs itself under <code>~/.local/share/controlroom/versions/&lt;ver&gt;</code>. pi, the bundle and nono come from the host's Nix config (home-manager). The <code>agents.toml</code> pi entry points at the <code>controlroom-pi</code> launcher. Hosts without Nix are out of scope for now. <span class="tag ext">REVISED</span> Hosts need only <code>controlroomd</code> (bootstrapped as today), bash and the pinned nono; no pi, bundle, <code>agents.toml</code> or model routes. The server gets <code>services.controlroom.agent</code>: the agent daemon (own user, <code>KillMode=process</code> for detached supervisors, no <code>MemoryDenyWriteExecute</code> because of Node), the <code>controlroom-pi</code> bundle, nono and the model credentials.</li>
-<li><b>VM tests:</b> one web VM and two execution VMs. They cover bootstrap, persistence across client disconnect, upgrade, reboot, the sandbox, and cross-machine messaging. <span class="tag ext">REVISED</span> pi and the mock model move to the server VM; the execution VMs carry only <code>controlroomd</code> and nono; new scenarios: a session with workspaces on both hosts, a link blip during a long <code>bash</code>, a host reboot (shell reset notice), a host-sandbox approval.</li>
+<li><b>Execution hosts:</b> the host daemon installs itself under <code>~/.local/share/controlroom/versions/&lt;ver&gt;</code> (bootstrapped and auto-upgraded over SSH). Hosts need only <code>controlroomd</code>, bash and the pinned nono (from the host's Nix config); no pi, bundle, <code>agents.toml</code> or model routes. Hosts without Nix are out of scope for now.</li>
+<li><b>VM tests:</b> a server VM (web, agent daemon, the pi bundle and the mock model) and two execution VMs (only <code>controlroomd</code> and nono). They cover bootstrap, persistence across client disconnect, upgrade, reboot, the sandbox, a session with workspaces on both hosts, a link blip during a long <code>bash</code>, a host reboot (shell reset notice) and a host-sandbox approval.</li>
 </ul>
 
 <h2 id="port">15. Port map from the prototype (<code>../controlroom-old</code>)</h2>
@@ -649,7 +689,7 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <p class="small">Full findings with prototype file and line references: <code>controlroom-artifacts/reviews/*.final.md</code>.</p>
 
 <h2 id="plan">17. Build plan</h2>
-<p>Each phase lists its parallel workstreams. Every merge is gated on <code>nix flake check</code>, with the real exit code checked.</p>
+<p>Each phase lists its parallel workstreams. Every merge is gated on <code>nix flake check</code>, with the real exit code checked. Phases P0 to P8 built the per-machine model (history; P8 deployment waits for R4); the re-architecture phases R0 to R4 follow.</p>
 <table>
 <tr><th>Phase</th><th>Workstreams (parallel)</th><th>Done when</th></tr>
 <tr><td>P0 Skeleton</td><td>Workspace, flake (static musl, web-dist, checks), <code>AGENTS.md</code> with the process rules, CI-equivalent checks</td><td><code>nix flake check</code> passes on an empty skeleton with every crate stubbed</td></tr>
@@ -664,7 +704,7 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <tr><td>P7b Extras</td><td><b>Files</b> (SFTP, browser, viewers, upload and download, light editing, content origin), Changes and undo (snapshots), dev-server previews (separate origin), templates, fork, away summary, search and ⌘K, secrets for jobs, usage and cost</td><td>Each has acceptance tests, and previews work through the reverse proxy</td></tr>
 <tr><td>P8 Ship</td><td>NixOS module, VM tests, Web Push verified on iOS, deployment</td><td>Running on the always-on server, behind the reverse proxy</td></tr>
 </table>
-<p><span class="tag ext">REVISED</span> <b>Re-architecture phases</b> (they precede deployment; details and lanes in <code>docs/design/remote-tools.md</code> §8):</p>
+<p><b>Re-architecture phases</b> (they precede deployment; details and lanes in <code>docs/design/remote-tools.md</code> §8; the contract is <code>docs/protocol.md</code>):</p>
 <table>
 <tr><th>Phase</th><th>Workstreams (parallel)</th><th>Done when</th></tr>
 <tr><td>R0 Contracts</td><td>Protocol: agent daemon, host and agent API types (<code>HostOp</code>, workspaces, shells), projects as task groups, TS regeneration; spec and protocol docs</td><td>Types merged, drift check green, the UI builds</td></tr>
@@ -703,29 +743,29 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <li><s>Daemon state on hosts that ran the prototype.</s> <b>Resolved:</b> the user deletes that state on all hosts. The build assumes clean hosts and contains <b>no detection or migration code</b> for it.</li>
 <li><s>Default sandbox level.</s> <b>Resolved: <code>strict</code></b> by default for every new session.</li>
 <li><s>Mediated commands in the default profile.</s> <b>Resolved:</b> a small default set ("Default mediated commands" in the sandboxing section).</li>
-<li><s>OAuth refresh helper.</s> <b>Resolved:</b> a small Node helper in the bundle calls pi-ai's locked <code>refreshStoredOAuthCredential</code>, and controlroomd is the only process that refreshes.</li>
+<li><s>OAuth refresh helper.</s> <b>Resolved:</b> a small Node helper in the bundle calls pi-ai's locked <code>refreshStoredOAuthCredential</code>, and the agent daemon is the only process that refreshes (OAuth reaches the server through a one-time <code>controlroom-agentd login &lt;provider&gt;</code>).</li>
 <li><b>The work instance:</b> which host and which IdP. <i>TBD (user).</i></li>
 <li><s>Sandbox default precedence.</s> <b>Resolved:</b> the strictest level among the machine and all matching projects, with the union of grants and domains (multi-project sessions are expected to be rare).</li>
 <li><b>Name and remote for the new repo</b>: <i>TBD (user)</i>. It's local only for now, at <code>~/Documents/controlroom</code>.</li>
-<li><span class="tag ext">REVISED</span> <b>Re-architecture questions</b> (each with a recommendation in <code>docs/design/remote-tools.md</code> §9): who dials hosts (recommended: the controller); the grace before <code>connection_lost</code> (10 min); one binary or two (two); search tools on hosts (embed ripgrep's crates); confinement of file tools (workspace roots read-write, the level's reads read-only); pi-lens (not loaded server-side); shell state after a host reboot (reopen in the last cwd with a notice); overlapping workspaces (warn only, CAS on edits).</li>
+<li><s>Re-architecture questions.</s> <b>Resolved</b> (all recommendations in <code>docs/design/remote-tools.md</code> §9 accepted): the controller dials hosts; a 10 min grace per machine before <code>connection_lost</code>; two binaries (<code>controlroom-agentd</code>, static <code>controlroomd</code>); ripgrep's crates embedded for search; workspace roots read-write with the level's reads read-only, enforced by the fs worker under nono; pi-lens not loaded server-side; a host reboot reopens shells in their last cwd with a notice; overlapping workspaces only warn (CAS on edits); host-side pi support is deleted outright in R4.</li>
 </ol>
 
 <h2 id="terminals">22. Terminals</h2>
 <p>Every terminal is a <b>PTY supervisor</b>: supervisor kind <code>pty</code>, detached, and surviving client loss and daemon upgrades the way tmux does. It keeps an in-memory scrollback ring and may log to disk. Bytes travel on a dedicated SSH exec channel (<code>controlroomd pty attach &lt;id&gt;</code>) and a binary WebSocket (<code>/api/stream/…</code>) to <b>xterm.js</b>. Several browsers can attach at once, with input from any of them.</p>
 <table>
 <tr><th>Kind</th><th>Scope</th><th>Access</th><th>Sandbox</th><th>Notes</th></tr>
-<tr><td><b>Session terminal</b> (collaborative)</td><td>Session (<span class="tag ext">REVISED</span> one per shell; shells belong to a workspace and run on its host)</td><td>User and agent share it, with one continuous history</td><td>The session's nono profile</td><td>The agent's <code>bash</code> runs here. One tab per shell (<code>main</code>, plus any from <code>shell_new</code>)</td></tr>
+<tr><td><b>Session terminal</b> (collaborative)</td><td>Session, one per named shell (a shell belongs to a workspace and runs on its host)</td><td>User and agent share it, with one continuous history</td><td>The workspace's nono profile</td><td>The agent's <code>bash</code> runs here. One tab per shell (one per workspace to start, named after its machine, plus any from <code>shell_new</code>)</td></tr>
 <tr><td><b>Privileged pane</b></td><td>Session</td><td>User (input), agent (sees output)</td><td><b>Unsandboxed</b> (the user's login environment)</td><td>Only for approved <code>bash_privileged</code> calls. A red "UNSANDBOXED" bar and badge</td></tr>
-<tr><td><b>Job terminal</b></td><td>Session, one per job</td><td>User (watch or type); agent via the log file</td><td>The session's nono profile</td><td>Jobs run on a PTY by default (<code>pty: false</code> opts out)</td></tr>
-<tr><td><b>Private terminal</b></td><td><b>Project</b> (machine and cwd chosen from the project's locations; persists across sessions)</td><td><b>User only.</b> No agent tool can list, read or write it</td><td>None (the user's own shell)</td><td>Visually distinctive (see below). <b>No disk log</b>: scrollback is in memory only, stored under a path no sandbox can reach, and never used in previews, push or summaries</td></tr>
+<tr><td><b>Job terminal</b></td><td>Session, one per job (on its workspace's host)</td><td>User (watch or type); agent via the log file</td><td>The workspace's nono profile</td><td>Jobs run on a PTY by default (<code>pty: false</code> opts out)</td></tr>
+<tr><td><b>Private terminal</b></td><td><b>Project</b> (a machine and directory the user picks; persists across sessions)</td><td><b>User only.</b> No agent tool can list, read or write it</td><td>None (the user's own shell)</td><td>Visually distinctive (see below). <b>No disk log</b>: scrollback is in memory only, stored under a path no sandbox can reach, and never used in previews, push or summaries</td></tr>
 </table>
 <p><b>Placement:</b> in the session view the terminal dock sits <b>below the composer</b> (timeline → todo/schedules → queue → composer → terminals), resizable from its top edge. On phone, terminals open full screen with an extra-keys row. Private terminals open as full panes under their project.</p>
 <h3>22.1 Agent shells (persistent state)</h3>
 <ul>
 <li><b>State persists within a shell:</b> <code>cd</code>, exported env vars (e.g. <code>KUBECONFIG</code>), functions and venv activation carry over between the agent's <code>bash</code> calls and the user's commands in the same shell. This stops agents from repeating env assignments in every command.</li>
-<li><b>Fresh state on request:</b> <code>shell_new {name?, cwd?}</code> opens a new shell (a new tab) with a clean login environment rooted at the session cwd (or <code>cwd</code>). <span class="tag ext">REVISED</span> <code>shell_new {name, at: machine:path}</code>; each workspace starts with one shell named after its machine. If a command runs <code>exit</code>, or the host daemon restarts without the shell's supervisor, the shell is reopened in its last directory and the next result says its variables were lost. <code>bash {shell}</code> targets a named shell. Separate shells also let independent commands run <b>in parallel</b>.</li>
-<li><b>Every tool result starts with a context header</b> <code>[shell main · ~/repo/sub · exit 0]</code> (cwd from OSC 7), so state drift is always visible to the agent.</li>
-<li><b>Command boundaries:</b> the daemon wraps each agent command with OSC 133 shell-integration markers (prompt, command start and end with exit code), so the tool result gets exactly that command's output (ANSI-stripped, length-capped, with a pointer to the full scrollback).</li>
+<li><b>Fresh state on request:</b> <code>shell_new {name, at: machine:path}</code> opens a new shell (a new tab) with a clean login environment in a workspace (default the root). Each workspace starts with one shell named after its machine (<code>&lt;machine&gt;-&lt;dir&gt;</code> when the session has several workspaces there). If a command runs <code>exit</code>, or the host restarts without the shell's supervisor, the shell is reopened in its last directory and the next result says its variables were lost. <code>bash {shell}</code> targets a named shell. Separate shells also let independent commands run <b>in parallel</b>.</li>
+<li><b>Every tool result starts with a context header</b> <code>[shell devbox · devbox:~/repo/sub · exit 0]</code> (cwd from OSC 7), so state drift is always visible to the agent.</li>
+<li><b>Command boundaries:</b> the host daemon wraps each agent command with OSC 133 shell-integration markers (prompt, command start and end with exit code), so the tool result gets exactly that command's output (ANSI-stripped, length-capped, with a pointer to the full output on the host).</li>
 <li><b>Serialization:</b> one command at a time per shell. If the user is mid-typing at the prompt, the agent's command waits, and the pane shows "agent wants to run: <code>…</code>" with [Let it run].</li>
 <li><b>Avoiding needless prompts:</b> agent shells set <code>PAGER=cat GIT_PAGER=cat MANPAGER=cat</code>, <code>GIT_TERMINAL_PROMPT=0</code> and <code>DEBIAN_FRONTEND=noninteractive</code>.</li>
 <li><b>Waiting for input:</b> when a command is waiting on terminal input (a password, a confirmation, a pager), the tool call is marked <b>"waiting for input in terminal"</b>. It becomes a blocking attention item with push, and the user types into xterm. Passwords are not echoed, so they never reach the agent. A timeout applies, and the agent can't type into the terminal itself.</li>
@@ -745,11 +785,11 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <h3>22.3 Jobs on PTYs</h3>
 <ul>
 <li><b>The terminal shows raw output</b> (colors, progress bars), and the user can type into it, e.g. to answer a prompt.</li>
-<li><b>The agent's log file</b> <code>&lt;cwd&gt;/.controlroom/jobs/&lt;id&gt;.log</code> is an <b>ANSI-stripped plain-text</b> copy (carriage-return progress lines collapsed). Follow and exit wakes work as described in "Job".</li>
+<li><b>The agent's log file</b> <code>&lt;workspace root&gt;/.controlroom/jobs/&lt;id&gt;.log</code> (on the job's machine) is an <b>ANSI-stripped plain-text</b> copy (carriage-return progress lines collapsed). Follow and exit wakes work as described in "Job".</li>
 </ul>
 <h3>22.4 Private terminals</h3>
 <ul>
-<li><b>Scope:</b> opened from a <b>project</b>, choosing a machine and cwd from the project's locations. Listed under the project and persistent until closed.</li>
+<li><b>Scope:</b> opened from a <b>project</b> on a machine and directory the user picks. Listed under the project and persistent until closed.</li>
 <li><b>Visual identity:</b> a distinct background tint and frame (e.g. a deep violet or charcoal theme in xterm), a lock icon, a "PRIVATE · agents can't see this" badge on the pane and tab, and its own section in the terminal list.</li>
 <li><b>Isolation:</b>
 <ul>
@@ -766,7 +806,7 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <tr><td><b>Files: browse, upload/download, preview</b></td><td>
 <ul>
 <li><b>Transport:</b> SFTP on the existing russh connection (<code>russh-sftp</code>), falling back to an exec channel when sftp is disabled (<code>doctor</code> reports which). The daemon isn't involved. Access is the <b>user's own</b> (not the agent's sandbox): this is the human's file access, and viewing a file never exposes it to an agent.</li>
-<li><b>Browser:</b> a Files pane rooted at the session cwd (switchable to any of the project's locations or the machine's home). Sort, filter, hidden-file toggle, size and mtime, breadcrumbs, recent files. Backed by <code>fs.list {include_files}</code> and stat.</li>
+<li><b>Browser:</b> a Files pane rooted at a workspace of the session (switchable to its other workspaces or the machine's home). Sort, filter, hidden-file toggle, size and mtime, breadcrumbs, recent files. Backed by <code>fs.list {include_files}</code> and stat.</li>
 <li><b>Open from anywhere:</b> file paths in timeline items (tool calls, diffs, messages), terminal output (xterm link provider, path plus <code>:line</code>), job logs and the Changes view are clickable and open the viewer at that line.</li>
 <li><b>Viewers</b> (lazy-loaded libraries, nothing hand-written):
 <ul>
@@ -777,7 +817,7 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <li><b>PDF:</b> <b>pdf.js</b>.</li>
 <li><b>Other types:</b> hex or binary info, plus download.</li>
 </ul></li>
-<li><b>Upload and download:</b> drag-and-drop or a picker uploads into the current directory, streamed and atomic (written to a temp file, then renamed), with a conflict prompt. Download works per file, or as a folder zip streamed on the fly. Uploading into a session cwd makes the file visible to that agent, and the UI says so.</li>
+<li><b>Upload and download:</b> drag-and-drop or a picker uploads into the current directory, streamed and atomic (written to a temp file, then renamed), with a conflict prompt. Download works per file, or as a folder zip streamed on the fly. Uploading into a workspace makes the file visible to that session's agent, and the UI says so.</li>
 <li><b>Editing (light):</b> quick edits in a <b>CodeMirror 6</b> editor with <b>vim mode on by default</b> (<code>@replit/codemirror-vim</code>, with <code>:w</code> saving and <code>:q</code> closing). Saves check mtime for conflicts and show a diff before saving. Not an IDE.</li>
 <li><b>Security (must hold):</b>
 <ul>
@@ -786,15 +826,15 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <li>authenticated, short-lived, signed URLs;</li>
 <li>Range support, and CSRF tokens on writes.</li>
 </ul></li>
-<li><b>Private files:</b> the file browser is available inside private-terminal context too (same user access). Nothing is shared with agents unless the user puts it in a session cwd.</li>
+<li><b>Private files:</b> the file browser is available inside private-terminal context too (same user access). Nothing is shared with agents unless the user puts it in a session's workspace.</li>
 </ul></td></tr>
-<tr><td><b>Changes review and undo</b> (VCS-agnostic)</td><td>The daemon takes <b>per-run snapshots</b> of the session cwd: content-addressed, incremental, honoring ignore files (<code>.gitignore</code>, <code>.p4ignore</code>, <code>node_modules</code>, build dirs) with a size cap. A <b>Changes</b> view shows the diff per run and overall, with revert per file or hunk and <b>"Undo last run"</b>. It doesn't depend on git or p4. nono's rollback snapshots are a possible implementation, to be evaluated.</td></tr>
+<tr><td><b>Changes review and undo</b> (VCS-agnostic)</td><td>Each host daemon takes <b>per-run snapshots</b> of the session's workspaces: content-addressed, incremental, honoring ignore files (<code>.gitignore</code>, <code>.p4ignore</code>, <code>node_modules</code>, build dirs) with a size cap. A <b>Changes</b> view shows the diff per run and overall, with revert per file or hunk and <b>"Undo last run"</b>. It doesn't depend on git or p4. nono's rollback snapshots are a possible implementation, to be evaluated.</td></tr>
 <tr><td><b>Dev-server previews</b></td><td>When a session's process listens on a port (detected from job or terminal output, or <code>ss</code>), the UI offers <b>Preview</b>. The controller opens an SSH <code>direct-tcpip</code> channel to the remote <code>localhost:port</code> and serves it on a <b>separate origin</b> (e.g. a wildcard subdomain <code>p-&lt;id&gt;.&lt;base&gt;</code> via the deployer's reverse proxy), so app cookies and scripts are isolated from controlroom. Access is authenticated and WebSocket upgrades work. Path-prefix proxying is avoided because it breaks absolute asset paths.</td></tr>
-<tr><td><b>Session templates</b></td><td>Named presets: agent, model, thinking level, cwd, sandbox level and grants, todo seed, schedules, task links. "New session from template".</td></tr>
+<tr><td><b>Session templates</b></td><td>Named presets: model, thinking level, workspaces, sandbox level and grants, todo seed, schedules, task links. "New session from template".</td></tr>
 <tr><td><b>Fork session</b></td><td>Fork from any timeline point (pi <code>fork {entryId}</code>) into a new controlroom session linked to the original. Compare the two side by side.</td></tr>
-<tr><td><b>Away summary</b></td><td>"While you were away": per project, sessions finished, waiting, failed and jobs done, derived by the daemon from the timeline. Shown on return, or as an optional daily digest push.</td></tr>
-<tr><td><b>Search and command palette</b></td><td>Full-text search across timelines (daemon-side index per machine, federated by the controller). A <b>⌘K</b> palette jumps to sessions, tasks, projects, terminals and actions.</td></tr>
-<tr><td><b>Secrets for jobs</b></td><td>User-managed secrets (stored sealed by the controller, or as host references) that nono's proxy injects for specific hosts, endpoints or commands. Agents can <b>use</b> them but never <b>read</b> them. Managed in Settings › Secrets; the private terminal is the natural place to obtain or test them.</td></tr>
+<tr><td><b>Away summary</b></td><td>"While you were away": per project, sessions finished, waiting, failed and jobs done, derived by the agent daemon from the timelines. Shown on return, or as an optional daily digest push.</td></tr>
+<tr><td><b>Search and command palette</b></td><td>Full-text search across timelines (the agent daemon's index, local to the server). A <b>⌘K</b> palette jumps to sessions, tasks, projects, terminals and actions.</td></tr>
+<tr><td><b>Secrets for jobs</b></td><td>User-managed secrets (stored sealed by the controller, or as host references) that nono's proxy injects into a workspace's sandbox on its host, for specific hosts, endpoints or commands (never into the server's pi sandbox). Agents can <b>use</b> them but never <b>read</b> them. Managed in Settings › Secrets; the private terminal is the natural place to obtain or test them.</td></tr>
 <tr><td><b>Usage and cost</b></td><td>Tokens and cost per session, task and project, from pi usage events. Optional budgets per session or project pause auto-continue (budget state) when exceeded.</td></tr>
 </table>
 
