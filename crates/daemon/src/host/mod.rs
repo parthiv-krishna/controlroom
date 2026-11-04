@@ -10,8 +10,8 @@
 //! Startup: claim the instance (`run/host.lock`, `run/host.sock`), open `host.sqlite`, bind
 //! the approval webhook, clean nono temp dirs that killed sandboxes leaked, restore
 //! workspaces, recover the journal (reattaching shells whose supervisors survived), resume
-//! following jobs, report ready, then serve. A new `epoch` marks every start. SIGTERM/SIGINT stop the daemon (shells and jobs keep running under
-//! their supervisors); SIGHUP is ignored.
+//! following jobs, report ready, then serve. A new `epoch` marks every start. SIGTERM/SIGINT
+//! stop the daemon (shells and jobs keep running under their supervisors); SIGHUP is ignored.
 //!
 //! - [`conn`], [`conns`], [`dispatch`]: the API surface;
 //! - [`workspaces`], [`context`], [`sandbox`]: workspaces, their instruction files and skills,
