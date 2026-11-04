@@ -1,8 +1,10 @@
 # controlroom-pi (spec §9, §14, §20): the pinned pi, @controlroom/pi, the OAuth helper and the
-# launcher, installed on execution hosts through their Nix config (home-manager).
+# launcher, used by the agent daemon on the controlroom server. pi runs there with
+# `--no-builtin-tools`: @controlroom/pi's file and shell tools work on the workspaces' hosts.
 #
 #   bin/controlroom-pi             pi with controlroom's layering: `--no-extensions -e
-#                                  <@controlroom/pi> -e <keep-list…>` (nix/pi/controlroom-pi.sh)
+#                                  <@controlroom/pi> -e <keep-list…>` (nix/pi/controlroom-pi.sh;
+#                                  refuses overlapping extensions and pi-lens)
 #   bin/controlroom-pi-oauth       prints a fresh OAuth access token, refreshed by pi under the
 #                                  auth.json lock (nix/pi/oauth-token.mjs); controlroomd runs it
 #   libexec/controlroom-pi/tools   fd and rg as pi's wrapper uses them, for sandbox.toml's

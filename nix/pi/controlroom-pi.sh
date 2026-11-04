@@ -12,7 +12,9 @@
 # store path), `npm:<name>[@version]` (the package as the user's pi installed it, under
 # <agent dir>/npm/node_modules) or `builtin:<name>`. Extensions that overlap controlroom's own
 # tools (subagents, intercom, background tasks, goals, threadroom, tmux and vim integrations)
-# are refused.
+# are refused, and so is pi-lens: pi runs on the controlroom server, where the file tools'
+# paths are `machine:path` on other machines, which its formatter, LSP and read guard would
+# treat as local files.
 #
 # Only shell builtins run before the final exec: a sandboxed session (nono) may only execute
 # programs from PATH directories, and this script's exec target.
@@ -28,6 +30,9 @@ check_not_excluded() {
   case $name in
     pi-subagents | pi-intercom | pi-background-tasks | pi-goal | threadroom-pi | *tmux* | *vim*)
       die "refusing to keep $source: $2 overlaps controlroom's own tools"
+      ;;
+    pi-lens | pi-lens-[0-9]*)
+      die "refusing to keep $source: $2 acts on local files, but controlroom's file tools work on remote machines"
       ;;
   esac
 }

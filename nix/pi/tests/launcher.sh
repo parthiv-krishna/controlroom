@@ -21,6 +21,7 @@ package "$agent/npm/node_modules/kept-npm" kept-npm kept-npm
 package "$agent/npm/node_modules/@scope/kept-scoped" @scope/kept-scoped kept-scoped
 package "$agent/npm/node_modules/pi-subagents" pi-subagents excluded-subagents
 package "$agent/npm/node_modules/pi-intercom" pi-intercom excluded-intercom
+package "$work/store/cccccccccccccccccccccccccccccccc-pi-lens-0.4.0" pi-lens excluded-lens
 package "$work/store/aaaa-provider" kept-provider kept-provider
 package "$work/store/bbbb-pi-vimmode-0.9.0" unrelated-name vim
 printf 'export default function (pi: any) { pi.registerCommand("auto-discovered", { handler: async () => {} }); }\n' \
@@ -60,10 +61,12 @@ refused() {
   case $output in *controlroom-pi:*) ;; *) fail "no launcher error for $*: $output" ;; esac
 }
 refused --keep npm:pi-subagents
+refused --keep npm:pi-lens@1.0.0
 refused --keep npm:@narumitw/pi-goal@0.54.4
 refused --keep npm:pi-tmux-session-map
 refused --keep "$agent/npm/node_modules/pi-intercom"
 refused --keep "$work/store/bbbb-pi-vimmode-0.9.0"
+refused --keep "$work/store/cccccccccccccccccccccccccccccccc-pi-lens-0.4.0"
 refused --keep npm:not-installed
 refused --keep relative/path
 refused -e "$agent/npm/node_modules/pi-subagents"
