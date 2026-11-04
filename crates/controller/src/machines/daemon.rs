@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use controlroom_client_core::bootstrap::daemon_command;
 use controlroom_client_core::daemon::{
-    CallOptions, ClientOptions, DaemonClient, HelloError, hello,
+    CallOptions, CallTimeout, ClientOptions, DaemonClient, HelloError, hello,
 };
 use controlroom_client_core::ssh::SshConnection;
 use controlroom_protocol::NoParams;
@@ -130,7 +130,7 @@ pub(crate) fn spawn_doctor(
 ) -> tokio::task::JoinHandle<()> {
     let (hub, client) = (hub.clone(), client.clone());
     let options = CallOptions {
-        timeout: Some(hub.services.tuning.slow_call_timeout),
+        timeout: CallTimeout::After(hub.services.tuning.slow_call_timeout),
         ..CallOptions::default()
     };
     tokio::spawn(async move {

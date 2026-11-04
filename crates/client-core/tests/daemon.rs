@@ -7,7 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use controlroom_client_core::SshPrivateKey;
-use controlroom_client_core::daemon::{CallError, CallOptions, ClientOptions, DaemonClient};
+use controlroom_client_core::daemon::{
+    CallError, CallOptions, CallTimeout, ClientOptions, DaemonClient,
+};
 use controlroom_client_core::ssh::{ConnectOptions, connect};
 use controlroom_protocol::{ErrorData, Method, RpcNotification, RpcOutcome};
 use serde::{Deserialize, Serialize};
@@ -260,7 +262,7 @@ async fn calls_time_out_and_late_answers_are_dropped() {
         let client = client.clone();
         async move {
             let options = CallOptions {
-                timeout: Some(Duration::from_secs(30)),
+                timeout: CallTimeout::After(Duration::from_secs(30)),
                 ..Default::default()
             };
             client.call_raw_with("fast", Value::Null, options).await

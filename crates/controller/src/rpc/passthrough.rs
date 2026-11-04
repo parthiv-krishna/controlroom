@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use controlroom_client_core::daemon::CallOptions;
+use controlroom_client_core::daemon::{CallOptions, CallTimeout};
 use controlroom_protocol::RpcError;
 use controlroom_protocol::daemon::{DaemonSettings, DoctorReport};
 use controlroom_protocol::ids::{MachineId, SessionId};
@@ -156,7 +156,11 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
     let daemon = hub.daemon(machine_id)?;
     let tuning = &hub.services.tuning;
     let options = CallOptions {
-        timeout: entry.slow.then_some(tuning.slow_call_timeout),
+        timeout: if entry.slow {
+            CallTimeout::After(tuning.slow_call_timeout)
+        } else {
+            CallTimeout::Default
+        },
         ..CallOptions::default()
     };
     let value = daemon

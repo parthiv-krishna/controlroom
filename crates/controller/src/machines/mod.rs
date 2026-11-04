@@ -294,6 +294,7 @@ async fn session(
                     HelloError::Incompatible {
                         daemon_version,
                         protocol_version,
+                        ..
                     },
                 ..
             }) => {

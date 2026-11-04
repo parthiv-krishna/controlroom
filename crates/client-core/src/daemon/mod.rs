@@ -4,7 +4,9 @@
 //! - Calls are multiplexed: [`DaemonClient::call_raw`] may run concurrently
 //!   from many tasks.
 //! - Every call has a timeout ([`ClientOptions::call_timeout`] unless
-//!   [`CallOptions::timeout`] overrides it), and dropping a call's future
+//!   [`CallOptions::timeout`] overrides it; only calls that last as long as
+//!   the work they wait for, such as a host's `tool.run`, opt out with
+//!   [`CallTimeout::Never`]), and dropping a call's future
 //!   cancels it, so post-connect steps can be abandoned at any point.
 //! - Lines are classified with the protocol's tolerant [`Message::parse`]. A
 //!   response whose body doesn't parse fails only its own call (as an
@@ -34,7 +36,9 @@ use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot, watch};
 
-pub use self::handshake::{HelloError, hello};
+pub use self::handshake::{
+    HelloError, agentd_hello, check_version, hello, hello_value, host_hello,
+};
 use self::line::{Line, read_line};
 
 /// Receives every notification, in wire order, on the reader task. It must not
@@ -95,11 +99,23 @@ impl Default for ClientOptions {
     }
 }
 
+/// How long a call may wait for its answer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CallTimeout {
+    /// [`ClientOptions::call_timeout`].
+    #[default]
+    Default,
+    /// This long.
+    After(Duration),
+    /// As long as it takes (the call still fails when the connection closes).
+    Never,
+}
+
 /// Per-call settings.
 #[derive(Default)]
 pub struct CallOptions {
     /// Overrides [`ClientOptions::call_timeout`].
-    pub timeout: Option<Duration>,
+    pub timeout: CallTimeout,
     /// See [`ResponseHook`].
     pub on_response: Option<ResponseHook>,
 }
@@ -300,7 +316,6 @@ impl DaemonClient {
             params,
         };
         let line = encode_line(&request).map_err(|e| CallError::Encode(e.to_string()))?;
-        let timeout = options.timeout.unwrap_or(inner.options.call_timeout);
         let exchange = async {
             inner
                 .out
@@ -309,9 +324,19 @@ impl DaemonClient {
                 .map_err(|_| inner.closed_error())?;
             rx.await.map_err(|_| inner.closed_error())
         };
+        let timeout = match options.timeout {
+            CallTimeout::Default => inner.options.call_timeout,
+            CallTimeout::After(timeout) => timeout,
+            CallTimeout::Never => return exchange.await,
+        };
         tokio::time::timeout(timeout, exchange)
             .await
             .unwrap_or(Err(CallError::Timeout(timeout)))
+    }
+
+    /// Whether `other` is a clone of this client (the same connection).
+    pub fn same_connection(&self, other: &DaemonClient) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
     }
 
     /// Whether the connection is gone.
@@ -446,7 +471,7 @@ mod tests {
         assert_eq!(client.inner.pending().len(), 0);
 
         let options = CallOptions {
-            timeout: Some(Duration::from_millis(1)),
+            timeout: CallTimeout::After(Duration::from_millis(1)),
             ..Default::default()
         };
         let err = client
