@@ -28,6 +28,7 @@ crates/controller    client store, machine manager, hub, UI API, attention, brok
 crates/web           bin controlroom-web (axum shell)
 crates/fake-agent    scriptable fake pi-RPC agent
 crates/fixture-tool  records and sanitizes pi-RPC transcripts
+crates/e2e           end-to-end tests: controller, agentd and two host daemons (test-only)
 web/                 Svelte 5 SPA
 fixtures/            sanitized recordings (committed)
 nix/                 rust.nix, web.nix (more later)
