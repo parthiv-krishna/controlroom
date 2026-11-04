@@ -819,7 +819,6 @@ dependencies = [
  "controlroom-supervisor",
  "controlroom-transcript",
  "globset",
- "grep-matcher",
  "grep-regex",
  "grep-searcher",
  "ignore",

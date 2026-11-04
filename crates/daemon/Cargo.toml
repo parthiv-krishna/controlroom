@@ -14,7 +14,6 @@ controlroom-supervisor.workspace = true
 controlroom-transcript.workspace = true
 # The host's search ops embed ripgrep's crates, so hosts need nothing but bash and nono.
 globset = "0.4"
-grep-matcher = "0.1"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 ignore = "0.4"
