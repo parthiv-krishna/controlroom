@@ -191,7 +191,17 @@ pub async fn ws_connect(
     origin: Option<&str>,
     cookie: Option<&str>,
 ) -> Result<Ws, u16> {
-    let url = format!("ws://{}/api/ws", s.server.local_addr().unwrap());
+    ws_connect_to(s, "/api/ws", origin, cookie).await
+}
+
+/// Opens the WebSocket at `path` with these headers; the HTTP status on refusal.
+pub async fn ws_connect_to(
+    s: &TestServer,
+    path: &str,
+    origin: Option<&str>,
+    cookie: Option<&str>,
+) -> Result<Ws, u16> {
+    let url = format!("ws://{}{path}", s.server.local_addr().unwrap());
     let mut req = url.into_client_request().unwrap();
     let headers = req.headers_mut();
     headers.insert("host", s.host.parse().unwrap());
@@ -267,6 +277,14 @@ impl Ws {
         )
         .await;
         hello
+    }
+
+    /// The next message from the server (none in time is a failure).
+    pub async fn next(&mut self) -> Option<Message> {
+        tokio::time::timeout(TIMEOUT, self.stream.next())
+            .await
+            .expect("a message in time")
+            .map(Result::unwrap)
     }
 
     /// Waits for the server's close frame; returns its code.

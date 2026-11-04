@@ -11,4 +11,5 @@ mod oidc;
 mod push;
 mod startup;
 mod static_files;
+mod terminal;
 mod ws;

@@ -10,6 +10,7 @@
 //! - [`hardening`], [`origin`], [`csp`]: the Host allowlist, CSRF, the security headers and
 //!   the CSP;
 //! - [`ws`]: the WebSocket bridge into a controller `UiClient`;
+//! - [`terminal`]: terminal stream WebSockets into a controller `TerminalStream`;
 //! - [`static_files`]: the embedded UI;
 //! - [`secrets`]: credential files and tokens.
 //!
@@ -25,6 +26,7 @@ pub mod origin;
 pub mod secrets;
 pub mod server;
 pub mod static_files;
+pub mod terminal;
 pub mod ws;
 
 pub use config::{Cli, Config, Env, Settings};

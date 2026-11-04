@@ -44,6 +44,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json"] }
 sha2 = "0.11"
 tempfile.workspace = true
 tokio-tungstenite = "0.29"
+# FakeAgentd publishes sessions for the terminal stream tests.
+controlroom-controller = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

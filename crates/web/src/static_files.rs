@@ -133,7 +133,8 @@ pub(crate) async fn serve(
     file_response("index.html", index, head)
 }
 
-/// `/api/files/…` and `/api/stream/…`, reserved for the file transfer and terminal streams.
+/// `/api/files/…` and `/api/stream/…` (but terminals), reserved for file transfer and other
+/// byte streams.
 pub(crate) async fn reserved() -> Response {
     (StatusCode::NOT_IMPLEMENTED, "reserved\n").into_response()
 }

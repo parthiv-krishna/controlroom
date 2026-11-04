@@ -19,12 +19,12 @@ use axum::extract::State;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade, close_code};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use controlroom_controller::{CloseReason, UiClient, UiReceiver};
+use controlroom_controller::{Authenticated, CloseReason, UiClient, UiReceiver};
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
 use tokio::sync::oneshot;
 
-use crate::auth::authenticate;
+use crate::auth::{Rejection, authenticate};
 use crate::server::AppState;
 
 /// The largest accepted message: the agent's per-record limit, so a big prompt (with images)
@@ -33,7 +33,40 @@ pub const MAX_MESSAGE_BYTES: usize = 16 << 20;
 /// The close code when the login is gone; the UI checks `auth/session` and signs in again.
 pub const CLOSE_UNAUTHENTICATED: u16 = 4401;
 /// How long the writer may take to flush its close frame after the reader stopped.
-const WRITER_GRACE: Duration = Duration::from_secs(5);
+pub(crate) const WRITER_GRACE: Duration = Duration::from_secs(5);
+
+/// Why a WebSocket upgrade was refused.
+pub(crate) enum Refused {
+    /// No `Origin`, or not ours (cross-site WebSocket hijacking, DNS rebinding).
+    Origin,
+    /// No live login session.
+    Login(Rejection),
+}
+
+impl IntoResponse for Refused {
+    fn into_response(self) -> Response {
+        match self {
+            Refused::Origin => {
+                (StatusCode::FORBIDDEN, "WebSocket Origin not allowed\n").into_response()
+            }
+            Refused::Login(rejection) => rejection.into_response(),
+        }
+    }
+}
+
+/// Admits a WebSocket upgrade (this one and the terminal streams'): an allowed `Origin`, then
+/// a live login session.
+pub(crate) fn admit(state: &AppState, headers: &HeaderMap) -> Result<Authenticated, Refused> {
+    // Browsers always send Origin on WebSocket upgrades; anything else is refused.
+    let origin_ok = headers
+        .get(header::ORIGIN)
+        .and_then(|o| o.to_str().ok())
+        .is_some_and(|o| state.origin.origin_allowed(o));
+    if !origin_ok {
+        return Err(Refused::Origin);
+    }
+    authenticate(state, headers).map_err(Refused::Login)
+}
 
 /// The upgrade.
 pub(crate) async fn upgrade(
@@ -41,17 +74,9 @@ pub(crate) async fn upgrade(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    // Browsers always send Origin on WebSocket upgrades; anything else is refused.
-    let origin_ok = headers
-        .get(header::ORIGIN)
-        .and_then(|o| o.to_str().ok())
-        .is_some_and(|o| state.origin.origin_allowed(o));
-    if !origin_ok {
-        return (StatusCode::FORBIDDEN, "WebSocket Origin not allowed\n").into_response();
-    }
-    let auth = match authenticate(&state, &headers) {
+    let auth = match admit(&state, &headers) {
         Ok(auth) => auth,
-        Err(rejection) => return rejection.into_response(),
+        Err(refused) => return refused.into_response(),
     };
     let client = match state.controller.open_client(&auth) {
         Ok(client) => client,
@@ -146,7 +171,7 @@ async fn write(
 }
 
 /// The close frame for a connection the controller closed.
-fn controller_close(reason: Option<CloseReason>) -> CloseFrame {
+pub(crate) fn controller_close(reason: Option<CloseReason>) -> CloseFrame {
     match reason {
         Some(CloseReason::Unauthenticated) => close_frame(CLOSE_UNAUTHENTICATED, "signed out"),
         Some(CloseReason::Overflow) => close_frame(close_code::AGAIN, "fell behind; reconnect"),
@@ -155,7 +180,7 @@ fn controller_close(reason: Option<CloseReason>) -> CloseFrame {
     }
 }
 
-fn close_frame(code: u16, reason: &'static str) -> CloseFrame {
+pub(crate) fn close_frame(code: u16, reason: &'static str) -> CloseFrame {
     CloseFrame {
         code,
         reason: reason.into(),

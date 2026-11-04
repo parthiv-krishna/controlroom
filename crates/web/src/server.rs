@@ -27,7 +27,7 @@ use crate::hardening;
 use crate::origin::OriginPolicy;
 use crate::secrets::{ensure_private_dir, read_text_secret};
 use crate::static_files::{self, Assets};
-use crate::ws;
+use crate::{terminal, ws};
 
 /// The server's version, reported in `hello` and to daemons.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -287,9 +287,13 @@ fn router(state: Arc<AppState>) -> Router {
         .route("/auth/callback", get(oidc::callback))
         .route("/auth/dev-token", get(dev_token::exchange))
         .route("/api/ws", get(ws::upgrade))
-        // Reserved (spec §19, §22, §23): file transfer, served with `nosniff` and
-        // `Content-Security-Policy: sandbox` from a separate content origin, and terminal
-        // byte streams.
+        .route(
+            "/api/stream/terminal/{session}/{shell}",
+            get(terminal::upgrade),
+        )
+        // Reserved (spec §19, §23): file transfer, served with `nosniff` and
+        // `Content-Security-Policy: sandbox` from a separate content origin, and other byte
+        // streams.
         .route("/api/files/{*rest}", any(static_files::reserved))
         .route("/api/stream/{*rest}", any(static_files::reserved))
         .fallback(static_files::serve)
