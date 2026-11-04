@@ -17,8 +17,9 @@ pub enum Event {
     Ended(Option<i32>),
     /// OSC 7: the shell's directory.
     Cwd(String),
-    /// OSC 133 `A`: a prompt is shown; the shell waits for input.
-    Prompt,
+    /// OSC 133 `A`: a prompt is shown; the shell waits for input. The integration adds the
+    /// shell's pid (`A;cr_pid=<pid>`), which locates its terminal even inside a sandbox.
+    Prompt(Option<u32>),
 }
 
 /// Longest OSC sequence considered; longer ones are passed through as output.
@@ -136,7 +137,12 @@ fn classify(body: &[u8]) -> Option<Event> {
     if let Some(rest) = text.strip_prefix("133;") {
         let mut parts = rest.splitn(2, ';');
         return match parts.next()? {
-            "A" => Some(Event::Prompt),
+            "A" => Some(Event::Prompt(
+                parts
+                    .next()
+                    .and_then(|p| p.strip_prefix("cr_pid="))
+                    .and_then(|p| p.parse().ok()),
+            )),
             "C" => Some(Event::Started(parts.next()?.to_owned())),
             "D" => Some(Event::Ended(parts.next().and_then(|s| s.parse().ok()))),
             _ => None,
@@ -168,7 +174,7 @@ mod tests {
         events
     }
 
-    const RUN: &[u8] = b"$  __cr_run m1 /x\r\n\x1b[2mecho hi\x1b[0m\r\n\x1b]133;C;m1\x07hi\r\n\x1b[31mred\x1b[0m\r\n\x1b]133;D;3\x07\x1b]7;file://devbox/home/alice/src\x07\x1b]133;A\x07$ ";
+    const RUN: &[u8] = b"$  __cr_run m1 /x\r\n\x1b[2mecho hi\x1b[0m\r\n\x1b]133;C;m1\x07hi\r\n\x1b[31mred\x1b[0m\r\n\x1b]133;D;3\x07\x1b]7;file://devbox/home/alice/src\x07\x1b]133;A;cr_pid=42\x07$ ";
 
     #[test]
     fn a_command_between_markers() {
@@ -177,7 +183,7 @@ mod tests {
             Event::Output(b"hi\r\n\x1b[31mred\x1b[0m\r\n".to_vec()),
             Event::Ended(Some(3)),
             Event::Cwd("/home/alice/src".into()),
-            Event::Prompt,
+            Event::Prompt(Some(42)),
         ];
         assert_eq!(all(&[RUN]), expected);
         // Any split of the stream gives the same events.

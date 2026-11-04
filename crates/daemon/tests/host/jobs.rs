@@ -284,3 +284,63 @@ async fn a_job_whose_supervisor_died_with_the_host_is_lost_and_kills_are_logged(
     };
     assert_eq!(jobs[0].status, JobStatus::Killed);
 }
+
+#[tokio::test]
+async fn following_a_running_job_rescans_its_lines_so_far() {
+    let env = HostEnv::start().await;
+    let client = env.controller().await;
+    let session = Session::open(&env, &client, SandboxLevel::Off).await;
+    let subscribed = client
+        .call::<methods::JobsSubscribe>(JobsSubscribeParams { since: None })
+        .await
+        .unwrap();
+    let gate = env.dir.path().join("gate");
+    fifo(&gate);
+    let command = format!(
+        "echo WARN a; echo ok; echo WARN b; cat {} > /dev/null; echo WARN c",
+        gate.display()
+    );
+    let job = run_job(&session, &client, "j1", job_run(&command, None)).await;
+    let mut seen = subscribed.events;
+    while !seen
+        .iter()
+        .any(|e| matches!(e.kind, JobEventKind::Progress { lines: 3, .. }))
+    {
+        let note = client.note("jobs.event").await;
+        seen.extend(serde_json::from_value::<Vec<JobEvent>>(note["events"].clone()).unwrap());
+    }
+    let followed = session
+        .run(
+            &client,
+            "f1",
+            HostOp::JobFollow {
+                job_id: job.id,
+                pattern: Some("^WARN".into()),
+                buffer_seconds: Some(3),
+                from: Default::default(),
+            },
+        )
+        .await
+        .unwrap();
+    let HostResult::JobFollow { job: after } = followed else {
+        panic!()
+    };
+    assert_eq!(after.follow.as_ref().map(|f| f.buffer_seconds), Some(3));
+    release(&gate).await;
+    let events = events_until_exit(&client, seen, job.id).await;
+    let follow = events.iter().find_map(|e| match &e.kind {
+        JobEventKind::Follow { matches, .. } => Some(matches.clone()),
+        _ => None,
+    });
+    assert_eq!(follow, Some(vec![1, 3]));
+    let later: Vec<u64> = events
+        .iter()
+        .skip_while(|e| !matches!(e.kind, JobEventKind::Follow { .. }))
+        .filter_map(|e| match &e.kind {
+            JobEventKind::Progress { matches, .. } => Some(matches.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(later, [4]);
+}

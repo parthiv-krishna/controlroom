@@ -19,7 +19,7 @@ use tokio::sync::{Notify, OwnedMutexGuard, oneshot};
 
 use super::integration::{marker, run_line};
 use super::output::Output;
-use super::{Active, End, Inner, Shell, proc};
+use super::{Active, End, Inner, Proc, Shell, proc};
 use crate::host::Host;
 use crate::host::store::internal;
 
@@ -31,6 +31,13 @@ const KILL_AFTER: Duration = Duration::from_secs(5);
 const INPUT_IDLE: Duration = Duration::from_secs(2);
 /// How long a command may wait for input before it is interrupted.
 const INPUT_TIMEOUT: Duration = Duration::from_secs(600);
+
+impl Proc {
+    /// The process whose terminal is the shell's: the shell once it reported its pid.
+    fn shell_or_child(&self) -> u32 {
+        self.shell_pid.unwrap_or(self.child_pid)
+    }
+}
 
 /// A command that was running when the daemon restarted (from its journal row).
 #[derive(Debug, Clone)]
@@ -272,7 +279,7 @@ async fn interrupt(shell: &Shell) -> Instant {
 /// SIGKILLs the terminal's foreground group (if that is the shell itself, the shell dies and
 /// is reopened by the next command).
 fn kill_foreground(shell: &Shell) {
-    let pid = shell.lock().proc.as_ref().map(|p| p.child_pid);
+    let pid = shell.lock().proc.as_ref().map(Proc::shell_or_child);
     if let Some(group) = pid.and_then(proc::foreground_group) {
         tracing::info!("shell {}: killing foreground group {group}", shell.id);
         proc::kill_group(group);
@@ -301,13 +308,19 @@ fn check_waiting(host: &Arc<Host>, shell: &Shell, call_id: &CallId) -> bool {
             return false;
         };
         (
-            inner.proc.as_ref().map(|p| p.child_pid),
+            inner.proc.as_ref().map(Proc::shell_or_child),
             active.last_output.elapsed() >= INPUT_IDLE,
         )
     };
     let group = pid.and_then(proc::foreground_group);
     let foreground = group.and_then(proc::name);
     let waiting = idle && group.is_some_and(proc::reads_terminal);
+    if idle {
+        tracing::debug!(
+            "shell {}: quiet; foreground group {group:?} ({foreground:?}) waiting for input: {waiting}",
+            shell.id
+        );
+    }
     let mut changed = false;
     {
         let mut inner = shell.lock();

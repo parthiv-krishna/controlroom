@@ -6,7 +6,7 @@ use controlroom_protocol::host::{HostResult, ShellListParams, ToolCallRef, metho
 use controlroom_protocol::ids::CallId;
 use controlroom_protocol::session::{SandboxLevel, ShellState};
 
-use crate::harness::{HostEnv, Session, bash_op};
+use crate::harness::{HostEnv, Session, bash_op, fifo, release, resize, type_into};
 
 #[tokio::test]
 async fn shells_keep_cwd_env_and_functions_and_are_independent() {
@@ -233,24 +233,8 @@ async fn a_command_waiting_for_input_is_flagged_and_the_user_answers_in_the_term
     assert_eq!(waiting["waiting"], true);
 
     // The user types in the terminal pane.
-    let shell_id = format!("{}/s", session.id);
-    let mut attach = env
-        .command()
-        .args(["pty", "attach", &shell_id, "--state-dir"])
-        .arg(env.state())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    {
-        use std::io::Write as _;
-        let stdin = attach.stdin.as_mut().unwrap();
-        stdin.write_all(b"alice\n").unwrap();
-    }
+    type_into(&env, &format!("{}/s", session.id), b"alice\n");
     let result: HostResult = serde_json::from_value(running.await.unwrap().unwrap()).unwrap();
-    drop(attach.stdin.take());
-    let _ = attach.kill();
-    let _ = attach.wait();
     let HostResult::Bash {
         waited_for_input,
         output,
@@ -261,4 +245,40 @@ async fn a_command_waiting_for_input_is_flagged_and_the_user_answers_in_the_term
     };
     assert!(waited_for_input);
     assert!(output.ends_with("got:alice"), "{output:?}");
+}
+
+#[tokio::test]
+async fn output_streams_while_the_command_runs_and_the_terminal_resizes() {
+    let env = HostEnv::start().await;
+    let client = env.controller().await;
+    let session = Session::open(&env, &client, SandboxLevel::Off).await;
+    session.shell(&client, "s").await;
+    let gate = env.dir.path().join("gate");
+    fifo(&gate);
+    let running = client
+        .send::<methods::ToolRun>(session.run_params(
+            "stream",
+            bash_op(
+                "s",
+                &format!(
+                    "printf '\\033[1mone\\033[0m\\ntwo\\n'; cat {} > /dev/null; echo three",
+                    gate.display()
+                ),
+                None,
+            ),
+        ))
+        .await;
+    let mut streamed = String::new();
+    while streamed != "one\ntwo\n" {
+        let note = client.note("tool.output").await;
+        assert_eq!(note["call_id"], "stream");
+        streamed.push_str(note["text"].as_str().unwrap());
+    }
+    release(&gate).await;
+    let result: HostResult = serde_json::from_value(running.await.unwrap().unwrap()).unwrap();
+    assert!(matches!(result, HostResult::Bash { ref output, .. } if output == "one\ntwo\nthree"));
+
+    resize(&env, &format!("{}/s", session.id), 100, 33);
+    let (_, output, _) = session.bash(&client, "size", "s", "stty size").await;
+    assert_eq!(output, "33 100");
 }

@@ -78,6 +78,8 @@ struct Active {
 struct Proc {
     generation: u64,
     child_pid: u32,
+    /// The shell itself (the supervisor's child may be a sandbox wrapper), from its prompt.
+    shell_pid: Option<u32>,
     control: Arc<Client>,
 }
 
@@ -196,6 +198,7 @@ impl Shell {
             inner.proc = Some(Proc {
                 generation: inner.generation,
                 child_pid,
+                shell_pid: None,
                 control: Arc::new(control),
             });
             inner.generation
@@ -251,7 +254,14 @@ impl Shell {
                         changed = true;
                     }
                 }
-                Event::Prompt => {
+                Event::Prompt(pid) => {
+                    if let Some(proc) = inner.proc.as_mut()
+                        && pid.is_some()
+                        && proc.shell_pid != pid
+                    {
+                        proc.shell_pid = pid;
+                        changed = true;
+                    }
                     // The runner takes the finished command (and its output) out of `active`.
                     if let Some(active) = inner
                         .active
@@ -315,13 +325,14 @@ impl Shell {
 
     /// Saves the cwd, supervisor and reset state.
     fn persist(&self, host: &Arc<Host>) {
-        let (id, cwd, reset, supervisor) = {
+        let (id, cwd, reset, supervisor, shell_pid) = {
             let inner = self.lock();
             (
                 self.id.to_string(),
                 inner.cwd.clone(),
                 inner.reset_reason.clone(),
                 inner.proc.as_ref().map(|p| p.control.hello().id.clone()),
+                inner.proc.as_ref().and_then(|p| p.shell_pid),
             )
         };
         let store = host.store.clone();
@@ -329,9 +340,9 @@ impl Shell {
             let saved = store
                 .run(move |c| {
                     c.execute(
-                        "UPDATE shells SET cwd = ?2, reset_reason = ?3, supervisor = ?4
+                        "UPDATE shells SET cwd = ?2, reset_reason = ?3, supervisor = ?4, shell_pid = ?5
                          WHERE id = ?1",
-                        params![id, cwd, reset, supervisor],
+                        params![id, cwd, reset, supervisor, shell_pid],
                     )
                 })
                 .await;
@@ -623,8 +634,8 @@ impl Shells {
             .store
             .run(|c| {
                 let mut stmt = c.prepare(
-                    "SELECT id, session_id, name, workspace_id, supervisor, cwd, reset_reason
-                     FROM shells",
+                    "SELECT id, session_id, name, workspace_id, supervisor, cwd, reset_reason,
+                     shell_pid FROM shells",
                 )?;
                 let rows = stmt.query_map([], |r| {
                     Ok((
@@ -635,13 +646,14 @@ impl Shells {
                         r.get::<_, Option<String>>(4)?,
                         r.get::<_, String>(5)?,
                         r.get::<_, Option<String>>(6)?,
+                        r.get::<_, Option<u32>>(7)?,
                     ))
                 })?;
                 rows.collect::<rusqlite::Result<Vec<_>>>()
             })
             .await?;
         let mut adopted = HashMap::new();
-        for (id, session, name, workspace, supervisor, cwd, reset) in rows {
+        for (id, session, name, workspace, supervisor, cwd, reset, shell_pid) in rows {
             let (Ok(session), Ok(workspace)) = (session.parse(), workspace.parse()) else {
                 continue;
             };
@@ -650,7 +662,9 @@ impl Shells {
             self.lock().insert(id.clone(), shell.clone());
             let resume = resumes.remove(&id);
             let attached = match &supervisor {
-                Some(supervisor) => reattach(host, &shell, supervisor, resume.as_ref()).await,
+                Some(supervisor) => {
+                    reattach(host, &shell, supervisor, shell_pid, resume.as_ref()).await
+                }
                 None => None,
             };
             match (attached, resume) {
@@ -680,6 +694,7 @@ async fn reattach(
     host: &Arc<Host>,
     shell: &Arc<Shell>,
     supervisor: &str,
+    shell_pid: Option<u32>,
     resume: Option<&Resume>,
 ) -> Option<Option<BashRun>> {
     let socket = host.paths.supervisor_socket(supervisor);
@@ -701,6 +716,7 @@ async fn reattach(
         inner.proc = Some(Proc {
             generation: inner.generation,
             child_pid: status.child_pid,
+            shell_pid,
             control: Arc::new(control),
         });
         if let Some(resume) = resume {

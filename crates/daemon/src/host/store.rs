@@ -30,6 +30,7 @@ const MIGRATIONS: &[&str] = &[r"
         name TEXT NOT NULL,
         workspace_id TEXT NOT NULL,
         supervisor TEXT,
+        shell_pid INTEGER,
         cwd TEXT NOT NULL,
         reset_reason TEXT
     );

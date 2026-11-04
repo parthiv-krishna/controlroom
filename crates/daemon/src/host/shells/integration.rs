@@ -7,7 +7,8 @@
 //! - It sets non-interactive defaults for agent commands (spec §22.1: pagers off, no git
 //!   credential prompts) and keeps `__cr_run` lines out of the history.
 //! - `PROMPT_COMMAND` reports every prompt: OSC 133 `D;<exit status>`, OSC 7 with the cwd,
-//!   then OSC 133 `A` (prompt start).
+//!   then OSC 133 `A;cr_pid=<the shell's pid>` (prompt start; the pid finds the shell's own
+//!   terminal when a sandbox runs it on another PTY).
 //! - `__cr_run <marker> <file>` runs an agent command: it shows the command (dimmed) for
 //!   humans watching the terminal, prints OSC 133 `C;<marker>`, clears the positional
 //!   parameters and sources the file. The command's output is what the terminal shows between
@@ -30,7 +31,7 @@ if [ -n "${CR_CWD-}" ]; then cd -- "$CR_CWD" 2>/dev/null; fi
 unset CR_CWD
 __cr_prompt() {
   local s=$?
-  printf '\033]133;D;%s\007\033]7;file://%s%s\007\033]133;A\007' "$s" "${HOSTNAME-}" "$PWD"
+  printf '\033]133;D;%s\007\033]7;file://%s%s\007\033]133;A;cr_pid=%s\007' "$s" "${HOSTNAME-}" "$PWD" "$$"
   return $s
 }
 PROMPT_COMMAND=(__cr_prompt)

@@ -464,3 +464,38 @@ pub async fn release(path: &Path) {
         .await
         .unwrap();
 }
+
+/// Types `text` into a shell's terminal the way a user does: `controlroomd pty attach`.
+pub fn type_into(env: &HostEnv, shell_id: &str, text: &[u8]) {
+    use std::io::Write as _;
+    let mut attach = env
+        .command()
+        .args(["pty", "attach", shell_id, "--state-dir"])
+        .arg(env.state())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    attach.stdin.as_mut().unwrap().write_all(text).unwrap();
+    drop(attach.stdin.take());
+    let status = attach.wait().unwrap();
+    assert!(status.success(), "pty attach failed: {status}");
+}
+
+/// `controlroomd pty resize`.
+pub fn resize(env: &HostEnv, shell_id: &str, cols: u16, rows: u16) {
+    let status = env
+        .command()
+        .args([
+            "pty",
+            "resize",
+            shell_id,
+            &cols.to_string(),
+            &rows.to_string(),
+        ])
+        .arg("--state-dir")
+        .arg(env.state())
+        .status()
+        .unwrap();
+    assert!(status.success());
+}

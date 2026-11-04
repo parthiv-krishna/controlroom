@@ -175,6 +175,22 @@ async fn shells_and_jobs_run_under_the_workspace_profile() {
         "{result:?}"
     );
 
+    // Waiting for input is seen through nono, and the user answers in the terminal.
+    let asking = client
+        .send::<methods::ToolRun>(session.run_params(
+            "ask",
+            crate::harness::bash_op("s", "read -r answer; echo got:$answer", None),
+        ))
+        .await;
+    let waiting = client.note("tool.waiting_input").await;
+    assert_eq!(waiting["waiting"], true);
+    crate::harness::type_into(&env, &format!("{}/s", session.id), b"yes\n");
+    let answered: HostResult = serde_json::from_value(asking.await.unwrap().unwrap()).unwrap();
+    assert!(
+        matches!(answered, HostResult::Bash { waited_for_input: true, ref output, .. } if output.ends_with("got:yes")),
+        "{answered:?}"
+    );
+
     // A job under the same profile.
     let subscribed = client
         .call::<methods::JobsSubscribe>(JobsSubscribeParams { since: None })

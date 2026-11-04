@@ -179,3 +179,66 @@ async fn a_command_whose_shell_died_with_the_daemon_is_lost_and_the_shell_reopen
     };
     assert!(shell_reset.is_some());
 }
+
+#[tokio::test]
+async fn a_write_interrupted_by_a_restart_is_resolved_by_the_files_hash() {
+    let mut env = HostEnv::start().await;
+    let client = env.controller().await;
+    let session = Session::open(&env, &client, SandboxLevel::Off).await;
+    drop(client);
+    env.kill_daemon();
+    // What a daemon that died mid-write leaves: a running row with its intent. One write
+    // reached the disk, the other didn't.
+    let target = env.project().join("done.txt");
+    std::fs::write(&target, "new content").unwrap();
+    let sha = |s: &str| {
+        use sha2::Digest as _;
+        sha2::Sha256::digest(s.as_bytes())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    };
+    let db = rusqlite::Connection::open(env.state().join("host/host.sqlite")).unwrap();
+    for (call, path, content) in [
+        ("w-applied", target.clone(), "new content"),
+        ("w-missing", env.project().join("never.txt"), "other"),
+    ] {
+        let intent = serde_json::json!({
+            "op": "write", "path": path, "sha256": sha(content), "bytes": content.len()
+        });
+        db.execute(
+            "INSERT INTO journal (call_id, workspace_id, op, args_hash, state, intent, started_at)
+             VALUES (?1, ?2, 'write', 'x', 'running', ?3, 0)",
+            rusqlite::params![call, session.workspace.to_string(), intent.to_string()],
+        )
+        .unwrap();
+    }
+    drop(db);
+    env.start_daemon().await;
+    let client = env.controller().await;
+    let applied = client
+        .call::<methods::ToolAttach>(ToolCallRef {
+            call_id: CallId::new("w-applied"),
+        })
+        .await
+        .unwrap();
+    assert!(
+        matches!(applied, HostResult::Write { bytes: 11, .. }),
+        "{applied:?}"
+    );
+    let missing = client
+        .call::<methods::ToolAttach>(ToolCallRef {
+            call_id: CallId::new("w-missing"),
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            missing.data,
+            Some(ErrorData::Lost {
+                may_have_run: false
+            })
+        ),
+        "{missing:?}"
+    );
+}
