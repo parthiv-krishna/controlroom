@@ -14,6 +14,19 @@ Three APIs, all JSON-RPC 2.0 with newline-delimited framing (one compact JSON ob
 
 Rust areas (crate root modules): `ids`, `jsonrpc`, `error`, `version`, `session` (model), `timeline`, `daemon`, `ui`, `agent`, `typescript`.
 
+> **Proposed model change (W9s, `docs/design/remote-tools.md`).** pi runs only on the server, in the agent daemon
+> (`controlroom-agentd`); execution hosts run `controlroomd` in a host role. The APIs become:
+>
+> | API | Between | Transport |
+> | --- | --- | --- |
+> | Agent daemon API (today's daemon API, §5) | controller ↔ `controlroom-agentd` | local unix socket |
+> | **Host API (new, §5b)** | controller ↔ `controlroomd` host role | SSH exec channel `controlroomd connect` |
+> | UI API (§6) | browser ↔ controller | WebSocket |
+> | Agent API (§6a, extended) | `@controlroom/pi` ↔ `controlroom-agentd` | per-session unix socket |
+>
+> Nothing is deployed yet, so the proposal redefines these in place as 1.0. Paragraphs marked **(W9s)** below are the
+> proposed changes.
+
 ## 1. Conventions
 
 - Field and enum names are `snake_case`. Tagged unions use `kind` (or `op` for timeline ops, `outcome` for results, `state` for connectivity).
@@ -53,6 +66,13 @@ A client calls a feature's methods only when the peer advertised it.
 
 **`SessionSummary`** (every session, fed by `machine.subscribe`, sent whole on each change; preview throttled to 1/s):
 `id, name?, title?, cwd, agent, created_at, updated_at, closed_at?, parent_id?, spawned_by?, state, last_outcome?, last_error?, read_seq, last_turn_end_seq, unread, preview, attention?, rollup, context?, queue, requests[], todo?, live_work, options[], agent_live, sandbox, resumable`.
+
+**(W9s)** `cwd` and `spawned_by` go; sessions are global (no `machine_id` in the UI feed). New fields:
+`workspaces[]` (`Workspace {id, machine_id, path: RemotePath, root?, primary, availability: Connectivity}`) and
+`shells[]` (`Shell {name, workspace_id, cwd, state: idle · running{call_id} · waiting_input{call_id} · gone}`).
+`live_work` gains `host_calls` (pending tool calls on unreachable hosts). New request kinds: `terminal_input`
+(a shell command waits for input; blocking) and `privileged` (`bash_privileged`). `Job` gains `machine_id`,
+`workspace_id`, and its `log_path` is on that machine.
 
 - `state`: `starting · idle · working · awaiting_permission · awaiting_input · failed · dormant · interrupted · closed`.
 - `last_outcome` (`RunOutcome`): `completed · cancelled · failed · max_tokens · refusal · unknown`.
@@ -141,6 +161,48 @@ Inbox deliveries: `message` (incl. replies, `late`) · `request` (contact or spa
 
 **Errors** (`ErrorData`, by `kind`, plus `code`/`message`): `parse_error · invalid_request · method_not_found · invalid_params · internal_error · incompatible_version · hello_required · op_id_conflict · timeout · invalid_response · unsupported · not_found{resource, id} · unknown_session · deleted · already_resolved · busy · invalid_state{state} · not_resumable · agent_unavailable · sandbox_unavailable · fs_error · controller_conflict{controller_id, connected_since} · unknown`.
 
+## 5b. Host API (`host`) (W9s, proposed)
+
+Controller ↔ `controlroomd` host role, over the exec channel `controlroomd connect` (as today's daemon API). Same
+framing, tolerance and single-controller rules. The host keeps no sessions: it knows workspaces, shells, jobs and a
+journal of tool calls.
+
+| Method | Purpose |
+| --- | --- |
+| `hello {protocol_version, client_name, role}` | → `host_version`, `protocol_version`, `host_id`, `epoch` (new each daemon start), capabilities (`shells`, `jobs`, `sandbox_approvals`, `pty`) |
+| `workspace.open {workspace_id, session_id, path, sandbox}` | resolve and check the path, generate the workspace's nono profile → `{root, home, context_files[{path, content}], skills[{name, description, path}]}` (AGENTS.override.md / AGENTS.md / CLAUDE.md from the root up to `/`) |
+| `workspace.close {workspace_id}` | stop its shells and jobs |
+| `shell.open {shell_id, workspace_id, cwd?}` · `shell.close {shell_id}` · `shell.list` | PTY supervisors under the workspace profile; `open` is idempotent by id |
+| `tool.run {call_id, workspace_id, op: HostOp}` | → `HostResult`. Idempotent by `call_id`: a repeat attaches to the running call or returns the journaled result; never reruns |
+| `tool.attach {call_id}` | → the result of an earlier call (`not_found` if it never started; `lost` if the daemon restarted while it ran) |
+| `tool.cancel {call_id}` | interrupt: ETX into the shell's PTY, SIGKILL of the foreground group after 5 s |
+| `journal.ack {call_ids[]}` | the server has logged these results; the host may drop them (TTL 24 h otherwise) |
+| `tool.run` with `op: job_run · job_follow · job_unfollow · job_kill · job_status` · `jobs.subscribe {since}` · `jobs.ack {seq}` | jobs run on the host in detached job supervisors under the workspace profile; commands are idempotent by `call_id` (call journal). The host appends `started · progress {lines, offset, matches[]} · follow · unfollow · killed · exit` to a persisted job event log (one sequence per host); `jobs.subscribe` returns the events after the server's cursor, then streams `jobs.event`. Wakes are the agent daemon's: cursor, pending follow matches and wakes commit together, wake ids are deterministic, so each wake is delivered exactly once (design §3.6) |
+| `fs.list {path, include_files?}` · `doctor.report` | as today |
+| `approvals.subscribe` · `approval.respond {id, decision, reason?}` | nono webhook approvals from workspace sandboxes |
+
+Notifications: `tool.output {call_id, text}` (ANSI-stripped, capped), `tool.waiting_input {call_id}`,
+`shell.changed {shell_id, cwd, state}`, `jobs.event {seq, at, job_id, kind, …}`, `approval.request {id, workspace_id, kind, body}`.
+
+**`HostOp`** (tagged by `op`, `unknown` fallback): `read {path, offset?, limit?}` (windowed, pi's truncation rules;
+images report their MIME type) · `read_bytes {path, offset?, length?}` (capped) · `stat {path}` ·
+`write {path, text | b64, expect_sha256?}` (temp file + fsync + rename; `conflict` when `expect_sha256` doesn't match) ·
+`ls {path, limit?}` · `find {pattern, path, limit?}` · `grep {pattern, path, glob?, ignore_case?, literal?, context?, limit?}` ·
+`bash {shell_id, command, timeout_s}` → `{exit_code?, cwd, output, truncated, notes[], log_path}`. Paths are `RemotePath`;
+relative paths resolve against the workspace root.
+
+**Exactly once:** read ops may rerun; `write` is journaled (a resend returns the journaled result; after a restart the
+file's hash tells `applied` from `not_applied`); `bash` is at-most-once (journaled before the command reaches the shell).
+**Errors** add `conflict`, `lost`, `shell_gone`, `connection_lost{since}` (raised by the controller/agent daemon when a
+host stays unreachable past the grace).
+
+**Agent daemon API changes (W9s):** `machine.subscribe` → `sessions.subscribe`; `session.create {workspaces[{machine_id, path}], name?, parent_id?, sandbox?, prompt?}`;
+`session.workspace_add|remove`; host routing pull-style: `hostops.subscribe` → notifications
+`hostops.request {call_id, machine_id, session_id, method, params}` (every pending call again on resubscribe),
+answered by `hostops.respond {call_id, result | error}`, plus `hostops.output`, `hostops.waiting_input` and
+`hostops.connectivity {machine_id, state, since}`; host-raised requests enter as `request.raise`. `outbox.*` and
+`inbox.deliver` go away (messaging is local to the agent daemon).
+
 ## 6. UI API (`ui`)
 
 Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.subscribe` per open session (shared across tabs by the server, resumed without duplicates).
@@ -155,7 +217,7 @@ Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.
 | *pass-through* | every other session, queue, request, todo, job, `sandbox.revoke`, `agents.list`, `fs.list`, `doctor.report`, `settings.*` method, params wrapped in `OnMachine` (`machine_id` next to the daemon fields); unreachable machine → `machine_unavailable` |
 | `machines.add` → `add_confirm` · `confirm_host_key` · `remove` · `reconnect` · `upgrade` · `set_settings {name?, key?, auto_upgrade?}` | machines |
 | `keys.list` · `rotate` · `generate` · `import` · `delete` | SSH keys |
-| `projects.create` · `update` · `delete` | projects (location prefixes) |
+| `projects.create` · `update` · `delete` | projects (location prefixes). **(W9s)** name and color only: a project is a group of tasks; a session belongs to the projects of its linked tasks, else "Unassigned" |
 | `tasks.create` · `update` · `move` · `delete` · `link` · `unlink` · `checklist_add` · `checklist_update` · `checklist_remove` | tasks (project_ids, links, checklist with item ids) |
 | `grants.revoke` | contact grants |
 | `devices.register` · `rename` · `remove` | devices (remove signs the device out) |
@@ -191,6 +253,20 @@ Mutating calls carry `call_id` (pi's tool call id) as their idempotency key: a c
 | `job.status {job_id?}` · `job.kill {call_id, job_id}` | → `{jobs[]}` · `Job`. The agent's own kill sends no exit wake |
 
 Notification: `state {todos[], questions[], auto_continue}` (the open questions and the auto-continue details).
+
+**(W9s) Remote tools.** The extension registers `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls` (pi runs with
+`--no-builtin-tools`; same names and argument shapes as pi's, paths as `machine:path`) plus `shell_new`, `shell_list`:
+
+| Method | Purpose |
+| --- | --- |
+| `session.info` | → `{workspaces[{machine, path, root, home, shell}], shells[], context_files[{machine, path, content}], skills[]}`; also pushed in `state` when it changes |
+| `host.call {call_id, machine, op: HostOp}` | → `HostResult`; the agent daemon checks `machine` is one of the session's workspaces and routes the call; idempotent by `call_id` (pi's tool call id, or `<id>/<n>` for the steps of one tool) |
+| `host.cancel {call_id}` | the tool's abort signal |
+| `shell.open {name, machine, cwd}` · `shell.list` · `shell.close {name}` | the session's named shells |
+
+Notifications: `host.output {call_id, text}`, `host.waiting_input {call_id}`. A call whose host is unreachable stays
+open up to the grace (default 10 min) and is resent after the reconnect; past the grace it fails with
+`connection_lost`, and its late result is injected when the host returns.
 Daemon → extension traffic goes through this socket rather than `/controlroom <verb>` commands on pi's stdin: those would be transcript lines that need a ready agent, follow the in-doubt rules, and make pi wait for the handler. Answers, todo notices and continuations reach the model through the agent's own RPC (injection: `steer` while it works, a `prompt` while it is idle), never through the socket.
 
 **Runtime rules behind it** (spec §8): an injection carries its origin, which becomes the run's trigger (`inject {origin, label}`; a continuation is `auto_continue`). Auto-continue (on by default, budget 10 runs per user instruction) starts a continue run when the agent ends its turn with pending or in-progress todos, unless a question or an approval is open, background work is running, the run failed or was cancelled, or the queue (or another injection) has items. It pauses with attention when only blocked items remain (`paused`), after 3 continue runs that closed no item (`stalled`), when the budget is used (`budget`), and on a user cancel (`paused`). `session.update {auto_continue: true}` resumes it with a fresh budget; raising `auto_continue_budget` resumes a `budget` pause.
@@ -230,3 +306,4 @@ Regenerate both: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --t
 23. **Auto-continue defaults.** On for every session, budget 10 continue runs per user instruction: a run the user starts (prompt or queue) and turning auto-continue on reset the count. Progress means a todo closed (done, blocked or skipped) during the run.
 24. **`notify`** only adds a timeline notice; it doesn't change attention or push.
 25. **Job items and logs.** A `job` item has no transcript record either: like a raised request it sits at the session's transcript head when the job started, and each change counts as changed after the current head. A job's log is `<session cwd>/.controlroom/jobs/<id>.log` (the session's cwd, not the job's, so one `.controlroom/.gitignore` covers every log); line `n` of the log is output record `n` of the job's transcript. `SessionDetail.jobs` lists running jobs and the latest 10 finished ones (`job.list` has all), and its `lines` count is refreshed at most once a second.
+26. **(W9s) Open questions of the remote-tools model** are listed with recommendations in `docs/design/remote-tools.md` §9.

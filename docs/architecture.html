@@ -68,14 +68,16 @@ th{background:var(--panel)}
 <main>
 <h1>controlroom: architecture and build plan</h1>
 <p class="sub">This document is the build spec: a supervisor agent should be able to build controlroom from it alone. A <b>prototype</b> at <code>../controlroom-old</code> validated many of these ideas; proven parts of it are ported selectively (see "Port map from the prototype"). Status: <b>draft for review</b>.</p>
+<div class="call warn"><b>Model change (proposal, W9s):</b> <b>pi runs only on the controlroom server</b>, in a new <b>agent daemon</b> (<code>controlroom-agentd</code>); execution hosts run only <code>controlroomd</code> in a <b>host role</b> (workspaces, named PTY shells, a tool executor with a journal, jobs, files) plus nono. A session has one or more <b>workspaces</b> (<code>machine:path</code>), the agent addresses files as <code>machine:path</code>, and projects are groups of tasks. Rationale, protocols, spike evidence and the phased plan: <code>docs/design/remote-tools.md</code>. Sections marked <span class="tag ext">REVISED</span> below follow that model.</div>
 
 <h2 id="summary">0. Summary</h2>
 <p>controlroom is a self-hosted web app for supervising pi coding-agent sessions that run on many Linux machines, reached over SSH. Its architecture:</p>
 <ul>
 <li><b>One deployment model:</b> a persistent web server (PWA, OIDC). The desktop app is gone.</li>
+<li><span class="tag ext">REVISED</span> <b>pi on the server, tools on the hosts:</b> the agent daemon on the server runs every pi session; hosts only execute tools in the session's workspaces, reached through the controller over SSH. A link blip pauses a tool call; it never reruns or loses one.</li>
 <li><b>Agent-neutral core:</b> a <b>driver</b> (native pi RPC) folds raw stdio into one <b>timeline model</b>. The protocol and UI never see agent-specific payloads.</li>
-<li><b>controlroomd as the agent runtime:</b> jobs, subagents as child sessions, a mailbox, injection, a shared todo list with auto-continue, and non-blocking questions. Agents reach these through the controlroom pi extension.</li>
-<li><b>Sandboxed by default</b> with <b>nono</b>: confinement to the working directory, credentials injected outside the sandbox, an egress allowlist, and approvals routed to controlroom.</li>
+<li><b>The agent daemon as the agent runtime:</b> jobs, subagents as child sessions, a mailbox, injection, a shared todo list with auto-continue, and non-blocking questions. Agents reach these through the controlroom pi extension.</li>
+<li><b>Sandboxed by default</b> with <b>nono</b>, twice: pi on the server sees only the model hosts and its agent socket (no project files); on each host, shells, jobs and file tools are confined to the workspace, with credentials injected outside the sandbox, an egress allowlist, and approvals routed to controlroom.</li>
 <li><b>Protocol 1.0:</b> agent-neutral and tolerant of additions.</li>
 </ul>
 <div class="call ok"><b>What carries over:</b> the hard, proven parts. Those are the detached supervisor, the transcript as the source of truth, exactly-once recovery algorithms, SSH, key handling and bootstrap, OIDC and request hardening, Web Push, the UI shell, Nix packaging, and the test scenarios. Each is <i>ported deliberately</i> (reviewed, adapted, known bugs fixed). Nothing is copied wholesale.</div>
@@ -97,18 +99,34 @@ Connectivity is shown separately from agent state, and silence is never treated 
 <tr><th>Area</th><th>Decision</th></tr>
 <tr><td>Deployment</td><td><b>One persistent web server</b> (OIDC, with dev-token for development), reached from any browser or as an installable PWA. Separate contexts (e.g. personal and work machines) run separate, unsynced instances. No desktop app. The controller keeps a thin shell boundary, so a native shell stays possible later.</td></tr>
 <tr><td>Languages</td><td>Rust (daemon, controller, web server). TypeScript + Svelte 5 + Vite for the UI, embedded in the web binary. Protocol types are defined in Rust; TS is generated (ts-rs) and drift-checked in CI.</td></tr>
-<tr><td>Transport</td><td>Browser ↔ server: one WebSocket per tab carrying JSON-RPC. Server ↔ daemon: in-process <code>russh</code> with a per-owner controlroom key and an exec channel running <code>controlroomd connect</code>, bridged to a unix socket. Further SSH channels are reserved for SFTP and PTYs.</td></tr>
+<tr><td>Transport</td><td>Browser ↔ server: one WebSocket per tab carrying JSON-RPC. <span class="tag ext">REVISED</span> Controller ↔ agent daemon: a local unix socket. Controller ↔ host daemon: in-process <code>russh</code> with a per-owner controlroom key and an exec channel running <code>controlroomd connect</code>, bridged to a unix socket. Further SSH channels are reserved for SFTP and PTYs. The controller routes the agent daemon's host calls.</td></tr>
+<tr><td>Topology <span class="tag ext">REVISED</span></td><td><b>pi runs only on the server</b> (agent daemon, own user and unit, survives web restarts and upgrades). <b>Execution hosts run only tools</b>: <code>controlroomd</code> host role plus nono; no pi, Node, bundle, extensions or model credentials on hosts.</td></tr>
+<tr><td>Workspaces <span class="tag ext">REVISED</span></td><td>A session has one or more workspaces, each <code>machine:path</code>, on any machines. Each workspace has named, stateful shells. Two sessions may use the same <code>machine:path</code> at once, each with its own shells (the UI warns). The agent addresses files as <code>machine:path</code>.</td></tr>
+<tr><td>Projects <span class="tag ext">REVISED</span></td><td><b>Projects are groups of tasks.</b> A session belongs to the projects of its linked tasks; unlinked sessions show as <b>Unassigned</b>. There are no location prefixes.</td></tr>
 <tr><td>Agents</td><td><b>pi only, through the native PiDriver</b> (<code>pi --mode rpc</code>) plus <code>@controlroom/pi</code>. The deep integration (our own bash, terminals, privileged commands, runtime tools) relies on owning the harness, so <b>ACP is out of scope</b>. The <code>Driver</code> trait stays (for <code>FakeDriver</code> tests and to keep the option open). There's no AcpDriver, no <code>controlroomd mcp</code> and no pi-acp.</td></tr>
-<tr><td>Source of truth</td><td>Daemons own sessions. Each session's raw stdio transcript is authoritative, and the timeline and state are derived from it. The controller owns client data: machines, keys, projects, tasks, grants and push subscriptions.</td></tr>
-<tr><td>Sandboxing</td><td><b>nono 0.80.0 (pinned)</b>, wrapped around every agent process. The daemon generates absolute-path profiles. Registry packs are <b>never</b> used, because their wiring mutates the user's agent config.</td></tr>
-<tr><td>Agent runtime</td><td>The daemon is the runtime. The <code>@controlroom/pi</code> extension is a thin front end. Third-party pi-subagents, pi-intercom, pi-background-tasks and pi-goal are <b>not</b> loaded in controlroom-launched pi.</td></tr>
+<tr><td>Source of truth</td><td><span class="tag ext">REVISED</span> The agent daemon owns sessions (global, not per machine). Each session's raw stdio transcript is authoritative, and the timeline and state are derived from it. Host daemons own workspaces, shells, jobs and the tool-call journal. The controller owns client data: machines, keys, projects, tasks, grants and push subscriptions.</td></tr>
+<tr><td>Sandboxing</td><td><b>nono 0.80.0 (pinned)</b>, wrapped around every pi process on the server and around every shell, job and file worker of a workspace on the hosts. The daemons generate absolute-path profiles. Registry packs are <b>never</b> used, because their wiring mutates the user's agent config.</td></tr>
+<tr><td>Agent runtime</td><td>The agent daemon is the runtime. The <code>@controlroom/pi</code> extension is a thin front end. Third-party pi-subagents, pi-intercom, pi-background-tasks and pi-goal are <b>not</b> loaded in controlroom-launched pi.</td></tr>
 <tr><td>Contact policy</td><td>Sessions on the same task can see and message each other on any machine. A parent and its child always can. Anything else needs user approval. Messaging fails closed and always reports the outcome to the agent, including <code>connection_lost</code>.</td></tr>
-<tr><td>Upgrades</td><td>Daemons upgrade automatically when idle (a per-machine opt-out exists) and never downgrade. Every daemon change bumps the version. Each install is verified by running it, with rollback.</td></tr>
+<tr><td>Upgrades</td><td>Host daemons upgrade automatically when idle (the agent daemon upgrades with the server's deploy) (a per-machine opt-out exists) and never downgrade. Every daemon change bumps the version. Each install is verified by running it, with rollback.</td></tr>
 <tr><td>Compatibility</td><td>Starts at <b>protocol 1.0</b>, with no compatibility with the prototype. Client-store schema changes are edited in place until the first release, with no migration code (the user fixes dev databases by hand). The daemon database uses real versioned migrations from day one, because daemons upgrade themselves in the field.</td></tr>
 <tr><td>Conventions</td><td>American spelling. No real hostnames, usernames, domains or deployment contexts in code, docs, tests, fixtures or commit messages (use example.com, alice, devbox). <code>README.md</code> is human-only.</td></tr>
 </table>
 
 <h2 id="arch">3. Architecture</h2>
+<p><span class="tag ext">REVISED</span> Proposed topology (the previous diagram follows for reference until the model change is accepted):</p>
+<pre><code>Browser ──WS──► controlroom-web (axum: OIDC, UI API, push, static)                 server (always on)
+                  └─ controller: store · machine manager · hub · broker · scheduler · host router
+                       │ unix socket (agent daemon API)        │ russh, one connection per host
+                       ▼                                       ▼
+               controlroom-agentd                      exec: controlroomd connect ──► controlroomd (host role)
+                 runtime: sessions · queue · reconcile ·        workspaces · named PTY shells · tool executor
+                 injection · todos · questions · mailbox ·      + journal (by tool call id) · jobs · fs worker
+                 subagents · job wakes · transcripts            nono per workspace · approval webhook
+                 supervisors ──► nono ──► pi --mode rpc --no-builtin-tools
+                                          └─ @controlroom/pi ⇄ agent socket (read/write/edit/bash/grep/find/ls
+                                                               with machine:path, routed to the hosts)
+                                                       exec: controlroomd pty attach · sftp</code></pre>
 <pre><code>Browser / PWA ──WS JSON-RPC──► controlroom-web  (axum shell: OIDC, hardening, push, static UI)
                                     │  controller: client store · machine manager · hub/event bus
                                     │              UI API router · attention · broker + policy
@@ -128,6 +146,7 @@ controlroomd serve  (per user, per machine; runtime library + RPC server)
 <li><b>One reconcile loop</b> per session decides what to write next. While the state is in doubt (just after a restart), <b>no</b> writes happen at all, answers included, until a supervisor barrier confirms that earlier writes have been logged.</li>
 <li><b>Disconnecting does nothing.</b> No action is ever triggered by a client going away.</li>
 <li><b>Detached supervisors:</b> agents survive client loss and daemon restarts or upgrades. Supervisors run from immutable versioned paths.</li>
+<li><span class="tag ext">REVISED</span> <b>Tool calls on hosts are keyed by the tool call id:</b> reads are idempotent, writes are journaled, atomic and compare-and-swap, and <code>bash</code> is at-most-once (journaled before it runs; a resend attaches to the running command or returns its result, never reruns). A link loss pauses a call; it never duplicates or silently drops one.</li>
 </ol>
 
 <h2 id="layout">4. Repository layout (new repo)</h2>
@@ -143,6 +162,8 @@ crates/
   sandbox/       nono profile generation + validation, per-session agent-dir builder,
                  credential helpers, approval-webhook server types
   daemon/        bin controlroomd: serve, supervise, connect, ctl, doctor, credential
+                 (REVISED: splits into agentd/ = bin controlroom-agentd, server-side runtime + pi,
+                  and daemon/ = bin controlroomd host role: workspaces, shells, tools, jobs)
   client-core/   russh, keys/seal/master key, bootstrap (verify-run + rollback), daemon client  [port]
   controller/    client store, machine manager, hub (+ event bus), rpc/* (split), attention,
                  broker + policy                                                          [port+fresh]
@@ -171,9 +192,9 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 <h3>5.2 Session model</h3>
 <table>
 <tr><th>Field</th><th>Notes</th></tr>
-<tr><td><code>id, name, cwd: RemotePath, agent, created_at, updated_at, closed_at</code></td><td></td></tr>
+<tr><td><code>id, name, cwd: RemotePath, agent, created_at, updated_at, closed_at</code></td><td><span class="tag ext">REVISED</span> <code>cwd</code> is replaced by <code>workspaces: [{id, machine_id, path, root, primary, availability}]</code> and <code>shells: [{name, workspace_id, cwd, state}]</code>. Session ids are global (no <code>machine_id</code>)</td></tr>
 <tr><td><code>agent_sessions: [{driver: pi, native_id, started_at, ended_at, started_by: new|resume|fresh}]</code></td><td>Replaces the prototype's <code>acp_session_id</code>. <code>driver</code> is an open enum (pi today)</td></tr>
-<tr><td><code>parent_id?, spawned_by?</code></td><td>Subagent tree</td></tr>
+<tr><td><code>parent_id?, spawned_by?</code></td><td>Subagent tree. <span class="tag ext">REVISED</span> <code>spawned_by</code> goes away: every child is a local session of the agent daemon</td></tr>
 <tr><td><code>state</code>: starting · idle · working · awaiting_permission · awaiting_input · failed · dormant · interrupted · closed</td><td><b>working</b> means a run is active, whoever started it (user, queue, steer, job completion, message, auto-continue)</td></tr>
 <tr><td><code>last_outcome</code>: completed · cancelled · failed · max_tokens · refusal · unknown (+ error)</td><td>Neutral. Replaces the prototype's ACP <code>StopReason</code></td></tr>
 <tr><td><code>read_seq, last_turn_end_seq, unread</code></td><td>Every way a run can end sets <code>last_turn_end_seq</code> (completed, failed, interrupted, reboot)</td></tr>
@@ -187,6 +208,7 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 <tr><td><code>resumable</code></td><td></td></tr>
 </table>
 <h3>5.3 Daemon API (controller ↔ controlroomd)</h3>
+<div class="call warn"><span class="tag ext">REVISED</span> This becomes the <b>agent daemon API</b> (controller ↔ <code>controlroom-agentd</code>, local socket): the same session methods, with <code>machine.subscribe</code> renamed <code>sessions.subscribe</code>, <code>session.create {workspaces[], …}</code> instead of <code>cwd</code>, <code>session.workspace_add|remove</code>, and pull-style host routing (<code>hostops.subscribe</code> → <code>hostops.request</code> notifications, answered by <code>hostops.respond</code>; agentd never calls the controller). The outbox/inbox broker disappears (messaging is local). A new <b>host API</b> (controller ↔ <code>controlroomd</code> host role over <code>controlroomd connect</code>) carries <code>workspace.open|close</code>, <code>shell.open|close|list</code>, <code>tool.run|attach|cancel</code> (idempotent by <code>call_id</code>), <code>journal.ack</code>, <code>job.*</code>, <code>fs.list</code> and approvals. Details: <code>docs/design/remote-tools.md</code> §3 and <code>docs/protocol.md</code> §5b.</div>
 <ul>
 <li><code>hello</code> (versions, capabilities, daemon id, controller id, role). <b>A daemon serves exactly one controller at a time:</b> a hello from a different controller is rejected while one is connected (a typed conflict error); a hello from the same controller replaces its old connection, so reconnects work. A local debugging client (<code>ctl</code>) connects with a debug role and is not the controller.</li>
 <li><code>machine.subscribe {since_rev}</code>: summaries feed, with a snapshot fallback. A persisted rev log survives restarts.</li>
@@ -207,14 +229,15 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 <h3>5.4 UI API (browser ↔ controller)</h3>
 <ul>
 <li><code>hello</code> (server version, protocol, <code>user</code>, push capability).</li>
-<li><code>state.subscribe</code> (epoch+rev cursor): one aggregated feed of machines (incl. connectivity and doctor), sessions (with machine_id; stale while unreachable), projects, tasks, grants and contact requests.</li>
-<li><b>Pass-through</b> of every session/todo/job/request command with <code>machine_id</code> added.</li>
+<li><code>state.subscribe</code> (epoch+rev cursor): one aggregated feed of machines (incl. connectivity and doctor), sessions (with machine_id; stale while unreachable), projects, tasks, grants and contact requests. <span class="tag ext">REVISED</span> Sessions are global, each with its workspaces and their availability (a session never goes stale; a workspace does), plus <code>overlaps[]</code> (workspaces shared by several sessions, for the warning).</li>
+<li><b>Pass-through</b> of every session/todo/job/request command with <code>machine_id</code> added. <span class="tag ext">REVISED</span> Session commands pass through to the agent daemon without <code>machine_id</code>.</li>
 <li><code>session.subscribe</code>: ref-counted, shared by tabs, resumed without duplicates.</li>
-<li><code>machines.*</code> (add → add_confirm, confirm_host_key, remove, reconnect, upgrade, set_settings incl. auto_upgrade), <code>keys.*</code> (incl. rotate), <code>projects.*</code>, <code>tasks.*</code> (project_ids, links, checklist), <code>grants.*</code>, <code>notifications.*</code> (web push only), <code>client.focus</code>.</li>
+<li><code>machines.*</code> (add → add_confirm, confirm_host_key, remove, reconnect, upgrade, set_settings incl. auto_upgrade), <code>keys.*</code> (incl. rotate), <code>projects.*</code> (<span class="tag ext">REVISED</span> name and color only: projects are task groups), <code>tasks.*</code> (project_ids, links, checklist), <code>grants.*</code>, <code>notifications.*</code> (web push only), <code>client.focus</code>.</li>
 <li>Connectivity per machine: connected · connecting · unreachable · incompatible · action_required{host_key_changed | auth_failed | host_key_unconfirmed} · plus <code>update_available</code>.</li>
 </ul>
 
 <h2 id="daemon">6. Daemon: supervisor, runtime, drivers</h2>
+<div class="call warn"><span class="tag ext">REVISED</span> The runtime, drivers and <code>agent</code>-kind supervisors move to the <b>agent daemon</b> on the server (<code>agent.sqlite</code>, the same migrations discipline). The host daemon keeps <code>pty</code> and <code>job</code> supervisors, the tool executor, the journal (<code>host.sqlite</code>) and doctor. pi is launched as <code>pi --mode rpc --no-builtin-tools --no-context-files --no-skills</code> in an empty per-session scratch cwd; the extension provides the tools, the workspace context and the skills.</div>
 <h3>6.1 Supervisor (port from the prototype, extend)</h3>
 <ul>
 <li><b>Keep:</b> flock single writer, log-then-fsync-then-write, partial-tail recovery, one writer role, exit drain, setsid re-exec, SIGHUP ignored, <code>meta</code> record, <code>sync</code>.</li>
@@ -295,7 +318,7 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
 <table>
 <tr><th>Primitive</th><th>Implementation</th></tr>
 <tr><td><b>Injection</b></td><td>Delivers an item into a session's next turn, with an <code>origin</code> (user, job, child, message, answer, todo, continue). pi uses <code>steer</code>/<code>follow_up</code>. It's the single path for job completion, child results, inbound messages, non-blocking answers, todo edits made by the user, and late replies.</td></tr>
-<tr><td><b>Job</b> (background task)</td><td>A supervised process (supervisor kind <code>job</code>, sandboxed, with an optional timeout). Jobs survive pi and daemon restarts. Their output goes to the job's transcript <b>and</b> to a plain-text <b>log file</b> the agent can read inside its sandbox: <code>&lt;cwd&gt;/.controlroom/jobs/&lt;job-id&gt;.log</code> (stdout and stderr interleaved, append-only; <code>.controlroom/</code> is git-ignored automatically).
+<tr><td><b>Job</b> (background task)</td><td><span class="tag ext">REVISED</span> Jobs run on the host of a workspace (<code>job run {command, at: machine:path}</code>), under that workspace's sandbox; the host reports line counts, follow matches and exits through a persisted job event log, and the agent daemon decides the wakes. Jobs keep running and logging while the link or the server is down; after a reconnect the agent daemon resyncs from its cursor and delivers each pending wake exactly once (<code>docs/design/remote-tools.md</code> §3.6). The log path is a <code>machine:path</code>. A supervised process (supervisor kind <code>job</code>, sandboxed, with an optional timeout). Jobs survive pi and daemon restarts. Their output goes to the job's transcript <b>and</b> to a plain-text <b>log file</b> the agent can read inside its sandbox: <code>&lt;cwd&gt;/.controlroom/jobs/&lt;job-id&gt;.log</code> (stdout and stderr interleaved, append-only; <code>.controlroom/</code> is git-ignored automatically).
 <br><b>Wakes:</b>
 <ul>
 <li><b>Exit wake (always on):</b> when the job exits, the agent is woken with the job id, exit code or signal, duration, total line count and the log path.</li>
@@ -309,7 +332,7 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
 </ul></li>
 <li><b>Logs are never dumped into the context.</b> Wakes carry only metadata and the path, and the agent reads what it needs. Wakes use injection: they start a turn when the agent is idle, or arrive as a steer or follow-up when it's busy.</li>
 </ul></td></tr>
-<tr><td><b>Subagent</b></td><td>A child controlroom session (<code>parent_id</code>) with any agent and model. It has its own transcript, sandbox (cwd inside the parent's directory or a worktree) and requests. Attention rolls up to the parent. <code>await</code> resolves with its result (or <code>connection_lost</code>) by injection.</td></tr>
+<tr><td><b>Subagent</b></td><td>A child controlroom session (<code>parent_id</code>) with any agent and model. It has its own transcript, sandbox (cwd inside the parent's directory or a worktree) and requests. <span class="tag ext">REVISED</span> A child inherits (a subset of) the parent's workspaces; a child that would get a workspace the parent doesn't have needs approval. Attention rolls up to the parent. <code>await</code> resolves with its result (or <code>connection_lost</code>) by injection.</td></tr>
 <tr><td><b>Request</b></td><td><b>Questions are non-blocking only.</b> <code>ask_user</code> returns immediately with a question id and the reminder: <i>"Question sent; the user will answer asynchronously. Keep working on other items. End your turn only if you truly can't make progress; the answer will wake you."</i> The answer (or a Dismiss, which counts as "declined") is injected. The agent can withdraw a question. There's no escalation and no blocking variant.
 <br><b>Approvals stay blocking</b> by nature, because they gate an action already in progress: <code>permission</code>, <code>sandbox</code>, <code>spawn</code> and <code>contact</code>. pi's own native blocking dialogs (<code>extension_ui_request</code> select/confirm/input) are shown as a <code>dialog</code> and answered as usual, but the agent instructions steer agents to use <code>ask_user</code> instead.</td></tr>
 <tr><td><b>Todo list</b></td><td>Per-session and shared: both the agent and the user edit it, and every change records who made it. Items: pending · in_progress · done · blocked(reason) · skipped. Can be seeded from a task's checklist.</td></tr>
@@ -321,7 +344,7 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
 <li>auto-continue is off for the session.</li>
 </ul>
 It pauses with attention when only blocked items remain, after 3 runs with no progress (stalled), or when the budget runs out. A user cancel pauses it too.</td></tr>
-<tr><td><b>Mailbox</b></td><td>Per-session outbox and inbox: send, ask (expects a reply), reply. Brokered by the controller with policy. Every operation returns an explicit outcome.</td></tr>
+<tr><td><b>Mailbox</b></td><td>Per-session outbox and inbox: send, ask (expects a reply), reply. Brokered by the controller with policy. Every operation returns an explicit outcome. <span class="tag ext">REVISED</span> All sessions live in the agent daemon, so delivery is local (the policy stays); <code>connection_lost</code> remains only for host-bound work.</td></tr>
 </table>
 
 <h3 id="schedules">8.1 Schedules (owned by the web server)</h3>
@@ -347,6 +370,7 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <ul>
 <li><b>Tools</b> (only things the agent initiates). These are grouped tools, each taking an action, provided by <code>@controlroom/pi</code>:
 <ul>
+<li><span class="tag ext">REVISED</span> <b>File and search tools on the hosts:</b> <code>read {path, offset?, limit?}</code>, <code>write {path, content}</code>, <code>edit {path, edits[]}</code>, <code>grep</code>, <code>find</code>, <code>ls</code> replace pi's built-ins under the same names and argument shapes, with paths as <code>machine:path</code> (e.g. <code>devbox:~/src/api/main.rs</code>; relative paths resolve against that machine's workspace). pi runs with <code>--no-builtin-tools</code>. Shells are named per session (default: the machine name) and belong to a workspace; <code>shell_new {name, at: machine:path}</code>.</li>
 <li><code>bash {command, shell?, timeout?}</code>: <b>replaces pi's built-in bash</b>. It runs in a <b>persistent shell</b> (default <code>main</code>) in the session's collaborative terminal ("Terminals"), sandboxed. <code>shell_new {name?, cwd?}</code> gives a fresh shell; <code>shell_list</code>, <code>shell_close {shell}</code>;</li>
 <li><code>terminal_read {shell?, last_lines | since_mark}</code>: reads the session terminal, including commands the <i>user</i> ran;</li>
 <li><code>bash_privileged {command, reason, cwd?}</code>: unsandboxed, and <b>every call needs human approval</b> ("Terminals");</li>
@@ -405,7 +429,7 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <li><b>Same task:</b> sessions linked to the same kanban task can see and message each other on any machine. Linking a session is the user's affirmative act.</li>
 <li><b>Parent and child:</b> they can always talk to each other.</li>
 <li><b>Anything else</b> raises a <code>contact</code> request to the user (allow once / allow this pair / deny). It behaves like a permission (attention and push). Grants are stored by the controller and can be revoked.</li>
-<li><b>Spawning on another machine:</b> always needs approval, raised as a <code>spawn</code> request with Allow or Deny.</li>
+<li><b>Spawning on another machine:</b> always needs approval, raised as a <code>spawn</code> request with Allow or Deny. <span class="tag ext">REVISED</span> Read as: a child with a workspace its parent doesn't have.</li>
 <li><b>Who sees a contact request:</b> it sits on the requesting session, which waits for the answer. The target session sees nothing until it's granted; then both timelines show a grant notice. Task detail lists pending contact requests among its sessions.</li>
 <li><b>Same-machine spawns</b> Same-machine spawns follow a per-session or per-project setting (default: allowed).</li>
 <li><b>The broker is the controller</b> (the single controller connected to each daemon). If the controller or the peer's machine is unreachable, the operation fails closed with <code>connection_lost{scope, since}</code>. It's queued only when the agent asked for <code>queue_if_offline</code>, with an expiry. In-flight asks and awaits resolve with <code>connection_lost</code> instead of hanging. Late replies are injected and marked late.</li>
@@ -423,6 +447,7 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <li>exit codes passed through, and it ran detached;</li>
 <li>overhead was about 50 ms at launch and about 0.25 s added to pi's startup.</li>
 </ul></div>
+<div class="call warn"><span class="tag ext">REVISED</span> Two sandboxes. <b>Server, per session:</b> pi under nono with an empty scratch workdir, read-only <code>/nix/store</code> and bundle, the session's agent/home/tmp, the agent socket as the only unix socket, and only the model routes on the network (the spike ran pi 1.2.0 this way). <b>Host, per workspace:</b> the workspace root read-write plus the level's reads, the session's domains, mediated commands and job secrets; shells, jobs and a per-workspace fs worker (serving the agent's file tools) all run inside it. Approvals travel nono → host webhook → controller → agent daemon (a session request) and back. The layout below moves to the agent daemon's state dir.</div>
 <h3>11.1 Per-session layout (owned by controlroomd)</h3>
 <pre><code>sessions/&lt;id&gt;/agent/   PI_CODING_AGENT_DIR: generated settings.json (keep-list, "transport":"sse"),
                         sanitized models.json (no literal keys), auth.json with FAKE tokens,
@@ -575,8 +600,8 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <li><code>listenAddress</code>/<code>port</code>/<code>publicUrl</code>.</li>
 </ul>
 The reverse proxy, TLS and IdP registration live in the deployer's own config.</li>
-<li><b>Execution hosts:</b> the daemon installs itself under <code>~/.local/share/controlroom/versions/&lt;ver&gt;</code>. pi, the bundle and nono come from the host's Nix config (home-manager). The <code>agents.toml</code> pi entry points at the <code>controlroom-pi</code> launcher. Hosts without Nix are out of scope for now.</li>
-<li><b>VM tests:</b> one web VM and two execution VMs. They cover bootstrap, persistence across client disconnect, upgrade, reboot, the sandbox, and cross-machine messaging.</li>
+<li><b>Execution hosts:</b> the daemon installs itself under <code>~/.local/share/controlroom/versions/&lt;ver&gt;</code>. pi, the bundle and nono come from the host's Nix config (home-manager). The <code>agents.toml</code> pi entry points at the <code>controlroom-pi</code> launcher. Hosts without Nix are out of scope for now. <span class="tag ext">REVISED</span> Hosts need only <code>controlroomd</code> (bootstrapped as today), bash and the pinned nono; no pi, bundle, <code>agents.toml</code> or model routes. The server gets <code>services.controlroom.agent</code>: the agent daemon (own user, <code>KillMode=process</code> for detached supervisors, no <code>MemoryDenyWriteExecute</code> because of Node), the <code>controlroom-pi</code> bundle, nono and the model credentials.</li>
+<li><b>VM tests:</b> one web VM and two execution VMs. They cover bootstrap, persistence across client disconnect, upgrade, reboot, the sandbox, and cross-machine messaging. <span class="tag ext">REVISED</span> pi and the mock model move to the server VM; the execution VMs carry only <code>controlroomd</code> and nono; new scenarios: a session with workspaces on both hosts, a link blip during a long <code>bash</code>, a host reboot (shell reset notice), a host-sandbox approval.</li>
 </ul>
 
 <h2 id="port">15. Port map from the prototype (<code>../controlroom-old</code>)</h2>
@@ -639,6 +664,15 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <tr><td>P7b Extras</td><td><b>Files</b> (SFTP, browser, viewers, upload and download, light editing, content origin), Changes and undo (snapshots), dev-server previews (separate origin), templates, fork, away summary, search and ⌘K, secrets for jobs, usage and cost</td><td>Each has acceptance tests, and previews work through the reverse proxy</td></tr>
 <tr><td>P8 Ship</td><td>NixOS module, VM tests, Web Push verified on iOS, deployment</td><td>Running on the always-on server, behind the reverse proxy</td></tr>
 </table>
+<p><span class="tag ext">REVISED</span> <b>Re-architecture phases</b> (they precede deployment; details and lanes in <code>docs/design/remote-tools.md</code> §8):</p>
+<table>
+<tr><th>Phase</th><th>Workstreams (parallel)</th><th>Done when</th></tr>
+<tr><td>R0 Contracts</td><td>Protocol: agent daemon, host and agent API types (<code>HostOp</code>, workspaces, shells), projects as task groups, TS regeneration; spec and protocol docs</td><td>Types merged, drift check green, the UI builds</td></tr>
+<tr><td>R1 Foundations</td><td>(a) host daemon: host API, workspaces, PTY shells (OSC 133/7), tool executor, journal, fs worker under nono; (b) agent daemon: the runtime behind a local socket, host-call port with grace and late results; (c) controller host router and agent daemon client; (d) extension remote tools</td><td>The spike's scenarios as Rust integration tests (fake agent → agentd → controller → host daemon), with link-drop and daemon-restart steps</td></tr>
+<tr><td>R2 End to end</td><td>VM e2e rewrite (pi on the server VM only), UI (workspaces, overlap warning, project rail, terminals per shell), acceptance with real pi under nono</td><td>VM e2e and Playwright green</td></tr>
+<tr><td>R3 Runtime parity</td><td>Jobs on hosts, subagents with workspaces, local mailbox, waiting for input, <code>bash_privileged</code>, <code>terminal_read</code>, workspace skills, composer <code>@machine:path</code></td><td>Each primitive's acceptance scenario passes on the new topology</td></tr>
+<tr><td>R4 Deploy</td><td><code>services.controlroom.agent</code>; nix-config: the server gets the agent service and model credentials, hosts drop <code>controlroom-pi</code></td><td>Running on the server; hosts carry no pi</td></tr>
+</table>
 
 <h2 id="process">18. Process rules (for the supervising agent)</h2>
 <ul>
@@ -673,13 +707,14 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <li><b>The work instance:</b> which host and which IdP. <i>TBD (user).</i></li>
 <li><s>Sandbox default precedence.</s> <b>Resolved:</b> the strictest level among the machine and all matching projects, with the union of grants and domains (multi-project sessions are expected to be rare).</li>
 <li><b>Name and remote for the new repo</b>: <i>TBD (user)</i>. It's local only for now, at <code>~/Documents/controlroom</code>.</li>
+<li><span class="tag ext">REVISED</span> <b>Re-architecture questions</b> (each with a recommendation in <code>docs/design/remote-tools.md</code> §9): who dials hosts (recommended: the controller); the grace before <code>connection_lost</code> (10 min); one binary or two (two); search tools on hosts (embed ripgrep's crates); confinement of file tools (workspace roots read-write, the level's reads read-only); pi-lens (not loaded server-side); shell state after a host reboot (reopen in the last cwd with a notice); overlapping workspaces (warn only, CAS on edits).</li>
 </ol>
 
 <h2 id="terminals">22. Terminals</h2>
 <p>Every terminal is a <b>PTY supervisor</b>: supervisor kind <code>pty</code>, detached, and surviving client loss and daemon upgrades the way tmux does. It keeps an in-memory scrollback ring and may log to disk. Bytes travel on a dedicated SSH exec channel (<code>controlroomd pty attach &lt;id&gt;</code>) and a binary WebSocket (<code>/api/stream/…</code>) to <b>xterm.js</b>. Several browsers can attach at once, with input from any of them.</p>
 <table>
 <tr><th>Kind</th><th>Scope</th><th>Access</th><th>Sandbox</th><th>Notes</th></tr>
-<tr><td><b>Session terminal</b> (collaborative)</td><td>Session</td><td>User and agent share it, with one continuous history</td><td>The session's nono profile</td><td>The agent's <code>bash</code> runs here. One tab per shell (<code>main</code>, plus any from <code>shell_new</code>)</td></tr>
+<tr><td><b>Session terminal</b> (collaborative)</td><td>Session (<span class="tag ext">REVISED</span> one per shell; shells belong to a workspace and run on its host)</td><td>User and agent share it, with one continuous history</td><td>The session's nono profile</td><td>The agent's <code>bash</code> runs here. One tab per shell (<code>main</code>, plus any from <code>shell_new</code>)</td></tr>
 <tr><td><b>Privileged pane</b></td><td>Session</td><td>User (input), agent (sees output)</td><td><b>Unsandboxed</b> (the user's login environment)</td><td>Only for approved <code>bash_privileged</code> calls. A red "UNSANDBOXED" bar and badge</td></tr>
 <tr><td><b>Job terminal</b></td><td>Session, one per job</td><td>User (watch or type); agent via the log file</td><td>The session's nono profile</td><td>Jobs run on a PTY by default (<code>pty: false</code> opts out)</td></tr>
 <tr><td><b>Private terminal</b></td><td><b>Project</b> (machine and cwd chosen from the project's locations; persists across sessions)</td><td><b>User only.</b> No agent tool can list, read or write it</td><td>None (the user's own shell)</td><td>Visually distinctive (see below). <b>No disk log</b>: scrollback is in memory only, stored under a path no sandbox can reach, and never used in previews, push or summaries</td></tr>
@@ -688,7 +723,7 @@ The reverse proxy, TLS and IdP registration live in the deployer's own config.</
 <h3>22.1 Agent shells (persistent state)</h3>
 <ul>
 <li><b>State persists within a shell:</b> <code>cd</code>, exported env vars (e.g. <code>KUBECONFIG</code>), functions and venv activation carry over between the agent's <code>bash</code> calls and the user's commands in the same shell. This stops agents from repeating env assignments in every command.</li>
-<li><b>Fresh state on request:</b> <code>shell_new {name?, cwd?}</code> opens a new shell (a new tab) with a clean login environment rooted at the session cwd (or <code>cwd</code>). <code>bash {shell}</code> targets a named shell. Separate shells also let independent commands run <b>in parallel</b>.</li>
+<li><b>Fresh state on request:</b> <code>shell_new {name?, cwd?}</code> opens a new shell (a new tab) with a clean login environment rooted at the session cwd (or <code>cwd</code>). <span class="tag ext">REVISED</span> <code>shell_new {name, at: machine:path}</code>; each workspace starts with one shell named after its machine. If a command runs <code>exit</code>, or the host daemon restarts without the shell's supervisor, the shell is reopened in its last directory and the next result says its variables were lost. <code>bash {shell}</code> targets a named shell. Separate shells also let independent commands run <b>in parallel</b>.</li>
 <li><b>Every tool result starts with a context header</b> <code>[shell main · ~/repo/sub · exit 0]</code> (cwd from OSC 7), so state drift is always visible to the agent.</li>
 <li><b>Command boundaries:</b> the daemon wraps each agent command with OSC 133 shell-integration markers (prompt, command start and end with exit code), so the tool result gets exactly that command's output (ANSI-stripped, length-capped, with a pointer to the full scrollback).</li>
 <li><b>Serialization:</b> one command at a time per shell. If the user is mid-typing at the prompt, the agent's command waits, and the pane shows "agent wants to run: <code>…</code>" with [Let it run].</li>
