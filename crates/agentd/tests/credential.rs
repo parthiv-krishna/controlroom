@@ -1,6 +1,5 @@
 //! `controlroom-agentd credential` end to end: a built session dir, the real binary.
 
-use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
 use controlroom_sandbox::agent_dir::{AgentDirSpec, build_session_dirs};
@@ -33,13 +32,18 @@ fn session(root: &AbsPath, helper: Option<&str>) -> AbsPath {
     .expect("write auth");
     let oauth_helper = helper.map(|body| {
         let path = root.join("controlroom-pi-oauth");
-        std::fs::write(
-            path.as_path(),
-            format!("#!/bin/sh\necho \"$@\" > {root}/helper-args\n{body}\n"),
-        )
-        .expect("write helper");
-        std::fs::set_permissions(path.as_path(), std::fs::Permissions::from_mode(0o755))
-            .expect("chmod");
+        // Written from a child shell: writing it here would race with the other tests' forks
+        // (a child inheriting the write fd makes executing the script fail with ETXTBSY).
+        let content = format!("#!/bin/sh\necho \"$@\" > {root}/helper-args\n{body}\n");
+        let status = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(r#"printf '%s' "$1" > "$2" && chmod 755 "$2""#)
+            .arg("sh")
+            .arg(&content)
+            .arg(path.as_path())
+            .status()
+            .expect("write helper");
+        assert!(status.success(), "write helper");
         path
     });
     let state = root.join("state");

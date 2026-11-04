@@ -71,7 +71,6 @@ pub fn fresh_oauth_token(
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt;
 
     use super::*;
     use crate::paths::AbsPath;
@@ -84,8 +83,7 @@ mod tests {
             "#!/bin/sh\nprintf '%s\\n' \"$@\" \"$PI_CODING_AGENT_DIR\" > {}/args\n{body}\n",
             t.path().display()
         );
-        std::fs::write(&helper, script).unwrap();
-        std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_executable(&helper, &script);
         let manifest = CredentialManifest {
             agent_dir: AbsPath::new("/home/alice/.pi/agent").unwrap(),
             api_key_providers: vec!["gateway".into()],
@@ -93,6 +91,21 @@ mod tests {
             oauth_helper: Some(AbsPath::from_path(&helper).unwrap()),
         };
         (t, manifest)
+    }
+
+    /// Writes an executable script from a child shell. Writing it from this process would race
+    /// with concurrent tests: a child forked while the write fd is open inherits it until it
+    /// execs, and executing the script then fails with ETXTBSY.
+    fn write_executable(path: &std::path::Path, content: &str) {
+        let status = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(r#"printf '%s' "$1" > "$2" && chmod 755 "$2""#)
+            .arg("sh")
+            .arg(content)
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(status.success());
     }
 
     fn name(s: &str) -> Name {
