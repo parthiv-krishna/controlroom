@@ -328,6 +328,7 @@ impl Env {
 
 impl Drop for Env {
     fn drop(&mut self) {
+        self.controller = None;
         if let Some(mut child) = self.daemon.take() {
             let _ = child.kill();
             let _ = child.wait();

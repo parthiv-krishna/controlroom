@@ -2,7 +2,8 @@
 //! one connected machine, `devbox`, subscribes to the host bridge and answers every host
 //! request itself, as a minimal host daemon would: workspaces resolve to their path, shells
 //! open, `bash` runs the command with `/bin/sh` in the workspace, `read` and `write` use the
-//! real files, the job log and approvals are empty. Every handled method is logged.
+//! real files, `job_run` accepts the job (its event log stays empty), approvals are empty.
+//! Every handled method is logged.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -126,9 +127,8 @@ impl Host {
                 Ok(result) => json!({"id": request.id, "result": result}),
                 Err(error) => json!({"id": request.id, "error": error}),
             };
-            if self.client.try_call("hostops.respond", outcome).is_err() {
-                return;
-            }
+            // Fire and forget: the agent daemon acks every response.
+            self.client.send("hostops.respond", outcome);
         }
     }
 
@@ -228,6 +228,28 @@ fn run(op: &HostOp) -> Result<Value, RpcError> {
                     cut: None,
                     first_line_too_long: false,
                 },
+            })
+        }
+        HostOp::JobRun { command, name, .. } => {
+            let id = controlroom_protocol::ids::JobId::generate();
+            ok(HostResult::JobRun {
+                job: Box::new(controlroom_protocol::session::Job {
+                    id,
+                    name: name.clone().unwrap_or_else(|| command.clone()),
+                    command: command.clone(),
+                    cwd: RemotePath::new("/"),
+                    machine_id: None,
+                    workspace_id: None,
+                    status: controlroom_protocol::session::JobStatus::Running,
+                    exit: None,
+                    signal: None,
+                    started_at: UnixMillis::now(),
+                    ended_at: None,
+                    timeout_s: None,
+                    log_path: RemotePath::new(format!("/tmp/{id}.log")),
+                    lines: 0,
+                    follow: None,
+                }),
             })
         }
         HostOp::Write { path, content, .. } => {
