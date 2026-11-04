@@ -308,10 +308,8 @@ impl Shell {
                 }) => format!("was killed by signal {signal}"),
                 _ => "is gone (its supervisor died, e.g. the host restarted)".to_owned(),
             };
-            inner.reset_reason = Some(format!(
-                "the shell {status}; it was reopened in its last directory and its variables, \
-                 functions and environment are lost"
-            ));
+            // Why it is reopened; the extension says what that means for the agent.
+            inner.reset_reason = Some(format!("the shell {status}"));
             if let Some(active) = inner.active.as_mut()
                 && let Some(done) = active.done.take()
             {
@@ -676,12 +674,8 @@ impl Shells {
                 }
                 (None, _) if supervisor.is_some() => {
                     // Its supervisor died with the host: gone until the next command.
-                    shell.lock().reset_reason = Some(
-                        "the host restarted and the shell's process with it; it was reopened \
-                         in its last directory and its variables, functions and environment \
-                         are lost"
-                            .to_owned(),
-                    );
+                    shell.lock().reset_reason =
+                        Some("the host restarted, and the shell's process with it".to_owned());
                     shell.persist(host);
                 }
                 _ => {}
