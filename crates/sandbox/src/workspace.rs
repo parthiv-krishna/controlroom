@@ -7,9 +7,9 @@
 //! no credential routes and no agent socket.
 //!
 //! ```text
-//! <state>/host/workspaces/<id>/              the workspace's own dir (protected)
-//! <state>/host/workspaces/<id>/profile.json  the generated profile
-//! <state>/host/workspaces/<id>/tmp/          TMPDIR (read-write in the sandbox)
+//! <state>/workspaces/<id>/              the workspace's own dir (protected)
+//! <state>/workspaces/<id>/profile.json  the generated profile
+//! <state>/workspaces/<id>/tmp/          TMPDIR (read-write in the sandbox)
 //! ```
 
 use std::collections::BTreeMap;

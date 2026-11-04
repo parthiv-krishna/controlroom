@@ -3,8 +3,8 @@
 use std::fs::Metadata;
 use std::time::UNIX_EPOCH;
 
-use controlroom_protocol::daemon::{FsEntry, FsEntryKind};
 use controlroom_protocol::host::HostResult;
+use controlroom_protocol::host::{FsEntry, FsEntryKind};
 use controlroom_protocol::{RemotePath, RpcError, UnixMillis};
 
 use super::fs_error;

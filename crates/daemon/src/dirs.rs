@@ -5,16 +5,20 @@
 //! ~/.local/share/controlroom/current -> versions/<ver>      swapped by the controller
 //! ~/.local/state/controlroom/                               the state dir:
 //!     daemon.log                                            stderr of a detached daemon
+//!     host.sqlite                                           workspaces, shells, journal, jobs
 //!     run/daemon.sock, run/daemon.lock                      the daemon socket and instance lock
-//!     run/<id>.sock                                         supervisor sockets
-//!     run/<id>.agent.sock                                   agent sockets (@controlroom/pi)
+//!     run/<id>.sock                                         shell and job supervisor sockets
 //!     run/webhook.port                                      the approval webhook's loopback port
-//!     sessions/<id>/                                        transcript, supervisor files, sandbox dirs
-//!     sessions/<id>/hook.secret                             the running launch's webhook secret
-//!     sessions/<id>/agent.token                             the running launch's agent token
+//!     workspaces/<id>/                                      one workspace (protected from its
+//!         profile.json, hook.secret                         sandbox): nono profile, webhook
+//!         tmp/                                              secret, its TMPDIR (read-write),
+//!         view/{bashrc, cmds/, calls/}                      and what it may read but not change
+//!     shells/<supervisor id>/, jobs/<job id>/               shell and job supervisors
 //!     nono/{state,config}/                                  nono's own XDG dirs
-//! ~/.config/controlroom/{agents.toml,sandbox.toml}          configuration
+//! ~/.config/controlroom/sandbox.toml                        configuration
 //! ```
+//!
+//! Job logs, which the agent reads, live in the workspace: `<root>/.controlroom/jobs/<id>.log`.
 //!
 //! Every path derives from `$HOME` alone, so an SSH exec channel, a systemd user unit and a
 //! cron job all agree. `$XDG_RUNTIME_DIR` is never used: it is removed at logout when linger is
@@ -84,11 +88,6 @@ impl Dirs {
         self.home.join(".config/controlroom")
     }
 
-    /// `~/.config/controlroom/agents.toml`.
-    pub fn agents_toml(&self) -> AbsPath {
-        self.config().join("agents.toml")
-    }
-
     /// `~/.config/controlroom/sandbox.toml`.
     pub fn sandbox_toml(&self) -> AbsPath {
         self.config().join("sandbox.toml")
@@ -124,26 +123,85 @@ impl Dirs {
         self.run().join(&format!("{id}.sock"))
     }
 
-    /// `<state>/run/<id>.agent.sock`: the session's agent socket, which its sandbox may reach.
-    pub fn agent_socket(&self, id: &str) -> AbsPath {
-        self.run().join(&format!("{id}.agent.sock"))
-    }
-
-    /// `<state>/sessions/<id>/agent.token`: the agent token of the session's current launch.
-    pub fn agent_token(&self, id: &str) -> AbsPath {
-        self.state.join("sessions").join(id).join("agent.token")
-    }
-
     /// `<state>/run/webhook.port`: the approval webhook's port, reused across restarts so
-    /// running agents' profiles keep pointing at it.
+    /// running shells' and jobs' profiles keep pointing at it.
     pub fn webhook_port(&self) -> AbsPath {
         self.run().join("webhook.port")
     }
 
-    /// `<state>/sessions/<id>/hook.secret`: the webhook secret of the session's current
-    /// launch.
-    pub fn hook_secret(&self, id: &str) -> AbsPath {
-        self.state.join("sessions").join(id).join("hook.secret")
+    /// `<state>/host.sqlite`.
+    pub fn database(&self) -> AbsPath {
+        self.state.join("host.sqlite")
+    }
+
+    /// One workspace's files.
+    pub fn workspace(&self, id: &str) -> WorkspacePaths {
+        WorkspacePaths {
+            dir: self.state.join("workspaces").join(id),
+        }
+    }
+
+    /// The directory of a shell supervisor.
+    pub fn shell_dir(&self, supervisor: &str) -> AbsPath {
+        self.state.join("shells").join(supervisor)
+    }
+
+    /// The directory of a job supervisor.
+    pub fn job_dir(&self, job: &str) -> AbsPath {
+        self.state.join("jobs").join(job)
+    }
+}
+
+/// The files of one workspace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspacePaths {
+    dir: AbsPath,
+}
+
+impl WorkspacePaths {
+    /// `workspaces/<id>`.
+    pub fn dir(&self) -> &AbsPath {
+        &self.dir
+    }
+
+    /// The generated nono profile.
+    pub fn profile(&self) -> AbsPath {
+        self.dir.join("profile.json")
+    }
+
+    /// The approval webhook secret.
+    pub fn hook_secret(&self) -> AbsPath {
+        self.dir.join("hook.secret")
+    }
+
+    /// The sandbox's `TMPDIR`.
+    pub fn tmp(&self) -> AbsPath {
+        self.dir.join("tmp")
+    }
+
+    /// What the sandbox may read but not change.
+    pub fn view(&self) -> AbsPath {
+        self.dir.join("view")
+    }
+
+    /// The shell integration (an rcfile).
+    pub fn bashrc(&self) -> AbsPath {
+        self.view().join("bashrc")
+    }
+
+    /// An agent command's file.
+    pub fn command(&self, marker: &str) -> AbsPath {
+        self.view().join("cmds").join(&format!("{marker}.sh"))
+    }
+
+    /// An agent command's full output.
+    pub fn call_log(&self, marker: &str) -> AbsPath {
+        self.view().join("calls").join(&format!("{marker}.log"))
+    }
+
+    /// The fs worker's stderr.
+    pub fn worker_log(&self) -> AbsPath {
+        self.dir.join("worker.log")
     }
 }
 
@@ -206,13 +264,15 @@ mod tests {
             "/home/alice/.local/state/controlroom/run/daemon.sock"
         );
         assert_eq!(
-            d.agents_toml().as_str(),
-            "/home/alice/.config/controlroom/agents.toml"
+            d.sandbox_toml().as_str(),
+            "/home/alice/.config/controlroom/sandbox.toml"
+        );
+        assert_eq!(
+            d.workspace("w1").call_log("m").as_str(),
+            "/home/alice/.local/state/controlroom/workspaces/w1/view/calls/m.log"
         );
         let sock = d.supervisor_socket("01HZY3K4M5N6P7Q8R9S0T1V2W3");
         assert!(sock.as_str().len() < controlroom_supervisor::SUN_PATH_MAX);
-        let agent = d.agent_socket("01HZY3K4M5N6P7Q8R9S0T1V2W3");
-        assert!(agent.as_str().len() < controlroom_supervisor::SUN_PATH_MAX);
         assert!(!sock.as_str().contains("/run/user/"));
     }
 

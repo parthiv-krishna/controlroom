@@ -1,7 +1,7 @@
 //! Sandbox prerequisites (spec §11.5): nono, pinned to 0.80.0, and the kernel's Landlock ABI;
 //! plus the sftp placeholder for future file browsing.
 
-use controlroom_protocol::daemon::{CheckStatus, DoctorCheck};
+use controlroom_protocol::host::{CheckStatus, DoctorCheck};
 use controlroom_sandbox::AbsPath;
 use controlroom_sandbox::launch::NonoDirs;
 use controlroom_sandbox::probe::{self, Landlock, NonoStatus, PINNED_NONO_VERSION};

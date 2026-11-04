@@ -104,7 +104,7 @@ async fn a_daemon_restart_mid_command_recovers_the_result_from_the_surviving_she
     wait_until("the command ran", || lines(&ran) == 1).await;
     let old_epoch = {
         let (_, hello) = env
-            .connect(controlroom_protocol::daemon::ClientRole::Debug)
+            .connect(controlroom_protocol::agentd::ClientRole::Debug)
             .await;
         hello.epoch
     };
@@ -113,7 +113,7 @@ async fn a_daemon_restart_mid_command_recovers_the_result_from_the_surviving_she
     env.start_daemon().await;
     let client = env.controller().await;
     let (_, hello) = env
-        .connect(controlroom_protocol::daemon::ClientRole::Debug)
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
         .await;
     assert_ne!(hello.epoch, old_epoch, "a restart is a new epoch");
 
@@ -198,7 +198,7 @@ async fn a_write_interrupted_by_a_restart_is_resolved_by_the_files_hash() {
             .map(|b| format!("{b:02x}"))
             .collect::<String>()
     };
-    let db = rusqlite::Connection::open(env.state().join("host/host.sqlite")).unwrap();
+    let db = rusqlite::Connection::open(env.state().join("host.sqlite")).unwrap();
     for (call, path, content) in [
         ("w-applied", target.clone(), "new content"),
         ("w-missing", env.project().join("never.txt"), "other"),

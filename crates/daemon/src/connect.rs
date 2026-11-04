@@ -3,8 +3,8 @@
 //!
 //! Bytes are copied unchanged in both directions. When stdin ends (the channel closed), the
 //! socket's write half is shut down, and the bridge exits once the daemon closes its side.
-//! Disconnecting does nothing else: the daemon and its agents keep running. Errors go to stderr
-//! only, so stdout stays a clean JSON-RPC stream.
+//! Disconnecting does nothing else: the daemon, its shells and its jobs keep running. Errors go
+//! to stderr only, so stdout stays a clean JSON-RPC stream.
 
 use std::io::{Read, Write};
 use std::net::Shutdown;
@@ -14,7 +14,6 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use controlroom_sandbox::AbsPath;
 
 use crate::dirs::Dirs;
 use crate::instance;
@@ -48,21 +47,12 @@ pub fn run(args: Args) -> ExitCode {
 
 /// Connects to the daemon socket, starting a detached daemon if nothing answers.
 pub fn connect_or_start(dirs: &Dirs) -> anyhow::Result<UnixStream> {
-    connect_or_start_with(&dirs.daemon_socket(), || {
-        let exe = instance::serve_binary()?;
-        instance::spawn_detached(&exe, dirs).map(drop)
-    })
-}
-
-/// Connects to `socket`, calling `start` (which starts a detached daemon) if nothing answers.
-pub fn connect_or_start_with(
-    socket: &AbsPath,
-    start: impl FnOnce() -> anyhow::Result<()>,
-) -> anyhow::Result<UnixStream> {
+    let socket = dirs.daemon_socket();
     if let Ok(stream) = UnixStream::connect(socket.as_path()) {
         return Ok(stream);
     }
-    start()?;
+    let exe = instance::serve_binary()?;
+    instance::spawn_detached(&exe, dirs)?;
     let deadline = Instant::now() + CONNECT_RETRY;
     loop {
         match UnixStream::connect(socket.as_path()) {
@@ -75,8 +65,7 @@ pub fn connect_or_start_with(
     }
 }
 
-/// Copies stdin to `stream` and `stream` to stdout until both sides are done.
-pub fn bridge(stream: UnixStream) -> anyhow::Result<()> {
+fn bridge(stream: UnixStream) -> anyhow::Result<()> {
     let mut to_daemon = stream.try_clone()?;
     let mut from_daemon = stream;
     std::thread::spawn(move || {

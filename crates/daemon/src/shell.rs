@@ -1,5 +1,5 @@
-//! Running host commands with a timeout, and resolving programs the way agents see them: through
-//! the user's login shell (`$SHELL -lc`), which sets up `PATH` (spec §6.1).
+//! Running host commands with a timeout, and resolving programs the way shells and jobs see
+//! them: through the user's login shell (`$SHELL -lc`), which sets up `PATH` (spec §6.1).
 
 use std::io::Read;
 use std::process::{Command, Stdio};
@@ -102,11 +102,6 @@ pub fn run(
     })
 }
 
-/// The first word of a command line: the program it runs.
-pub fn command_program(command: &str) -> Option<&str> {
-    command.split_whitespace().next()
-}
-
 /// The resolved path printed by `command -v`: the last non-empty line, because shell startup
 /// files may print to stdout.
 pub fn parse_command_v(stdout: &str) -> Option<String> {
@@ -129,7 +124,7 @@ pub fn resolve_program(shell: &AbsPath, program: &str) -> Result<Option<String>,
     })
 }
 
-/// Finds a program from a `sandbox.toml` setting (`nono`, `oauth_helper`): an absolute (or `~/`)
+/// Finds a program from a `sandbox.toml` setting (`nono`): an absolute (or `~/`)
 /// path as is, a program name through the login shell; then canonicalized (store paths, not
 /// profile links).
 pub fn find_program(shell: &AbsPath, setting: &str, home: &AbsPath) -> Result<AbsPath, String> {
@@ -152,8 +147,6 @@ mod tests {
 
     #[test]
     fn command_lines() {
-        assert_eq!(command_program("  pi --mode rpc"), Some("pi"));
-        assert_eq!(command_program(" "), None);
         assert_eq!(
             parse_command_v("Welcome!\n/home/alice/.local/bin/pi\n\n"),
             Some("/home/alice/.local/bin/pi".into())

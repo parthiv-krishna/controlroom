@@ -4,7 +4,8 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use controlroom_protocol::daemon::{ClientRole, FsListParams, HelloParams};
+use controlroom_protocol::agentd::{ClientRole, HelloParams};
+use controlroom_protocol::host::FsListParams;
 use controlroom_protocol::host::{
     ApprovalRespondParams, HostApproval, ShellListParams, WorkspaceCloseParams, methods,
 };
@@ -172,14 +173,14 @@ async fn fs_list_and_doctor() {
 
 /// The webhook's port and a workspace's secret, from the host's state dir.
 fn hook(env: &HostEnv, session: &Session) -> (u16, String) {
-    let port = std::fs::read_to_string(env.state().join("host/webhook.port"))
+    let port = std::fs::read_to_string(env.state().join("run/webhook.port"))
         .unwrap()
         .trim()
         .parse()
         .unwrap();
     let secret = std::fs::read_to_string(
         env.state()
-            .join(format!("host/workspaces/{}/hook.secret", session.workspace)),
+            .join(format!("workspaces/{}/hook.secret", session.workspace)),
     )
     .unwrap();
     (port, secret)

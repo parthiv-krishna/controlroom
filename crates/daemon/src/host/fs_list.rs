@@ -3,7 +3,7 @@
 
 use std::time::UNIX_EPOCH;
 
-use controlroom_protocol::daemon::{FsEntry, FsEntryKind, FsListParams, FsListResult};
+use controlroom_protocol::host::{FsEntry, FsEntryKind, FsListParams, FsListResult};
 use controlroom_protocol::{ErrorData, RemotePath, RpcError, UnixMillis};
 use controlroom_sandbox::AbsPath;
 

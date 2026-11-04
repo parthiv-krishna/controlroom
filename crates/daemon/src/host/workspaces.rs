@@ -21,11 +21,11 @@ use rusqlite::params;
 use super::Host;
 use super::context::{context_files, skills};
 use super::fsops::fs_error;
-use super::paths::WorkspacePaths;
 use super::sandbox::{self, ProfileInput, Wrapped};
 use super::shells::integration;
 use super::store::internal;
 use super::worker::WorkerClient;
+use crate::dirs::WorkspacePaths;
 use crate::dirs::{create_private_dir, expand_home, write_private_file};
 
 /// An open workspace.
@@ -61,7 +61,7 @@ impl Workspace {
     pub fn wrap(&self, host: &Host, argv: Vec<String>) -> Result<Wrapped, RpcError> {
         sandbox::wrap(
             &host.sandbox,
-            &host.paths,
+            &host.dirs,
             self.profile().as_ref(),
             &self.root,
             argv,
@@ -79,7 +79,7 @@ impl Workspace {
             "--root".to_owned(),
             self.root.to_string(),
             "--home".to_owned(),
-            host.paths.dirs().home().to_string(),
+            host.dirs.home().to_string(),
         ];
         let wrapped = self.wrap(host, argv)?;
         let log = std::fs::OpenOptions::new()
@@ -178,7 +178,7 @@ fn install(
     root: AbsPath,
     sandbox: SandboxSpec,
 ) -> Result<Arc<Workspace>, RpcError> {
-    let files = host.paths.workspace(&id.to_string());
+    let files = host.dirs.workspace(&id.to_string());
     for dir in [
         files.dir().clone(),
         files.tmp(),
@@ -201,7 +201,7 @@ fn install(
     let policy = sandbox::policy(&sandbox)?;
     let profile = sandbox::write_profile(
         &host.sandbox,
-        &host.paths,
+        &host.dirs,
         ProfileInput {
             id: &id.to_string(),
             root: &root,
@@ -243,7 +243,7 @@ pub async fn open(
     host: &Arc<Host>,
     params: WorkspaceOpenParams,
 ) -> Result<WorkspaceOpenResult, RpcError> {
-    let home = host.paths.dirs().home().clone();
+    let home = host.dirs.home().clone();
     let requested = params.path.as_str().to_owned();
     let root = expand_home(&requested, &home)
         .map_err(|e| fs_error(&requested, e))

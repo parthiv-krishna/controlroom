@@ -178,22 +178,19 @@ pub fn full() -> SessionSandboxSpec {
 /// A workspace on a host at level strict, with the default mediated commands and approvals.
 pub fn workspace() -> WorkspaceSandboxSpec {
     let agent = full();
-    let dir = p("/home/alice/.local/state/controlroom/host/workspaces").join(SESSION);
+    let dir = p("/home/alice/.local/state/controlroom/workspaces").join(SESSION);
     WorkspaceSandboxSpec {
         id: session(),
         root: p("/home/alice/src/api"),
         tmp: dir.join("tmp"),
+        read_only: vec![p("/nix/store"), dir.join("view")],
         dir,
         policy: agent.policy,
-        read_only: vec![
-            p("/nix/store"),
-            p("/home/alice/.local/state/controlroom/host/logs").join(SESSION),
-        ],
         relaxed_reads: Vec::new(),
         exec_dirs: vec![p("/usr/bin"), p("/bin")],
         ssh_config: vec![p("/home/alice/.ssh")],
         protected: vec![
-            p("/home/alice/.local/state/controlroom/host"),
+            p("/home/alice/.local/state/controlroom"),
             p("/home/alice/.local/share/controlroom"),
         ],
         approvals: agent.approvals,

@@ -2,7 +2,7 @@
 
 use std::fmt::Write;
 
-use controlroom_protocol::daemon::{AgentStatus, BootStartMethod, CheckStatus, DoctorCheck};
+use controlroom_protocol::host::{BootStartMethod, CheckStatus, DoctorCheck};
 
 use super::Diagnosis;
 
@@ -12,14 +12,6 @@ fn mark(status: CheckStatus) -> &'static str {
         CheckStatus::Warn => "warn",
         CheckStatus::Fail => "FAIL",
         CheckStatus::Unknown => "??  ",
-    }
-}
-
-fn agent_mark(status: AgentStatus) -> &'static str {
-    match status {
-        AgentStatus::Ok => "ok  ",
-        AgentStatus::Missing => "FAIL",
-        AgentStatus::Unknown => "??  ",
     }
 }
 
@@ -76,30 +68,13 @@ pub fn render_human(d: &Diagnosis) -> String {
     row(&mut out, "nono", &r.nono);
     row(&mut out, "Landlock ABI", &d.landlock);
     row(&mut out, "sftp", &d.sftp);
-
-    let source = r.agents_config.as_ref().map_or("defaults", |p| p.as_str());
-    let _ = writeln!(out, "\nAgents ({source}):");
-    if let Some(e) = &r.agents_config_error {
-        let _ = writeln!(out, "  [warn] {e}");
-    }
-    for a in &r.agents {
-        let _ = writeln!(
-            out,
-            "  [{}] {:<22} {} ({})",
-            agent_mark(a.status),
-            a.agent,
-            a.command,
-            a.detail
-        );
-    }
     out
 }
 
 #[cfg(test)]
 mod tests {
     use controlroom_protocol::UnixMillis;
-    use controlroom_protocol::daemon::{AgentInfo, DoctorReport};
-    use controlroom_protocol::session::DriverKind;
+    use controlroom_protocol::host::DoctorReport;
 
     use super::super::{check, unknown};
     use super::*;
@@ -118,16 +93,9 @@ mod tests {
                     "/nix/store/aaaa-nono-0.80.0/bin/nono",
                 ),
                 landlock_abi: Some(6),
-                agents_config: Some("/home/alice/.config/controlroom/agents.toml".into()),
+                agents_config: None,
                 agents_config_error: None,
-                agents: vec![AgentInfo {
-                    agent: "pi".into(),
-                    driver: DriverKind::Pi,
-                    command: "pi".into(),
-                    status: AgentStatus::Missing,
-                    path: None,
-                    detail: "`pi` not found".into(),
-                }],
+                agents: Vec::new(),
                 checked_at: UnixMillis(1_000),
             },
             persistence: vec![
@@ -178,9 +146,6 @@ Sandbox:
   [ok  ] nono                   0.80.0: /nix/store/aaaa-nono-0.80.0/bin/nono
   [ok  ] Landlock ABI           6: filesystem and network confinement
   [??  ] sftp                   no sftp-server
-
-Agents (/home/alice/.config/controlroom/agents.toml):
-  [FAIL] pi                     pi (`pi` not found)
 ";
         assert_eq!(render_human(&sample()), expected);
     }
@@ -192,8 +157,7 @@ Agents (/home/alice/.config/controlroom/agents.toml):
         assert_eq!(v["boot_start"], "lazy");
         assert_eq!(v["nono"]["value"], "0.80.0");
         assert_eq!(v["landlock_abi"], 6);
-        assert_eq!(v["agents"][0]["driver"], "pi");
-        assert_eq!(v["agents"][0]["status"], "missing");
+        assert_eq!(v["agents"], serde_json::json!([]));
         assert_eq!(v["checked_at"], 1000);
     }
 }

@@ -152,7 +152,7 @@ pub(super) fn adopt(
     resume: &Resume,
 ) -> BashRun {
     let marker = marker(resume.call_id.as_str());
-    let files = host.paths.workspace(&shell.workspace_id.to_string());
+    let files = host.dirs.workspace(&shell.workspace_id.to_string());
     let log_path = files.call_log(&marker);
     let log = File::create(log_path.as_path()).ok();
     let (done_tx, done) = oneshot::channel();

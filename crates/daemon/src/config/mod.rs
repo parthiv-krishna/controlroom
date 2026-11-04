@@ -1,13 +1,11 @@
 //! controlroomd's configuration files under `~/.config/controlroom/`.
 //!
-//! - [`agents`]: `agents.toml`, the agent registry;
-//! - [`sandbox`]: `sandbox.toml`, machine-local sandbox inputs (nono, the pi agent dir, the
-//!   keep-list, credential routes).
+//! - [`sandbox`]: `sandbox.toml`, machine-local inputs of workspace sandboxes (nono, readable
+//!   paths, executable dirs, relaxed reads, the approval timeout).
 //!
-//! Both files are optional. A file that exists but can't be read or parsed is reported (by
+//! The file is optional. A file that exists but can't be read or parsed is reported (by
 //! `doctor`) and its defaults apply, so a typo never takes the daemon down.
 
-pub mod agents;
 pub mod sandbox;
 
 use serde::de::DeserializeOwned;

@@ -8,18 +8,18 @@
   "filesystem": {
     "read": [
       "/nix/store",
-      "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+      "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view",
       "/home/alice/datasets"
     ],
     "allow": [
-      "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+      "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
       "/home/alice/shared"
     ],
     "allow_file": [
       "/home/alice/notes.md"
     ],
     "unix_socket_subtree_bind": [
-      "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
+      "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
     ]
   },
   "groups": {
@@ -48,7 +48,7 @@
       "SSH_AUTH_SOCK"
     ],
     "set_vars": {
-      "TMPDIR": "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
+      "TMPDIR": "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
     }
   },
   "network": {
@@ -93,13 +93,13 @@
             "sandbox": {
               "exec_paths": [
                 "/nix/store",
-                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3"
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view"
               ],
               "fs_read": [
                 "/nix/store",
-                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view",
                 "/home/alice/src/api",
-                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
                 "/home/alice/datasets",
                 "/home/alice/shared"
               ],
@@ -108,7 +108,7 @@
               ],
               "fs_write": [
                 "/home/alice/src/api",
-                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
                 "/home/alice/shared"
               ],
               "fs_write_file": [
@@ -139,13 +139,13 @@
             "sandbox": {
               "exec_paths": [
                 "/nix/store",
-                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3"
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view"
               ],
               "fs_read": [
                 "/nix/store",
-                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view",
                 "/home/alice/src/api",
-                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
                 "/home/alice/datasets",
                 "/home/alice/shared",
                 "@git:common-dir"
@@ -155,7 +155,7 @@
               ],
               "fs_write": [
                 "/home/alice/src/api",
-                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
                 "/home/alice/shared",
                 "@git:common-dir"
               ],
@@ -202,13 +202,13 @@
             "sandbox": {
               "exec_paths": [
                 "/nix/store",
-                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3"
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view"
               ],
               "fs_read": [
                 "/nix/store",
-                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view",
                 "/home/alice/src/api",
-                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
                 "/home/alice/datasets",
                 "/home/alice/shared"
               ],
@@ -217,7 +217,7 @@
               ],
               "fs_write": [
                 "/home/alice/src/api",
-                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
                 "/home/alice/shared"
               ],
               "fs_write_file": [
@@ -272,12 +272,12 @@
             "sandbox": {
               "exec_paths": [
                 "/nix/store",
-                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3"
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view"
               ],
               "fs_read": [
                 "/nix/store",
-                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
-                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/view",
+                "/home/alice/.local/state/controlroom/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
                 "/home/alice/.ssh"
               ],
               "network": {

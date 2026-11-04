@@ -1,4 +1,4 @@
-//! A real `controlroomd host serve` in a scratch home, and a JSON-RPC client for it.
+//! A real `controlroomd serve` in a scratch home, and a JSON-RPC client for it.
 //!
 //! Dropping a [`HostEnv`] SIGKILLs every process whose command line mentions the scratch dir
 //! or whose cwd is inside it (daemon, supervisors, shells, jobs, fs workers), scanning until
@@ -12,7 +12,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use controlroom_protocol::daemon::{ClientRole, HelloParams};
+use controlroom_protocol::agentd::{ClientRole, HelloParams};
 use controlroom_protocol::host::{
     HostHelloResult, HostOp, HostResult, ShellOpenParams, ToolRunParams, WorkspaceOpenParams,
     WorkspaceOpenResult, methods,
@@ -80,7 +80,7 @@ impl HostEnv {
     }
 
     pub fn socket(&self) -> PathBuf {
-        self.state().join("run/host.sock")
+        self.state().join("run/daemon.sock")
     }
 
     /// `controlroomd` with the scratch home.
@@ -93,7 +93,7 @@ impl HostEnv {
         cmd
     }
 
-    /// Starts `host serve` in the foreground and waits for its socket.
+    /// Starts `serve` in the foreground and waits for its socket.
     pub async fn start_daemon(&mut self) {
         let log = std::fs::OpenOptions::new()
             .create(true)
@@ -102,7 +102,7 @@ impl HostEnv {
             .unwrap();
         let child = self
             .command()
-            .args(["host", "serve", "--state-dir"])
+            .args(["serve", "--state-dir"])
             .arg(self.state())
             .stdin(Stdio::null())
             .stdout(Stdio::null())

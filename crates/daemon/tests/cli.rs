@@ -2,7 +2,7 @@
 
 use std::process::{Command, Stdio};
 
-use controlroom_protocol::daemon::DoctorReport;
+use controlroom_protocol::host::DoctorReport;
 
 const BIN: &str = env!("CARGO_BIN_EXE_controlroomd");
 
@@ -37,26 +37,18 @@ fn doctor_prints_the_protocol_report_and_a_table() {
     };
     let report: DoctorReport = serde_json::from_str(&doctor(&[])).unwrap();
     assert_eq!(report.daemon_version, env!("CARGO_PKG_VERSION"));
-    assert_eq!(report.agents.len(), 1);
-    assert_eq!(report.agents[0].agent, "pi");
+    assert!(report.agents.is_empty(), "agents run on the server");
 
     let config = home.path().join(".config/controlroom");
     std::fs::create_dir_all(&config).unwrap();
-    std::fs::write(config.join("agents.toml"), "[agents.pi]\ncommand = [").unwrap();
     std::fs::write(
         config.join("sandbox.toml"),
         "nono = \"/nonexistent/nono\"\n",
     )
     .unwrap();
     let table = doctor(&["--human"]);
-    for heading in [
-        "Persistence after logout:",
-        "Start at boot:",
-        "Sandbox:",
-        "Agents (",
-    ] {
+    for heading in ["Persistence after logout:", "Start at boot:", "Sandbox:"] {
         assert!(table.contains(heading), "{table}");
     }
-    assert!(table.contains("using defaults"), "{table}");
     assert!(table.contains("[FAIL] nono"), "{table}");
 }

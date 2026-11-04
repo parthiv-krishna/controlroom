@@ -20,7 +20,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use controlroom_protocol::daemon::FollowFrom;
+use controlroom_protocol::agentd::FollowFrom;
 use controlroom_protocol::host::{
     HostOp, HostResult, JobEvent, JobEventKind, JobFollowSpec, JobsAckParams, JobsEventParams,
     JobsSubscribeParams, JobsSubscribeResult, KilledBy, notifications,
@@ -397,7 +397,7 @@ impl Jobs {
         }
         let ctx = Context {
             root: workspace.root.to_string(),
-            home: host.paths.dirs().home().to_string(),
+            home: host.dirs.home().to_string(),
         };
         let cwd = ctx.resolve_or_root(cwd.as_ref());
         if !Path::new(&cwd).starts_with(workspace.root.as_path()) {
@@ -521,7 +521,7 @@ impl Jobs {
             command.to_owned(),
         ];
         let wrapped = workspace.wrap(host, argv)?;
-        let dir = host.paths.job_dir(&id.to_string());
+        let dir = host.dirs.job_dir(&id.to_string());
         create_private_dir(&dir).map_err(internal)?;
         let env_file = dir.join("launch.env");
         let text: String = wrapped
@@ -530,8 +530,8 @@ impl Jobs {
             .map(|(k, v)| format!("{k}={v}\n"))
             .collect();
         write_private_file(&env_file, text.as_bytes()).map_err(internal)?;
-        create_private_dir(&host.paths.dirs().run()).map_err(internal)?;
-        let socket = host.paths.supervisor_socket(&id.to_string());
+        create_private_dir(&host.dirs.run()).map_err(internal)?;
+        let socket = host.dirs.supervisor_socket(&id.to_string());
         let request = LaunchRequest {
             id: id.to_string(),
             paths: Paths {
@@ -569,7 +569,7 @@ impl Jobs {
     ) -> Result<Job, RpcError> {
         let regex = pattern.as_deref().map(compile).transpose()?;
         let buffer_seconds = buffer_seconds.unwrap_or(DEFAULT_BUFFER_SECONDS).max(1);
-        let transcript = host.paths.job_dir(&id.to_string()).join("transcript.jsonl");
+        let transcript = host.dirs.job_dir(&id.to_string()).join("transcript.jsonl");
         let lines = {
             let inner = self.lock();
             let state = inner.jobs.get(id).ok_or_else(|| job_not_found(id))?;
@@ -622,7 +622,7 @@ impl Jobs {
             })
             .await?;
         if appended.is_some() {
-            let socket = host.paths.supervisor_socket(&id.to_string());
+            let socket = host.dirs.supervisor_socket(&id.to_string());
             match Client::connect(socket.as_path(), true).await {
                 Ok(client) => {
                     if let Err(e) = client.terminate(None).await {
@@ -792,7 +792,7 @@ impl Jobs {
             );
         }
         for (id, scanned) in running {
-            let socket = host.paths.supervisor_socket(&id.to_string());
+            let socket = host.dirs.supervisor_socket(&id.to_string());
             tokio::spawn(follow_job(
                 host.clone(),
                 id,
@@ -847,7 +847,7 @@ async fn follow_job(host: Arc<Host>, id: JobId, socket: std::path::PathBuf, from
         return;
     }
     // The supervisor is gone (or went away): finish from the transcript file.
-    let transcript = host.paths.job_dir(&id.to_string()).join("transcript.jsonl");
+    let transcript = host.dirs.job_dir(&id.to_string()).join("transcript.jsonl");
     let from = host
         .jobs
         .lock()

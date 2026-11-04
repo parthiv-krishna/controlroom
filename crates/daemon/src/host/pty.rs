@@ -15,7 +15,6 @@ use controlroom_transcript::PtyChunk;
 use rusqlite::OptionalExtension;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::paths::HostPaths;
 use super::store::Store;
 use crate::dirs::Dirs;
 
@@ -70,22 +69,22 @@ pub fn run(args: Args) -> ExitCode {
 }
 
 async fn run_async(args: Args) -> anyhow::Result<()> {
-    let paths = HostPaths::new(Dirs::from_env(args.state_dir.as_deref())?);
+    let dirs = Dirs::from_env(args.state_dir.as_deref())?;
     match args.command {
         Command::Attach { shell, since_seq } => {
-            let client = connect(&paths, &shell).await?;
-            attach(&client, &connect(&paths, &shell).await?, since_seq).await
+            let client = connect(&dirs, &shell).await?;
+            attach(&client, &connect(&dirs, &shell).await?, since_seq).await
         }
         Command::Resize { shell, cols, rows } => {
-            let client = connect(&paths, &shell).await?;
+            let client = connect(&dirs, &shell).await?;
             client.resize(cols, rows).await.context("resizing")
         }
     }
 }
 
 /// Connects to the running supervisor of `shell`.
-async fn connect(paths: &HostPaths, shell: &str) -> anyhow::Result<Client> {
-    let store = Store::open(paths.database().as_path())?;
+async fn connect(dirs: &Dirs, shell: &str) -> anyhow::Result<Client> {
+    let store = Store::open(dirs.database().as_path())?;
     let id = shell.to_owned();
     let supervisor: Option<Option<String>> = store
         .run_blocking(|c| {
@@ -98,7 +97,7 @@ async fn connect(paths: &HostPaths, shell: &str) -> anyhow::Result<Client> {
     let Some(Some(supervisor)) = supervisor else {
         bail!("no running shell {shell:?} on this host");
     };
-    let socket = paths.supervisor_socket(&supervisor);
+    let socket = dirs.supervisor_socket(&supervisor);
     Client::connect(socket.as_path(), false)
         .await
         .with_context(|| format!("shell {shell:?} is not running"))

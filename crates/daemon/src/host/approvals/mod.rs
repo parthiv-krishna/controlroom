@@ -199,7 +199,7 @@ enum Notice {
 /// Binds the listener on loopback: the port of the previous run if it is free, else a new one
 /// (saved for the next run).
 pub async fn bind(host: &Host) -> std::io::Result<TcpListener> {
-    let file = host.paths.webhook_port();
+    let file = host.dirs.webhook_port();
     let saved: Option<u16> = std::fs::read_to_string(file.as_path())
         .ok()
         .and_then(|text| text.trim().parse().ok());
@@ -288,7 +288,7 @@ fn route(
     }
     let (id, secret) = parse_hook_path(&request.path).ok_or(404u16)?;
     let workspace: WorkspaceId = id.as_str().parse().map_err(|_| 404u16)?;
-    let stored = std::fs::read_to_string(host.paths.workspace(id.as_str()).hook_secret().as_path())
+    let stored = std::fs::read_to_string(host.dirs.workspace(id.as_str()).hook_secret().as_path())
         .ok()
         .and_then(|s| HookSecret::parse(s.trim()));
     let session = host.workspaces.get(&workspace).map(|w| w.session_id);

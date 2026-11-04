@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
-use controlroom_protocol::daemon::{BootStartMethod, CheckStatus, DoctorCheck};
+use controlroom_protocol::host::{BootStartMethod, CheckStatus, DoctorCheck};
 
 use super::parse::{self, CgroupPlacement};
 use super::{check, unknown};

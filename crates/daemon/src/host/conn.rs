@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use controlroom_protocol::daemon::{ClientRole, HelloParams};
+use controlroom_protocol::agentd::{ClientRole, HelloParams};
 use controlroom_protocol::host::{HostHelloResult, methods};
 use controlroom_protocol::jsonrpc::{Method, encode_line, parse_params};
 use controlroom_protocol::{

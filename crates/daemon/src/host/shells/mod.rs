@@ -380,7 +380,7 @@ async fn spawn(
     ];
     let wrapped = workspace.wrap(host, argv)?;
     let supervisor = ulid::Ulid::generate().to_string();
-    let dir = host.paths.shell_dir(&supervisor);
+    let dir = host.dirs.shell_dir(&supervisor);
     create_private_dir(&dir).map_err(internal)?;
     let mut env = vec![
         ("TERM".to_owned(), "xterm-256color".to_owned()),
@@ -390,13 +390,13 @@ async fn spawn(
     let env_file = dir.join("launch.env");
     let text: String = env.iter().map(|(k, v)| format!("{k}={v}\n")).collect();
     write_private_file(&env_file, text.as_bytes()).map_err(internal)?;
-    create_private_dir(&host.paths.dirs().run()).map_err(internal)?;
+    create_private_dir(&host.dirs.run()).map_err(internal)?;
     let request = LaunchRequest {
         id: supervisor.clone(),
         paths: Paths {
             dir: dir.as_path().to_owned(),
             socket: host
-                .paths
+                .dirs
                 .supervisor_socket(&supervisor)
                 .as_path()
                 .to_owned(),
@@ -530,7 +530,7 @@ impl Shells {
         let start = params.cwd.as_ref().map(|c| {
             let ctx = super::fsops::Context {
                 root: workspace.root.to_string(),
-                home: host.paths.dirs().home().to_string(),
+                home: host.dirs.home().to_string(),
             };
             ctx.resolve(c.as_str())
         });
@@ -700,7 +700,7 @@ async fn reattach(
     shell_pid: Option<u32>,
     resume: Option<&Resume>,
 ) -> Option<Option<BashRun>> {
-    let socket = host.paths.supervisor_socket(supervisor);
+    let socket = host.dirs.supervisor_socket(supervisor);
     let probe = Client::connect(socket.as_path(), false).await.ok()?;
     let status = probe.status().await.ok()?;
     if !status.alive {

@@ -78,7 +78,7 @@ async fn the_fs_worker_is_confined_to_the_workspace() {
     let env = env().await;
     let denied = deny_everything(&env).await;
     let (client, _) = env
-        .connect(controlroom_protocol::daemon::ClientRole::Debug)
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
         .await;
     let session = Session::open(&env, &client, SandboxLevel::Strict).await;
     std::fs::write(env.project().join("inside.txt"), "inside\n").unwrap();
@@ -137,7 +137,7 @@ async fn shells_and_jobs_run_under_the_workspace_profile() {
     let env = env().await;
     let denied = deny_everything(&env).await;
     let (client, _) = env
-        .connect(controlroom_protocol::daemon::ClientRole::Debug)
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
         .await;
     let session = Session::open(&env, &client, SandboxLevel::Strict).await;
     session.shell(&client, "s").await;

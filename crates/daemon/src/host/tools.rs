@@ -419,7 +419,7 @@ async fn execute(
         } => {
             let ctx = Context {
                 root: workspace.root.to_string(),
-                home: host.paths.dirs().home().to_string(),
+                home: host.dirs.home().to_string(),
             };
             let data = super::fsops::content_bytes(content, encoding)?;
             let intent = Intent::Write {

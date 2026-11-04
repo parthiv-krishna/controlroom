@@ -1,4 +1,4 @@
-//! controlroomd: serve, connect, supervise, doctor, and the host role (host, workspace-exec, pty).
+//! controlroomd: serve, connect, supervise, doctor, workspace-exec, pty.
 
 use std::process::ExitCode;
 
@@ -15,16 +15,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run the daemon (or, with --detach, start it in the background).
+    /// Run the host daemon (or, with --detach, start it in the background).
     Serve(serve::Args),
     /// Bridge stdin/stdout to the daemon socket, starting the daemon if needed.
     Connect(connect::Args),
-    /// Check this machine: persistence, boot start, sandbox, agents.
+    /// Check this machine: persistence, boot start, sandbox.
     Doctor(doctor::Args),
-    /// Run one detached supervisor (a process and its transcript).
+    /// Run one detached supervisor (a shell, job or other process and its transcript).
     Supervise(supervise::Args),
-    /// The host role: serve the host API, or bridge to it.
-    Host(host::Args),
     /// The per-workspace fs worker (started by the host daemon under the workspace sandbox).
     WorkspaceExec(host::worker::Args),
     /// Attach to or resize a shell's terminal.
@@ -38,7 +36,6 @@ fn main() -> ExitCode {
         Command::Connect(args) => connect::run(args),
         Command::Doctor(args) => doctor::run(args),
         Command::Supervise(args) => supervise::run(args),
-        Command::Host(args) => host::run(args),
         Command::WorkspaceExec(args) => host::worker::run(args),
         Command::Pty(args) => host::pty::run(args),
     }

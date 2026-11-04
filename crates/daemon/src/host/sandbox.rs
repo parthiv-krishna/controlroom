@@ -26,10 +26,10 @@ use controlroom_sandbox::{
     effective_policy, generate_workspace_profile,
 };
 
-use super::paths::{HostPaths, WorkspacePaths};
 use crate::config::sandbox::{self as sandbox_config, SandboxSettings};
 use crate::dirs::write_private_file;
-use crate::shell::{login_shell, resolve_program};
+use crate::dirs::{Dirs, WorkspacePaths};
+use crate::shell::{find_program, login_shell};
 
 /// A `sandbox_unavailable` error.
 pub fn unavailable(detail: impl Into<String>) -> RpcError {
@@ -57,24 +57,22 @@ pub struct SandboxEnv {
 
 impl SandboxEnv {
     /// Reads `sandbox.toml` and looks for nono through the login shell.
-    pub fn load(paths: &HostPaths, exe: AbsPath) -> Self {
-        let dirs = paths.dirs();
+    pub fn load(dirs: &Dirs, exe: AbsPath) -> Self {
         let loaded = sandbox_config::load(dirs);
         if let Some(e) = &loaded.error {
             tracing::warn!("{e}; using the defaults");
         }
         let settings = loaded
             .value
-            .resolve(dirs.home(), None)
+            .resolve(dirs.home())
             .or_else(|e| {
                 tracing::warn!("{e}; using the defaults");
-                sandbox_config::SandboxConfig::default().resolve(dirs.home(), None)
+                sandbox_config::SandboxConfig::default().resolve(dirs.home())
             })
             .expect("the default sandbox settings resolve");
-        let nono = find_program(&settings.nono, dirs.home());
-        if nono.is_none() {
-            tracing::warn!("nono not found: only level off workspaces can run");
-        }
+        let nono = find_program(&login_shell(), &settings.nono, dirs.home())
+            .inspect_err(|e| tracing::warn!("nono: {e}; only level off workspaces can run"))
+            .ok();
         Self {
             settings,
             nono,
@@ -82,15 +80,6 @@ impl SandboxEnv {
             exe,
         }
     }
-}
-
-/// Resolves `setting` (a program name found by the login shell, or a path).
-fn find_program(setting: &str, home: &AbsPath) -> Option<AbsPath> {
-    if let Ok(path) = crate::dirs::expand_home(setting, home) {
-        return path.as_path().is_file().then_some(path);
-    }
-    let found = resolve_program(&login_shell(), setting).ok().flatten()?;
-    AbsPath::new(&found).ok()
 }
 
 /// The level of a spec (an unknown level is treated as the strictest).
@@ -184,7 +173,7 @@ pub struct ProfileInput<'a> {
 /// Writes the workspace's nono profile; `None` (and no file) at level off.
 pub fn write_profile(
     env: &SandboxEnv,
-    paths: &HostPaths,
+    dirs: &Dirs,
     input: ProfileInput<'_>,
 ) -> Result<Option<AbsPath>, RpcError> {
     let profile = input.files.profile();
@@ -214,7 +203,6 @@ pub fn write_profile(
             Some((rule.command.clone(), pin))
         })
         .collect::<BTreeMap<_, _>>();
-    let dirs = paths.dirs();
     let mut read_only = env.settings.read_only.clone();
     read_only.push(input.files.view());
     if !read_only.iter().any(|r| r.contains(&env.exe)) {
@@ -238,7 +226,7 @@ pub fn write_profile(
             .cloned()
             .collect(),
         ssh_config: ssh.as_path().is_dir().then_some(ssh).into_iter().collect(),
-        protected: vec![paths.root(), dirs.data(), dirs.config()],
+        protected: vec![dirs.state().clone(), dirs.data(), dirs.config()],
         approvals: input.hook.map(|hook| Approvals {
             hook,
             timeout_secs: env.settings.approval_timeout_secs,
@@ -265,7 +253,7 @@ pub struct Wrapped {
 /// the sandbox.
 pub fn wrap(
     env: &SandboxEnv,
-    paths: &HostPaths,
+    dirs: &Dirs,
     profile: Option<&AbsPath>,
     root: &AbsPath,
     argv: Vec<String>,
@@ -301,7 +289,7 @@ pub fn wrap(
         "--".to_owned(),
     ];
     wrapped.extend(argv);
-    let mut vars = NonoDirs::under(paths.dirs().state()).env();
+    let mut vars = NonoDirs::under(dirs.state()).env();
     vars.push(("TMPDIR".to_owned(), env.settings.nono_tmp.to_string()));
     Ok(Wrapped {
         argv: wrapped,

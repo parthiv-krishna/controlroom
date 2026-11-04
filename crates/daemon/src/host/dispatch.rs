@@ -82,12 +82,12 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
             }
         }
         HostRequest::FsList(p) => {
-            let home = host.paths.dirs().home().clone();
+            let home = host.dirs.home().clone();
             json(blocking(move || fs_list::list(&home, &p)).await)
         }
         HostRequest::DoctorReportMethod(_) => {
-            let dirs = host.paths.dirs().clone();
-            json(blocking(move || Ok(doctor::diagnose_host(&dirs))).await)
+            let dirs = host.dirs.clone();
+            json(blocking(move || Ok(doctor::diagnose(&dirs).report)).await)
         }
     };
     conn.respond(id, result).await;
