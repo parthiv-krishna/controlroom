@@ -61,15 +61,15 @@ async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_instal
     assert_eq!(machine["update_available"], false);
     assert_eq!(machine["arch"], std::env::consts::ARCH);
     assert!(machine["daemon_id"].is_string());
-    assert!(machine["settings"]["idle_timeout_h"].is_number());
+    // A host daemon has no daemon settings (they belong to the agent daemon).
+    assert!(machine["settings"].is_null(), "{machine}");
 
     // The same host can't be added twice.
     ui.err("machines.add", new, "invalid_params").await;
 
-    // Pass-through: agents and a directory listing.
-    let agents = ui.ok("agents.list", json!({"machine_id": id})).await;
-    assert!(agents["agents"].is_array());
-    let listing = ui
+    // A directory listing from the host daemon (next UI API).
+    let mut next = ui_next(&setup.controller, "laptop").await;
+    let listing = next
         .ok("fs.list", json!({"machine_id": id, "path": host.work()}))
         .await;
     assert!(listing["entries"].is_array());
@@ -199,7 +199,8 @@ async fn an_unreachable_machine_does_not_block_others() {
 
     // Another machine is added and answers meanwhile.
     let machine = add_machine(&mut ui, &host, "devbox").await;
-    let listing = ui
+    let mut next = ui_next(&controller, "laptop").await;
+    let listing = next
         .ok(
             "fs.list",
             json!({"machine_id": machine, "path": host.work(), "include_files": true}),
@@ -208,7 +209,7 @@ async fn an_unreachable_machine_does_not_block_others() {
     assert!(listing["entries"].is_array(), "{listing}");
     // Calls to the stuck machine fail at once instead of waiting.
     let started = std::time::Instant::now();
-    ui.err(
+    next.err(
         "fs.list",
         json!({"machine_id": stuck, "path": "~"}),
         "machine_unavailable",

@@ -302,3 +302,125 @@ async fn machine_names_and_the_grace_setting_reach_the_agent_daemon() {
     ui.ok("machines.remove", json!({"machine_id": id})).await;
     agentd.wait_machines("no machines", <[_]>::is_empty).await;
 }
+
+/// The router with the real host daemon (`controlroomd serve`, installed by the controller):
+/// a workspace and a shell are opened, a command runs, and a command that is running when the
+/// link drops finishes on the host and is answered from its journal after the reconnect (it ran
+/// once).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_real_host_daemon_runs_routed_calls_across_a_link_drop() {
+    use controlroom_protocol::host::{ShellOpenParams, WorkspaceOpenParams};
+    use controlroom_protocol::ids::SessionId;
+    use controlroom_protocol::session::{SandboxLevel, SandboxSpec};
+
+    let agentd = FakeAgentd::start().await;
+    let bundled = bundled_daemons();
+    let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
+    let host = RemoteHost::start().await;
+    let relay = Relay::start(host.port()).await;
+    let mut ui = ui_next(&setup.controller, "laptop").await;
+    agentd.wait_connected(1).await;
+    let id = machine_id(&add_machine_at(&mut ui, &host, "devbox", relay.port).await);
+    agentd
+        .wait_machines("devbox is a connected host", |m| {
+            m.iter()
+                .any(|m| m.availability.is_connected() && m.epoch.is_some())
+        })
+        .await;
+
+    let (session, workspace) = (SessionId::generate(), WorkspaceId::generate());
+    let send = |call: &str, request: HostRequest| {
+        agentd.request(HostOpRequest {
+            id: HostOpId::new(call),
+            machine_id: id,
+            session_id: Some(session),
+            request,
+        });
+    };
+    send(
+        "open",
+        HostRequest::WorkspaceOpen(WorkspaceOpenParams {
+            workspace_id: workspace,
+            session_id: session,
+            path: host.work().into(),
+            sandbox: SandboxSpec {
+                level: SandboxLevel::Off,
+                grants: Vec::new(),
+                domains: Vec::new(),
+                mediated: Vec::new(),
+            },
+        }),
+    );
+    let opened = result(agentd.response(&HostOpId::new("open")).await);
+    assert!(
+        opened["root"]
+            .as_str()
+            .is_some_and(|r| r.ends_with("/work")),
+        "{opened}"
+    );
+    send(
+        "shell",
+        HostRequest::ShellOpen(ShellOpenParams {
+            workspace_id: workspace,
+            name: "devbox".into(),
+            cwd: None,
+        }),
+    );
+    result(agentd.response(&HostOpId::new("shell")).await);
+    let run = |call: &str, command: &str| {
+        HostRequest::ToolRun(ToolRunParams {
+            call_id: CallId::new(call),
+            workspace_id: workspace,
+            op: HostOp::Bash {
+                shell: "devbox".into(),
+                command: command.into(),
+                timeout_s: None,
+            },
+        })
+    };
+    send("c1", run("c1", "echo hi-$((40+2))"));
+    let answer = result(agentd.response(&HostOpId::new("c1")).await);
+    assert_eq!(
+        (answer["output"].clone(), answer["exit_code"].clone()),
+        (json!("hi-42"), json!(0))
+    );
+
+    // A command held on a FIFO while the link is down.
+    let work = std::path::PathBuf::from(host.work());
+    let gate = work.join("gate");
+    let ran = work.join("ran.txt");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&gate)
+            .status()
+            .unwrap()
+            .success()
+    );
+    send(
+        "c2",
+        run(
+            "c2",
+            &format!(
+                "echo x >> {}; cat {} > /dev/null; echo done",
+                ran.display(),
+                gate.display()
+            ),
+        ),
+    );
+    controlroom_controller::test_support::wait_until("the command started", || ran.exists()).await;
+    relay.down();
+    agentd
+        .wait_machines("devbox is reported unreachable", |m| {
+            !m[0].availability.is_connected()
+        })
+        .await;
+    let release = gate.clone();
+    tokio::task::spawn_blocking(move || std::fs::write(release, "go\n").unwrap())
+        .await
+        .unwrap();
+    relay.up();
+    let answer = result(agentd.response(&HostOpId::new("c2")).await);
+    assert_eq!(answer["output"], "done", "{answer}");
+    assert_eq!(std::fs::read_to_string(&ran).unwrap(), "x\n", "it ran once");
+    assert_eq!(agentd.responses(&HostOpId::new("c2")).len(), 1);
+}
