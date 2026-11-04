@@ -5,7 +5,7 @@
 //! controlroom-fixture-tool record --raw-dir /tmp/raw [--only plain-text]
 //! controlroom-fixture-tool sanitize /tmp/raw fixtures/pi-rpc/1.2.0
 //! controlroom-fixture-tool list
-//! controlroom-fixture-tool mock-model --listen 127.0.0.1:4000
+//! controlroom-fixture-tool mock-model --listen 127.0.0.1:4000 [--api-key-file KEY]
 //! ```
 
 use std::collections::BTreeMap;
@@ -48,6 +48,9 @@ enum Cmd {
         /// The address to listen on.
         #[arg(long, default_value = "127.0.0.1:4000")]
         listen: SocketAddr,
+        /// Require `Authorization: Bearer <the file's content, trimmed>` on completions.
+        #[arg(long)]
+        api_key_file: Option<PathBuf>,
     },
 }
 
@@ -62,8 +65,20 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::MockModel { listen } => {
-            let mock = MockModel::serve(listen).await?;
+        Cmd::MockModel {
+            listen,
+            api_key_file,
+        } => {
+            let api_key = match api_key_file {
+                Some(path) => Some(
+                    std::fs::read_to_string(&path)
+                        .with_context(|| format!("reading {}", path.display()))?
+                        .trim()
+                        .to_owned(),
+                ),
+                None => None,
+            };
+            let mock = MockModel::serve(listen, api_key).await?;
             eprintln!("mock model listening on {}", mock.base_url());
             mock.wait().await
         }

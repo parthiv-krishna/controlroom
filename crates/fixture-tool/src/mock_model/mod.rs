@@ -7,7 +7,8 @@
 //! during text" or "steer mid-run" deterministic without sleeps.
 //!
 //! [`MockModel::serve`] adds an HTTP control API ([`control`]) for tests that
-//! script the model from another process.
+//! script the model from another process, and can require an API key, so a
+//! test sees that the credential reached the model (answers 401 otherwise).
 
 pub mod control;
 mod script;
@@ -22,7 +23,7 @@ use anyhow::{Context, Result, anyhow};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
 use axum::routing::post;
 use serde_json::Value;
@@ -39,6 +40,8 @@ struct Shared {
     released: watch::Sender<BTreeSet<String>>,
     /// Gates a stream is currently waiting at (or has passed).
     reached: watch::Sender<BTreeSet<String>>,
+    /// Completions without `Authorization: Bearer <key>` are refused.
+    api_key: Option<String>,
 }
 
 /// A running mock model server. Dropping it stops the server.
@@ -51,21 +54,28 @@ pub struct MockModel {
 impl MockModel {
     /// Serve `replies` on an ephemeral loopback port.
     pub async fn start(replies: Vec<Reply>) -> Result<Self> {
-        Self::bind(SocketAddr::from(([127, 0, 0, 1], 0)), replies, false).await
+        Self::bind(SocketAddr::from(([127, 0, 0, 1], 0)), replies, false, None).await
     }
 
     /// Serve on `addr` with no scripted replies yet, plus the [`control`] API that scripts
-    /// the model over HTTP.
-    pub async fn serve(addr: SocketAddr) -> Result<Self> {
-        Self::bind(addr, Vec::new(), true).await
+    /// the model over HTTP. With `api_key`, completions must carry `Authorization: Bearer
+    /// <api_key>` (else 401, and no reply is used).
+    pub async fn serve(addr: SocketAddr, api_key: Option<String>) -> Result<Self> {
+        Self::bind(addr, Vec::new(), true, api_key).await
     }
 
-    async fn bind(addr: SocketAddr, replies: Vec<Reply>, with_control: bool) -> Result<Self> {
+    async fn bind(
+        addr: SocketAddr,
+        replies: Vec<Reply>,
+        with_control: bool,
+        api_key: Option<String>,
+    ) -> Result<Self> {
         let shared = Arc::new(Shared {
             replies: Mutex::new(replies.into()),
             requests: Mutex::new(Vec::new()),
             released: watch::Sender::new(BTreeSet::new()),
             reached: watch::Sender::new(BTreeSet::new()),
+            api_key,
         });
         let mut app = Router::new().route("/v1/chat/completions", post(completions));
         if with_control {
@@ -150,7 +160,19 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-async fn completions(State(shared): State<Arc<Shared>>, body: String) -> Response {
+async fn completions(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
+    if let Some(key) = &shared.api_key {
+        let sent = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok());
+        if sent != Some(format!("Bearer {key}").as_str()) {
+            return error_response(401, "invalid API key");
+        }
+    }
     let request: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
     let model = request
         .get("model")

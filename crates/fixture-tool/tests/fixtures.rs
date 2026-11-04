@@ -172,8 +172,13 @@ async fn mock_model_streams_and_holds_at_gates() {
 
 /// Sends one HTTP/1.1 request with `connection: close` and returns the raw response.
 async fn http(port: u16, method: &str, path: &str, body: &str) -> String {
+    http_with(port, method, path, "", body).await
+}
+
+/// [`http`] with extra header lines (each ending in `\r\n`).
+async fn http_with(port: u16, method: &str, path: &str, headers: &str, body: &str) -> String {
     let request = format!(
-        "{method} {path} HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        "{method} {path} HTTP/1.1\r\nhost: localhost\r\n{headers}content-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
         body.len()
     );
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
@@ -191,10 +196,11 @@ async fn http(port: u16, method: &str, path: &str, body: &str) -> String {
     response
 }
 
-/// A served mock is scripted, released and inspected over its control API.
+/// A served mock is scripted, released and inspected over its control API, and refuses
+/// completions without its API key.
 #[tokio::test]
 async fn mock_model_control_api() {
-    let mock = MockModel::serve("127.0.0.1:0".parse().unwrap())
+    let mock = MockModel::serve("127.0.0.1:0".parse().unwrap(), Some("sk-test".to_owned()))
         .await
         .expect("mock");
     let port = mock.port();
@@ -210,7 +216,15 @@ async fn mock_model_control_api() {
     );
 
     let body = r#"{"model":"mock-model","stream":true,"messages":[]}"#;
-    let completion = tokio::spawn(http(port, "POST", "/v1/chat/completions", body));
+    let refused = http(port, "POST", "/v1/chat/completions", body).await;
+    assert!(refused.starts_with("HTTP/1.1 401"), "{refused}");
+    let completion = tokio::spawn(http_with(
+        port,
+        "POST",
+        "/v1/chat/completions",
+        "authorization: Bearer sk-test\r\n",
+        body,
+    ));
     mock.wait_reached("g1", Duration::from_secs(10))
         .await
         .expect("gate reached");
