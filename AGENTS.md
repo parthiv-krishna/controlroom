@@ -19,9 +19,10 @@ crates/protocol      wire types, tolerant decoding, TS export (owns web/src/lib/
 crates/transcript    record format, writer, reader/tail, seq index
 crates/supervisor    detached per-process pipe and its socket protocol
 crates/drivers       Driver trait, PiDriver, FakeDriver
-crates/runtime       session runtime library (no sockets; IO via traits)
+crates/runtime       session runtime library (no sockets; IO via traits, hosts via the hostops bridge)
 crates/sandbox       nono profiles, per-session agent dir, credential helpers, webhook types
-crates/daemon        bin controlroomd
+crates/daemon        bin controlroomd (execution hosts)
+crates/agentd        bin controlroom-agentd (pi sessions on the server)
 crates/client-core   russh, keys, bootstrap, daemon client
 crates/controller    client store, machine manager, hub, UI API, attention, broker
 crates/web           bin controlroom-web (axum shell)
