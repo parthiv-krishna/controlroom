@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::agentd::SessionSummary;
-use crate::daemon::{InitialPrompt, PromptResult};
+use crate::agentd::{InitialPrompt, PromptResult};
 use crate::ids::{OpId, SessionId, WorkspaceId};
 use crate::session::{SandboxLevel, SandboxSpec, WorkspaceSpec};
 

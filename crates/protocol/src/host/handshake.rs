@@ -1,7 +1,7 @@
 //! The host `hello`.
 //!
-//! The params are the daemon API's [`crate::daemon::HelloParams`] (protocol version, client
-//! name, [`crate::daemon::ClientRole`]), with the same single-controller rule: a host daemon
+//! The params are the agent daemon API's [`crate::agentd::HelloParams`] (protocol version, client
+//! name, [`crate::agentd::ClientRole`]), with the same single-controller rule: a host daemon
 //! serves one controller at a time, a `hello` with the same `controller_id` replaces the old
 //! connection, and debug clients connect alongside.
 

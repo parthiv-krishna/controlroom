@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::daemon::PromptResult;
+use crate::agentd::PromptResult;
 use crate::ids::{GrantId, JobId, OpId, RequestId, SessionId, TodoId};
 use crate::session::{ContentPart, DeviceRef, Job, Request, Response, Todo, TodoStatus};
 

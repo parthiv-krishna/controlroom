@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::daemon::DaemonSettings;
+use crate::agentd::DaemonSettings;
 use crate::ids::{Rev, Seq, SessionId, SubscriptionId, UnixMillis};
 use crate::session::{
     Attention, AttentionRollup, ContextUsage, LiveWork, QueueStatus, Request, RunOutcome,

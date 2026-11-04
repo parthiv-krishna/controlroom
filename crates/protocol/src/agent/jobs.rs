@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::daemon::FollowFrom;
+use crate::agentd::FollowFrom;
 use crate::ids::{JobId, RemotePath};
 use crate::session::Job;
 

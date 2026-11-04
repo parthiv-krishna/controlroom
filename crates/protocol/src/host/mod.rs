@@ -12,7 +12,7 @@
 //!
 //! **Connection lifecycle:**
 //! 1. `hello` first (`hello_required` otherwise). Same single-controller rule as the daemon
-//!    API ([`crate::daemon::ClientRole`]). The result's `epoch` changes when the daemon restarts.
+//!    API ([`crate::agentd::ClientRole`]). The result's `epoch` changes when the daemon restarts.
 //! 2. After every `hello` the agent daemon (through the controller) subscribes again:
 //!    `jobs.subscribe {since: its cursor}` and `approvals.subscribe`.
 //! 3. Every method is idempotent (workspaces and shells by id, tool calls by call id, acks and
@@ -27,18 +27,22 @@
 //! `approval.respond` (`sandbox_approvals`).
 
 mod approvals;
+mod doctor;
+mod fs;
 mod handshake;
 mod jobs;
 mod tool;
 mod workspace;
 
 pub use approvals::*;
+pub use doctor::*;
+pub use fs::*;
 pub use handshake::*;
 pub use jobs::*;
 pub use tool::*;
 pub use workspace::*;
 
-use crate::daemon::{DoctorReport, FsListParams, FsListResult, HelloParams, UnsubscribeParams};
+use crate::agentd::{HelloParams, UnsubscribeParams};
 use crate::jsonrpc::{Ack, NoParams};
 
 /// Marker types for every host method; see [`crate::jsonrpc::Method`].

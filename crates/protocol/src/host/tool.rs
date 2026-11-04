@@ -22,7 +22,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::daemon::{FollowFrom, FsEntry, FsEntryKind};
+use crate::agentd::FollowFrom;
+use crate::host::{FsEntry, FsEntryKind};
 use crate::ids::{CallId, JobId, RemotePath, UnixMillis, WorkspaceId};
 use crate::session::Job;
 

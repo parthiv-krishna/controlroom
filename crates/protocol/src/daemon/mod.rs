@@ -4,9 +4,9 @@
 //! into the agent daemon API ([`crate::agentd`], sessions) and the host API ([`crate::host`],
 //! tools). Its method table, `machine.subscribe` feed ([`MachineSnapshot`], [`MachineEvent`]),
 //! cwd-based [`SessionCreateParams`] / [`SessionCreateResult`] and the mailbox ([`mailbox`
-//! types](OutboxItem)) are removed once the controller and the daemon have switched. The
-//! session-scoped command types, the `hello` types, [`FsListParams`], [`DoctorReport`] and
-//! [`DaemonSettings`] are reused by the new APIs and move to them then.
+//! types](OutboxItem)) are removed once the controller has switched. The session-scoped command
+//! types, the `hello` types and the settings now live in [`crate::agentd`], `fs.list` and
+//! `doctor.report` in [`crate::host`]; this module re-exports them meanwhile.
 //!
 //! Newline-delimited JSON-RPC over an SSH exec channel running `controlroomd connect`. A daemon
 //! accepts several concurrent clients, and a client going away never triggers anything.
@@ -28,17 +28,29 @@
 
 mod commands;
 mod feeds;
-mod handshake;
-mod host;
 mod mailbox;
-mod runtime;
 
 pub use commands::*;
 pub use feeds::*;
-pub use handshake::*;
-pub use host::*;
 pub use mailbox::*;
-pub use runtime::*;
+
+// Moved to the agent daemon and host APIs; re-exported while the old API still compiles.
+pub use crate::agentd::{
+    AgentInfo, AgentStatus, AgentsListResult, ClientRole, DaemonSettings, FollowFrom, HelloParams,
+    HelloResult, IfBusy, InitialPrompt, JobFollowParams, JobListParams, JobListResult, JobLogs,
+    JobLogsParams, JobOpParams, OptionValue, PromptResult, QueueEditParams, QueueRemoveParams,
+    QueueReorderParams, QueueSendNowParams, ReadCursor, RequestRespondParams,
+    RequestRespondResult, RetentionPolicy, SandboxRevokeParams, SendNowResult, SessionEventsParams,
+    SessionMarkReadParams, SessionOpParams, SessionPromptParams, SessionResumeParams,
+    SessionSetOptionParams, SessionStartFreshParams, SessionSubscribeParams,
+    SessionSubscribeResult, SessionUpdateParams, SettingsSetParams, StartFreshResult,
+    TodoAddParams, TodoAddResult, TodoRemoveParams, TodoReorderParams, TodoUpdateParams,
+    UnsubscribeParams,
+};
+pub use crate::host::{
+    BootStartMethod, CheckStatus, DoctorCheck, DoctorReport, FsEntry, FsEntryKind, FsListParams,
+    FsListResult,
+};
 
 use crate::jsonrpc::{Ack, NoParams};
 use crate::session::{Job, Todo};

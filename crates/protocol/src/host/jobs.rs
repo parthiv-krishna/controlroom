@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::daemon::FollowFrom;
+use crate::agentd::FollowFrom;
 use crate::host::{JobFollowSpec, KilledBy};
 use crate::ids::{JobId, RemotePath, Rev, SessionId, SubscriptionId, UnixMillis, WorkspaceId};
 

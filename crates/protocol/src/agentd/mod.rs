@@ -8,36 +8,35 @@
 //! daemon never calls the controller.
 //!
 //! **Connection lifecycle:**
-//! 1. `hello` first (`hello_required` otherwise), with the daemon API's params and result and
-//!    its single-controller rule ([`crate::daemon::ClientRole`]; `controlroom-agentd ctl` uses
-//!    the debug role).
+//! 1. `hello` first (`hello_required` otherwise), with the single-controller rule
+//!    ([`ClientRole`]; `controlroom-agentd ctl` uses the debug role).
 //! 2. The controller subscribes with `sessions.subscribe {since_rev}`, `hostops.subscribe`,
 //!    and `session.subscribe {id, since_seq}` per open session, and reports its machines with
 //!    `hostops.machines`. After a reconnect it resubscribes with the last `rev` / `head_seq`.
 //! 3. Mutating commands carry an `op_id`; repeating one returns the original result.
 //!
-//! The session-scoped command types are the daemon API's ([`crate::daemon`]): they move here
-//! when the daemon API is deleted.
+//! The session-scoped command types, the `hello` types and the settings live here; the
+//! deprecated daemon API ([`crate::daemon`]) re-exports them until it is deleted.
 
+mod commands;
 mod create;
+mod feeds;
+mod handshake;
 mod hostops;
+mod runtime;
 mod sessions;
+mod settings;
 
+pub use commands::*;
 pub use create::*;
+pub use feeds::*;
+pub use handshake::*;
 pub use hostops::*;
+pub use runtime::*;
 pub use sessions::*;
+pub use settings::*;
 
-use crate::daemon::{
-    AgentsListResult, DaemonSettings, DoctorReport, HelloParams, HelloResult, JobFollowParams,
-    JobListParams, JobListResult, JobLogs, JobLogsParams, JobOpParams, PromptResult,
-    QueueEditParams, QueueRemoveParams, QueueReorderParams, QueueSendNowParams, ReadCursor,
-    RequestRespondParams, RequestRespondResult, SandboxRevokeParams, SendNowResult,
-    SessionEventsParams, SessionMarkReadParams, SessionOpParams, SessionPromptParams,
-    SessionResumeParams, SessionSetOptionParams, SessionStartFreshParams, SessionSubscribeParams,
-    SessionSubscribeResult, SessionUpdateParams, SettingsSetParams, StartFreshResult,
-    TodoAddParams, TodoAddResult, TodoRemoveParams, TodoReorderParams, TodoUpdateParams,
-    UnsubscribeParams,
-};
+use crate::host::DoctorReport;
 use crate::jsonrpc::{Ack, NoParams};
 use crate::session::{Job, Todo, Workspace};
 
