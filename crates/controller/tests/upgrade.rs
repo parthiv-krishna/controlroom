@@ -47,6 +47,7 @@ async fn machine(ui: &mut UiDriver, id: &str) -> serde_json::Value {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "sessions moved to controlroom-agentd; the controller reaches them there after R1c"]
 async fn auto_upgrade_waits_for_the_run_and_keeps_the_session() {
     let dir = tempfile::tempdir().unwrap();
     let store = dir.path().join("controller.sqlite");

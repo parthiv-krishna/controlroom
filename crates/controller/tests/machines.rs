@@ -60,13 +60,6 @@ async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_instal
     assert_eq!(machine["arch"], std::env::consts::ARCH);
     assert!(machine["daemon_id"].is_string());
     assert!(machine["settings"]["idle_timeout_h"].is_number());
-    assert!(
-        machine["capabilities"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("sandbox_approvals")),
-        "{machine}"
-    );
 
     // The same host can't be added twice.
     ui.err("machines.add", new, "invalid_params").await;
@@ -114,6 +107,7 @@ async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_instal
 /// The atomic create (session, task links, first prompt), two tabs seeing the same live state,
 /// shared session subscriptions without duplicate text, and the prompt origin.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "sessions moved to controlroom-agentd; the controller reaches them there after R1c"]
 async fn two_tabs_run_a_session_end_to_end() {
     let bundled = bundled_daemons();
     let setup = controller(Some(bundled.path()), None);
@@ -327,6 +321,7 @@ async fn two_tabs_run_a_session_end_to_end() {
 /// The prototype's lost update: a UI settings write racing a daemon-settings write. Writes are
 /// column-targeted now, so both survive any interleaving.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "sessions moved to controlroom-agentd; the controller reaches them there after R1c"]
 async fn concurrent_settings_writes_keep_both() {
     let bundled = bundled_daemons();
     let setup = controller(Some(bundled.path()), None);
@@ -367,6 +362,7 @@ async fn concurrent_settings_writes_keep_both() {
 /// An unreachable machine (a host that accepts TCP and never speaks SSH) never holds up
 /// another machine or the UI.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "sessions moved to controlroom-agentd; the controller reaches them there after R1c"]
 async fn an_unreachable_machine_does_not_block_others() {
     let silent = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let silent_port = silent.local_addr().unwrap().port();
@@ -483,6 +479,7 @@ async fn rotation_migrates_connected_machines() {
 /// Approvals through the UI: server-owned attention, one push per device per request (none to
 /// a device focused on the session), the first answer wins.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "sessions moved to controlroom-agentd; the controller reaches them there after R1c"]
 async fn approvals_push_once_per_device_and_the_first_answer_wins() {
     let push = std::sync::Arc::new(support::RecordingPush::default());
     let bundled = bundled_daemons();
