@@ -126,7 +126,7 @@ impl FakeDriver {
             out.events.push(DriverEvent::Written { tag });
         }
         match input.command {
-            Command::Prompt { text } | Command::Steer { text } => {
+            Command::Prompt { text, .. } | Command::Steer { text } => {
                 self.end_message(out, rec);
                 let item = new_item(
                     rec,
@@ -426,19 +426,24 @@ impl Driver for FakeDriver {
                 if self.view.run_active {
                     return Err(EncodeError::InvalidState("a run is active".into()));
                 }
-                Command::Prompt {
-                    text: plain_text(content),
+                prompt(content, false)
+            }
+            Intent::Steer { .. } if caps.steer && !self.view.run_active => {
+                return Err(EncodeError::InvalidState("no run is active".into()));
+            }
+            // Like the PiDriver: a steering prompt starts the next run if this one ends
+            // before the agent reads the line, where a plain steer would wait for a prompt.
+            Intent::Steer { content } if caps.steer => prompt(content, true),
+            Intent::Inject { content, .. } if !self.view.run_active => prompt(content, false),
+            Intent::Inject { content, wake, .. } if caps.steer => {
+                if *wake {
+                    prompt(content, true)
+                } else {
+                    Command::Steer {
+                        text: plain_text(content),
+                    }
                 }
             }
-            Intent::Steer { content } if caps.steer => Command::Steer {
-                text: plain_text(content),
-            },
-            Intent::Inject { content, .. } if !self.view.run_active => Command::Prompt {
-                text: plain_text(content),
-            },
-            Intent::Inject { content, .. } if caps.steer => Command::Steer {
-                text: plain_text(content),
-            },
             Intent::Steer { .. } | Intent::FollowUp { .. } | Intent::Inject { .. } => {
                 return Err(EncodeError::Unsupported(
                     "the fake agent can't do that".into(),
@@ -524,6 +529,13 @@ fn trigger(cause: Option<&LineTag>) -> RunTrigger {
         Some(LineTag::Op { .. }) => RunTrigger::User { device: None },
         Some(LineTag::Queue { .. }) => RunTrigger::Queue { device: None },
         Some(LineTag::Internal { .. }) | None => RunTrigger::Unknown,
+    }
+}
+
+fn prompt(content: &[ContentPart], steer: bool) -> Command {
+    Command::Prompt {
+        text: plain_text(content),
+        steer,
     }
 }
 

@@ -11,7 +11,7 @@ use controlroom_protocol::ids::{OpId, QueueId};
 use controlroom_protocol::session::{
     ContentPart, QuestionAnswer, RequestKind, RequestState, Response, RunOutcome,
 };
-use controlroom_protocol::timeline::{InjectOrigin, ItemBody, RunTrigger, TimelineOp};
+use controlroom_protocol::timeline::{InjectOrigin, ItemBody, MessageRole, RunTrigger, TimelineOp};
 use controlroom_transcript::{Body, Record};
 use serde_json::{Value, json};
 use support::{in_line, out_line};
@@ -274,11 +274,80 @@ fn intents_check_the_run_state() {
         busy_notice[0].contains(r#""type":"steer""#),
         "{busy_notice:?}"
     );
+    let lines = session.driver.encode(&steer, &tag).expect("steer");
+    assert_eq!(
+        serde_json::from_str::<Value>(&lines[0]).expect("json"),
+        json!({"id": "cr:op:0:a", "type": "prompt", "message": "now", "streamingBehavior": "steer"})
+    );
     let lines = session.driver.encode(&follow_up, &tag).expect("follow-up");
     assert_eq!(
         serde_json::from_str::<Value>(&lines[0]).expect("json"),
-        json!({"id": "cr:op:0:a", "type": "follow_up", "message": "later"})
+        json!({"id": "cr:op:0:a", "type": "prompt", "message": "later", "streamingBehavior": "followUp"})
     );
+}
+
+/// A send-now steered into a run that settles before pi reads the line starts the next run
+/// (pi would hold a plain `steer` until the next prompt), caused by the item's tag; its user
+/// message shows once.
+#[test]
+fn a_send_now_racing_the_end_of_a_run_starts_the_next_run() {
+    let mut session = Session::new();
+    session.start_run(&op("run"));
+    let tag = LineTag::Queue {
+        queue_id: QueueId::generate(),
+        part: 0,
+    };
+    let steer = Intent::Steer {
+        content: text("Change of plan."),
+    };
+    let lines = session.send(&steer, &tag);
+    assert_eq!(lines[0]["type"], "prompt");
+    assert_eq!(lines[0]["streamingBehavior"], "steer");
+    session.read(json!({"type": "agent_end", "messages": []}));
+    session.read(json!({"type": "agent_settled", "aborted": false}));
+    assert!(!session.driver.view().run_active);
+
+    let id = lines[0]["id"].as_str().expect("id").to_owned();
+    let mut ops = Vec::new();
+    let out = session.read(json!({"id": id, "type": "response", "command": "prompt",
+        "success": true, "data": {"disposition": "started"}}));
+    assert_eq!(out.events, [], "accepted once the run is active");
+    ops.extend(out.ops);
+    assert!(session.driver.view().run_starting);
+    let out = session.read(json!({"type": "agent_start"}));
+    assert!(
+        out.events.contains(&DriverEvent::RunStarted {
+            cause: Some(tag.clone())
+        }),
+        "{:?}",
+        out.events
+    );
+    assert!(out.events.contains(&DriverEvent::Accepted { tag }));
+    assert!(session.driver.view().run_active);
+    ops.extend(out.ops);
+    let out = session.read(json!({"type": "message_start", "message": {
+        "role": "user", "content": [{"type": "text", "text": "Change of plan."}]
+    }}));
+    ops.extend(out.ops);
+    let mut users: Vec<_> = ops
+        .iter()
+        .filter_map(|op| match op {
+            TimelineOp::Upsert { item }
+                if matches!(
+                    &item.body,
+                    ItemBody::Message {
+                        role: MessageRole::User,
+                        ..
+                    }
+                ) =>
+            {
+                Some(item.id.clone())
+            }
+            _ => None,
+        })
+        .collect();
+    users.dedup();
+    assert_eq!(users.len(), 1, "{ops:?}");
 }
 
 /// An injection steered into a run that settles before pi reads the line starts a run of its
@@ -335,7 +404,7 @@ fn accepted_steer_is_shown_and_moves_to_its_delivery() {
     let written = session.seq;
     let out = session.ok(
         lines[0]["id"].as_str().expect("id"),
-        "steer",
+        "prompt",
         json!({"disposition": "queued"}),
     );
     assert_eq!(out, [DriverEvent::Accepted { tag }]);

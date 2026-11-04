@@ -22,22 +22,28 @@ impl PiDriver {
                 vec![user_command("prompt", content)?]
             }
             Intent::Steer { content } | Intent::FollowUp { content } => {
-                // pi would hold it until the next prompt (fixtures README obs. 8).
+                // An idle agent gets a `Prompt`, so the runtime knows a run is about to start.
                 if !run_active {
                     return Err(EncodeError::InvalidState("no run is active".into()));
                 }
-                let kind = if matches!(intent, Intent::Steer { .. }) {
+                // A `prompt` with a `streamingBehavior` queues into the run, and starts the
+                // next run if this one settles before pi reads the line, where a plain
+                // `steer`/`follow_up` would wait in pi's queue for the next prompt (fixtures
+                // README obs. 8).
+                let behavior = if matches!(intent, Intent::Steer { .. }) {
                     "steer"
                 } else {
-                    "follow_up"
+                    "followUp"
                 };
-                vec![user_command(kind, content)?]
+                let mut command = user_command("prompt", content)?;
+                command["streamingBehavior"] = json!(behavior);
+                vec![command]
             }
             Intent::Inject { content, wake, .. } => {
                 // While a run is active it steers into it. A waking item goes as a `prompt`
-                // with `streamingBehavior: "steer"`: if the run settles before pi reads the
-                // line, pi starts a run with it, where a `steer` would wait in pi's queue for
-                // the next prompt (as a non-waking item should).
+                // with `streamingBehavior: "steer"`, like `Steer`; a non-waking one as a plain
+                // `steer`, which waits in pi's queue for the next prompt if the run settles
+                // before pi reads the line.
                 let command = match (run_active, wake) {
                     (false, _) => user_command("prompt", content)?,
                     (true, false) => user_command("steer", content)?,

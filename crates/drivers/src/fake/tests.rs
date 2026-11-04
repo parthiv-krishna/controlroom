@@ -2,7 +2,7 @@
 
 use controlroom_protocol::ids::{OpId, QueueId};
 use controlroom_protocol::session::{ContentPart, RequestKind, Response, RunOutcome};
-use controlroom_protocol::timeline::{ItemBody, TimelineOp};
+use controlroom_protocol::timeline::{InjectOrigin, ItemBody, MessageRole, TimelineOp};
 use controlroom_transcript::{Body, ExitInfo, Line, Record};
 
 use super::{FakeAgent, FakeDriver, FakeScript, FakeStep};
@@ -38,7 +38,13 @@ impl Rig {
     }
 
     fn write(&mut self, driver: &mut FakeDriver, intent: &Intent, tag: &LineTag) {
-        for line in driver.encode(intent, tag).unwrap() {
+        let lines = driver.encode(intent, tag).unwrap();
+        self.feed(lines);
+    }
+
+    /// Lets the agent read encoded lines.
+    fn feed(&mut self, lines: Vec<String>) {
+        for line in lines {
             let out = self.agent.input(&line);
             self.push(Body::In(Line::new(line)));
             self.output(out);
@@ -229,4 +235,70 @@ fn unsupported_intents_are_refused() {
     assert!(driver.encode(&steer, &tag).is_err());
     let new_session = Intent::NewSession { parent: None };
     assert!(driver.encode(&new_session, &tag).is_err());
+}
+
+/// Like pi: a steering prompt that reaches an idle agent (its run ended before the agent read
+/// the line) starts a run; a plain steer waits for the next prompt.
+#[test]
+fn steers_reaching_an_idle_agent() {
+    let script = FakeScript::default().turn(
+        "first",
+        [FakeStep::Text("one".into()), FakeStep::Gate("g".into())],
+    );
+    let mut rig = Rig::new(script);
+    let mut driver = FakeDriver::new(Capabilities {
+        steer: true,
+        ..Capabilities::default()
+    });
+    let op = |name: &str| LineTag::Op {
+        op_id: OpId::new(name),
+        part: 0,
+    };
+    rig.write(&mut driver, &prompt("first"), &op("p"));
+    rig.fold(&mut driver);
+    assert!(driver.view().run_active);
+    let notice = Intent::Inject {
+        origin: InjectOrigin::Todo,
+        content: vec![ContentPart::text("notice")],
+        wake: false,
+    };
+    let notice = driver.encode(&notice, &op("n")).unwrap();
+    let steer = Intent::Steer {
+        content: vec![ContentPart::text("late")],
+    };
+    let tag = op("s");
+    let steer = driver.encode(&steer, &tag).unwrap();
+    let out = rig.agent.release("g");
+    rig.output(out);
+    rig.feed(notice);
+    rig.feed(steer);
+    let outs = rig.fold(&mut driver);
+    let events = events(&outs);
+    assert!(events.contains(&DriverEvent::RunStarted {
+        cause: Some(tag.clone())
+    }));
+    assert!(events.contains(&DriverEvent::Accepted { tag }));
+    let texts: Vec<&str> = outs
+        .iter()
+        .flat_map(|o| &o.ops)
+        .filter_map(|op| match op {
+            TimelineOp::Upsert { item } => match &item.body {
+                ItemBody::Message {
+                    role: MessageRole::Agent,
+                    content,
+                } => content.iter().find_map(|c| match c {
+                    ContentPart::Text { text } => Some(text.as_str()),
+                    _ => None,
+                }),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        texts,
+        ["Steered: notice"],
+        "held for the run the steer started"
+    );
+    assert!(!driver.view().run_active);
 }

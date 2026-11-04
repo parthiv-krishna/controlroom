@@ -151,6 +151,8 @@ pub struct FakeAgent {
     script: FakeScript,
     native: WireNative,
     run: Option<Run>,
+    /// Steers received while idle, delivered with the next prompt (like pi).
+    held: Vec<String>,
     released: HashSet<String>,
     counter: u64,
 }
@@ -170,6 +172,7 @@ impl FakeAgent {
                 id,
             },
             run: None,
+            held: Vec::new(),
             released: HashSet::new(),
             counter: 0,
         }
@@ -182,8 +185,11 @@ impl FakeAgent {
             return out;
         };
         match command {
-            Command::Prompt { text } => {
+            Command::Prompt { text, steer } => {
                 if self.run.is_some() {
+                    if steer {
+                        return steered(out, tag, &text);
+                    }
                     return refuse(out, tag, "already processing");
                 }
                 self.run = Some(Run {
@@ -204,19 +210,18 @@ impl FakeAgent {
                     },
                 );
                 respond(&mut out, tag);
+                for text in std::mem::take(&mut self.held) {
+                    emit(&mut out, &steered_text(&text));
+                }
                 self.advance(&mut out);
             }
             Command::Steer { text } => {
                 if self.run.is_none() {
-                    return refuse(out, tag, "no active run");
+                    self.held.push(text);
+                    respond(&mut out, tag);
+                    return out;
                 }
-                respond(&mut out, tag);
-                emit(
-                    &mut out,
-                    &Output::Text {
-                        text: format!("Steered: {text}"),
-                    },
-                );
+                return steered(out, tag, &text);
             }
             Command::Cancel => {
                 respond(&mut out, tag);
@@ -457,6 +462,20 @@ fn respond(out: &mut AgentOutput, tag: WireTag) {
             error: None,
         },
     );
+}
+
+/// Accepts a steer into the active run.
+fn steered(mut out: AgentOutput, tag: WireTag, text: &str) -> AgentOutput {
+    respond(&mut out, tag);
+    emit(&mut out, &steered_text(text));
+    out
+}
+
+/// The agent's acknowledgement of a steer.
+fn steered_text(text: &str) -> Output {
+    Output::Text {
+        text: format!("Steered: {text}"),
+    }
 }
 
 fn refuse(mut out: AgentOutput, tag: WireTag, error: &str) -> AgentOutput {

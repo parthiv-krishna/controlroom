@@ -1,7 +1,7 @@
 //! The fake agent's line protocol: one JSON object per line, tagged by `type`.
 //!
-//! To the agent ([`Input`]): `prompt`, `steer`, `cancel`, `answer`, `set_option`,
-//! `new_session` and `state`, each with the writer's [`WireTag`] in `tag`.
+//! To the agent ([`Input`]): `prompt` (optionally steering), `steer`, `cancel`, `answer`,
+//! `set_option`, `new_session` and `state`, each with the writer's [`WireTag`] in `tag`.
 //!
 //! From the agent ([`Output`]): a `response` to every input line, plus `state`, `run_start`,
 //! `run_end`, `text`, `tool_start`, `tool_end`, `request`, `request_closed` and `context`.
@@ -97,12 +97,17 @@ pub struct Input {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Command {
-    /// Start a run (refused while one is active).
+    /// Start a run (refused while one is active, unless `steer`).
     Prompt {
         /// The prompt text.
         text: String,
+        /// While a run is active, steer the text into it instead (pi's `prompt` with
+        /// `streamingBehavior: "steer"`).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        steer: bool,
     },
-    /// Add text to the active run.
+    /// Add text to the active run. While idle the agent holds it and delivers it with the next
+    /// prompt (like pi).
     Steer {
         /// The text.
         text: String,

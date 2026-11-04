@@ -76,14 +76,17 @@ pub enum Intent {
         /// The prompt.
         content: Vec<ContentPart>,
     },
-    /// Deliver into the running turn as soon as possible (pi: `steer`). Used for send-now and
-    /// for injections while busy.
+    /// Deliver into the running turn as soon as possible (the agent must be running). If the
+    /// run ends before the agent reads the line, the item starts the next run instead of
+    /// waiting for a later prompt (pi: `prompt` with `streamingBehavior: "steer"`). Used for
+    /// send-now.
     Steer {
         /// The text.
         content: Vec<ContentPart>,
     },
-    /// Deliver after the current run settles, without a new user turn in between
-    /// (pi: `follow_up`).
+    /// Deliver after the current run's work, without a new user turn in between (the agent must
+    /// be running). If the run ends before the agent reads the line, the item starts the next
+    /// run (pi: `prompt` with `streamingBehavior: "followUp"`).
     FollowUp {
         /// The text.
         content: Vec<ContentPart>,
