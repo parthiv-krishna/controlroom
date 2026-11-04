@@ -122,6 +122,27 @@ test('aborting bash interrupts the command on the host and returns its partial o
   await pi.fire('session_shutdown', {});
 });
 
+test('a bash call survives an agent socket drop: resent with the same id, its output resumes', async () => {
+  let finish: (reply: Reply) => void = () => {};
+  daemon.handlers.set('host.call', () => new Promise((resolve) => (finish = resolve)));
+  const pi = await started(daemon, ONE);
+  const updates: string[] = [];
+  const running = pi.run('bash', { command: 'make' }, { callId: 'tc-drop', onUpdate: (u) => updates.push(updateText(u)) });
+  await daemon.called((c) => c.method === 'host.call' && c.params.call_id === 'tc-drop');
+  const hellos = daemon.hellos;
+  daemon.drop();
+  await daemon.helloCount(hellos + 1);
+  while (daemon.paramsOf('host.call').filter((p) => p.call_id === 'tc-drop').length < 2) await new Promise((r) => setImmediate(r));
+  daemon.notify('host.output', { call_id: 'tc-drop', text: 'after the drop\n' });
+  while (!updates.includes('after the drop\n')) await new Promise((r) => setImmediate(r));
+  finish({ result: { result: { op: 'bash', ...bashResult({ output: 'after the drop\n' }) }, link_drops: 0 } });
+  assert.match((await running).text, /^\[shell devbox · devbox:~\/src\/api\/src · exit 0\]\nafter the drop$/);
+  const sent = daemon.paramsOf('host.call').filter((p) => p.call_id === 'tc-drop');
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[0], sent[1]);
+  await pi.fire('session_shutdown', {});
+});
+
 test('bash failures the model can act on', async () => {
   const pi = await started(daemon, TWO);
   daemon.handlers.set('host.call', () => rpcError('connection_lost', { machine_id: 'M1', since: Date.UTC(2026, 0, 2, 3, 4, 5) }));
