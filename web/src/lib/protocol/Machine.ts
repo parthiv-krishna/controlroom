@@ -60,6 +60,11 @@ update_available: boolean,
  */
 auto_upgrade: boolean, 
 /**
+ * How long an agent's tool call waits for this machine while it is unreachable before it
+ * fails with `connection_lost` (seconds; default 600).
+ */
+grace_s: number, 
+/**
  * When the daemon was last reachable.
  */
 last_seen: UnixMillis | null, 

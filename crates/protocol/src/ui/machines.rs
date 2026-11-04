@@ -112,6 +112,9 @@ pub struct Machine {
     pub update_available: bool,
     /// Upgrade a compatible, older daemon automatically while the machine is idle.
     pub auto_upgrade: bool,
+    /// How long an agent's tool call waits for this machine while it is unreachable before it
+    /// fails with `connection_lost` (seconds; default 600).
+    pub grace_s: u32,
     /// When the daemon was last reachable.
     pub last_seen: Option<UnixMillis>,
     /// The installed daemon version, once known.
@@ -227,4 +230,8 @@ pub struct MachinesSetSettingsParams {
     /// Turn automatic daemon upgrades on or off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_upgrade: Option<bool>,
+    /// New grace period for tool calls while the machine is unreachable (seconds, at most a
+    /// week).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grace_s: Option<u32>,
 }

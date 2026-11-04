@@ -131,6 +131,8 @@ impl MachineEntry {
             connectivity: self.live.connectivity.clone(),
             update_available: self.live.update_available,
             auto_upgrade: r.auto_upgrade,
+            // The default grace; the machine setting comes with the host router.
+            grace_s: 600,
             last_seen: r.last_seen,
             version: r.version.clone(),
             arch: r.arch.clone(),

@@ -22,4 +22,9 @@ key?: MachineKeyChoice | null,
 /**
  * Turn automatic daemon upgrades on or off.
  */
-auto_upgrade?: boolean | null, };
+auto_upgrade?: boolean | null, 
+/**
+ * New grace period for tool calls while the machine is unreachable (seconds, at most a
+ * week).
+ */
+grace_s?: number | null, };
