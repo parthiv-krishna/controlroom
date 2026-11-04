@@ -175,9 +175,7 @@ impl MachineEntry {
             bootstrap: self.live.bootstrap.clone(),
         }
     }
-}
 
-impl MachineEntry {
     /// The machine as the agent daemon sees it. A legacy daemon can't serve host requests, so
     /// it counts as `incompatible`.
     pub(crate) fn host_machine(&self) -> HostMachine {

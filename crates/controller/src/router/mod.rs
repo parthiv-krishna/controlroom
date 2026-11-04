@@ -83,7 +83,7 @@ impl Router {
         Some(pending.request)
     }
 
-    /// Requests waiting for `machine` (with or without a flight).
+    /// Whether a request is with `machine`'s host daemon right now.
     pub(crate) fn in_flight(&self, machine: MachineId) -> bool {
         self.pending
             .values()
