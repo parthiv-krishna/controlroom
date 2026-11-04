@@ -39,8 +39,9 @@ pub struct Agentd {
 }
 
 impl Agentd {
-    /// Prepares the scratch directory and starts the daemon.
-    pub async fn start_new() -> Self {
+    /// Prepares the scratch directory (the agent runs the empty scenario until
+    /// [`Agentd::scenario`]); nothing runs until [`Agentd::start`].
+    pub fn new() -> Self {
         let dir = tempfile::Builder::new().prefix("cre").tempdir().unwrap();
         controlroom_controller::test_support::write_executable(
             &dir.path().join("login-shell"),
@@ -50,7 +51,6 @@ impl Agentd {
         std::fs::create_dir_all(dir.path().join("config")).unwrap();
         let mut agentd = Self { dir, child: None };
         agentd.scenario(&serde_json::json!({}));
-        agentd.start().await;
         agentd
     }
 
@@ -62,6 +62,11 @@ impl Agentd {
     /// The state directory.
     pub fn state(&self) -> PathBuf {
         self.path().join("state")
+    }
+
+    /// The configuration directory (`agents.toml`, `sandbox.toml`).
+    pub fn config(&self) -> PathBuf {
+        self.path().join("config")
     }
 
     /// The agent daemon API socket.
@@ -79,11 +84,23 @@ impl Agentd {
             file.display(),
             self.path().join("gates").display()
         );
+        self.agent(&command);
+    }
+
+    /// Makes new sessions' agent `command` (driver `pi`).
+    pub fn agent(&self, command: &str) {
         std::fs::write(
-            self.path().join("config/agents.toml"),
+            self.config().join("agents.toml"),
             format!("[agents.pi]\ncommand = {command:?}\ndriver = \"pi\"\n"),
         )
         .unwrap();
+    }
+
+    /// Replaces the stand-in login shell (`$SHELL`) with `program`.
+    pub fn login_shell(&self, program: &Path) {
+        let shell = self.path().join("login-shell");
+        std::fs::remove_file(&shell).unwrap();
+        std::os::unix::fs::symlink(program, shell).unwrap();
     }
 
     /// Starts `controlroom-agentd serve` and waits for its socket.
@@ -147,6 +164,12 @@ impl Agentd {
         let log = std::fs::read_to_string(self.path().join("agentd.log")).unwrap_or_default();
         let tail: Vec<&str> = log.lines().rev().take(lines).collect();
         tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+    }
+}
+
+impl Default for Agentd {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

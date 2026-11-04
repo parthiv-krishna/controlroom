@@ -17,6 +17,9 @@ tempfile.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+controlroom-fixture-tool = { path = "../fixture-tool" }
+controlroom-sandbox.workspace = true
+controlroom-transcript.workspace = true
 sha2 = "0.11"
 
 [lints]

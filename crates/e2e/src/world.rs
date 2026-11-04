@@ -73,6 +73,11 @@ impl Host {
         procs::kill_all(&self.home().to_string_lossy());
     }
 
+    /// Sets an environment variable of the remote user's commands (and so of the host daemon).
+    pub fn set_env(&self, name: &str, value: &str) {
+        self.remote.server().set_env(name, value);
+    }
+
     /// Types `text` into a shell's terminal the way a user does: `controlroomd pty attach
     /// <shell id>` as the remote user (the UI runs it over an SSH exec channel).
     pub async fn type_into(&self, shell_id: &str, text: &str) {
@@ -142,7 +147,16 @@ fn tuning() -> Tuning {
 impl World {
     /// Starts everything and adds both machines; returns once they are connected hosts.
     pub async fn start() -> Self {
-        let agentd = Agentd::start_new().await;
+        Self::start_with(|_, _, _| {}).await
+    }
+
+    /// Like [`World::start`], letting `configure` set up the agent daemon and the hosts before
+    /// anything runs (e.g. real pi and nono).
+    pub async fn start_with(configure: impl FnOnce(&mut Agentd, &Host, &Host)) -> Self {
+        let mut agentd = Agentd::new();
+        let (devbox, buildbox) = (Host::start("devbox").await, Host::start("buildbox").await);
+        configure(&mut agentd, &devbox, &buildbox);
+        agentd.start().await;
         let bundled = bundled_daemons();
         let store = tempfile::tempdir().unwrap();
         let controller = Controller::start(ControllerConfig {
@@ -172,8 +186,8 @@ impl World {
             ui,
             controller,
             agentd,
-            devbox: Host::start("devbox").await,
-            buildbox: Host::start("buildbox").await,
+            devbox,
+            buildbox,
             _store: store,
             _bundled: bundled,
         };
