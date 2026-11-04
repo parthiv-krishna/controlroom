@@ -42,6 +42,15 @@ async fn two_workspaces_on_two_machines() {
             new_main,
             &sha256(main_rs),
         ),
+        // A second edit based on the original file: it changed meanwhile, so the write is a
+        // conflict and nothing is lost.
+        edit(
+            "c_stale",
+            "devbox",
+            "~/src/api/src/main.rs",
+            "fn main() {}\n",
+            &sha256(main_rs),
+        ),
         host_call(
             "c_write",
             "write",
@@ -204,6 +213,13 @@ async fn two_workspaces_on_two_machines() {
     assert_eq!(
         timeline.tool_json("c_edit")["result"]["sha256"],
         sha256(new_main)
+    );
+    assert!(timeline.tool_failed("c_stale"));
+    assert_eq!(
+        timeline.tool_json("c_stale")["data"]["kind"],
+        "conflict",
+        "{}",
+        timeline.tool_json("c_stale")
     );
     assert_eq!(
         std::fs::read_to_string(web.join("notes.md")).unwrap(),

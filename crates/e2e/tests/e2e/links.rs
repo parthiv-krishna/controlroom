@@ -130,3 +130,69 @@ async fn past_the_grace_the_call_fails_and_its_late_result_is_injected_once() {
     );
     assert_eq!(held.runs(), 1);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_late_result_survives_an_agentd_restart_and_is_injected_once() {
+    let mut world = World::start().await;
+    let work = world.buildbox.dir("work");
+    let held = Held::new(&work, "migrate");
+    world.agentd.scenario(&scenario(vec![
+        bash(
+            "c_bash",
+            "buildbox",
+            "buildbox",
+            &held.command("echo migrating", "echo migrated-7"),
+        ),
+        say("Waiting for buildbox."),
+        say("Noted the late result."),
+    ]));
+    let buildbox = world.buildbox.id.clone();
+    world
+        .ui
+        .ok(
+            "machines.set_settings",
+            json!({"machine_id": buildbox, "grace_s": 1}),
+        )
+        .await;
+    let id = world
+        .create_session(&[(&buildbox, "~/work")], json!({}))
+        .await;
+
+    let mark = world.turn_mark(&id);
+    world.send_prompt(&id, "migrate").await;
+    held.started().await;
+    world.cut(Which::Buildbox).await;
+    let mark = world.wait_turn(&id, mark).await["last_turn_end_seq"]
+        .as_u64()
+        .unwrap();
+
+    // The agent daemon restarts while the machine is away; the command finishes meanwhile.
+    world.restart_agentd().await;
+    held.release().await;
+    world.restore(Which::Buildbox).await;
+    world.wait_turn(&id, mark).await;
+    let mut timeline = world.timeline(&id).await;
+    world
+        .until(&mut timeline, "the late result's run", |t| {
+            !t.injected_runs("tool_late").is_empty()
+        })
+        .await;
+    let error = timeline.tool_json("c_bash");
+    assert_eq!(error["data"]["kind"], "connection_lost", "{error}");
+
+    // A later turn: still injected once.
+    world.prompt(&id, "anything else?").await;
+    world
+        .until(&mut timeline, "the next run", |t| {
+            t.user_texts().iter().any(|u| u == "anything else?")
+        })
+        .await;
+    let late: Vec<String> = timeline
+        .user_texts()
+        .into_iter()
+        .filter(|t| t.contains("migrated-7"))
+        .collect();
+    assert_eq!(late.len(), 1, "{late:?}");
+    assert_eq!(timeline.injected_runs("tool_late").len(), 1);
+    assert_eq!(held.runs(), 1);
+}
