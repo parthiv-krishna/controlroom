@@ -6,8 +6,9 @@ use controlroom_transcript::{ExitInfo, ProcessKind, Record};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The protocol version this supervisor speaks.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// The protocol version this supervisor speaks. Version 2 added terminals (`write_bytes`,
+/// `resize`).
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The oldest supervisor protocol version clients accept (N-1, but at least 1).
 /// Supervisors outlive daemon upgrades, so a client must talk to older ones.
@@ -129,6 +130,24 @@ pub(crate) struct WriteParams {
 pub(crate) struct WriteResult {
     pub seq: u64,
 }
+
+/// `write_bytes` parameters.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct WriteBytesParams {
+    /// The bytes, base64-encoded.
+    pub data: String,
+}
+
+/// `resize` parameters.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct ResizeParams {
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// The result of `write_bytes` and `resize`.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub(crate) struct Done {}
 
 /// `terminate` parameters.
 #[derive(Debug, Default, Serialize, Deserialize)]

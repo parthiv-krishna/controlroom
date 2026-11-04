@@ -15,8 +15,9 @@
 //!   transcript (after a resume) appends and continues the numbering.
 //! - `ts` is unix time in milliseconds.
 //! - `dir` is `in` (written to the child's stdin), `out` (child stdout), `stderr`,
-//!   `exit` (see [`ExitInfo`]) or `meta` (a supervisor started the child; see
-//!   [`Meta`], which carries [`FORMAT_VERSION`]). Unknown `dir`s decode as
+//!   `exit` (see [`ExitInfo`]), `meta` (a supervisor started the child; see
+//!   [`Meta`], which carries [`FORMAT_VERSION`]) or `pty` (raw terminal output, see
+//!   [`PtyChunk`]). Unknown `dir`s decode as
 //!   [`Body::Unknown`] and round-trip unchanged.
 //! - `raw` is the line without its `\n`. A line cut at the supervisor's line cap has
 //!   `truncated` (bytes dropped); one that wasn't valid UTF-8 has `lossy: true`.
@@ -34,12 +35,14 @@
 //! The crate knows nothing about agent protocols; drivers interpret `raw`.
 
 mod index;
+mod pty;
 mod reader;
 mod record;
 mod scan;
 mod writer;
 
 pub use index::index_path;
+pub use pty::{PTY_DIR, PtyChunk};
 pub use reader::{PartialTail, ReadAll, ReadError, Reader, read_all};
 pub use record::{
     Body, ExitInfo, FORMAT_VERSION, Line, Meta, ProcessKind, Record, StdinMode, StopCause,

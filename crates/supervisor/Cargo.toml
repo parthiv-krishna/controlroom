@@ -6,10 +6,11 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+base64 = "0.22"
 clap.workspace = true
 controlroom-transcript.workspace = true
-# setsid(), waitid() and kill(-pgid) without unsafe.
-rustix = { version = "1.1", features = ["process"] }
+# setsid(), waitid(), kill(-pgid) and PTYs without unsafe (but for one pre_exec hook).
+rustix = { version = "1.1", features = ["process", "pty", "termios", "stdio"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

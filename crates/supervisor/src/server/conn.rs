@@ -5,6 +5,8 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use controlroom_transcript::{ReadError, Reader, Record, StdinMode, StopCause};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -18,9 +20,9 @@ use tokio::task::JoinHandle;
 use super::stdin::LogOp;
 use super::{DEFAULT_GRACE, READER_DRAIN_TIMEOUT, Shared, until_shutdown};
 use crate::proto::{
-    DurableResult, ErrorBody, ErrorCode, Hello, HelloParams, Message, PROTOCOL_VERSION, ReadParams,
-    ReadResult, Request, Status, TerminateParams, TerminateResult, VERSION, WriteParams,
-    WriteResult,
+    Done, DurableResult, ErrorBody, ErrorCode, Hello, HelloParams, Message, PROTOCOL_VERSION,
+    ReadParams, ReadResult, Request, ResizeParams, Status, TerminateParams, TerminateResult,
+    VERSION, WriteBytesParams, WriteParams, WriteResult,
 };
 
 /// Longest request line accepted; a `write` line is further capped by the spec.
@@ -185,6 +187,18 @@ impl Conn {
                 self.write(request.id, params(request.params)?).await?;
                 Ok(None)
             }
+            "write_bytes" => {
+                self.write_bytes(request.id, params(request.params)?)
+                    .await?;
+                Ok(None)
+            }
+            "resize" => {
+                let params: ResizeParams = params(request.params)?;
+                let pty = self.pty()?;
+                super::pty::resize(&pty.master, params.cols, params.rows)
+                    .map_err(|e| ErrorBody::new(ErrorCode::Io, format!("resizing: {e}")))?;
+                Ok(Some(to_value(Done {})))
+            }
             "barrier" => {
                 let (reply, rx) = oneshot::channel();
                 self.enqueue(LogOp::Barrier { reply }).await?;
@@ -306,6 +320,12 @@ impl Conn {
     }
 
     async fn write(&mut self, id: Value, params: WriteParams) -> Result<(), ErrorBody> {
+        if self.shared.pty.is_some() {
+            return Err(ErrorBody::new(
+                ErrorCode::NoStdin,
+                "a terminal takes write_bytes",
+            ));
+        }
         if self.shared.stdin != StdinMode::Pipe {
             return Err(ErrorBody::new(
                 ErrorCode::NoStdin,
@@ -339,6 +359,49 @@ impl Conn {
         .await?;
         self.reply_later(id, rx, |seq| WriteResult { seq });
         Ok(())
+    }
+
+    /// Queues raw input for a terminal (any connection may type); answers once it is written.
+    /// Not logged: what a user types may be a password.
+    async fn write_bytes(&self, id: Value, params: WriteBytesParams) -> Result<(), ErrorBody> {
+        let bytes = STANDARD
+            .decode(params.data)
+            .map_err(|e| ErrorBody::new(ErrorCode::InvalidParams, format!("data: {e}")))?;
+        let input = self.pty()?.input.clone();
+        if self.shared.log.child_reaped() {
+            return Err(ErrorBody::new(ErrorCode::ChildExited, "child has exited"));
+        }
+        let (reply, rx) = oneshot::channel();
+        let out = self.out.clone();
+        // The writer thread may block on a full terminal; never on this connection's loop.
+        tokio::task::spawn_blocking(move || {
+            if let Err(std::sync::mpsc::SendError((_, reply))) = input.send((bytes, reply)) {
+                let _ = reply.send(Err(ErrorBody::new(
+                    ErrorCode::ChildExited,
+                    "the terminal is closed",
+                )));
+            }
+        });
+        tokio::spawn(async move {
+            let result = match rx.await {
+                Ok(Ok(())) => Ok(to_value(Done {})),
+                Ok(Err(error)) => Err(error),
+                Err(_) => Err(ErrorBody::new(
+                    ErrorCode::ChildExited,
+                    "the terminal is closed",
+                )),
+            };
+            let _ = out.send(message(&id, result)).await;
+        });
+        Ok(())
+    }
+
+    /// The terminal, or `invalid_params` for a child on pipes.
+    fn pty(&self) -> Result<&super::PtyHandle, ErrorBody> {
+        self.shared
+            .pty
+            .as_ref()
+            .ok_or_else(|| ErrorBody::new(ErrorCode::InvalidParams, "the child has no terminal"))
     }
 
     /// Queues an operation for the logger, in request order.

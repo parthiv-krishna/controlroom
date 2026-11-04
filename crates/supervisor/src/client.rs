@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use controlroom_transcript::Record;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -16,9 +18,9 @@ use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::proto::{
-    DurableResult, ErrorBody, Hello, HelloParams, MIN_PROTOCOL_VERSION, Message, PROTOCOL_VERSION,
-    ReadParams, ReadResult, Request, Status, TerminateParams, TerminateResult, WriteParams,
-    WriteResult,
+    Done, DurableResult, ErrorBody, Hello, HelloParams, MIN_PROTOCOL_VERSION, Message,
+    PROTOCOL_VERSION, ReadParams, ReadResult, Request, ResizeParams, Status, TerminateParams,
+    TerminateResult, WriteBytesParams, WriteParams, WriteResult,
 };
 
 /// Default per-call timeout.
@@ -173,6 +175,23 @@ impl Client {
             line: line.to_owned(),
         };
         Ok(self.call::<WriteResult>("write", params).await?.seq)
+    }
+
+    /// Types `bytes` into a terminal (`kind: pty`, any connection); returns once they are
+    /// written to it. Not logged. Supervisors before protocol 2 answer `unknown_method`.
+    pub async fn write_bytes(&self, bytes: &[u8]) -> Result<(), ClientError> {
+        let params = WriteBytesParams {
+            data: STANDARD.encode(bytes),
+        };
+        self.call::<Done>("write_bytes", params).await?;
+        Ok(())
+    }
+
+    /// Resizes a terminal (`kind: pty`, any connection).
+    pub async fn resize(&self, cols: u16, rows: u16) -> Result<(), ClientError> {
+        self.call::<Done>("resize", ResizeParams { cols, rows })
+            .await?;
+        Ok(())
     }
 
     /// Waits until every write the supervisor accepted before this call (from any

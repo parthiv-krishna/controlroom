@@ -16,7 +16,7 @@ pub const MAX_LINE_BYTES: u64 = 16 << 20;
 /// What a supervisor runs and how. Serialized as JSON on the `supervise` command line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpawnSpec {
-    /// What kind of process this is. `pty` is reserved and refused for now.
+    /// What kind of process this is. A `pty` child runs on a terminal (see the crate docs).
     pub kind: ProcessKind,
     /// The program to execute.
     pub exec: Exec,
@@ -62,7 +62,7 @@ pub enum Exec {
 /// Why a spawn spec is unusable.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum SpecError {
-    /// The kind is `pty` (reserved) or unknown.
+    /// The kind is unknown.
     #[error("unsupported process kind {0:?}")]
     UnsupportedKind(ProcessKind),
     /// `exec` is empty or contains NUL bytes.
@@ -74,6 +74,9 @@ pub enum SpecError {
     /// `env_file` is not absolute.
     #[error("env file {0:?} is not absolute")]
     RelativeEnvFile(PathBuf),
+    /// `plain_log` was given for a `pty` (terminal output is not line-based).
+    #[error("a pty has no plain log")]
+    PtyPlainLog,
     /// `plain_log` is not absolute.
     #[error("plain log {0:?} is not absolute")]
     RelativePlainLog(PathBuf),
@@ -93,7 +96,9 @@ impl SpawnSpec {
     pub fn validate(&self) -> Result<(), SpecError> {
         match self.kind {
             ProcessKind::Agent | ProcessKind::Job => {}
-            kind @ (ProcessKind::Pty | ProcessKind::Unknown) => {
+            ProcessKind::Pty if self.plain_log.is_some() => return Err(SpecError::PtyPlainLog),
+            ProcessKind::Pty => {}
+            kind @ ProcessKind::Unknown => {
                 return Err(SpecError::UnsupportedKind(kind));
             }
         }
@@ -228,6 +233,12 @@ mod tests {
     #[test]
     fn validation() {
         spec(Exec::Shell("cat".into())).validate().unwrap();
+        SpawnSpec {
+            kind: ProcessKind::Pty,
+            ..spec(Exec::Shell("bash".into()))
+        }
+        .validate()
+        .unwrap();
         let wrapper = Exec::Argv(vec!["nono".into(), "run".into(), "--".into(), "sh".into()]);
         spec(wrapper).validate().unwrap();
 
@@ -237,10 +248,18 @@ mod tests {
             (spec(Exec::Argv(vec!["a\0".into()])), "nul"),
             (
                 SpawnSpec {
-                    kind: ProcessKind::Pty,
+                    kind: ProcessKind::Unknown,
                     ..spec(Exec::Shell("x".into()))
                 },
-                "pty",
+                "unknown kind",
+            ),
+            (
+                SpawnSpec {
+                    kind: ProcessKind::Pty,
+                    plain_log: Some("/log.txt".into()),
+                    ..spec(Exec::Shell("x".into()))
+                },
+                "pty plain log",
             ),
             (
                 SpawnSpec {

@@ -15,7 +15,7 @@
 //!
 //! # API (for the daemon)
 //!
-//! - [`SpawnSpec`]: `{kind: agent|job (pty reserved), exec: {argv}|{shell}, cwd,
+//! - [`SpawnSpec`]: `{kind: agent|job|pty, exec: {argv}|{shell}, cwd,
 //!   env_file?, stdin: pipe|null, timeout_ms?, max_line_bytes?, labels, plain_log?}`.
 //!   The supervisor is sandbox-agnostic: a sandboxed launch is a plain argv such as
 //!   `nono run ... -- $SHELL -lc '<cmd>'`. `plain_log` (jobs) also appends every output
@@ -102,8 +102,19 @@
 //! A login shell may print non-protocol bytes to stdout before the agent starts;
 //! they are logged like any other line and drivers must tolerate them.
 //!
-//! PTYs (`kind: pty`) are reserved: they will need byte-chunk records, raw writes
-//! and resize, added as a new protocol version.
+//! # Terminals (`kind: pty`, protocol 2)
+//!
+//! The child runs on a fresh PTY (120x40 until resized) as a session leader with the
+//! terminal as its controlling terminal, so an interactive shell has job control and
+//! ETX reaches the foreground group as SIGINT. What it prints is logged as raw byte
+//! chunks (`pty` records, [`controlroom_transcript::PtyChunk`]). Input is not logged
+//! (a password typed at a prompt must not reach the disk):
+//!
+//! - `write_bytes {data}` (any connection; `data` is base64): writes the bytes to the
+//!   terminal, in arrival order, and answers once they are written;
+//! - `resize {cols, rows}` (any connection);
+//! - `write` is refused (`no_stdin`), and `terminate` sends SIGHUP instead of SIGTERM
+//!   (what an interactive shell honors), then SIGKILL after the grace.
 
 pub mod cli;
 mod client;

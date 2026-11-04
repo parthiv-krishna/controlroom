@@ -96,7 +96,7 @@ pub enum ProcessKind {
     Agent,
     /// A background job (a command with line output).
     Job,
-    /// A terminal (reserved: not supported yet).
+    /// A terminal: a program on a PTY, its output logged as [`crate::PtyChunk`] records.
     Pty,
     /// A kind this version doesn't know.
     #[default]

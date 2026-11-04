@@ -1,27 +1,32 @@
 //! The supervisor runtime: child process, transcript, socket server, signals.
 //!
 //! Threads do the blocking I/O (two output pumps, the stdin logger and writer, the
-//! reaper); a current-thread tokio runtime serves the socket, timers and signals,
-//! and runs fsyncs and transcript reads on its blocking pool.
+//! reaper; for a terminal one pump and the input writer); a current-thread tokio
+//! runtime serves the socket, timers and signals, and runs fsyncs and transcript
+//! reads on its blocking pool.
 
 mod child;
 mod conn;
 mod log;
+mod pty;
 mod pump;
 mod stdin;
 
 use crate::diag::diag;
+use std::fs::File;
 use std::io::Write as _;
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use anyhow::{Context, bail};
 use controlroom_transcript::{
-    Body, ExitInfo, FORMAT_VERSION, Line, Meta, StdinMode, StopCause, Writer, unix_ms_now,
+    Body, ExitInfo, FORMAT_VERSION, Meta, ProcessKind, StdinMode, StopCause, Writer, unix_ms_now,
 };
 use rustix::process::Signal;
 use tokio::net::UnixListener;
@@ -104,16 +109,32 @@ pub(crate) struct Shared {
     pub shutdown: watch::Sender<bool>,
     /// Why the supervisor asked the child to stop (first request wins).
     stop_cause: Mutex<Option<StopCause>>,
+    /// The terminal of a `pty` child.
+    pub pty: Option<PtyHandle>,
+}
+
+/// The master side of a `pty` child's terminal.
+pub(crate) struct PtyHandle {
+    /// For resizing.
+    pub master: OwnedFd,
+    /// Raw input, written in order by the pty writer thread.
+    pub input: SyncSender<pty::Input>,
 }
 
 impl Shared {
-    /// SIGTERM to the child's group now, SIGKILL after `grace` if it still runs.
+    /// Asks the child's group to stop (SIGTERM, or SIGHUP for a terminal, which is what an
+    /// interactive shell honors), and SIGKILLs it after `grace` if it still runs.
     pub(crate) fn terminate(self: &Arc<Self>, grace: Duration, cause: StopCause) {
         self.stop_cause
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get_or_insert(cause);
-        self.group.signal(Signal::TERM);
+        let signal = if self.pty.is_some() {
+            Signal::HUP
+        } else {
+            Signal::TERM
+        };
+        self.group.signal(signal);
         let shared = self.clone();
         tokio::spawn(async move {
             let mut exit = shared.exit.subscribe();
@@ -210,9 +231,13 @@ async fn start(config: Config) -> anyhow::Result<Running> {
         Some(path) => read_env_file(path)?,
         None => Vec::new(),
     };
-    let spawned = child::spawn(&argv, &spec.cwd, env, spec.stdin)
-        .with_context(|| format!("spawning {argv:?} in {}", spec.cwd.display()))?;
-    let child_pid = spawned.child.id();
+    let spawned = if spec.kind == ProcessKind::Pty {
+        pty::spawn(&argv, &spec.cwd, env).map(Spawned::Pty)
+    } else {
+        child::spawn(&argv, &spec.cwd, env, spec.stdin).map(Spawned::Pipes)
+    }
+    .with_context(|| format!("spawning {argv:?} in {}", spec.cwd.display()))?;
+    let child_pid = spawned.child().id();
     let group = Arc::new(Group::new(child_pid));
     guard.group = Some(group.clone());
 
@@ -259,6 +284,7 @@ async fn start(config: Config) -> anyhow::Result<Running> {
         started_at: unix_ms_now(),
     };
     let (ops_tx, ops_rx) = mpsc::channel(OPS_QUEUE);
+    let (mut child, started) = start_io(spawned, &log, usize::try_from(max_line_bytes)?)?;
     let shared = Arc::new(Shared {
         info: info.clone(),
         log: log.clone(),
@@ -271,14 +297,11 @@ async fn start(config: Config) -> anyhow::Result<Running> {
         final_seq: AtomicU64::new(0),
         shutdown: watch::Sender::new(false),
         stop_cause: Mutex::new(None),
+        pty: started.pty,
     });
 
-    let cap = usize::try_from(max_line_bytes)?;
-    let pumps_done = vec![
-        spawn_pump("stdout", spawned.stdout, &log, cap, Body::Out)?,
-        spawn_pump("stderr", spawned.stderr, &log, cap, Body::Stderr)?,
-    ];
-    let stdin_tx = match spawned.stdin {
+    let pumps_done = started.pumps_done;
+    let stdin_tx = match started.stdin {
         Some(pipe) => {
             let (tx, rx) = std::sync::mpsc::sync_channel(STDIN_QUEUE);
             spawn_thread("stdin", move || stdin::stdin_writer(pipe, rx))?;
@@ -291,7 +314,6 @@ async fn start(config: Config) -> anyhow::Result<Running> {
         stdin::logger(logger_log, ops_rx, stdin_tx)
     })?;
     let (reaped_tx, reaped) = oneshot::channel();
-    let mut child = spawned.child;
     let reaper_log = log.clone();
     spawn_thread("reaper", move || {
         let status = group.wait_and_reap(&mut child);
@@ -352,17 +374,85 @@ fn spawn_thread(name: &str, f: impl FnOnce() + Send + 'static) -> anyhow::Result
     Ok(())
 }
 
-fn spawn_pump(
-    name: &str,
-    src: impl std::io::Read + Send + 'static,
+/// A spawned child with its stdio: pipes, or a terminal.
+enum Spawned {
+    Pipes(child::Spawned),
+    Pty(pty::PtySpawned),
+}
+
+impl Spawned {
+    fn child(&self) -> &std::process::Child {
+        match self {
+            Spawned::Pipes(s) => &s.child,
+            Spawned::Pty(s) => &s.child,
+        }
+    }
+}
+
+/// The child's I/O, once its threads run.
+struct StartedIo {
+    /// Resolve when an output pump has logged everything.
+    pumps_done: Vec<oneshot::Receiver<()>>,
+    /// The stdin pipe, for the stdin writer (pipes only).
+    stdin: Option<std::process::ChildStdin>,
+    /// The terminal (pty only).
+    pty: Option<PtyHandle>,
+}
+
+/// Starts the output pumps (and, for a terminal, the input writer).
+fn start_io(
+    spawned: Spawned,
     log: &Arc<Log>,
     cap: usize,
-    wrap: fn(Line) -> Body,
+) -> anyhow::Result<(std::process::Child, StartedIo)> {
+    match spawned {
+        Spawned::Pipes(s) => {
+            let pumps_done = vec![
+                spawn_pump("stdout", log, move |log| {
+                    pump::pump(s.stdout, log, cap, Body::Out);
+                })?,
+                spawn_pump("stderr", log, move |log| {
+                    pump::pump(s.stderr, log, cap, Body::Stderr);
+                })?,
+            ];
+            let started = StartedIo {
+                pumps_done,
+                stdin: s.stdin,
+                pty: None,
+            };
+            Ok((s.child, started))
+        }
+        Spawned::Pty(s) => {
+            let reader = File::from(s.master.try_clone()?);
+            let writer = File::from(s.master.try_clone()?);
+            let (input, input_rx) = std::sync::mpsc::sync_channel(STDIN_QUEUE);
+            spawn_thread("pty-input", move || pty::writer(writer, &input_rx))?;
+            let pumps_done = vec![spawn_pump("pty", log, move |log| {
+                pty::pump(reader, &log);
+            })?];
+            let started = StartedIo {
+                pumps_done,
+                stdin: None,
+                pty: Some(PtyHandle {
+                    master: s.master,
+                    input,
+                }),
+            };
+            Ok((s.child, started))
+        }
+    }
+}
+
+/// Runs an output pump on its own thread; the receiver resolves when it is done.
+fn spawn_pump(
+    name: &str,
+    log: &Arc<Log>,
+    pump: impl FnOnce(Arc<Log>) + Send + 'static,
 ) -> anyhow::Result<oneshot::Receiver<()>> {
     let (done_tx, done) = oneshot::channel();
     let log = log.clone();
     spawn_thread(name, move || {
-        pump::pump(src, log, cap, wrap);
+        pump(log);
         let _ = done_tx.send(());
     })?;
     Ok(done)

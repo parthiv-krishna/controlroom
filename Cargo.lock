@@ -752,6 +752,7 @@ name = "controlroom-supervisor"
 version = "0.0.10"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "controlroom-transcript",
  "rustix",
@@ -766,6 +767,7 @@ dependencies = [
 name = "controlroom-transcript"
 version = "0.0.10"
 dependencies = [
+ "base64 0.22.1",
  "serde",
  "serde_json",
  "tempfile",

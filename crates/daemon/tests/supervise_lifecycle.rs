@@ -312,9 +312,10 @@ fn bad_arguments_are_refused_clearly() {
     assert!(message.contains("107-byte unix socket limit"), "{message}");
     assert!(!wait_child(&mut child).success());
 
-    let mut pty = spec.clone();
-    pty.kind = ProcessKind::Pty;
-    let (mut child, ready) = run_foreground(state.path(), &paths(state.path(), "s1"), "s1", &pty);
+    let mut unknown = spec.clone();
+    unknown.kind = ProcessKind::Unknown;
+    let (mut child, ready) =
+        run_foreground(state.path(), &paths(state.path(), "s1"), "s1", &unknown);
     assert!(matches!(ready, ReadyLine::Error(m) if m.contains("unsupported process kind")));
     assert!(!wait_child(&mut child).success());
 
