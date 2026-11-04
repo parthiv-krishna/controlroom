@@ -12,6 +12,7 @@
 //!   feed.
 //! - [`FakeAgentd`] is an in-process agent daemon on a unix socket; [`FakeHost`] an in-process
 //!   host daemon behind a [`RemoteHost`].
+//! - [`Relay`] sits in front of a host's SSH port and can cut the link.
 //!
 //! **Finding the binaries.** Integration tests run from `target/<profile>/deps/`, so
 //! `controlroomd` and `controlroom-fake-agent` are looked up in `target/<profile>/`, where
@@ -26,10 +27,12 @@
 
 mod fake_agentd;
 mod fake_host;
+mod relay;
 mod wire;
 
 pub use fake_agentd::{FakeAgentd, session_summary};
 pub use fake_host::FakeHost;
+pub use relay::Relay;
 
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
@@ -61,8 +64,9 @@ fn target_dir() -> PathBuf {
     }
 }
 
-/// A workspace binary from the same profile as the running test, built if missing.
-fn workspace_binary(package: &str, bin: &str, env_override: &str) -> PathBuf {
+/// A workspace binary (`bin` of `package`) from the same profile as the running test, built if
+/// missing; `$<env_override>` overrides the path.
+pub fn workspace_binary(package: &str, bin: &str, env_override: &str) -> PathBuf {
     if let Some(path) = std::env::var_os(env_override) {
         return PathBuf::from(path);
     }

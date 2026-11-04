@@ -4,6 +4,7 @@
 
 mod support;
 
+use controlroom_controller::test_support::Relay;
 use controlroom_controller::test_support::{FakeAgentd, FakeHost, RemoteHost, bundled_daemons};
 use controlroom_protocol::agentd::HostOpRequest;
 use controlroom_protocol::host::{
@@ -13,7 +14,6 @@ use controlroom_protocol::ids::{CallId, HostOpId, MachineId, WorkspaceId};
 use controlroom_protocol::ui::Connectivity;
 use controlroom_protocol::{ErrorData, RpcOutcome};
 use serde_json::{Value, json};
-use support::relay::Relay;
 use support::{add_machine, add_machine_at, controller_with_agentd, ui_next};
 
 /// A `tool.run` request: `bash` (held while the command starts with `hold`).
