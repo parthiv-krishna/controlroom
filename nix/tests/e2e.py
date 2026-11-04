@@ -89,8 +89,14 @@ def mock(*replies: dict[str, Any]) -> None:
     )
 
 
-def mock_requests() -> list[dict[str, Any]]:
-    return json.loads(server.succeed(f"curl -sf {MOCK}/requests"))
+def mock_request(select: str = ".[-1]", **args: str) -> dict[str, Any]:
+    """One model request the mock received, picked by a jq filter in the VM (default: the
+    latest). All of them together grow past 100 KB, which the driver's console doesn't carry
+    reliably, so only the one needed leaves the VM."""
+    jq_args = " ".join(f"--arg {k} {shlex.quote(v)}" for k, v in args.items())
+    return json.loads(
+        server.succeed(f"curl -sf {MOCK}/requests | jq -ce {jq_args} {shlex.quote(select)}")
+    )
 
 
 def mock_done() -> None:
@@ -106,7 +112,7 @@ def text(message: dict[str, Any]) -> str:
 
 def tool_result(call_id: str) -> str:
     """What pi sent the model as the result of tool call `call_id` (in the latest request)."""
-    for message in mock_requests()[-1]["messages"]:
+    for message in mock_request()["messages"]:
         if message.get("role") == "tool" and message.get("tool_call_id") == call_id:
             return text(message)
     raise Exception(f"no result of {call_id} in the last model request")
@@ -114,7 +120,7 @@ def tool_result(call_id: str) -> str:
 
 def conversation() -> list[str]:
     """The latest model request's messages, as text."""
-    return [text(m) for m in mock_requests()[-1]["messages"]]
+    return [text(m) for m in mock_request()["messages"]]
 
 
 def tool(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -287,7 +293,10 @@ def workspaces() -> None:
     server.succeed("pgrep -u controlroom-agent -f '^[^ ]*nono run'")
     for machine in (devbox, buildbox):
         machine.succeed("pgrep -u alice -f '^[^ ]*nono run'")
-    first = next(r for r in mock_requests() if "Look around both machines" in json.dumps(r["messages"]))
+    first = mock_request(
+        "first(.[] | select(.messages | tostring | contains($prompt)))",
+        prompt="Look around both machines",
+    )
     system = text(first["messages"][0])
     assert "devbox:~/work/api/AGENTS.md" in system and "make check" in system, system
     assert "<workspaces>" in system, system
