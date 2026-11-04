@@ -2,6 +2,7 @@
 # The NixOS module VM test script (see ./module.nix). The test driver defines `server`, `idp`
 # and `start_all`.
 
+import json
 import re
 import shlex
 
@@ -150,8 +151,17 @@ with subtest("the agent daemon runs as its own user and serves the web server"):
     assert re.search(r"(?m)^NoNewPrivs:\s+1$", proc), "no new privileges"
     for setting in ("KillMode=process", "MemoryDenyWriteExecute=no", "ProtectSystem=strict", "ProtectHome=yes"):
         server.succeed(f"systemctl show controlroom-agent | grep -qx {setting}")
-    # The bundle and nono are on the agent user's login PATH; its doctor finds them.
-    print(server.succeed("su -l -s /bin/sh controlroom-agent -c 'command -v controlroom-pi nono'"))
+    # The daemon's CLI, the bundle and nono are on the agent user's login PATH; its doctor
+    # (as an admin would run it) finds nono and Landlock.
+    print(server.succeed("su -l controlroom-agent -c 'command -v controlroom-agentd controlroom-pi nono'"))
+    doctor = server.succeed(
+        "su -l controlroom-agent -c 'controlroom-agentd doctor --state-dir /var/lib/controlroom-agent"
+        " --config-dir /etc/controlroom-agent'"
+    )
+    report = json.loads(doctor)
+    assert report["nono"]["status"] == "ok" and report["landlock_abi"], doctor
+    assert [a["status"] for a in report["agents"]] == ["ok"], doctor
+    print(server.succeed("systemd-analyze security --no-pager controlroom-agent.service | tail -n 1"))
     server.succeed("test -d /var/lib/controlroom-agent -a -d /var/tmp/controlroom-agent")
     # A restart of the agent daemon: the web server reconnects.
     server.succeed("systemctl restart controlroom-agent")

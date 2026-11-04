@@ -13,6 +13,7 @@
 # - Model credentials as systemd credentials (`LoadCredential=`, e.g. sops-nix outputs): pi's
 #   `models.json` names them as `"apiKey": "!cat $CREDENTIALS_DIRECTORY/<name>"`, which only
 #   `controlroom-agentd credential` (nono's credential helper, outside the sandbox) resolves.
+# - Its configuration (agents.toml, sandbox.toml) in /etc/controlroom-agent.
 # - The API socket /run/controlroom-agent/agentd.sock (mode 0660) is reachable by the web
 #   unit through the shared group; services.controlroom points `agentd_socket` at it.
 {
@@ -33,9 +34,9 @@ let
   # PrivateTmp or RuntimeDirectory, which systemd removes while detached sessions still use it.
   nonoTmp = "/var/tmp/controlroom-agent";
 
-  configDir = pkgs.linkFarm "controlroom-agent-config" {
-    "agents.toml" = tomlFormat.generate "agents.toml" cfg.agents;
-    "sandbox.toml" = tomlFormat.generate "sandbox.toml" cfg.sandbox;
+  configFiles = {
+    agents = tomlFormat.generate "agents.toml" cfg.agents;
+    sandbox = tomlFormat.generate "sandbox.toml" cfg.sandbox;
   };
   piFiles = lib.filterAttrs (_: v: v != null) {
     "models.json" = cfg.pi.models;
@@ -168,14 +169,24 @@ in
       isSystemUser = true;
       group = user;
       home = stateDir;
-      # Agents start in `$SHELL -lc`, whose profile puts this user's packages on PATH.
+      # Agents start in its login shell (`$SHELL -lc`), whose profile puts this user's
+      # packages on PATH; so does `sudo -u controlroom-agent -i` for the daemon's CLI.
+      shell = pkgs.bashInteractive;
       packages = [
+        cfg.package
         cfg.piBundle
         cfg.nono
       ]
       ++ cfg.extraPackages;
     };
     users.groups.${user} = { };
+
+    # /etc/controlroom-agent ($CONFIGURATION_DIRECTORY). Not a store path: pi's sandbox reads
+    # /nix/store, and the daemon's configuration must stay out of its reach.
+    environment.etc = {
+      "controlroom-agent/agents.toml".source = configFiles.agents;
+      "controlroom-agent/sandbox.toml".source = configFiles.sandbox;
+    };
 
     systemd.tmpfiles.settings.controlroom-agent.${nonoTmp}.d = {
       inherit user;
@@ -187,14 +198,12 @@ in
       description = "controlroom agent daemon (pi sessions)";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
+      # Restarting is harmless: running sessions outlive it.
+      restartTriggers = lib.attrValues configFiles;
       path = [
         cfg.piBundle
         cfg.nono
       ];
-      environment = {
-        SHELL = lib.getExe pkgs.bashInteractive;
-        HOME = stateDir;
-      };
       # pi's agent dir, with the declared files (copies: pi rewrites settings.json).
       preStart = ''
         install -d -m 0700 ${stateDir}/agent
@@ -205,7 +214,7 @@ in
         '') piFiles
       );
       serviceConfig = {
-        ExecStart = "${lib.getExe cfg.package} serve --config-dir ${configDir}";
+        ExecStart = "${lib.getExe cfg.package} serve";
         User = user;
         Group = user;
         # Detached supervisors (one per running pi) outlive restarts; the next daemon
@@ -214,6 +223,7 @@ in
         Restart = "on-failure";
         RestartSec = "5s";
         StateDirectory = "controlroom-agent";
+        ConfigurationDirectory = "controlroom-agent";
         StateDirectoryMode = "0700";
         RuntimeDirectory = "controlroom-agent";
         RuntimeDirectoryMode = "0750";

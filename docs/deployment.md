@@ -2,12 +2,13 @@
 
 controlroom has two parts:
 
-- **The web server** (`controlroom-web`) runs on one always-on NixOS machine, behind your
-  reverse proxy and identity provider. It holds the SSH keys (sealed with a master key), the
-  machine list, projects and tasks, and serves the UI.
-- **Execution hosts** are the machines agents run on. The server connects to them over SSH and
-  installs its daemon (`controlroomd`) into `~/.local/share/controlroom`. pi, the
-  `controlroom-pi` bundle and nono come from the host's own Nix config (home-manager).
+- **The server**, one always-on NixOS machine behind your reverse proxy and identity provider,
+  runs two services: the web server (`controlroom-web`), which holds the SSH keys (sealed with a
+  master key), the machine list, projects and tasks, and serves the UI; and the agent daemon
+  (`controlroom-agentd`), which runs every pi session (under nono) with the model credentials.
+- **Execution hosts** are the machines the agents work on: their files, shells and jobs. The
+  server connects to them over SSH and installs its daemon (`controlroomd`) into
+  `~/.local/share/controlroom`. They need only bash and nono: no pi, bundle or model credentials.
 
 The examples use `controlroom.example.com` for the app, `id.example.com` for the identity
 provider (Authelia here) and `alice` for the user. Adapt them.
@@ -70,6 +71,62 @@ restarts on failure, including while a credential file is still missing.
 State lives in `/var/lib/private/controlroom` (`$STATE_DIRECTORY`): the database
 `controlroom.sqlite`. On an impermanent root, persist that directory.
 
+### The agent daemon: `services.controlroom.agent`
+
+Enabled with `services.controlroom` (`agent.enable`, default on). Sessions run pi through the
+`controlroom-pi` bundle on this machine; its tools act on the workspaces' hosts.
+
+```nix
+services.controlroom.agent = {
+  # sandbox.toml: one credential route per model provider.
+  sandbox.routes = [
+    {
+      provider = "gateway";
+      upstream = "https://llm.example.com";
+      allow = [ "POST /v1/chat/completions" ];
+    }
+  ];
+  # pi's models.json and settings.json in the agent dir (or manage them by hand: null).
+  pi.models.providers.gateway = {
+    baseUrl = "https://llm.example.com/v1";
+    api = "openai-completions";
+    apiKey = "!cat $CREDENTIALS_DIRECTORY/gateway"; # resolved outside the sandbox only
+    models = [ { id = "some-model"; name = "Some model"; } ];
+  };
+  pi.settings = {
+    defaultProvider = "gateway";
+    defaultModel = "some-model";
+  };
+  credentials.gateway = config.sops.secrets."controlroom/gateway_key".path;
+};
+```
+
+| Option | Meaning |
+| --- | --- |
+| `credentials` | Model API keys: name → a root-only file outside the store, loaded with `LoadCredential=`. `models.json` names them as `"!cat $CREDENTIALS_DIRECTORY/<name>"`; only nono's credential helper (`controlroom-agentd credential`, outside the sandbox) reads them, and pi only ever sees a placeholder. |
+| `sandbox` | `sandbox.toml` (`crates/agentd/src/config/sandbox.rs`): `routes`, `keep`, `oauth_claims`, …; `nono`, `oauth_helper` and `nono_tmp` default to the module's. |
+| `agents` | `agents.toml`; by default sessions run the bundle's `controlroom-pi` (add a keep-list with `agents.agents.pi.command = "controlroom-pi --keep …"`). |
+| `pi.models`, `pi.settings` | pi's `models.json` and `settings.json`, installed into the agent dir at every start (`null`: left alone). |
+| `extraPackages` | More programs on the agent user's PATH. |
+| `package`, `piBundle`, `nono` | Default to the flake's `controlroom-agentd`, `controlroom-pi` and pinned `nono`. |
+
+It runs as the static user `controlroom-agent` with its state in `/var/lib/controlroom-agent`
+(sessions, transcripts and pi's agent dir, including `auth.json`; persist and back it up with
+the web server's state) and its configuration in `/etc/controlroom-agent`. `KillMode=process`
+keeps running sessions alive across restarts and upgrades of the daemon. There is no
+`MemoryDenyWriteExecute` (pi is Node) and no system call filter of its own: nono confines each
+pi with Landlock to its scratch directory, its agent socket and the model routes. The daemon's
+socket `/run/controlroom-agent/agentd.sock` is shared with the web server through the
+`controlroom-agent` group, and `services.controlroom` points `agentd_socket` at it.
+
+For an OAuth subscription instead of an API key, sign in once on the server (pi asks for
+`/login <provider>`):
+
+```sh
+sudo -u controlroom-agent -i controlroom-agentd login \
+  --state-dir /var/lib/controlroom-agent --config-dir /etc/controlroom-agent <provider>
+```
+
 ## 2. Secrets
 
 Generate each secret once and store it with your secrets tool.
@@ -130,12 +187,8 @@ sign-in. The `groups` scope is requested whenever `allowedGroups` is set.
 
 On each host, through home-manager:
 
-- install the `controlroom-pi` package (`inputs.controlroom.packages.<system>.controlroom-pi`) and
-  nono;
-- write `~/.config/controlroom/agents.toml`, with the pi agent's command pointing at the
-  `controlroom-pi` launcher and its keep-list;
-- write `~/.config/controlroom/sandbox.toml` (credential routes, `exec_dirs` including the
-  bundle's `libexec/controlroom-pi/tools`, `oauth_helper`);
+- install nono (`inputs.controlroom.packages.<system>.nono`, the pinned version) on the user's
+  PATH; optionally `~/.config/controlroom/sandbox.toml` (`crates/daemon/src/config/sandbox.rs`);
 - persist `~/.local/state/controlroom` and `~/.local/share/controlroom` on an impermanent home.
 
 Then, in the UI, open **Settings › Machines › Add machine**: enter the SSH target, trust the host
@@ -157,10 +210,10 @@ the server can't be reached from the phone, the app shows "can't reach server" a
 ## 7. Checks after deploying
 
 ```sh
-systemctl status controlroom
+systemctl status controlroom controlroom-agent
 curl -fsS http://127.0.0.1:8080/healthz
 systemd-analyze security controlroom
-journalctl -u controlroom -e
+journalctl -u controlroom -u controlroom-agent -e
 ```
 
 ## 8. Upgrades and rollback
