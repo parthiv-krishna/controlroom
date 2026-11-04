@@ -436,7 +436,7 @@ async fn execute(
             timeout_s,
         } => {
             let shell = host.shells.require(workspace.session_id, shell)?;
-            let timeout_s = timeout_s.unwrap_or(DEFAULT_TIMEOUT_S);
+            let timeout_s = timeout_s.unwrap_or(DEFAULT_TIMEOUT_S).max(1);
             let started = shells::run::start(
                 host,
                 &shell,

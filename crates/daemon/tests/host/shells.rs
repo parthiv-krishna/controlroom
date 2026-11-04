@@ -157,6 +157,16 @@ async fn cancel_interrupts_the_command_and_the_shell_survives() {
             break;
         }
     }
+    // Opening the busy shell again returns it at once.
+    let reopened = client
+        .call::<methods::ShellOpen>(controlroom_protocol::host::ShellOpenParams {
+            workspace_id: session.workspace,
+            name: "s".into(),
+            cwd: None,
+        })
+        .await
+        .unwrap();
+    assert!(matches!(reopened.shell.state, ShellState::Running { .. }));
     let cancelled = client
         .call::<methods::ToolCancel>(ToolCallRef {
             call_id: CallId::new("slow"),

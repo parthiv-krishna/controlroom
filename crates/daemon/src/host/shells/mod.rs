@@ -571,8 +571,11 @@ impl Shells {
                 )
             })
             .await?;
-        let _guard = shell.lock_run().await;
-        shell.ensure_running(host, start).await?;
+        // A live shell is returned as it is, even while a command runs in it.
+        if !shell.is_running() {
+            let _turn = shell.lock_run().await;
+            shell.ensure_running(host, start).await?;
+        }
         Ok(shell.describe())
     }
 
