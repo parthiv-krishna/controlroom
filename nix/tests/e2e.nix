@@ -13,15 +13,17 @@
 # The test script (./e2e.py) runs one Playwright spec per scenario and does what a user (or the
 # network, or a power button) would do in between: install the key, cut a link, reboot a host.
 #
-# `run` always succeeds: its $out holds `status` plus, on failure, the Playwright traces and the
-# server, agent daemon, host daemon and mock-model logs. `check` fails unless the run passed,
-# pointing at them. A failed run is cached like any build; re-run it with
-# `nix build --rebuild <run>`.
+# `run` always succeeds: its $out holds `status`, `seconds` (how long it took) and, on failure,
+# the Playwright traces and the server, agent daemon, host daemon and mock-model logs. `check`
+# fails unless the run passed, pointing at them. A failed run is cached like any build: delete
+# it to run it again (`--rebuild` runs it but keeps the first output, since logs differ).
 #
 #   nix build .#checks.x86_64-linux.vm-e2e     # the gate
-#   nix build .#vm-e2e-run --rebuild -L        # run again; see result/
-#   nix build .#vm-e2e-driver -o driver && TMPDIR=$(mktemp -d) driver/bin/nixos-test-driver -o out
-#                                              # outside the sandbox (faster to iterate)
+#   nix store delete $(nix path-info .#vm-e2e-run) && nix build -L .#vm-e2e-run   # run again
+#   nix build .#vm-e2e-run -o result           # result/ holds the logs
+#   nix build .#vm-e2e-driver -o driver && mkdir out \
+#     && TMPDIR=$(mktemp -d) driver/bin/nixos-test-driver -o out   # outside the sandbox
+#     (faster to iterate; `--test-script` runs an edited copy of the script on the same VMs)
 {
   pkgs,
   module,

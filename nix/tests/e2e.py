@@ -287,8 +287,8 @@ def workspaces() -> None:
     server.succeed("pgrep -u controlroom-agent -f '^[^ ]*nono run'")
     for machine in (devbox, buildbox):
         machine.succeed("pgrep -u alice -f '^[^ ]*nono run'")
-    first = mock_requests()[-6]["messages"]
-    system = text(first[0])
+    first = next(r for r in mock_requests() if "Look around both machines" in json.dumps(r["messages"]))
+    system = text(first["messages"][0])
     assert "devbox:~/work/api/AGENTS.md" in system and "make check" in system, system
     assert "<workspaces>" in system, system
     assert "remote notes" in tool_result("call_read")
@@ -322,7 +322,8 @@ def approvals() -> None:
     )
 
     def push(branch: str) -> dict[str, Any]:
-        return bash(f"call_push_{branch}", f"push {branch}", f"cd ~/push/repo && git push origin HEAD:{branch} 2>&1; echo exit=$?")
+        command = f"cd ~/push/repo && git push origin HEAD:{branch} 2>&1; echo exit=$?"
+        return bash(f"call_push_{branch}", f"push {branch}", command)
 
     mock(push("allowed"), say("Pushed."), push("denied"), say("The push was denied."))
 
@@ -459,7 +460,7 @@ def reboot() -> None:
     spec.finish()
     mock_done()
     lost = tool_result("call_wait")
-    assert "lost" in lost or "restarted" in lost, lost
+    assert "restarted while this call ran" in lost and "result is lost" in lost, lost
     check = tool_result("call_check")
     assert "stage=unset" in check and f"{WEB}/sub" in check, check
     assert "was reopened before this command (the host restarted" in check, f"the agent is told the shell was reset: {check}"
