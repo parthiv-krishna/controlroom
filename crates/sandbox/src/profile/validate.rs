@@ -10,9 +10,11 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+use super::input::Input;
 use crate::paths::AbsPath;
 use crate::policy::{Access, CommandDecision, SandboxLevel};
 use crate::spec::{Endpoint, SessionSandboxSpec};
+use crate::workspace::WorkspaceSandboxSpec;
 
 /// Why a spec or profile was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -93,8 +95,17 @@ pub enum ProfileError {
 
 const MAX_CACHE_TTL_SECS: u32 = 3600;
 
-/// Checks a spec before generation.
+/// Checks an agent session spec before generation.
 pub fn validate_spec(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
+    validate(&Input::session(spec))
+}
+
+/// Checks a workspace spec before generation.
+pub fn validate_workspace_spec(spec: &WorkspaceSandboxSpec) -> Result<(), ProfileError> {
+    validate(&Input::workspace(spec))
+}
+
+pub(super) fn validate(spec: &Input) -> Result<(), ProfileError> {
     if spec.policy.level == SandboxLevel::Off {
         return Err(ProfileError::SandboxOff);
     }
@@ -107,30 +118,26 @@ pub fn validate_spec(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
     check_approvals(spec)
 }
 
-fn check_protected(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
-    let protected: Vec<&AbsPath> = spec
-        .protected
-        .iter()
-        .chain(std::iter::once(spec.layout.root()))
-        .collect();
-    let relaxed = spec.active_relaxed_reads();
-    let grants = std::iter::once(&spec.cwd)
-        .chain(&spec.read_only)
-        .chain(&spec.exec_dirs)
+fn check_protected(spec: &Input) -> Result<(), ProfileError> {
+    let protected = &spec.protected;
+    let relaxed = spec.relaxed_reads;
+    let grants = std::iter::once(spec.cwd)
+        .chain(spec.read_only)
+        .chain(spec.exec_dirs)
         .chain(spec.policy.paths.iter().map(|g| &g.path))
         .chain(relaxed.iter().map(|g| &g.path));
     for grant in grants {
         if let Some(p) = protected.iter().find(|p| grant.contains(p)) {
             return Err(ProfileError::CoversProtected {
                 grant: grant.clone(),
-                protected: (*p).clone(),
+                protected: p.clone(),
             });
         }
     }
     Ok(())
 }
 
-fn check_exec_dirs(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
+fn check_exec_dirs(spec: &Input) -> Result<(), ProfileError> {
     let writable_grants = spec
         .policy
         .paths
@@ -138,10 +145,10 @@ fn check_exec_dirs(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
         .filter(|g| g.access == Access::ReadWrite)
         .map(|g| g.path.clone());
     let writable: Vec<AbsPath> = std::iter::once(spec.cwd.clone())
-        .chain(spec.layout.sandbox_dirs())
+        .chain(spec.writable.iter().cloned())
         .chain(writable_grants)
         .collect();
-    for dir in &spec.exec_dirs {
+    for dir in spec.exec_dirs {
         if let Some(w) = writable.iter().find(|w| w.contains(dir)) {
             return Err(ProfileError::WritableExecDir {
                 dir: dir.clone(),
@@ -152,9 +159,9 @@ fn check_exec_dirs(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
     Ok(())
 }
 
-fn check_routes(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
+fn check_routes(spec: &Input) -> Result<(), ProfileError> {
     let mut seen = BTreeSet::new();
-    for route in &spec.credential_routes {
+    for route in spec.routes {
         let id = route.route_id();
         if !seen.insert(id.clone()) {
             return Err(ProfileError::DuplicateRoute(id));
@@ -213,7 +220,7 @@ fn is_http_token(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
 }
 
-fn check_approvals(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
+fn check_approvals(spec: &Input) -> Result<(), ProfileError> {
     let mediated = spec
         .policy
         .commands
@@ -224,11 +231,8 @@ fn check_approvals(spec: &SessionSandboxSpec) -> Result<(), ProfileError> {
         .commands
         .iter()
         .any(|r| r.decision == CommandDecision::Approve && spec.pins.contains_key(&r.command));
-    let endpoint_approvals = spec
-        .credential_routes
-        .iter()
-        .any(|r| !r.endpoints.approve.is_empty());
-    match &spec.approvals {
+    let endpoint_approvals = spec.routes.iter().any(|r| !r.endpoints.approve.is_empty());
+    match spec.approvals {
         None if command_approvals || endpoint_approvals => Err(ProfileError::ApprovalsRequired),
         Some(a) if a.timeout_secs == 0 => Err(ProfileError::ApprovalTimeout),
         _ if endpoint_approvals && !mediated => Err(ProfileError::EndpointApprovalsNeedMediation),

@@ -1,0 +1,300 @@
+{
+  "meta": {
+    "name": "cr-ws-01HZY3K4M5N6P7Q8R9S0T1V2W3"
+  },
+  "workdir": {
+    "access": "readwrite"
+  },
+  "filesystem": {
+    "read": [
+      "/nix/store",
+      "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+      "/home/alice/datasets"
+    ],
+    "allow": [
+      "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+      "/home/alice/shared"
+    ],
+    "allow_file": [
+      "/home/alice/notes.md"
+    ],
+    "unix_socket_subtree_bind": [
+      "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
+    ]
+  },
+  "groups": {
+    "include": [
+      "linux_sysfs_read"
+    ],
+    "exclude": [
+      "dangerous_commands",
+      "dangerous_commands_linux",
+      "dangerous_commands_macos"
+    ]
+  },
+  "linux": {
+    "af_unix_mediation": "pathname"
+  },
+  "environment": {
+    "deny_vars": [
+      "*_API_KEY",
+      "*_SECRET",
+      "*_SECRET_KEY",
+      "*_PASSWORD",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+      "SSH_AUTH_SOCK"
+    ],
+    "set_vars": {
+      "TMPDIR": "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp"
+    }
+  },
+  "network": {
+    "allow_domain": [
+      "git.example.com",
+      "registry.example.com"
+    ]
+  },
+  "security": {
+    "capability_elevation": true,
+    "approval_backends": {
+      "controlroom": {
+        "type": "webhook",
+        "url": "http://127.0.0.1:47100/nono/v1/01HZY3K4M5N6P7Q8R9S0T1V2W3/abababababababababababababababababababababababababababababababab",
+        "timeout_secs": 600
+      }
+    },
+    "approval_defaults": {
+      "backend": "controlroom"
+    }
+  },
+  "command_policies": {
+    "executable_dirs": [
+      "/usr/bin",
+      "/bin"
+    ],
+    "approval_backends": {
+      "controlroom": {
+        "type": "webhook",
+        "url": "http://127.0.0.1:47100/nono/v1/01HZY3K4M5N6P7Q8R9S0T1V2W3/abababababababababababababababababababababababababababababababab",
+        "timeout_secs": 600
+      }
+    },
+    "approval_defaults": {
+      "backend": "controlroom"
+    },
+    "commands": {
+      "gh": {
+        "executable": "/nix/store/ffff-gh-2.80/bin/gh",
+        "from": {
+          "session": {
+            "sandbox": {
+              "exec_paths": [
+                "/nix/store",
+                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3"
+              ],
+              "fs_read": [
+                "/nix/store",
+                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+                "/home/alice/src/api",
+                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/datasets",
+                "/home/alice/shared"
+              ],
+              "fs_read_file": [
+                "/home/alice/notes.md"
+              ],
+              "fs_write": [
+                "/home/alice/src/api",
+                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/shared"
+              ],
+              "fs_write_file": [
+                "/home/alice/notes.md"
+              ],
+              "network": {
+                "allow_domain": [
+                  "git.example.com",
+                  "registry.example.com"
+                ]
+              },
+              "environment": {
+                "allow_vars": [
+                  "*"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "git": {
+        "executable": "/nix/store/cccc-git-2.55.0/bin/git",
+        "can_use": [
+          "ssh"
+        ],
+        "from": {
+          "session": {
+            "sandbox": {
+              "exec_paths": [
+                "/nix/store",
+                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3"
+              ],
+              "fs_read": [
+                "/nix/store",
+                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+                "/home/alice/src/api",
+                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/datasets",
+                "/home/alice/shared",
+                "@git:common-dir"
+              ],
+              "fs_read_file": [
+                "/home/alice/notes.md"
+              ],
+              "fs_write": [
+                "/home/alice/src/api",
+                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/shared",
+                "@git:common-dir"
+              ],
+              "fs_write_file": [
+                "/home/alice/notes.md"
+              ],
+              "network": {
+                "allow_domain": [
+                  "git.example.com",
+                  "registry.example.com"
+                ]
+              },
+              "environment": {
+                "allow_vars": [
+                  "*"
+                ]
+              }
+            },
+            "invocation_policy": {
+              "default": "allow",
+              "approve": [
+                {
+                  "argv": {
+                    "contains": [
+                      "push"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "git.shadow1": {
+        "executable": "/nix/store/dddd-git-minimal-2.55.0/bin/git",
+        "from": {
+          "session": "deny"
+        }
+      },
+      "kubectl": {
+        "executable": "/nix/store/gggg-kubectl-1.34/bin/kubectl",
+        "from": {
+          "session": {
+            "sandbox": {
+              "exec_paths": [
+                "/nix/store",
+                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3"
+              ],
+              "fs_read": [
+                "/nix/store",
+                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+                "/home/alice/src/api",
+                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/datasets",
+                "/home/alice/shared"
+              ],
+              "fs_read_file": [
+                "/home/alice/notes.md"
+              ],
+              "fs_write": [
+                "/home/alice/src/api",
+                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/shared"
+              ],
+              "fs_write_file": [
+                "/home/alice/notes.md"
+              ],
+              "network": {
+                "allow_domain": [
+                  "git.example.com",
+                  "registry.example.com"
+                ]
+              },
+              "environment": {
+                "allow_vars": [
+                  "*"
+                ]
+              }
+            },
+            "invocation_policy": {
+              "default": "allow",
+              "deny": [
+                {
+                  "argv": {
+                    "contains": [
+                      "delete"
+                    ]
+                  }
+                }
+              ],
+              "approve": [
+                {
+                  "argv": {
+                    "contains": [
+                      "apply"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "scp": {
+        "executable": "/nix/store/eeee-openssh-10.5/bin/scp",
+        "from": {
+          "session": "deny"
+        }
+      },
+      "ssh": {
+        "executable": "/nix/store/eeee-openssh-10.5/bin/ssh",
+        "from": {
+          "git": {
+            "sandbox": {
+              "exec_paths": [
+                "/nix/store",
+                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3"
+              ],
+              "fs_read": [
+                "/nix/store",
+                "/home/alice/.local/state/controlroom/host/logs/01HZY3K4M5N6P7Q8R9S0T1V2W3",
+                "/home/alice/.local/state/controlroom/host/workspaces/01HZY3K4M5N6P7Q8R9S0T1V2W3/tmp",
+                "/home/alice/.ssh"
+              ],
+              "network": {
+                "tcp_connect_ports": [
+                  22
+                ]
+              },
+              "environment": {
+                "allow_vars": [
+                  "*"
+                ]
+              }
+            }
+          },
+          "session": "deny"
+        }
+      }
+    }
+  }
+}

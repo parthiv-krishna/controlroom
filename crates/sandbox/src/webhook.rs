@@ -55,12 +55,12 @@ impl fmt::Debug for HookSecret {
     }
 }
 
-/// The approval webhook URL of one session.
+/// The approval webhook URL of one session (or, on a host, of one workspace).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HookUrl {
     /// Loopback port of the daemon's webhook listener.
     pub port: u16,
-    /// The session the hook belongs to.
+    /// The session (or host workspace) the hook belongs to.
     pub session: SessionId,
     /// The session's secret.
     pub secret: HookSecret,

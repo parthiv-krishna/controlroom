@@ -8,7 +8,9 @@ use std::path::PathBuf;
 
 use common::*;
 use controlroom_sandbox::policy::{Access, CommandDecision, PathGrant, PathKind, SandboxLevel};
-use controlroom_sandbox::profile::{check_profile_json, generate_profile};
+use controlroom_sandbox::profile::{
+    check_profile_json, generate_profile, generate_workspace_profile,
+};
 use controlroom_sandbox::spec::{Endpoint, EndpointPolicy};
 use controlroom_sandbox::{ProfileError, SessionSandboxSpec};
 use serde_json::json;
@@ -293,4 +295,48 @@ fn profile_json_check_rejects_indirection() {
         assert!(check_profile_json(&with(bad.clone())).is_err(), "{bad}");
     }
     assert!(check_profile_json(&with(json!({"extends": "default"}))).is_ok());
+}
+
+#[test]
+fn golden_workspace() {
+    let spec = workspace();
+    let profile = generate_workspace_profile(&spec).expect("profile generates");
+    check_profile_json(&profile.to_value()).expect("generated profile passes the check");
+    let text = profile.to_json_pretty();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden/workspace.json");
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        std::fs::write(&path, &text).expect("write golden file");
+        return;
+    }
+    let expected = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{}: {e} (run with UPDATE_GOLDEN=1)", path.display()));
+    assert_eq!(text, expected);
+}
+
+#[test]
+fn a_workspace_keeps_home_and_has_no_agent_dirs_or_credentials() {
+    let profile = generate_workspace_profile(&workspace()).unwrap().to_value();
+    let vars = &profile["environment"]["set_vars"];
+    assert!(vars.get("HOME").is_none(), "{vars}");
+    assert!(vars.get("PI_CODING_AGENT_DIR").is_none());
+    assert!(vars["TMPDIR"].as_str().unwrap().ends_with("/tmp"));
+    assert!(profile.get("credential_capture").is_none());
+    assert!(profile["filesystem"].get("unix_socket").is_none());
+    // The workspace's own dir (profile, webhook secret) can't be granted.
+    let mut spec = workspace();
+    spec.policy.paths.push(PathGrant {
+        path: spec.dir.clone(),
+        kind: PathKind::Dir,
+        access: Access::Read,
+    });
+    assert!(matches!(
+        generate_workspace_profile(&spec),
+        Err(ProfileError::CoversProtected { .. })
+    ));
+    let mut spec = workspace();
+    spec.policy.level = SandboxLevel::Off;
+    assert_eq!(
+        generate_workspace_profile(&spec),
+        Err(ProfileError::SandboxOff)
+    );
 }

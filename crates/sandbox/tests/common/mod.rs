@@ -13,6 +13,7 @@ use controlroom_sandbox::spec::{
     Upstream,
 };
 use controlroom_sandbox::webhook::{HookSecret, HookUrl};
+use controlroom_sandbox::workspace::WorkspaceSandboxSpec;
 use controlroom_sandbox::{AbsPath, Domain, Name, SessionId, SessionLayout, effective_policy};
 
 pub const SESSION: &str = "01HZY3K4M5N6P7Q8R9S0T1V2W3";
@@ -172,4 +173,30 @@ pub fn full() -> SessionSandboxSpec {
         ),
     ]);
     spec
+}
+
+/// A workspace on a host at level strict, with the default mediated commands and approvals.
+pub fn workspace() -> WorkspaceSandboxSpec {
+    let agent = full();
+    let dir = p("/home/alice/.local/state/controlroom/host/workspaces").join(SESSION);
+    WorkspaceSandboxSpec {
+        id: session(),
+        root: p("/home/alice/src/api"),
+        tmp: dir.join("tmp"),
+        dir,
+        policy: agent.policy,
+        read_only: vec![
+            p("/nix/store"),
+            p("/home/alice/.local/state/controlroom/host/logs").join(SESSION),
+        ],
+        relaxed_reads: Vec::new(),
+        exec_dirs: vec![p("/usr/bin"), p("/bin")],
+        ssh_config: vec![p("/home/alice/.ssh")],
+        protected: vec![
+            p("/home/alice/.local/state/controlroom/host"),
+            p("/home/alice/.local/share/controlroom"),
+        ],
+        approvals: agent.approvals,
+        pins: agent.pins,
+    }
 }

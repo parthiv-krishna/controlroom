@@ -2,12 +2,14 @@
 
 use std::collections::BTreeMap;
 
+use super::input::Input;
 use super::model::*;
-use super::validate::{ProfileError, validate_spec};
+use super::validate::{ProfileError, validate};
 use crate::names::Name;
 use crate::paths::AbsPath;
 use crate::policy::{Access, CommandDecision, CommandRule, PathKind};
 use crate::spec::{CredentialRoute, Endpoint, SessionSandboxSpec};
+use crate::workspace::WorkspaceSandboxSpec;
 
 /// Name of the single approval backend in generated profiles.
 const BACKEND: &str = "controlroom";
@@ -46,24 +48,29 @@ const CREDENTIAL_TIMEOUT_SECS: u32 = 60;
 /// How much longer than nono caches it an OAuth token must stay valid.
 const TOKEN_VALIDITY_MARGIN_SECS: u32 = 300;
 
-/// Generates the nono profile for `spec`, after validating it.
+/// Generates the nono profile of an agent session, after validating it.
 pub fn generate_profile(spec: &SessionSandboxSpec) -> Result<NonoProfile, ProfileError> {
-    validate_spec(spec)?;
-    let layout = &spec.layout;
-    let backend = spec.approvals.as_ref().map(|a| ApprovalBackend {
+    generate(&Input::session(spec))
+}
+
+/// Generates the nono profile of a workspace on a host, after validating it.
+pub fn generate_workspace_profile(
+    spec: &WorkspaceSandboxSpec,
+) -> Result<NonoProfile, ProfileError> {
+    generate(&Input::workspace(spec))
+}
+
+fn generate(spec: &Input) -> Result<NonoProfile, ProfileError> {
+    validate(spec)?;
+    let backend = spec.approvals.map(|a| ApprovalBackend {
         kind: "webhook",
         url: a.hook.url(),
         timeout_secs: a.timeout_secs,
     });
 
-    let mut set_vars = BTreeMap::new();
-    set_vars.insert("HOME", layout.home().to_string());
-    set_vars.insert("TMPDIR", layout.tmp().to_string());
-    set_vars.insert("PI_CODING_AGENT_DIR", layout.agent().to_string());
-
     Ok(NonoProfile {
         meta: Meta {
-            name: format!("cr-{}", layout.id()),
+            name: spec.name.clone(),
         },
         workdir: Workdir {
             access: "readwrite",
@@ -78,7 +85,7 @@ pub fn generate_profile(spec: &SessionSandboxSpec) -> Result<NonoProfile, Profil
         },
         environment: Environment {
             deny_vars: DENY_VARS.to_vec(),
-            set_vars,
+            set_vars: spec.set_vars.clone(),
         },
         network: network(spec),
         credential_capture: credential_capture(spec),
@@ -101,8 +108,8 @@ struct Grants {
 }
 
 /// Collects standing grants plus relaxed-level home config for a command sandbox.
-fn command_grants(spec: &SessionSandboxSpec) -> Grants {
-    let relaxed = spec.active_relaxed_reads();
+fn command_grants(spec: &Input) -> Grants {
+    let relaxed = spec.relaxed_reads;
     let mut g = Grants {
         read_dirs: Vec::new(),
         read_files: Vec::new(),
@@ -127,13 +134,12 @@ fn strings(paths: &[AbsPath]) -> Vec<String> {
     paths.iter().map(AbsPath::to_string).collect()
 }
 
-fn filesystem(spec: &SessionSandboxSpec) -> Filesystem {
-    let layout = &spec.layout;
-    let mut read = strings(&spec.read_only);
-    let mut allow = strings(&layout.sandbox_dirs());
+fn filesystem(spec: &Input) -> Filesystem {
+    let mut read = strings(spec.read_only);
+    let mut allow = strings(&spec.writable);
     let mut allow_file = Vec::new();
     // `read` takes files and directories; read-write grants go to allow/allow_file.
-    for grant in spec.policy.paths.iter().chain(spec.active_relaxed_reads()) {
+    for grant in spec.policy.paths.iter().chain(spec.relaxed_reads) {
         let target = match (grant.access, grant.kind) {
             (Access::Read, _) => &mut read,
             (Access::ReadWrite, PathKind::Dir) => &mut allow,
@@ -145,23 +151,19 @@ fn filesystem(spec: &SessionSandboxSpec) -> Filesystem {
         read,
         allow,
         allow_file,
-        unix_socket: spec.daemon_socket.iter().map(AbsPath::to_string).collect(),
-        // Extensions (tsx) bind IPC sockets under TMPDIR.
-        unix_socket_subtree_bind: vec![layout.tmp().to_string()],
+        unix_socket: strings(&spec.unix_sockets),
+        // Extensions (tsx) and build tools bind IPC sockets under TMPDIR.
+        unix_socket_subtree_bind: vec![spec.socket_bind.to_string()],
     }
 }
 
 /// Domains reachable through the proxy: the policy's domains plus the route upstreams.
-fn proxy_domains(spec: &SessionSandboxSpec) -> Vec<String> {
+fn proxy_domains(spec: &Input) -> Vec<String> {
     let mut domains: Vec<String> = spec
         .policy
         .domains
         .iter()
-        .chain(
-            spec.credential_routes
-                .iter()
-                .filter_map(|r| r.upstream.allowed_host()),
-        )
+        .chain(spec.routes.iter().filter_map(|r| r.upstream.allowed_host()))
         .map(|d| d.to_string())
         .collect();
     domains.sort();
@@ -169,16 +171,16 @@ fn proxy_domains(spec: &SessionSandboxSpec) -> Vec<String> {
     domains
 }
 
-fn network(spec: &SessionSandboxSpec) -> Network {
+fn network(spec: &Input) -> Network {
     let allow_domain = proxy_domains(spec);
-    if allow_domain.is_empty() && spec.credential_routes.is_empty() {
+    if allow_domain.is_empty() && spec.routes.is_empty() {
         return Network {
             block: true,
             ..Network::default()
         };
     }
     let custom_credentials: BTreeMap<String, CustomCredential> = spec
-        .credential_routes
+        .routes
         .iter()
         .map(|r| (r.route_id(), custom_credential(r)))
         .collect();
@@ -215,9 +217,11 @@ fn custom_credential(route: &CredentialRoute) -> CustomCredential {
     }
 }
 
-fn credential_capture(spec: &SessionSandboxSpec) -> BTreeMap<String, CredentialCapture> {
-    let helper = &spec.credential_helper;
-    spec.credential_routes
+fn credential_capture(spec: &Input) -> BTreeMap<String, CredentialCapture> {
+    let Some((helper, session)) = spec.capture else {
+        return BTreeMap::new();
+    };
+    spec.routes
         .iter()
         .map(|r| {
             let command = vec![
@@ -227,7 +231,7 @@ fn credential_capture(spec: &SessionSandboxSpec) -> BTreeMap<String, CredentialC
                 helper.state_dir.to_string(),
                 "--valid-for-secs".to_owned(),
                 (r.cache_ttl_secs + TOKEN_VALIDITY_MARGIN_SECS).to_string(),
-                spec.layout.id().to_string(),
+                session.to_string(),
                 r.provider.to_string(),
             ];
             (
@@ -304,14 +308,12 @@ fn invocation_policy(rules: &CommandRules) -> Option<InvocationPolicy> {
 
 /// The sandbox of a mediated command run by the session: the session's own grants (nono
 /// command sandboxes inherit nothing) plus the proxy domains.
-fn command_sandbox(spec: &SessionSandboxSpec, command: &str) -> CommandSandbox {
-    let layout = &spec.layout;
+fn command_sandbox(spec: &Input, command: &str) -> CommandSandbox {
     let grants = command_grants(spec);
-    let session_dirs = [spec.cwd.clone(), layout.home(), layout.tmp()];
-    let mut fs_read = strings(&spec.read_only);
-    fs_read.extend(strings(&session_dirs));
+    let mut fs_read = strings(spec.read_only);
+    fs_read.extend(strings(&spec.command_dirs));
     fs_read.extend(grants.read_dirs);
-    let mut fs_write = strings(&session_dirs);
+    let mut fs_write = strings(&spec.command_dirs);
     fs_write.extend(grants.write_dirs);
     if command == "git" {
         // The object store of a linked worktree lives outside the checkout.
@@ -325,7 +327,7 @@ fn command_sandbox(spec: &SessionSandboxSpec, command: &str) -> CommandSandbox {
         .map(|d| d.to_string())
         .collect::<Vec<_>>();
     CommandSandbox {
-        exec_paths: strings(&spec.read_only),
+        exec_paths: strings(spec.read_only),
         fs_read,
         fs_read_file: grants.read_files,
         fs_write,
@@ -342,11 +344,11 @@ fn command_sandbox(spec: &SessionSandboxSpec, command: &str) -> CommandSandbox {
 
 /// The sandbox of `ssh` when run by `git`: SSH config and known hosts from the session HOME
 /// and raw TCP to port 22.
-fn git_ssh_sandbox(spec: &SessionSandboxSpec) -> CommandSandbox {
-    let mut fs_read = strings(&spec.read_only);
-    fs_read.extend(strings(&[spec.layout.home(), spec.layout.tmp()]));
+fn git_ssh_sandbox(spec: &Input) -> CommandSandbox {
+    let mut fs_read = strings(spec.read_only);
+    fs_read.extend(strings(&spec.ssh_reads));
     CommandSandbox {
-        exec_paths: strings(&spec.read_only),
+        exec_paths: strings(spec.read_only),
         fs_read,
         network: Some(CommandNetwork {
             tcp_connect_ports: vec![22],
@@ -359,10 +361,7 @@ fn git_ssh_sandbox(spec: &SessionSandboxSpec) -> CommandSandbox {
     }
 }
 
-fn command_policies(
-    spec: &SessionSandboxSpec,
-    backend: Option<ApprovalBackend>,
-) -> Option<CommandPolicies> {
+fn command_policies(spec: &Input, backend: Option<ApprovalBackend>) -> Option<CommandPolicies> {
     let grouped = group_rules(&spec.policy.commands);
     let mut commands = BTreeMap::new();
     for (name, rules) in &grouped {
@@ -420,13 +419,12 @@ fn command_policies(
         return None;
     }
     Some(CommandPolicies {
-        executable_dirs: strings(&spec.exec_dirs),
+        executable_dirs: strings(spec.exec_dirs),
         approval_backends: backend
             .map(|b| BTreeMap::from([(BACKEND, b)]))
             .unwrap_or_default(),
         approval_defaults: spec
             .approvals
-            .as_ref()
             .map(|_| ApprovalDefaults { backend: BACKEND }),
         commands,
     })

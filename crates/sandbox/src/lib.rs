@@ -6,6 +6,7 @@
 //! - [`agent_dir`]: the per-session pi agent dir with fake credentials (§11.1, §11.3);
 //! - [`credential`]: the host-side key lookup behind `controlroomd credential` (§11.3);
 //! - [`webhook`]: approval webhook URL, request and reply types (§11.4);
+//! - [`workspace`]: the per-workspace sandbox of a host (§11, host side);
 //! - [`launch`]: the `nono run` argv and environment (§11.5);
 //! - [`probe`]: Landlock ABI and nono availability checks for `doctor`;
 //! - [`tempdirs`]: cleanup of leaked `/tmp/nono-*` directories.
@@ -24,10 +25,12 @@ pub mod profile;
 pub mod spec;
 pub mod tempdirs;
 pub mod webhook;
+pub mod workspace;
 
 pub use layout::SessionLayout;
 pub use names::{Domain, Name, SessionId};
 pub use paths::AbsPath;
 pub use policy::{EffectivePolicy, SandboxLevel, ScopePolicy, effective_policy};
-pub use profile::{NonoProfile, ProfileError, generate_profile};
+pub use profile::{NonoProfile, ProfileError, generate_profile, generate_workspace_profile};
 pub use spec::SessionSandboxSpec;
+pub use workspace::WorkspaceSandboxSpec;
