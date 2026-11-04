@@ -1,32 +1,12 @@
-// The tools the extension registers (spec §9): `ask_user`, `todo`, `notify_user` and `job` (in
-// `job.ts`). Each is a plain definition (name, description, JSON Schema parameters) plus an
-// `execute` that talks to the daemon, so they run and test without pi. Results carry
-// model-facing text and `details` for rendering.
+// The session tools (spec §9): `ask_user`, `todo` and `notify_user`, served by the agent
+// daemon's session state (questions, the shared todo list, timeline notices).
 
 import type { AgentClient } from './client.ts';
-import { job } from './job.ts';
 import type { AgentQuestion } from './protocol/AgentQuestion.ts';
 import type { NoticeLevel } from './protocol/NoticeLevel.ts';
 import type { Todo } from './protocol/Todo.ts';
 import type { TodoStatus } from './protocol/TodoStatus.ts';
-
-/** What a tool returns to pi. */
-export interface ToolResult<D> {
-  content: { type: 'text'; text: string }[];
-  details: D;
-}
-
-/** A tool independent of pi's types. */
-export interface Tool<P, D> {
-  name: string;
-  label: string;
-  description: string;
-  promptSnippet: string;
-  parameters: object;
-  execute(client: AgentClient, callId: string, params: P): Promise<ToolResult<D>>;
-}
-
-const text = (s: string) => [{ type: 'text' as const, text: s }];
+import { text, type Tool } from './tool.ts';
 
 // ---------------------------------------------------------------------------------------------
 // ask_user
@@ -96,7 +76,7 @@ export const askUser: Tool<AskParams, AskDetails> = {
       withdraw: { type: 'string', description: 'Withdraw this open question instead of asking.' },
     },
   },
-  async execute(client, callId, params) {
+  async execute({ client, id: callId }, params) {
     if (params.withdraw) {
       const result = await client.call('question.withdraw', { call_id: callId, question_id: params.withdraw });
       const said =
@@ -175,8 +155,7 @@ export const todo: Tool<TodoParams, TodoDetails> = {
     },
     required: ['action'],
   },
-  async execute(client, callId, params) {
-    const call_id = callId;
+  async execute({ client, id: call_id }, params) {
     let todos: Todo[];
     let changed: string[] = [];
     switch (params.action) {
@@ -272,13 +251,10 @@ export const notifyUser: Tool<NotifyParams, NotifyDetails> = {
     },
     required: ['text'],
   },
-  async execute(client, callId, params) {
+  async execute({ client, id: callId }, params) {
     const level = params.level ?? 'info';
     if (!params.text?.trim()) throw new Error('notify_user needs text.');
     await client.call('notify', { call_id: callId, text: params.text, level });
     return { content: text('Notice shown to the user.'), details: { text: params.text, level } };
   },
 };
-
-/** Every tool. */
-export const TOOLS = [askUser, todo, notifyUser, job] as const;

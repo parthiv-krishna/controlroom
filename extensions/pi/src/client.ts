@@ -2,27 +2,35 @@
 //
 // - `start()` connects and says `hello` with the session's token; a dropped connection is
 //   retried with backoff, forever, until `close()`. The daemon may restart at any time.
-// - `call()` waits for the connection, up to the call's timeout. Calls in flight when the
-//   connection drops are sent again once it is back: mutating calls carry the tool call id as
-//   an idempotency key, so the daemon applies them once.
+// - `call()` waits for the connection, up to the call's timeout (none for host calls, which
+//   the daemon keeps open while a host is unreachable). Calls in flight when the connection
+//   drops are sent again once it is back: mutating calls carry the tool call id as an
+//   idempotency key, so the daemon applies them once. An aborted call stops waiting; a late
+//   answer is ignored.
 // - A wrong token or an incompatible protocol is final: every call fails with that error.
-// - The daemon pushes `state` notifications; `onState` listeners get the latest one.
+// - The daemon pushes notifications (`state`, `session.info`, `host.output`, …); `on()`
+//   listeners get them, and the latest `state` and `session.info` are kept.
 
 import { createConnection, type Socket } from 'node:net';
 
-import type { AgentMethod, AgentMethods } from './protocol/AgentMethods.ts';
+import type { AgentMethod, AgentMethods, AgentNotificationName, AgentNotifications } from './protocol/AgentMethods.ts';
 import type { AgentState } from './protocol/AgentState.ts';
+import type { ErrorData } from './protocol/ErrorData.ts';
 import type { RpcError } from './protocol/RpcError.ts';
+import type { SessionInfo } from './protocol/SessionInfo.ts';
 import { AGENT_PROTOCOL_VERSION } from './protocol/versions.ts';
 
-/** A failed call, with the daemon's error kind when it sent one. */
+/** A failed call, with the daemon's typed error when it sent one. */
 export class ControlroomError extends Error {
   readonly kind: string;
+  /** The typed error, when the daemon sent one. */
+  readonly data: ErrorData | null;
 
-  constructor(message: string, kind: string) {
+  constructor(message: string, kind: string, data: ErrorData | null = null) {
     super(message);
     this.name = 'ControlroomError';
     this.kind = kind;
+    this.data = data;
   }
 }
 
@@ -34,12 +42,20 @@ export interface ClientOptions {
   token: string;
   /** Sent in `hello`, for the daemon's log. */
   clientName: string;
-  /** How long a call may wait for the connection and its answer. Default 30 s. */
+  /** How long a call may wait for the connection and its answer by default. Default 30 s. */
   callTimeoutMs?: number;
   /** First and longest reconnect delays. Default 200 ms and 5 s. */
   retryMs?: { first: number; max: number };
   /** Opens the socket (tests replace it). */
   connect?: (path: string) => Socket;
+}
+
+/** Per-call settings. */
+export interface CallOptions {
+  /** Overrides the default timeout; `null` waits as long as it takes. */
+  timeoutMs?: number | null;
+  /** Stops waiting (the call fails with kind `aborted`). */
+  signal?: AbortSignal;
 }
 
 interface Pending {
@@ -48,11 +64,14 @@ interface Pending {
   sent: boolean;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
+  /** Clears the timer and the abort listener. */
+  done: () => void;
 }
 
 /** Error kinds that make reconnecting pointless. */
 const FINAL = new Set(['unauthenticated', 'incompatible_version']);
+
+type Listener<N extends AgentNotificationName> = (params: AgentNotifications[N]) => void;
 
 /** The client of one session's agent socket. */
 export class AgentClient {
@@ -67,8 +86,9 @@ export class AgentClient {
   #pending = new Map<number, Pending>();
   #attempt = 0;
   #retry: NodeJS.Timeout | null = null;
-  #listeners = new Set<(state: AgentState) => void>();
+  #listeners = new Map<string, Set<(params: never) => void>>();
   #state: AgentState | null = null;
+  #info: SessionInfo | null = null;
 
   constructor(options: ClientOptions) {
     this.#options = {
@@ -81,6 +101,11 @@ export class AgentClient {
   /** The latest state the daemon pushed, if any. */
   get state(): AgentState | null {
     return this.#state;
+  }
+
+  /** The latest session info the daemon pushed, if any. */
+  get info(): SessionInfo | null {
+    return this.#info;
   }
 
   /** Whether the handshake succeeded on the current connection. */
@@ -106,25 +131,59 @@ export class AgentClient {
     this.#failAll(new ControlroomError('the controlroom connection was closed', 'closed'));
   }
 
-  /** Subscribes to state pushes; returns the unsubscribe function. */
-  onState(listener: (state: AgentState) => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+  /** Subscribes to a notification; returns the unsubscribe function. */
+  on<N extends AgentNotificationName>(method: N, listener: Listener<N>): () => void {
+    let set = this.#listeners.get(method);
+    if (!set) this.#listeners.set(method, (set = new Set()));
+    const entry = listener as (params: never) => void;
+    set.add(entry);
+    return () => set.delete(entry);
+  }
+
+  /** The session's info: the latest pushed, or fetched now. */
+  async sessionInfo(): Promise<SessionInfo> {
+    return this.#info ?? (await this.call('session.info', {}));
   }
 
   /** Calls an agent API method. */
-  call<M extends Exclude<AgentMethod, 'hello'>>(method: M, params: AgentMethods[M]['params']): Promise<AgentMethods[M]['result']> {
+  call<M extends Exclude<AgentMethod, 'hello'>>(
+    method: M,
+    params: AgentMethods[M]['params'],
+    options: CallOptions = {},
+  ): Promise<AgentMethods[M]['result']> {
     if (this.#final) return Promise.reject(this.#final);
     if (this.#closed) return Promise.reject(new ControlroomError('the controlroom connection is closed', 'closed'));
+    const { signal } = options;
+    if (signal?.aborted) return Promise.reject(aborted());
     return new Promise((resolve, reject) => {
       const id = this.#nextId++;
-      const timer = setTimeout(() => {
+      const fail = (error: Error) => {
         this.#pending.delete(id);
-        const why = this.#ready ? 'did not answer' : 'is not reachable';
-        reject(new ControlroomError(`the controlroom daemon ${why} (${method})`, 'timeout'));
-      }, this.#options.callTimeoutMs);
-      timer.unref();
-      const pending: Pending = { method, params, sent: false, resolve: resolve as (v: unknown) => void, reject, timer };
+        pending.done();
+        reject(error);
+      };
+      const timeoutMs = options.timeoutMs === undefined ? this.#options.callTimeoutMs : options.timeoutMs;
+      const timer =
+        timeoutMs === null
+          ? null
+          : setTimeout(() => {
+              const why = this.#ready ? 'did not answer' : 'is not reachable';
+              fail(new ControlroomError(`the controlroom daemon ${why} (${method})`, 'timeout'));
+            }, timeoutMs);
+      timer?.unref();
+      const onAbort = () => fail(aborted());
+      signal?.addEventListener('abort', onAbort, { once: true });
+      const pending: Pending = {
+        method,
+        params,
+        sent: false,
+        resolve: resolve as (v: unknown) => void,
+        reject,
+        done: () => {
+          if (timer) clearTimeout(timer);
+          signal?.removeEventListener('abort', onAbort);
+        },
+      };
       this.#pending.set(id, pending);
       if (this.#ready) this.#send(id, pending);
     });
@@ -170,19 +229,22 @@ export class AgentClient {
     } catch {
       return;
     }
-    if (msg.method === 'state' && msg.params) {
-      this.#state = msg.params as AgentState;
-      for (const listener of this.#listeners) listener(this.#state);
-      return;
-    }
+    if (typeof msg.method === 'string' && msg.id === undefined) return this.#notification(msg.method, msg.params);
     if (typeof msg.id !== 'number') return;
     if (msg.id === this.#helloId) return this.#helloAnswered(msg.error);
     const pending = this.#pending.get(msg.id);
     if (!pending) return;
     this.#pending.delete(msg.id);
-    clearTimeout(pending.timer);
+    pending.done();
     if (msg.error) pending.reject(toError(msg.error));
     else pending.resolve(msg.result);
+  }
+
+  #notification(method: string, params: unknown): void {
+    if (params === undefined || params === null) return;
+    if (method === 'state') this.#state = params as AgentState;
+    if (method === 'session.info') this.#info = params as SessionInfo;
+    for (const listener of this.#listeners.get(method) ?? []) listener(params as never);
   }
 
   #helloAnswered(error: RpcError | undefined): void {
@@ -225,14 +287,18 @@ export class AgentClient {
 
   #failAll(error: Error): void {
     for (const pending of this.#pending.values()) {
-      clearTimeout(pending.timer);
+      pending.done();
       pending.reject(error);
     }
     this.#pending.clear();
   }
 }
 
+function aborted(): ControlroomError {
+  return new ControlroomError('Operation aborted', 'aborted');
+}
+
 function toError(error: RpcError): ControlroomError {
-  const kind = error.data?.kind ?? 'unknown';
-  return new ControlroomError(`controlroom: ${error.message}`, kind);
+  const data = error.data ?? null;
+  return new ControlroomError(`controlroom: ${error.message}`, data?.kind ?? 'unknown', data);
 }

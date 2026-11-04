@@ -1,11 +1,11 @@
 {
-  "//": "Type-check with the web UI's toolchain: ../../web/node_modules/.bin/tsc -p extensions/pi (after pnpm install in web/).",
+  "//": "Type-checked by the extension-pi flake check. Locally, link pi first (see nix/extension.nix): node_modules/@earendil-works/pi-coding-agent -> the pinned pi package, whose node_modules provide @types/node.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2023"],
-    "typeRoots": ["../../web/node_modules/@types"],
+    "typeRoots": ["node_modules/@earendil-works/pi-coding-agent/node_modules/@types"],
     "types": ["node"],
     "strict": true,
     "noUnusedLocals": true,

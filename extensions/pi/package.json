@@ -1,7 +1,7 @@
 {
   "name": "@controlroom/pi",
   "version": "0.0.5",
-  "description": "controlroom's pi extension: ask_user, todo and notify_user tools backed by the session's controlroom daemon",
+  "description": "controlroom's pi extension: remote file and shell tools on the session's workspaces (machine:path), plus ask_user, todo, notify_user and job, backed by the controlroom agent daemon",
   "private": true,
   "type": "module",
   "license": "UNLICENSED",

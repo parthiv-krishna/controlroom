@@ -1,10 +1,22 @@
-// How the tools look in pi's terminal UI (and HTML exports): one line per call, a compact
-// result. Loaded by pi only; the tests don't need it.
+// How the tools look in pi's terminal UI (and HTML exports). The remote file and shell tools
+// reuse pi's own renderers (`$ cmd`, edit diffs, `read path:range`), since they keep pi's
+// names, argument shapes and details; the others get one line per call and a compact result.
+// Loaded by pi only; the tests don't need it.
 
+import {
+  createBashToolDefinition,
+  createEditToolDefinition,
+  createFindToolDefinition,
+  createGrepToolDefinition,
+  createLsToolDefinition,
+  createReadToolDefinition,
+  createWriteToolDefinition,
+} from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 
 import type { Renderers } from './extension.ts';
 import type { JobDetails, JobParams } from './job.ts';
+import type { ShellDetails, ShellNewParams } from './remote/shell.ts';
 import type { AskDetails, AskParams, NotifyDetails, NotifyParams, TodoDetails, TodoParams } from './tools.ts';
 
 interface Theme {
@@ -27,7 +39,30 @@ const MARK: Record<string, [string, string]> = {
 
 const firstText = (result: Result<unknown>) => result.content.find((c) => c.type === 'text')?.text ?? '';
 
+/** pi's renderers of one built-in tool. */
+const piRenderers = ({ renderShell, renderCall, renderResult }: { renderShell?: unknown; renderCall?: unknown; renderResult?: unknown }) => ({
+  renderShell,
+  renderCall,
+  renderResult,
+});
+
 export const renderers: Renderers = {
+  read: piRenderers(createReadToolDefinition('/')),
+  write: piRenderers(createWriteToolDefinition('/')),
+  edit: piRenderers(createEditToolDefinition('/')),
+  bash: piRenderers(createBashToolDefinition('/')),
+  grep: piRenderers(createGrepToolDefinition('/')),
+  find: piRenderers(createFindToolDefinition('/')),
+  ls: piRenderers(createLsToolDefinition('/')),
+  shell_new: {
+    renderCall: (args: ShellNewParams, theme: Theme) =>
+      new Text(theme.fg('toolTitle', theme.bold('shell_new ')) + theme.fg('muted', `${args.name ?? ''} ${args.at ?? ''}`.trim()), 0, 0),
+    renderResult: (result: Result<ShellDetails>, _options: unknown, theme: Theme) => new Text(theme.fg('muted', firstText(result)), 0, 0),
+  },
+  shell_list: {
+    renderCall: (_args: unknown, theme: Theme) => new Text(theme.fg('toolTitle', theme.bold('shell_list')), 0, 0),
+    renderResult: (result: Result<ShellDetails>, _options: unknown, theme: Theme) => new Text(theme.fg('muted', firstText(result)), 0, 0),
+  },
   ask_user: {
     renderCall: (args: AskParams, theme: Theme) =>
       new Text(
