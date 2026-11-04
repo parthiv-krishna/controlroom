@@ -273,3 +273,56 @@ async fn sessions_are_created_and_driven_through_the_agent_daemon() {
         .await;
     assert_eq!(error["data"]["kind"], Value::from("timeout"));
 }
+
+/// The agent daemon refuses machines it doesn't see connected, and learns of connectivity
+/// through the controller's queue of machine reports. A machine the UI shows connected again
+/// must be connected for the agent daemon too when the create reaches it: the controller lets
+/// the queued reports through first (a held report used to be overtaken by the create, which
+/// then failed with `machine_unavailable`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_create_waits_for_the_agent_daemon_to_see_what_the_ui_saw() {
+    use controlroom_controller::test_support::Relay;
+    let agentd = FakeAgentd::start().await;
+    let bundled = bundled_daemons();
+    let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
+    let host = RemoteHost::start().await;
+    let _fake = FakeHost::start(&host);
+    let relay = Relay::start(host.port()).await;
+    let mut next = ui_next(&setup.controller, "laptop").await;
+    agentd.wait_connected(1).await;
+    let devbox = support::add_machine_at(&mut next, &host, "devbox", relay.port).await;
+    let id: MachineId = devbox.parse().unwrap();
+
+    relay.down();
+    agentd
+        .wait_machines("devbox is reported down", |m| {
+            m.iter()
+                .any(|m| m.machine_id == id && !m.availability.is_connected())
+        })
+        .await;
+    // The next report (devbox is back) waits in the controller's queue to the agent daemon.
+    agentd.hold_machines(true);
+    relay.up();
+    next.wait("devbox is back in the UI", |m| {
+        m.machine(&devbox)["connectivity"]["state"] == "connected"
+    })
+    .await;
+    let create = next
+        .send(
+            "session.create",
+            json!({"op_id": op(), "workspaces": [{"machine_id": devbox, "path": "~/src"}],
+                   "sandbox_level": "off"}),
+        )
+        .await;
+    // The create waits for the held report. (Only a time bound can show that it waits; with
+    // the fix it can't finish early however long this takes, so this never flakes.)
+    let early =
+        tokio::time::timeout(std::time::Duration::from_millis(500), next.response(create)).await;
+    assert!(
+        early.is_err(),
+        "the create overtook the machine report: {early:?}"
+    );
+    agentd.hold_machines(false);
+    let response = next.response(create).await;
+    assert!(response.get("error").is_none(), "{response}");
+}

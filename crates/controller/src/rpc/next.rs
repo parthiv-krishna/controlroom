@@ -182,6 +182,8 @@ async fn create(
             device: conn.device_ref(),
         };
     }
+    // The agent daemon refuses machines it doesn't see connected: let it see what the UI saw.
+    hub.outbound.barrier().await;
     let created = hub
         .agentd()?
         .call::<SessionCreate>(&create)

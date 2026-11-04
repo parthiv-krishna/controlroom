@@ -1,7 +1,9 @@
 //! An in-process fake agent daemon on a unix socket: it answers the controller's `hello`,
 //! serves a sessions feed the test edits, records every host bridge call (`hostops.respond`,
 //! `hostops.notify`, `hostops.machines`) and every pass-through call, and lets the test publish
-//! host requests (`hostops.request`) and withdraw them.
+//! host requests (`hostops.request`) and withdraw them. Like the real one, `session.create`
+//! refuses a machine its latest report doesn't show connected; the test can hold machine
+//! reports (they are taken when released).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -55,6 +57,8 @@ struct State {
 pub struct FakeAgentd {
     path: PathBuf,
     state: Arc<Mutex<State>>,
+    /// Machine reports wait while this is true.
+    hold_machines: Arc<tokio::sync::watch::Sender<bool>>,
     accept: tokio::task::JoinHandle<()>,
     _dir: tempfile::TempDir,
 }
@@ -78,17 +82,25 @@ impl FakeAgentd {
         let path = dir.path().join("agentd.sock");
         let listener = UnixListener::bind(&path).unwrap();
         let state: Arc<Mutex<State>> = Arc::default();
+        let hold_machines = Arc::new(tokio::sync::watch::channel(false).0);
         let accept = tokio::spawn({
             let state = state.clone();
+            let hold = hold_machines.clone();
             async move {
                 while let Ok((stream, _)) = listener.accept().await {
                     if state.lock().unwrap().down {
                         continue;
                     }
-                    let st = state.clone();
+                    let (st, hold) = (state.clone(), hold.clone());
                     let peer = serve(stream, move |peer, method, params| {
                         let st = st.clone();
-                        async move { handle(&st, peer, &method, params) }
+                        let mut held = hold.subscribe();
+                        async move {
+                            if method == "hostops.machines" {
+                                let _ = held.wait_for(|held| !held).await;
+                            }
+                            handle(&st, peer, &method, params)
+                        }
                     });
                     // One controller at a time: a new connection replaces the old one.
                     if let Some(old) = state.lock().unwrap().peer.replace(peer) {
@@ -100,6 +112,7 @@ impl FakeAgentd {
         Self {
             path,
             state,
+            hold_machines,
             accept,
             _dir: dir,
         }
@@ -227,6 +240,12 @@ impl FakeAgentd {
         if down {
             self.drop_connection();
         }
+    }
+
+    /// Holds machine reports (`hostops.machines` isn't answered, so the controller's queue to
+    /// the agent daemon waits) or releases them.
+    pub fn hold_machines(&self, hold: bool) {
+        self.hold_machines.send_replace(hold);
     }
 
     /// Adds or replaces a session and publishes it.
@@ -404,6 +423,21 @@ fn handle(
             let p: SessionCreateParams = serde_json::from_value(params).unwrap();
             if let Some(done) = st.created.get(&p.op_id.0) {
                 return to_value(done);
+            }
+            let reported = st.machines.last().cloned().unwrap_or_default();
+            for w in &p.workspaces {
+                let machine = reported.iter().find(|m| m.machine_id == w.machine_id);
+                if !machine.is_some_and(|m| m.availability.is_connected()) {
+                    return Err(RpcError::new(
+                        ErrorData::MachineUnavailable {
+                            machine_id: w.machine_id,
+                            connectivity: Box::new(machine.map_or(Connectivity::Connecting, |m| {
+                                m.availability.connectivity.clone()
+                            })),
+                        },
+                        "not connected",
+                    ));
+                }
             }
             let session = session_summary(SessionId::generate(), &p.workspaces);
             let result = SessionCreateResult {

@@ -55,6 +55,9 @@ struct Entry {
     keep: Keep,
     /// Uses the slow-call timeout.
     slow: bool,
+    /// Needs the agent daemon to know the machines as the UI shows them (it refuses a machine
+    /// it doesn't see connected): waits for the queued machine reports first.
+    machines: bool,
 }
 
 const fn plain(method: &'static str) -> Entry {
@@ -63,6 +66,7 @@ const fn plain(method: &'static str) -> Entry {
         fill: Fill::None,
         keep: Keep::None,
         slow: false,
+        machines: false,
     }
 }
 
@@ -133,7 +137,10 @@ const LEGACY: &[Entry] = session_methods![
 
 /// The next UI API's table (to the agent daemon).
 const NEXT: &[Entry] = session_methods![
-    plain("session.workspace_add"),
+    Entry {
+        machines: true,
+        ..plain("session.workspace_add")
+    },
     plain("session.workspace_remove"),
     plain("settings.get"),
     plain("settings.set"),
@@ -229,6 +236,9 @@ pub(crate) async fn pass_to_agentd(
     let entry = entry(NEXT, method)?;
     let mut params = object(params)?;
     fill_params(conn, entry.fill, None, &mut params)?;
+    if entry.machines {
+        conn.hub.outbound.barrier().await;
+    }
     let value = conn
         .hub
         .agentd()?

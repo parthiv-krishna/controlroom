@@ -7,6 +7,10 @@
 //! that finds it full is sent once the queue drains (the latest report replaces earlier ones).
 //! Without an agent daemon connection items are dropped: after the next `hello` the agent
 //! daemon lists its pending requests again and gets a fresh machine report.
+//!
+//! [`OutboundQueue::barrier`] waits until everything queued before it was answered, so a
+//! command that depends on the machines (`session.create`) reaches an agent daemon that
+//! already knows what the UI showed.
 
 use std::sync::Weak;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,7 +19,7 @@ use controlroom_protocol::agentd::methods::{HostOpsMachines, HostOpsNotify, Host
 use controlroom_protocol::agentd::{
     HostOpsMachinesParams, HostOpsNotifyParams, HostOpsRespondParams,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::hub::Hub;
 
@@ -31,6 +35,8 @@ pub(crate) enum Outbound {
     Notify(HostOpsNotifyParams),
     /// The machines.
     Machines(HostOpsMachinesParams),
+    /// Everything before it was sent: tell the waiter.
+    Barrier(oneshot::Sender<()>),
 }
 
 /// The sending side, owned by the hub.
@@ -74,6 +80,15 @@ impl OutboundQueue {
         }
     }
 
+    /// Waits until every item queued so far (and a machine report that didn't fit) was sent
+    /// and answered, or dropped for want of a connection.
+    pub(crate) async fn barrier(&self) {
+        let (tx, rx) = oneshot::channel();
+        if self.tx.send(Outbound::Barrier(tx)).await.is_ok() {
+            let _ = rx.await;
+        }
+    }
+
     /// Queues a machine report.
     pub(crate) fn machines(&self, params: HostOpsMachinesParams) {
         if self.tx.try_send(Outbound::Machines(params)).is_err() {
@@ -86,10 +101,19 @@ impl OutboundQueue {
 pub(crate) async fn run(hub: Weak<Hub>, mut rx: mpsc::Receiver<Outbound>) {
     while let Some(item) = rx.recv().await {
         let Some(hub) = hub.upgrade() else { return };
-        send(&hub, item).await;
+        let barrier = match item {
+            Outbound::Barrier(tx) => Some(tx),
+            item => {
+                send(&hub, item).await;
+                None
+            }
+        };
         if hub.outbound.machines_dirty.swap(false, Ordering::SeqCst) {
             let machines = hub.lock().host_machines();
             send(&hub, Outbound::Machines(HostOpsMachinesParams { machines })).await;
+        }
+        if let Some(tx) = barrier {
+            let _ = tx.send(());
         }
     }
 }
@@ -102,6 +126,7 @@ async fn send(hub: &Hub, item: Outbound) {
         Outbound::Respond(p) => client.call::<HostOpsRespond>(p).await.map(drop),
         Outbound::Notify(p) => client.call::<HostOpsNotify>(p).await.map(drop),
         Outbound::Machines(p) => client.call::<HostOpsMachines>(p).await.map(drop),
+        Outbound::Barrier(_) => return,
     };
     if let Err(e) = result {
         tracing::debug!(error = %e, "sending to the agent daemon");
