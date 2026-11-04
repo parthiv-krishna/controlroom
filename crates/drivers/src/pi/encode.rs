@@ -33,9 +33,21 @@ impl PiDriver {
                 };
                 vec![user_command(kind, content)?]
             }
-            Intent::Inject { content, .. } => {
-                let kind = if run_active { "steer" } else { "prompt" };
-                vec![user_command(kind, content)?]
+            Intent::Inject { content, wake, .. } => {
+                // While a run is active it steers into it. A waking item goes as a `prompt`
+                // with `streamingBehavior: "steer"`: if the run settles before pi reads the
+                // line, pi starts a run with it, where a `steer` would wait in pi's queue for
+                // the next prompt (as a non-waking item should).
+                let command = match (run_active, wake) {
+                    (false, _) => user_command("prompt", content)?,
+                    (true, false) => user_command("steer", content)?,
+                    (true, true) => {
+                        let mut command = user_command("prompt", content)?;
+                        command["streamingBehavior"] = json!("steer");
+                        command
+                    }
+                };
+                vec![command]
             }
             Intent::Cancel => self.cancel(),
             Intent::Answer { request, response } => {

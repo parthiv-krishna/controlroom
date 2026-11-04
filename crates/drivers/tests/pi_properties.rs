@@ -64,6 +64,7 @@ fn intents(driver: &PiDriver) -> Vec<Intent> {
         Intent::Inject {
             origin: controlroom_protocol::timeline::InjectOrigin::Job,
             content: text,
+            wake: true,
         },
         Intent::Cancel,
         Intent::Answer {

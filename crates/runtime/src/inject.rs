@@ -82,13 +82,14 @@ impl Core {
         let intent = Intent::Inject {
             origin: injection.origin,
             content: injection.content.clone(),
+            wake: injection.wake,
         };
         let tag = injection.tag();
         match session.driver_mut().encode(&intent, &tag) {
             Ok(lines) => {
-                if via == Via::Prompt {
-                    session.data.record_trigger(&tag, injection.trigger());
-                }
+                // A steer can start the run too, if the active one settles before the agent
+                // reads the line.
+                session.data.record_trigger(&tag, injection.trigger());
                 session.data.injections[index].delivery = Some(Delivery::Handed(via));
                 session.live.handed.insert(tag);
                 for line in lines {

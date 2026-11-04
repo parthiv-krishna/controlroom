@@ -227,6 +227,7 @@ fn intents_check_the_run_state() {
     let inject = Intent::Inject {
         origin: InjectOrigin::Job,
         content: text("job done"),
+        wake: true,
     };
     assert!(matches!(
         session.driver.encode(&steer, &tag),
@@ -258,15 +259,62 @@ fn intents_check_the_run_state() {
         Err(EncodeError::InvalidState(_))
     ));
     let busy_inject = session.driver.encode(&inject, &tag).expect("inject");
+    assert_eq!(
+        serde_json::from_str::<Value>(&busy_inject[0]).expect("json"),
+        json!({"id": "cr:op:0:a", "type": "prompt", "message": "job done", "streamingBehavior": "steer"})
+    );
+    // A non-waking item waits in pi's queue for the next run if this one ends first.
+    let notice = Intent::Inject {
+        origin: InjectOrigin::Todo,
+        content: text("todo edited"),
+        wake: false,
+    };
+    let busy_notice = session.driver.encode(&notice, &tag).expect("inject");
     assert!(
-        busy_inject[0].contains(r#""type":"steer""#),
-        "{busy_inject:?}"
+        busy_notice[0].contains(r#""type":"steer""#),
+        "{busy_notice:?}"
     );
     let lines = session.driver.encode(&follow_up, &tag).expect("follow-up");
     assert_eq!(
         serde_json::from_str::<Value>(&lines[0]).expect("json"),
         json!({"id": "cr:op:0:a", "type": "follow_up", "message": "later"})
     );
+}
+
+/// An injection steered into a run that settles before pi reads the line starts a run of its
+/// own (pi would hold a plain `steer` until the next prompt), caused by the injection's tag.
+#[test]
+fn an_injection_racing_the_end_of_a_run_starts_the_next_run() {
+    let mut session = Session::new();
+    session.start_run(&op("run"));
+    let tag = LineTag::Internal {
+        key: "inject:1".into(),
+        part: 0,
+    };
+    let inject = Intent::Inject {
+        origin: InjectOrigin::Job,
+        content: text("job done"),
+        wake: true,
+    };
+    let lines = session.send(&inject, &tag);
+    session.read(json!({"type": "agent_end", "messages": []}));
+    session.read(json!({"type": "agent_settled", "aborted": false}));
+    assert!(!session.driver.view().run_active);
+
+    let id = lines[0]["id"].as_str().expect("id").to_owned();
+    let events = session.ok(&id, "prompt", json!({"disposition": "started"}));
+    assert_eq!(events, [], "accepted once the run is active");
+    assert!(session.driver.view().run_starting);
+    let out = session.read(json!({"type": "agent_start"}));
+    assert!(
+        out.events.contains(&DriverEvent::RunStarted {
+            cause: Some(tag.clone())
+        }),
+        "{:?}",
+        out.events
+    );
+    assert!(out.events.contains(&DriverEvent::Accepted { tag }));
+    assert!(session.driver.view().run_active);
 }
 
 /// A steer is shown once pi accepts it, and moves to where pi delivers it.

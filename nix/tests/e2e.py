@@ -25,6 +25,7 @@ SPEC_TIMEOUT = timedelta(minutes=15)
 MOCK = "http://127.0.0.1:4000/control"
 API = "/home/alice/work/api"
 WEB = "/home/alice/work/web"
+BUILD = "/home/alice/build"
 
 # ------------------------------------------------------------------------------- helpers
 
@@ -206,7 +207,7 @@ def boot() -> None:
         f"mkdir -p {API}/src {API}/.gates && echo 'remote notes' > {API}/notes.txt"
         f" && echo 'Run the tests with make check.' > {API}/AGENTS.md",
     )
-    as_alice(buildbox, f"mkdir -p {WEB}/.gates && echo \"const version = 'v1';\" > {WEB}/app.js")
+    as_alice(buildbox, f"mkdir -p {BUILD}/.gates {WEB}/.gates && echo \"const version = 'v1';\" > {WEB}/app.js")
 
 
 def add_machine(machine: Any, key_first: bool) -> None:
@@ -232,7 +233,7 @@ def auto_upgrade() -> None:
         bash(
             "call_build",
             "make-it",
-            f"echo make-it >> ran.txt; export STAGE=built; {wait_for_gate(WEB, 'build')}; echo built",
+            f"echo make-it >> ran.txt; export STAGE=built; {wait_for_gate(BUILD, 'build')}; echo built",
         ),
         say("Built."),
         bash("call_stage", "stage", 'echo "stage=$STAGE"'),
@@ -240,7 +241,7 @@ def auto_upgrade() -> None:
     )
     spec = Spec("upgrade")
     spec.step("restart")
-    buildbox.wait_until_succeeds(f"test -s {WEB}/ran.txt")
+    buildbox.wait_until_succeeds(f"test -s {BUILD}/ran.txt")
     supervisors = buildbox.succeed("pgrep -u alice -f 'controlroomd supervise'").split()
     use_bundle(CURRENT_BUNDLE)
     spec.release("restart")
@@ -250,7 +251,7 @@ def auto_upgrade() -> None:
     spec.step("update-available")
     time.sleep(20)
     assert current_daemon(buildbox) == f"versions/{VERSION}-old"
-    open_gate(buildbox, WEB, "build")
+    open_gate(buildbox, BUILD, "build")
     spec.release("update-available")
 
     spec.step("upgraded")
@@ -260,7 +261,7 @@ def auto_upgrade() -> None:
     spec.release("upgraded")
     spec.finish()
     mock_done()
-    assert lines(buildbox, f"{WEB}/ran.txt") == 1, "the command ran once across the web server restart"
+    assert lines(buildbox, f"{BUILD}/ran.txt") == 1, "the command ran once across the web server restart"
     assert "built" in tool_result("call_build")
     assert "stage=built" in tool_result("call_stage"), "the shell kept its variables across the upgrade"
 
@@ -321,7 +322,7 @@ def approvals() -> None:
     )
 
     def push(branch: str) -> dict[str, Any]:
-        return bash(f"call_push_{branch}", f"push {branch}", f"cd repo && git push origin HEAD:{branch} 2>&1; echo exit=$?")
+        return bash(f"call_push_{branch}", f"push {branch}", f"cd ~/push/repo && git push origin HEAD:{branch} 2>&1; echo exit=$?")
 
     mock(push("allowed"), say("Pushed."), push("denied"), say("The push was denied."))
 
@@ -404,7 +405,7 @@ def grace() -> None:
                 "command": f"echo compiling; {wait_for_gate(API, 'job')}; echo linked",
             },
         ),
-        bash("call_late", "late", f"echo late >> {API}/late.txt; {wait_for_gate(API, 'late')}; echo late-done"),
+        bash("call_late", "late", f"echo late >> {API}/late.txt; {wait_for_gate(API, 'late')}; echo \"late-$((1+1))\""),
         say("devbox is away; I'll wait."),
     )
     spec = Spec("grace")
@@ -428,13 +429,13 @@ def grace() -> None:
     # two; the mock answers "ok" to anything unscripted).
     spec.step("woken")
     server.wait_until_succeeds(
-        f"curl -sf {MOCK}/requests | jq -e '.[-1].messages | tostring | (contains(\"late-done\") and contains(\"exited with code 0\"))'",
+        f"curl -sf {MOCK}/requests | jq -e '.[-1].messages | tostring | (contains(\"late-2\") and contains(\"exited with code 0\"))'",
         timeout=timedelta(minutes=3),
     )
     spec.release("woken")
     spec.finish()
     seen = "\n".join(conversation())
-    assert seen.count("late-done") == 1, f"the late result is injected once: {seen}"
+    assert seen.count("late-2") == 1, f"the late result is injected once: {seen}"
     assert seen.count("exited with code 0") == 1, f"one exit wake: {seen}"
     assert lines(devbox, f"{API}/late.txt") == 1, "the command ran once"
 

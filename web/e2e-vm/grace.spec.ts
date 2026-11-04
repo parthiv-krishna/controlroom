@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test';
 import {
   choose,
   closeSettings,
-  lastReply,
   login,
   machineBanner,
   machineCard,
@@ -11,6 +10,7 @@ import {
   send,
   settled,
   step,
+  timeline,
   toolCalls,
   waitReconnected,
 } from './helpers';
@@ -34,9 +34,10 @@ test('past the grace a call fails; its late result and the job exit arrive once'
   await step('cut');
 
   await expect(machineBanner(page, 'devbox')).toContainText('unreachable', { timeout: 180_000 });
-  // The grace runs out: the call fails, and the agent is told why.
+  // The grace runs out: the call fails, and the agent is told why (and, in a notice, that its
+  // jobs keep running there).
   await expect(late).toHaveClass(/s-failed/, { timeout: 180_000 });
-  await expect(lastReply(page)).toHaveText("devbox is away; I'll wait.");
+  await expect(timeline(page).locator('.msg.r-agent', { hasText: "devbox is away; I'll wait." })).toBeVisible();
   await settled(page);
   await step('restore');
 

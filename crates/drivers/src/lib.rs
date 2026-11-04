@@ -95,6 +95,9 @@ pub enum Intent {
         origin: InjectOrigin,
         /// The text delivered to the agent.
         content: Vec<ContentPart>,
+        /// Whether it wakes the agent: steered into a run that ends before the agent reads
+        /// it, a waking item starts the next run, a non-waking one waits for it.
+        wake: bool,
     },
     /// Stop the current run (pi: `abort`; the driver also cancels any open dialog, since pi's
     /// abort waits for it).
