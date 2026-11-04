@@ -216,6 +216,8 @@ export type * from "./TasksCreateParams";
 export type * from "./TasksLinkParams";
 export type * from "./TasksMoveParams";
 export type * from "./TasksUpdateParams";
+export type * from "./TerminalCommand";
+export type * from "./TerminalEvent";
 export type * from "./TimelineItem";
 export type * from "./TimelineOp";
 export type * from "./Todo";

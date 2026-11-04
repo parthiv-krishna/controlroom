@@ -19,7 +19,7 @@
 //!    simply sent again on the next connection.
 //!
 //! Bulk bytes never ride this channel: terminals use `controlroomd pty attach <shell id>`
-//! channels and the human file browser uses SFTP; `read_bytes` is capped.
+//! channels ([`terminal`]) and the human file browser uses SFTP; `read_bytes` is capped.
 //!
 //! Methods that belong to an optional feature need the matching `hello` capability: `shell.*`
 //! and `bash` (`shells`), `job_*` ops and `jobs.*` (`jobs`), `approvals.subscribe` and
@@ -30,6 +30,7 @@ mod doctor;
 mod fs;
 mod handshake;
 mod jobs;
+pub mod terminal;
 mod tool;
 mod workspace;
 

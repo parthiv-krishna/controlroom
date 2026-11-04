@@ -1,6 +1,7 @@
 //! TypeScript generation, in two sets (both read-only for their users):
 //!
-//! - [`generate`]: the UI API, for `web/src/lib/protocol/`;
+//! - [`generate`]: the UI API and the terminal streams' text frames ([`crate::terminal`]), for
+//!   `web/src/lib/protocol/`;
 //! - [`generate_agent`]: the agent API, for `extensions/pi/src/protocol/`.
 //!
 //! The host and agent daemon APIs have no TypeScript consumer, so no set.
@@ -26,6 +27,7 @@ use ts_rs::{Config, TS, TypeVisitor};
 use crate::agent::{AgentNotification, AgentRequest};
 use crate::error::RpcError;
 use crate::jsonrpc::{Method, NotificationMethod, RpcNotification, RpcRequest, RpcResponse};
+use crate::terminal::{TerminalCommand, TerminalEvent};
 use crate::ui::{UiNotification, UiRequest};
 use crate::version::{AGENT_PROTOCOL_VERSION, ProtocolVersion, UI_PROTOCOL_VERSION};
 
@@ -296,6 +298,7 @@ struct Api {
 /// `index.ts`.
 fn generate_set(
     apis: &[Api],
+    extra: fn(&mut Collector<'_>),
     versions: &[(&str, &str, ProtocolVersion)],
 ) -> Result<BTreeMap<PathBuf, String>, TsExportError> {
     let cfg = config();
@@ -315,6 +318,7 @@ fn generate_set(
             (spec.collect)(&mut collector);
         }
     }
+    extra(&mut collector);
     if let Some(err) = collector.error {
         return Err(err);
     }
@@ -350,6 +354,11 @@ pub fn generate() -> Result<BTreeMap<PathBuf, String>, TsExportError> {
             methods: UiRequest::specs(),
             notifications: UiNotification::specs(),
         }],
+        // The terminal streams' text frames (`/api/stream/terminal/…`).
+        |c| {
+            c.visit::<TerminalCommand>();
+            c.visit::<TerminalEvent>();
+        },
         &[(
             "UI_PROTOCOL_VERSION",
             "The UI API version, sent in the UI `hello`.",
@@ -366,6 +375,7 @@ pub fn generate_agent() -> Result<BTreeMap<PathBuf, String>, TsExportError> {
             methods: AgentRequest::specs(),
             notifications: AgentNotification::specs(),
         }],
+        |_| {},
         &[(
             "AGENT_PROTOCOL_VERSION",
             "The agent API version, sent in the agent `hello`.",

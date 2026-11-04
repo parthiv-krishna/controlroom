@@ -9,7 +9,8 @@
 //! - [`host`]: controller ↔ `controlroomd` host role (workspaces, shells, tool calls with a
 //!   journal, jobs, approvals);
 //! - [`agent`]: the agent's extension (`@controlroom/pi`) ↔ the agent daemon, per session;
-//! - [`ui`]: browser ↔ controller.
+//! - [`ui`]: browser ↔ controller;
+//! - [`terminal`]: browser ↔ controller terminal streams (binary WebSockets).
 //!
 //! Areas:
 //! - [`ids`]: ULID and string ids, `RemotePath`, `UnixMillis`, `Seq`, `Rev`;
@@ -44,6 +45,7 @@ pub mod host;
 pub mod ids;
 pub mod jsonrpc;
 pub mod session;
+pub mod terminal;
 pub mod timeline;
 pub mod typescript;
 pub mod ui;
