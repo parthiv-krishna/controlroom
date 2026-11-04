@@ -123,13 +123,20 @@ async fn host_requests_are_routed_and_answered_verbatim() {
         .collect();
     assert_eq!(outputs, ["one", "two"]);
 
-    // A withdrawn request is never answered.
+    // A withdrawn request is never answered. Ordering matters: the withdraw and the host's
+    // result travel different paths, so the test first makes sure the router processed the
+    // withdraw (agentd's messages are handled in order: answering `c3` proves it), then lets
+    // the host finish `w1`, then waits until `w1`'s answer is on the wire before checking
+    // (a later round trip `c4` on the same host connection can't overtake it).
     agentd.request(bash(id, "w1", "hold"));
     fake.wait_started("w1").await;
     agentd.withdraw(&HostOpId::new("w1"));
-    fake.release("w1");
     agentd.request(bash(id, "c3", "true"));
     result(agentd.response(&HostOpId::new("c3")).await);
+    fake.release("w1");
+    fake.wait_finished("w1").await;
+    agentd.request(bash(id, "c4", "true"));
+    result(agentd.response(&HostOpId::new("c4")).await);
     assert!(agentd.responses(&HostOpId::new("w1")).is_empty());
 
     // The UI's fs.list goes to the host daemon.

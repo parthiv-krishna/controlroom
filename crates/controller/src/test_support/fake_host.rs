@@ -120,6 +120,16 @@ impl FakeHost {
         wait_until(&format!("call {id} starts"), || self.executions(id) > 0).await;
     }
 
+    /// Waits until call `id` finished and its result is journaled. The response is queued on
+    /// the connection right after (no await in between), so a later round trip on the same
+    /// connection can't overtake it.
+    pub async fn wait_finished(&self, id: &str) {
+        wait_until(&format!("call {id} finishes"), || {
+            self.lock().journal.contains_key(id)
+        })
+        .await;
+    }
+
     /// Every request of `method` received, with its params.
     pub fn received(&self, method: &str) -> Vec<Value> {
         self.lock()
