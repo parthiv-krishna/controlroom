@@ -12,6 +12,7 @@ use controlroom_protocol::ids::{OpId, QueueId, SessionId};
 use controlroom_protocol::session::{
     RequestKind, RequestState, Response, RunOutcome, SessionState,
 };
+use controlroom_protocol::timeline::RunTrigger;
 
 use super::{Harness, caps, text};
 
@@ -414,4 +415,109 @@ async fn queue_edit_remove_reorder() {
         .await
         .unwrap_err();
     assert!(matches!(err.data, Some(ErrorData::NotFound { .. })));
+}
+
+/// A run that holds at gate `end`, then a default turn.
+fn ending_script() -> FakeScript {
+    FakeScript::default()
+        .turn(
+            "stream",
+            [
+                FakeStep::Text("partial".into()),
+                FakeStep::Gate("end".into()),
+            ],
+        )
+        .default_turn([FakeStep::Text("next one handled".into())])
+}
+
+/// A send-now steered into a run that ends before the agent reads the line starts the next
+/// run, without another message from the user (the agent would hold a plain steer until
+/// then).
+#[tokio::test]
+async fn a_send_now_racing_the_end_of_the_run_starts_the_next_run() {
+    let caps = Capabilities {
+        steer: true,
+        ..caps()
+    };
+    let mut h = Harness::with(ending_script(), caps).await;
+    let id = h.create().await;
+    h.prompt(id, "stream please").await;
+    h.wait(id, "streaming", |s| s.preview == "partial").await;
+    let late = queued(h.prompt(id, "change of plan").await);
+    // The agent reads the steer only after its run has ended.
+    h.host.hold_writes(id, true);
+    assert_eq!(
+        h.rt.send_now(send_now(id, late)).await.unwrap(),
+        SendNowResult::Steered
+    );
+    h.host
+        .wait("the held steer", |host| host.held_writes(id) == 1)
+        .await;
+    h.host.release(id, "end");
+    let s = h
+        .wait(id, "the run's end", |s| {
+            s.last_outcome == Some(RunOutcome::Completed)
+        })
+        .await;
+    assert_eq!(s.queue.len, 1, "the item is on its way");
+    assert!(!s.queue.send_now_pending);
+    h.host.release_writes(id);
+    let s = h
+        .wait(id, "the item's run", |s| {
+            s.preview == "next one handled" && s.state == SessionState::Idle
+        })
+        .await;
+    assert_eq!(s.queue.len, 0);
+    assert!(!s.queue.paused);
+    assert_eq!(h.host.prompts(id), ["stream please"]);
+    assert_eq!(h.host.steers(id), ["change of plan"]);
+    let triggers = h.run_triggers(id).await;
+    assert_eq!(triggers.len(), 2, "{triggers:?}");
+    assert_eq!(triggers[1], RunTrigger::Steer { device: None });
+    assert_eq!(cancels(&h, id), 0);
+}
+
+/// An interrupting send-now whose cancel reaches the agent after its run ended on its own still
+/// goes next, as a prompt.
+#[tokio::test]
+async fn an_interrupt_racing_the_end_of_the_run_still_sends_the_item() {
+    let caps = Capabilities {
+        steer: true,
+        ..caps()
+    };
+    let mut h = Harness::with(ending_script(), caps).await;
+    let id = h.create().await;
+    h.prompt(id, "stream please").await;
+    h.wait(id, "streaming", |s| s.preview == "partial").await;
+    let now = queued(h.prompt(id, "stop and do this").await);
+    h.host.hold_writes(id, true);
+    let interrupt = QueueSendNowParams {
+        interrupt: true,
+        ..send_now(id, now)
+    };
+    assert_eq!(
+        h.rt.send_now(interrupt).await.unwrap(),
+        SendNowResult::Interrupting
+    );
+    h.host
+        .wait("the held cancel", |host| host.held_writes(id) == 1)
+        .await;
+    h.host.release(id, "end");
+    // The run ended on its own: the item follows the cancel, which the agent reads while
+    // idle.
+    h.wait(id, "the run's end", |s| {
+        s.last_outcome == Some(RunOutcome::Completed)
+    })
+    .await;
+    h.host.release_writes(id);
+    let s = h
+        .wait(id, "the item's run", |s| {
+            s.preview == "next one handled" && s.state == SessionState::Idle
+        })
+        .await;
+    assert_eq!(s.queue.len, 0);
+    assert!(!s.queue.paused);
+    assert_eq!(h.host.prompts(id), ["stream please", "stop and do this"]);
+    assert!(h.host.steers(id).is_empty());
+    assert_eq!(cancels(&h, id), 1);
 }

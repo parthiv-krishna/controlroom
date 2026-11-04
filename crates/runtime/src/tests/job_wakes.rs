@@ -4,13 +4,13 @@
 //! jobs keep counting as live work and one notice per outage follows the grace period.
 
 use controlroom_drivers::Capabilities;
-use controlroom_drivers::fake::wire::Command;
 use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::agent::AgentTodoAddParams;
 use controlroom_protocol::ids::{OpId, SessionId};
 use controlroom_protocol::session::{AutoContinueStatus, JobStatus, SessionState};
 use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
 
+use super::host::steered_text;
 use super::jobs::{agent_op, follow, op, start, wait_job};
 use super::{Harness, caps};
 
@@ -98,11 +98,9 @@ async fn an_exit_wake_while_busy_is_steered_in() {
     h.prompt(id, "work on it").await;
     h.wait(id, "working", |s| s.preview == "working").await;
     h.machines.job_exit(h.devbox, job, 2);
-    h.wait_command(
-        id,
-        "the steer",
-        |c| matches!(c, Command::Steer { text } if text.contains(WAKE)),
-    )
+    h.wait_command(id, "the steer", |c| {
+        steered_text(c).is_some_and(|text| text.contains(WAKE))
+    })
     .await;
     h.host.release(id, "work");
     h.wait_state(id, SessionState::Idle).await;

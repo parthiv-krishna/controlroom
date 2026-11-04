@@ -69,6 +69,14 @@ impl Agents for FakeAgents {
 type Held = (String, oneshot::Sender<Result<Seq, HostError>>);
 
 /// One session's supervised agent.
+/// The text a command steers into a run (a steer, or a steering prompt).
+pub(crate) fn steered_text(command: &Command) -> Option<&str> {
+    match command {
+        Command::Steer { text } | Command::Prompt { text, steer: true } => Some(text),
+        _ => None,
+    }
+}
+
 #[derive(Default)]
 struct Proc {
     transcript: Vec<Record>,
@@ -219,14 +227,23 @@ impl FakeHost {
             .unwrap_or_default()
     }
 
-    /// The prompt texts written, in order.
+    /// The prompt texts written (not steering ones), in order.
     pub(crate) fn prompts(&self, id: SessionId) -> Vec<String> {
         self.commands(id)
             .into_iter()
             .filter_map(|c| match c {
-                Command::Prompt { text } => Some(text),
+                Command::Prompt { text, steer: false } => Some(text),
                 _ => None,
             })
+            .collect()
+    }
+
+    /// The steered texts written (steers and steering prompts), in order.
+    pub(crate) fn steers(&self, id: SessionId) -> Vec<String> {
+        self.commands(id)
+            .iter()
+            .filter_map(steered_text)
+            .map(str::to_owned)
             .collect()
     }
 

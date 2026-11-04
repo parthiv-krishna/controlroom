@@ -3,7 +3,6 @@
 //! user's edits injected as a notice, notices, and run triggers from the runtime's knowledge.
 
 use controlroom_drivers::Capabilities;
-use controlroom_drivers::fake::wire::Command;
 use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::agent::{
     AgentQuestion, AgentQuestionOption, AgentTodoAddParams, AgentTodoUpdateParams, NotifyParams,
@@ -21,6 +20,7 @@ use controlroom_protocol::session::{
 use controlroom_protocol::timeline::{InjectOrigin, ItemBody, NoticeLevel, RunTrigger};
 use controlroom_protocol::{ErrorData, Seq};
 
+use super::host::steered_text;
 use super::{Harness, caps, text};
 
 fn steering() -> Capabilities {
@@ -101,17 +101,6 @@ fn prompts_containing(h: &Harness, id: SessionId, needle: &str) -> usize {
         .iter()
         .filter(|p| p.contains(needle))
         .count()
-}
-
-fn steers(h: &Harness, id: SessionId) -> Vec<String> {
-    h.host
-        .commands(id)
-        .into_iter()
-        .filter_map(|c| match c {
-            Command::Steer { text } => Some(text),
-            _ => None,
-        })
-        .collect()
 }
 
 #[tokio::test]
@@ -221,9 +210,9 @@ async fn an_answer_while_the_agent_works_is_steered_in() {
     assert_eq!(s.attention, Some(Attention::Question));
 
     h.rt.respond(answer(id, &question, "SQLite")).await.unwrap();
-    h.wait_command(id, "the steer", |c| matches!(c, Command::Steer { .. }))
+    h.wait_command(id, "the steer", |c| steered_text(c).is_some())
         .await;
-    let steered = steers(&h, id);
+    let steered = h.host.steers(id);
     assert!(steered[0].contains("→ SQLite"), "{steered:?}");
     h.host.release(id, "work");
     h.wait_state(id, SessionState::Idle).await;
@@ -409,11 +398,9 @@ async fn todos_are_shared_attributed_and_rolled_up() {
     // The user's edits wait for the next run (no wake), then arrive as one notice.
     assert!(h.host.prompts(id).is_empty());
     h.prompt(id, "work on it").await;
-    h.wait_command(id, "the todo notice", |c| {
-        matches!(c, Command::Steer { .. })
-    })
-    .await;
-    let notice = steers(&h, id).remove(0);
+    h.wait_command(id, "the todo notice", |c| steered_text(c).is_some())
+        .await;
+    let notice = h.host.steers(id).remove(0);
     assert!(notice.starts_with("[controlroom] The user changed your todo list:"));
     assert!(notice.contains("marked \"demo\" skipped"), "{notice}");
     assert!(notice.contains("added \"announce\""), "{notice}");

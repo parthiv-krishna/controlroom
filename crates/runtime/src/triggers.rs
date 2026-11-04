@@ -1,7 +1,8 @@
 //! Run triggers. A driver only knows the kind of the tag that started a run (a user command, a
 //! queue item, a daemon-internal line); the runtime knows who sent it and why. Each
 //! run-starting line the runtime writes records its trigger ([`SessionData::record_trigger`]):
-//! a queued prompt's device or schedule, an injection's origin, auto-continue. When the fold
+//! a queued prompt's device or schedule, a steered send-now's device, an injection's origin,
+//! auto-continue (a steer counts: it starts a run if the active one ends first). When the fold
 //! reports the run, the run item is rewritten with that trigger, in this and every later op
 //! of the run.
 
@@ -63,4 +64,14 @@ pub(crate) fn of_queue_entry(entry: &QueueEntry) -> RunTrigger {
 /// Records the trigger of the queue item about to be sent as a prompt.
 pub(crate) fn record_queue_entry(data: &mut SessionData, entry: &QueueEntry) {
     data.record_trigger(&entry.tag(), of_queue_entry(entry));
+}
+
+/// Records the trigger of the send-now item about to be steered in: a steer starts the next
+/// run when the active one settles before the agent reads it.
+pub(crate) fn record_steered_entry(data: &mut SessionData, entry: &QueueEntry) {
+    let device = match &entry.origin {
+        PromptOrigin::User { device } => device.clone(),
+        PromptOrigin::Schedule { .. } | PromptOrigin::Unknown => None,
+    };
+    data.record_trigger(&entry.tag(), RunTrigger::Steer { device });
 }

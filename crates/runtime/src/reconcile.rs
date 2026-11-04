@@ -135,11 +135,13 @@ impl Core {
                 };
                 let delivered = self.write(id, &intent, head.tag());
                 if let Ok(session) = self.session_mut(id) {
-                    let entry = &mut session.data.queue[index];
                     if delivered {
-                        entry.delivery = Some(Delivery::Handed(Via::Steer));
+                        // It starts the next run if this one settles before the agent
+                        // reads it.
+                        crate::triggers::record_steered_entry(&mut session.data, &head);
+                        session.data.queue[index].delivery = Some(Delivery::Handed(Via::Steer));
                     } else {
-                        entry.no_steer = true;
+                        session.data.queue[index].no_steer = true;
                     }
                 }
                 return;

@@ -1,18 +1,21 @@
 //! Auto-continue (spec §8): every rule and pause reason.
 
+use controlroom_drivers::Capabilities;
 use controlroom_drivers::fake::wire::Command;
 use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::agent::{
     AgentQuestion, AgentTodoAddParams, AgentTodoUpdateParams, QuestionAskParams,
 };
-use controlroom_protocol::agentd::SessionUpdateParams;
+use controlroom_protocol::agentd::{
+    PromptResult, QueueSendNowParams, SendNowResult, SessionUpdateParams,
+};
 use controlroom_protocol::ids::{OpId, SessionId, TodoId};
 use controlroom_protocol::session::{
     Attention, AutoContinueStatus, RunOutcome, SessionState, SessionSummary, TodoStatus,
 };
 use controlroom_protocol::timeline::RunTrigger;
 
-use super::Harness;
+use super::{Harness, caps};
 
 const CONTINUE: &str = "Auto-continue";
 
@@ -349,4 +352,50 @@ async fn a_user_run_starts_a_fresh_budget() {
     h.wait(id, "working", |s| s.preview == "working").await;
     assert_eq!(h.detail(id).await.auto_continue.runs_used, 0);
     h.host.release(id, "work");
+}
+
+/// A send-now steered into a continue run that ends before the agent reads it starts the next
+/// run itself: a user run (fresh budget), after which auto-continue decides again.
+#[tokio::test]
+async fn a_send_now_racing_the_end_of_a_continue_run_is_a_user_run() {
+    let caps = Capabilities {
+        steer: true,
+        ..caps()
+    };
+    let mut h = Harness::with(script(), caps).await;
+    let id = h.create().await;
+    work_with_todos(&mut h, id, &["one", "two"]).await;
+    wait_continue(&mut h, id, 1).await;
+    assert_eq!(h.detail(id).await.auto_continue.runs_used, 1);
+    let PromptResult::Queued { queue_id } = h.prompt(id, "change of plan").await else {
+        panic!("not queued");
+    };
+    h.host.hold_writes(id, true);
+    let result =
+        h.rt.send_now(QueueSendNowParams {
+            op_id: OpId::generate(),
+            id,
+            queue_id,
+            interrupt: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result, SendNowResult::Steered);
+    h.host
+        .wait("the held steer", |host| host.held_writes(id) == 1)
+        .await;
+    let mark = h.summary(id).last_turn_end_seq;
+    h.host.release(id, "cont");
+    h.wait(id, "the continue run's end", |s| s.last_turn_end_seq > mark)
+        .await;
+    h.host.release_writes(id);
+    // The steered run, then a continue run on a fresh budget.
+    wait_continue(&mut h, id, 2).await;
+    assert_eq!(h.detail(id).await.auto_continue.runs_used, 1);
+    assert_eq!(h.host.steers(id), ["change of plan"]);
+    let triggers = h.run_triggers(id).await;
+    assert_eq!(triggers.len(), 4, "{triggers:?}");
+    assert_eq!(triggers[2], RunTrigger::Steer { device: None });
+    assert_eq!(triggers[3], RunTrigger::AutoContinue);
+    h.host.release(id, "cont");
 }
