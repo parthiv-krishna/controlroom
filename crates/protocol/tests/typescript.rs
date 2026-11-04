@@ -162,7 +162,10 @@ fn generated_files_cover_the_api() {
     );
     // The next set is the UI API alone: no daemon map, no per-machine session wrapper.
     for name in ["DaemonMethods.ts", "MachineSession.ts", "SessionLink.ts"] {
-        assert!(!next.contains_key(Path::new(name)), "{name} in the next set");
+        assert!(
+            !next.contains_key(Path::new(name)),
+            "{name} in the next set"
+        );
     }
     let agent = typescript::generate_agent().unwrap();
     assert_generated(

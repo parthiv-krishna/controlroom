@@ -33,10 +33,10 @@ use crate::daemon::{
     QueueEditParams, QueueRemoveParams, QueueReorderParams, QueueSendNowParams, ReadCursor,
     RequestRespondParams, RequestRespondResult, SandboxRevokeParams, SendNowResult,
     SessionEventsParams, SessionMarkReadParams, SessionOpParams, SessionPromptParams,
-    SessionResumeParams, SessionSetOptionParams, SessionStartFreshParams,
-    SessionSubscribeParams, SessionSubscribeResult, SessionUpdateParams, SettingsSetParams,
-    StartFreshResult, TodoAddParams, TodoAddResult, TodoRemoveParams, TodoReorderParams,
-    TodoUpdateParams, UnsubscribeParams,
+    SessionResumeParams, SessionSetOptionParams, SessionStartFreshParams, SessionSubscribeParams,
+    SessionSubscribeResult, SessionUpdateParams, SettingsSetParams, StartFreshResult,
+    TodoAddParams, TodoAddResult, TodoRemoveParams, TodoReorderParams, TodoUpdateParams,
+    UnsubscribeParams,
 };
 use crate::jsonrpc::{Ack, NoParams};
 use crate::session::{Job, Todo, Workspace};
