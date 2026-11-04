@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use controlroom_protocol::daemon::OptionValue;
+use controlroom_protocol::agentd::OptionValue;
 use controlroom_protocol::ids::{ItemId, RequestId};
 use controlroom_protocol::session::{
     ContentPart, ContextUsage, DriverKind, OptionControl, Request, RequestAnswer, RequestState,

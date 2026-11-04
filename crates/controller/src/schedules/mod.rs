@@ -5,7 +5,7 @@
 //! - [`plan`]: what is due, claimed or missed at a given time (pure);
 //! - [`deliver`]: one due time as a `session.prompt` with a deterministic op id;
 //! - [`runs`]: the bounded recent-run log with collapsed misses;
-//! - [`scheduler`]: the per-owner task that fires due times, retries unreachable machines
+//! - [`scheduler`]: the per-owner task that fires due times, retries an unreachable agent daemon
 //!   until the next due time, and disables the schedules of closed or deleted sessions;
 //! - [`Clock`]: the system clock, or a manual one for tests.
 //!

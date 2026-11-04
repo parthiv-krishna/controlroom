@@ -1,6 +1,5 @@
 //! Wire types for controlroom's JSON-RPC APIs, and the source of the generated TypeScript in
-//! `web/src/lib/protocol/` (UI API), `web/src/lib/protocol/next/` (the next UI API) and
-//! `extensions/pi/src/protocol/` (agent API). See `docs/protocol.md` for the overview.
+//! `web/src/lib/protocol/` (UI API) and `extensions/pi/src/protocol/` (agent API). See `docs/protocol.md` for the overview.
 //!
 //! pi runs only on the server, in the agent daemon (`controlroom-agentd`); execution hosts run
 //! `controlroomd` in the host role, which only executes tools in workspaces. The APIs:
@@ -10,9 +9,7 @@
 //! - [`host`]: controller ↔ `controlroomd` host role (workspaces, shells, tool calls with a
 //!   journal, jobs, approvals);
 //! - [`agent`]: the agent's extension (`@controlroom/pi`) ↔ the agent daemon, per session;
-//! - [`ui::next`]: browser ↔ controller, with global sessions;
-//! - deprecated, removed once their users switch: [`daemon`] (controller ↔ the old per-machine
-//!   `controlroomd`) and [`ui`]'s own method table (sessions per machine).
+//! - [`ui`]: browser ↔ controller.
 //!
 //! Areas:
 //! - [`ids`]: ULID and string ids, `RemotePath`, `UnixMillis`, `Seq`, `Rev`;
@@ -42,7 +39,6 @@ mod macros;
 
 pub mod agent;
 pub mod agentd;
-pub mod daemon;
 pub mod error;
 pub mod host;
 pub mod ids;
@@ -60,6 +56,6 @@ pub use jsonrpc::{
     RpcOutcome, RpcRequest, RpcResponse,
 };
 pub use version::{
-    AGENT_PROTOCOL_VERSION, AGENTD_PROTOCOL_VERSION, Capability, DAEMON_PROTOCOL_VERSION,
-    HOST_PROTOCOL_VERSION, ProtocolVersion, UI_PROTOCOL_VERSION,
+    AGENT_PROTOCOL_VERSION, AGENTD_PROTOCOL_VERSION, Capability, HOST_PROTOCOL_VERSION,
+    ProtocolVersion, UI_PROTOCOL_VERSION,
 };

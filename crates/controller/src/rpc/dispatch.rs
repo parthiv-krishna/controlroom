@@ -1,31 +1,32 @@
-//! Routes one request of the old UI API to its handler. Params are validated against the
-//! method's type first, so malformed params are `invalid_params` before anything happens.
+//! Routes one UI request to its handler after validating its params against the method's type,
+//! so malformed params are `invalid_params` before anything happens.
+//!
+//! Session commands pass through to the agent daemon ([`passthrough`]); `session.create`
+//! does more (sandbox defaults, attribution, task links); `fs.list` and a machine's
+//! `doctor.report` go to that machine's host daemon.
 
 use std::sync::Arc;
 
-use controlroom_protocol::ui::{Priority, ScheduleRef, TaskStatus, UiRequest};
-use controlroom_protocol::{Ack, RpcError, RpcRequest};
+use controlroom_client_core::daemon::{CallOptions, CallTimeout};
+use controlroom_protocol::agentd::SessionCreateResult;
+use controlroom_protocol::agentd::methods::SessionCreate;
+use controlroom_protocol::error::Resource;
+use controlroom_protocol::host::methods::{DoctorReportMethod, FsList};
+use controlroom_protocol::host::{DoctorReport, FsListParams, FsListResult};
+use controlroom_protocol::session::PromptOrigin;
+use controlroom_protocol::ui::{
+    DoctorReportParams, OnMachine, Priority, TaskStatus, UiRequest, UiSessionCreateParams,
+};
+use controlroom_protocol::{Ack, NoParams, RpcError, RpcRequest};
 use serde_json::Value;
 
 use super::{
-    Conn, Reply, UiApi, board, keys, machines, passthrough, people, reply, sandbox, schedules,
-    sessions, state, subscriptions,
+    Conn, Reply, board, keys, machines, passthrough, people, reply, sandbox, schedules, state,
+    subscriptions,
 };
-use crate::errors::{internal, not_found};
-use crate::hub::{Focus, Source, legacy_project};
-use crate::store::{NewTask, ScheduleRow, TaskLink, TaskRow};
-
-fn task(row: TaskRow) -> Result<Reply, RpcError> {
-    reply(row.legacy())
-}
-
-fn schedule(row: ScheduleRow) -> Result<Reply, RpcError> {
-    let id = row.id;
-    reply(
-        row.legacy()
-            .ok_or_else(|| not_found(controlroom_protocol::error::Resource::Schedule, id))?,
-    )
-}
+use crate::errors::{call_error, internal, not_found, store_error};
+use crate::hub::Focus;
+use crate::store::NewTask;
 
 pub(super) async fn dispatch(
     conn: &Arc<Conn>,
@@ -40,11 +41,9 @@ pub(super) async fn dispatch(
         UiRequest::Hello(p) => reply(state::hello(conn, p)?),
         UiRequest::Ping(_) => reply(Ack {}),
         UiRequest::StateSubscribe(p) => state::subscribe(conn, p),
-        UiRequest::SessionSubscribe(p) => {
-            subscriptions::subscribe(conn, Source::Machine(p.machine_id), p.params).await
-        }
+        UiRequest::SessionSubscribe(p) => subscriptions::subscribe(conn, p).await,
         UiRequest::Unsubscribe(p) => reply(subscriptions::unsubscribe(conn, p).await?),
-        UiRequest::SessionCreate(p) => reply(sessions::create(conn, p).await?),
+        UiRequest::SessionCreate(p) => reply(create(conn, p).await?),
 
         UiRequest::MachinesAdd(p) => reply(machines::add(conn, p).await?),
         UiRequest::MachinesAddConfirm(p) => reply(machines::add_confirm(conn, p).await?),
@@ -60,18 +59,15 @@ pub(super) async fn dispatch(
         UiRequest::KeysImport(p) => reply(keys::import(conn, p)?),
         UiRequest::KeysDelete(p) => reply(keys::delete(conn, p)?),
 
-        // Location prefixes are gone: projects group tasks.
-        UiRequest::ProjectsCreate(p) => reply(legacy_project(board::projects_create(
-            conn, &p.name, &p.color,
-        )?)),
-        UiRequest::ProjectsUpdate(p) => reply(legacy_project(board::projects_update(
+        UiRequest::ProjectsCreate(p) => reply(board::projects_create(conn, &p.name, &p.color)?),
+        UiRequest::ProjectsUpdate(p) => reply(board::projects_update(
             conn,
             p.project_id,
             p.name.as_deref(),
             p.color.as_deref(),
-        )?)),
+        )?),
         UiRequest::ProjectsDelete(p) => reply(board::projects_delete(conn, p)?),
-        UiRequest::TasksCreate(p) => task(board::tasks_create(
+        UiRequest::TasksCreate(p) => reply(board::tasks_create(
             conn,
             NewTask {
                 title: p.title,
@@ -81,21 +77,17 @@ pub(super) async fn dispatch(
                 project_ids: p.project_ids,
                 notes: p.notes,
                 checklist: p.checklist,
-                links: p.links.iter().map(TaskLink::legacy).collect(),
+                links: p.links,
             },
         )?),
-        UiRequest::TasksUpdate(p) => task(board::tasks_update(conn, p)?),
-        UiRequest::TasksMove(p) => task(board::tasks_move(conn, p)?),
+        UiRequest::TasksUpdate(p) => reply(board::tasks_update(conn, p)?),
+        UiRequest::TasksMove(p) => reply(board::tasks_move(conn, p)?),
         UiRequest::TasksDelete(p) => reply(board::tasks_delete(conn, p)?),
-        UiRequest::TasksLink(p) => task(board::tasks_link(
-            conn,
-            p.task_id,
-            TaskLink::legacy(&p.link),
-        )?),
-        UiRequest::TasksUnlink(p) => task(board::tasks_unlink(conn, p.task_id, p.link.session_id)?),
-        UiRequest::TasksChecklistAdd(p) => task(board::checklist_add(conn, p)?),
-        UiRequest::TasksChecklistUpdate(p) => task(board::checklist_update(conn, p)?),
-        UiRequest::TasksChecklistRemove(p) => task(board::checklist_remove(conn, p)?),
+        UiRequest::TasksLink(p) => reply(board::tasks_link(conn, p.task_id, p.session_id)?),
+        UiRequest::TasksUnlink(p) => reply(board::tasks_unlink(conn, p.task_id, p.session_id)?),
+        UiRequest::TasksChecklistAdd(p) => reply(board::checklist_add(conn, p)?),
+        UiRequest::TasksChecklistUpdate(p) => reply(board::checklist_update(conn, p)?),
+        UiRequest::TasksChecklistRemove(p) => reply(board::checklist_remove(conn, p)?),
 
         UiRequest::GrantsRevoke(p) => reply(people::grants_revoke(conn, p)?),
         UiRequest::DevicesRegister(p) => reply(people::devices_register(conn, p)?),
@@ -109,15 +101,14 @@ pub(super) async fn dispatch(
             conn,
             Focus {
                 device_id: p.device_id,
-                session_id: p.session.map(|s| s.session_id),
+                session_id: p.session_id,
                 visible: p.visible,
             },
         )),
 
-        UiRequest::SchedulesCreate(p) => schedule(schedules::create(
+        UiRequest::SchedulesCreate(p) => reply(schedules::create(
             conn,
             schedules::Create {
-                machine_id: Some(p.machine_id),
                 session_id: p.session_id,
                 name: p.name,
                 spec: p.spec,
@@ -128,20 +119,117 @@ pub(super) async fn dispatch(
                 missed: p.missed,
             },
         )?),
-        UiRequest::SchedulesUpdate(p) => schedule(schedules::update(conn, p, UiApi::Legacy)?),
-        UiRequest::SchedulesDelete(p) => reply(schedules::delete(conn, p, UiApi::Legacy)?),
-        UiRequest::SchedulesRunNow(p) => run_now(conn, p).await,
+        UiRequest::SchedulesUpdate(p) => reply(schedules::update(conn, p)?),
+        UiRequest::SchedulesDelete(p) => reply(schedules::delete(conn, p)?),
+        UiRequest::SchedulesRunNow(p) => reply(schedules::run_now(conn, p).await?),
 
         UiRequest::SandboxProfiles(_) => reply(sandbox::profiles(conn)?),
         UiRequest::SandboxSetProfile(p) => reply(sandbox::set_profile(conn, p)?),
+
+        UiRequest::FsList(p) => reply(fs_list(conn, p).await?),
+        UiRequest::DoctorReportMethod(p) => reply(doctor(conn, p).await?),
 
         // Everything else is in the pass-through table (checked above).
         other => Err(internal(format!("{} is not dispatched", other.method()))),
     }
 }
 
-async fn run_now(conn: &Arc<Conn>, p: ScheduleRef) -> Result<Reply, RpcError> {
-    schedule(schedules::run_now(conn, p, UiApi::Legacy).await?)
+/// `session.create`: the agent daemon creates the session on its workspaces with its first
+/// prompt (atomically, under the `op_id`), then the controller links it to the tasks, moving
+/// tasks in `backlog` or `todo` to `doing`. The controller fills in the sandbox defaults (the
+/// workspaces' machines and the tasks' projects) and the prompt's origin (this connection's
+/// device), replacing whatever a client sent. Links are set-like, so a retry is safe.
+async fn create(
+    conn: &Arc<Conn>,
+    p: UiSessionCreateParams,
+) -> Result<SessionCreateResult, RpcError> {
+    let hub = &conn.hub;
+    for task in &p.task_ids {
+        hub.task(*task)?;
+    }
+    let mut create = *p.create;
+    let mut machines = Vec::new();
+    for w in &create.workspaces {
+        hub.machine_view(w.machine_id)?;
+        if !machines.contains(&w.machine_id) {
+            machines.push(w.machine_id);
+        }
+    }
+    create.sandbox = Some(sandbox::defaults(hub, &machines, &p.task_ids)?);
+    if let Some(prompt) = &mut create.prompt {
+        prompt.origin = PromptOrigin::User {
+            device: conn.device_ref(),
+        };
+    }
+    // The agent daemon refuses machines it doesn't see connected: let it see what the UI saw.
+    hub.outbound.barrier().await;
+    let created = hub
+        .agentd()?
+        .call::<SessionCreate>(&create)
+        .await
+        .map_err(passthrough::agentd_error)?;
+    let session = created.session.id;
+    for task in &p.task_ids {
+        let mut st = hub.lock();
+        let repo = hub.repo();
+        let tasks = repo.tasks();
+        if !tasks.link(*task, session).map_err(store_error)? {
+            return Err(not_found(Resource::Task, task));
+        }
+        tasks
+            .move_if_in(
+                *task,
+                &[TaskStatus::Backlog, TaskStatus::Todo],
+                TaskStatus::Doing,
+            )
+            .map_err(store_error)?;
+        let row = hub.task(*task)?;
+        hub.emit_task(&mut st, &row);
+    }
+    Ok(created)
+}
+
+/// `fs.list`: a directory on a machine, listed by its host daemon with the user's own access.
+async fn fs_list(conn: &Conn, p: OnMachine<FsListParams>) -> Result<FsListResult, RpcError> {
+    let hub = &conn.hub;
+    let machine = p.machine_id;
+    let options = CallOptions {
+        timeout: CallTimeout::After(hub.services.tuning.slow_call_timeout),
+        ..CallOptions::default()
+    };
+    hub.host(machine)?
+        .call_with::<FsList>(&p.params, options)
+        .await
+        .map_err(|e| call_error(e, machine, || hub.connectivity(machine)))
+}
+
+/// `doctor.report`: a machine's host daemon checks (stored on the machine), or the server's
+/// (the agent daemon's).
+async fn doctor(conn: &Conn, p: DoctorReportParams) -> Result<DoctorReport, RpcError> {
+    let hub = &conn.hub;
+    let options = CallOptions {
+        timeout: CallTimeout::After(hub.services.tuning.slow_call_timeout),
+        ..CallOptions::default()
+    };
+    match p.machine_id {
+        Some(machine) => {
+            let report = hub
+                .host(machine)?
+                .call_with::<DoctorReportMethod>(&NoParams {}, options)
+                .await
+                .map_err(|e| call_error(e, machine, || hub.connectivity(machine)))?;
+            hub.set_doctor(machine, &report);
+            Ok(report)
+        }
+        None => hub
+            .agentd()?
+            .call_with::<controlroom_protocol::agentd::methods::DoctorReportMethod>(
+                &NoParams {},
+                options,
+            )
+            .await
+            .map_err(passthrough::agentd_error),
+    }
 }
 
 #[cfg(test)]
@@ -158,6 +246,8 @@ mod tests {
             "session.subscribe",
             "unsubscribe",
             "session.create",
+            "fs.list",
+            "doctor.report",
         ];
         let namespaces = [
             "machines.",

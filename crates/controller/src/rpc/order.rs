@@ -4,12 +4,11 @@
 //! run one at a time, in arrival order; requests with different keys (or none) run
 //! concurrently. Keys:
 //!
-//! - a session-scoped command (`id`, with `machine_id` in the old UI API): that session;
+//! - a session-scoped command (`id`): that session;
 //! - any other machine-scoped command: that machine;
 //! - the handshake, heartbeat and the slow SSH flows (`machines.add`, `machines.add_confirm`,
-//!   `keys.rotate`), and daemon calls that name neither a machine nor a session
-//!   (`schedules.run_now`, the next UI API's `session.create` and the server's `doctor.report`):
-//!   none;
+//!   `keys.rotate`), and calls that name neither a machine nor a session (`schedules.run_now`,
+//!   `session.create` and the server's `doctor.report`): none;
 //! - everything else (controller data, subscriptions, focus): one shared key.
 //!
 //! So two edits of the same session's queue, or a task create followed by a task move, are
@@ -26,8 +25,7 @@ use tokio::sync::oneshot;
 /// What a request is ordered with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum OrderKey {
-    /// A session: a legacy daemon's (with its machine) or a global one.
-    Session(Option<MachineId>, SessionId),
+    Session(SessionId),
     Machine(MachineId),
     Local,
 }
@@ -49,7 +47,7 @@ pub(crate) fn order_key(method: &str, params: &Value) -> Option<OrderKey> {
     let machine: Option<MachineId> = text("machine_id").and_then(|s| s.parse().ok());
     let session: Option<SessionId> = text("id").and_then(|s| s.parse().ok());
     match (machine, session) {
-        (m, Some(s)) => Some(OrderKey::Session(m, s)),
+        (_, Some(s)) => Some(OrderKey::Session(s)),
         (Some(m), None) => Some(OrderKey::Machine(m)),
         (None, None) if matches!(method, "session.create" | "doctor.report") => None,
         (None, None) => Some(OrderKey::Local),
@@ -110,12 +108,8 @@ mod tests {
         let m = MachineId::generate();
         let s = SessionId::generate();
         assert_eq!(
-            order_key("queue.edit", &json!({"machine_id": m, "id": s})),
-            Some(OrderKey::Session(Some(m), s))
-        );
-        assert_eq!(
             order_key("queue.edit", &json!({"id": s})),
-            Some(OrderKey::Session(None, s))
+            Some(OrderKey::Session(s))
         );
         assert_eq!(
             order_key("session.create", &json!({"workspaces": []})),

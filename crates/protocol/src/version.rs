@@ -40,12 +40,6 @@ impl fmt::Display for ProtocolVersion {
     }
 }
 
-/// The daemon API version (controller ↔ `controlroomd`), sent in the daemon `hello`.
-///
-/// Deprecated with the daemon API: replaced by [`AGENTD_PROTOCOL_VERSION`] and
-/// [`HOST_PROTOCOL_VERSION`].
-pub const DAEMON_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
-
 /// The agent daemon API version (controller ↔ `controlroom-agentd`), sent in its `hello`.
 pub const AGENTD_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
 
@@ -54,7 +48,7 @@ pub const AGENTD_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1,
 pub const HOST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
 
 /// The UI API version (browser ↔ controller), sent in the UI `hello`. Versioned separately from
-/// the daemon API: the UI ships with its controller, while daemons upgrade independently.
+/// the host API: the UI ships with its controller, while host daemons upgrade independently.
 pub const UI_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
 
 /// The agent API version (`@controlroom/pi` ↔ the agent daemon), sent in the agent `hello`.
@@ -71,16 +65,14 @@ pub const AGENT_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, 
 pub struct Capability(#[ts(type = "string")] pub Cow<'static, str>);
 
 impl Capability {
-    /// Background jobs: `job.*` and job timeline items (daemon).
+    /// Background jobs: `job.*` and job timeline items (agent daemon).
     pub const JOBS: Capability = Capability(Cow::Borrowed("jobs"));
-    /// The shared todo list and auto-continue: `todo.*` (daemon).
+    /// The shared todo list and auto-continue: `todo.*` (agent daemon).
     pub const TODOS: Capability = Capability(Cow::Borrowed("todos"));
-    /// Subagents as child sessions (daemon).
+    /// Subagents as child sessions (agent daemon).
     pub const SUBAGENTS: Capability = Capability(Cow::Borrowed("subagents"));
-    /// The durable mailbox: `outbox.*` and `inbox.deliver` (daemon).
-    pub const MAILBOX: Capability = Capability(Cow::Borrowed("mailbox"));
     /// Sandbox approvals: the sandbox's approval requests (e.g. a mediated `git push`) reach
-    /// the user as blocking `sandbox` requests (daemon). Without it, commands that need an
+    /// the user as blocking `sandbox` requests (agent daemon). Without it, commands that need an
     /// approval are denied.
     pub const SANDBOX_APPROVALS: Capability = Capability(Cow::Borrowed("sandbox_approvals"));
     /// Schedules: `schedules.*` (controller).

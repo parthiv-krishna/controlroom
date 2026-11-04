@@ -1,11 +1,11 @@
 use std::sync::{Arc, Barrier};
 
 use controlroom_protocol::UnixMillis;
-use controlroom_protocol::daemon::{CheckStatus, DaemonSettings, DoctorReport, RetentionPolicy};
+use controlroom_protocol::host::{BootStartMethod, CheckStatus, DoctorCheck, DoctorReport};
 use controlroom_protocol::ids::{DeviceId, KeyId, MachineId, SessionId};
 use controlroom_protocol::session::SandboxLevel;
 use controlroom_protocol::ui::{
-    AuthMode, ContactScope, Priority, ProfileChange, ProfileScope, SessionLink, TaskStatus,
+    AuthMode, ContactScope, Priority, ProfileChange, ProfileScope, Task, TaskStatus,
 };
 
 use super::*;
@@ -46,7 +46,7 @@ fn machine(store: &Store, owner: &OwnerId, name: &str, port: u16) -> MachineRow 
 }
 
 fn doctor(version: &str) -> DoctorReport {
-    let check = controlroom_protocol::daemon::DoctorCheck {
+    let check = DoctorCheck {
         status: CheckStatus::Ok,
         value: None,
         detail: String::new(),
@@ -55,7 +55,7 @@ fn doctor(version: &str) -> DoctorReport {
         daemon_version: version.into(),
         user: Some("alice".into()),
         persistence: check.clone(),
-        boot_start: controlroom_protocol::daemon::BootStartMethod::Lazy,
+        boot_start: BootStartMethod::Lazy,
         boot_start_check: check.clone(),
         nono: check,
         landlock_abi: None,
@@ -137,7 +137,7 @@ fn duplicate_machines_and_names_conflict() {
     );
 }
 
-/// The prototype's lost update: a daemon-settings write and a UI settings write raced, each
+/// The prototype's lost update: a daemon-reported write and a UI settings write raced, each
 /// rewriting the whole row. Writes are column-targeted now, so any interleaving keeps both.
 #[test]
 fn concurrent_column_writes_never_lose_each_other() {
@@ -155,17 +155,7 @@ fn concurrent_column_writes_never_lose_each_other() {
                 for round in 0..ROUNDS {
                     match writer {
                         0 => machines.set_name(m.id, &format!("name-{round}")).map(drop),
-                        1 => machines
-                            .set_daemon_settings(
-                                m.id,
-                                &DaemonSettings {
-                                    idle_timeout_h: round as u32,
-                                    retention: RetentionPolicy {
-                                        delete_closed_after_days: Some(7),
-                                    },
-                                },
-                            )
-                            .map(drop),
+                        1 => machines.set_grace(m.id, round as u32).map(drop),
                         2 => machines.set_auto_upgrade(m.id, round % 2 == 1).map(drop),
                         _ => machines
                             .set_doctor(m.id, &doctor(&format!("0.0.{round}")))
@@ -182,7 +172,7 @@ fn concurrent_column_writes_never_lose_each_other() {
     let last = ROUNDS - 1;
     let row = store.owner(&owner).machines().get(m.id).unwrap().unwrap();
     assert_eq!(row.name, format!("name-{last}"));
-    assert_eq!(row.daemon_settings.unwrap().idle_timeout_h, last as u32);
+    assert_eq!(row.grace_s, last as u32);
     assert!(row.auto_upgrade);
     assert_eq!(row.doctor.unwrap().daemon_version, format!("0.0.{last}"));
     // Untouched columns kept their values.
@@ -246,12 +236,7 @@ fn tasks_with_checklist_projects_and_dangling_links() {
     let repo = store.owner(&owner);
     let p1 = repo.projects().insert("one", "#111").unwrap();
     let p2 = repo.projects().insert("two", "#222").unwrap();
-    let legacy = SessionLink {
-        machine_id: MachineId::generate(),
-        session_id: SessionId::generate(),
-    };
-    let link = tasks::TaskLink::legacy(&legacy);
-    let global = tasks::TaskLink::global(SessionId::generate());
+    let (s1, s2) = (SessionId::generate(), SessionId::generate());
     let task = repo
         .tasks()
         .insert(tasks::NewTask {
@@ -262,15 +247,12 @@ fn tasks_with_checklist_projects_and_dangling_links() {
             project_ids: vec![p2.id, p1.id],
             notes: String::new(),
             checklist: vec!["a".into(), "c".into()],
-            links: vec![link, global],
+            links: vec![s1, s2],
         })
         .unwrap();
     assert_eq!(task.project_ids, [p2.id, p1.id]);
-    assert_eq!(task.links, [link, global]);
-    // Each UI API sees its own links.
-    assert_eq!(task.legacy().links, [legacy]);
-    assert_eq!(task.next().links, [global.session_id]);
-    let texts = |t: &tasks::TaskRow| {
+    assert_eq!(task.links, [s1, s2]);
+    let texts = |t: &Task| {
         t.checklist
             .iter()
             .map(|c| c.text.clone())
@@ -301,7 +283,7 @@ fn tasks_with_checklist_projects_and_dangling_links() {
     assert!(repo.projects().delete(p2.id).unwrap());
     let task = repo.tasks().get(task.id).unwrap().unwrap();
     assert_eq!(task.project_ids, [p1.id]);
-    assert_eq!(repo.tasks().linked_to(link.session_id).unwrap(), [task.id]);
+    assert_eq!(repo.tasks().linked_to(s1).unwrap(), [task.id]);
     // Moving only from the given columns.
     assert!(
         repo.tasks()
@@ -323,12 +305,7 @@ fn tasks_with_checklist_projects_and_dangling_links() {
         TaskStatus::Doing
     );
     assert!(repo.tasks().delete(task.id).unwrap());
-    assert!(
-        repo.tasks()
-            .linked_to(global.session_id)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(repo.tasks().linked_to(s2).unwrap().is_empty());
 }
 
 #[test]

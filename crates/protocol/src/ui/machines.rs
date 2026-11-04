@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::daemon::{DaemonSettings, DoctorReport};
+use crate::host::DoctorReport;
 use crate::ids::{DaemonId, KeyId, MachineId, UnixMillis};
 use crate::version::Capability;
 
@@ -125,8 +125,6 @@ pub struct Machine {
     pub last_error: Option<String>,
     /// The daemon's optional features, from its `hello`.
     pub capabilities: Vec<Capability>,
-    /// The daemon's settings, once connected.
-    pub settings: Option<DaemonSettings>,
     /// The latest doctor report, once bootstrapped.
     pub doctor: Option<DoctorReport>,
     /// Progress of a running bootstrap or upgrade.

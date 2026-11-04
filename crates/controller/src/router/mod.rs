@@ -32,7 +32,7 @@ use serde_json::Value;
 use tokio::task::AbortHandle;
 
 use crate::errors::{invalid_params, not_found};
-use crate::hub::{Hub, HubState, LinkKind};
+use crate::hub::{Hub, HubState};
 
 /// A request on its way to (or with) its host.
 #[derive(Debug)]
@@ -245,12 +245,7 @@ impl Hub {
             return;
         };
         let client = match &entry.link {
-            Some(link)
-                if matches!(link.kind, LinkKind::Host { .. })
-                    && entry.live.connectivity == Connectivity::Connected =>
-            {
-                link.daemon.clone()
-            }
+            Some(link) if entry.live.connectivity == Connectivity::Connected => link.daemon.clone(),
             _ => return,
         };
         let (method, params) = match wire(&pending.request.request) {

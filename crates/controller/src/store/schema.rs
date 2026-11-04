@@ -5,18 +5,14 @@
 //! reference their parents through composite `(id, owner_id)` keys, so a row can never point at
 //! another owner's row. Task links and contact grants deliberately have no foreign key to
 //! machines or sessions: they survive session purges and machine removal and render as
-//! "missing session".
-//!
-//! Sessions are global (the agent daemon's). Until the old UI API goes away (R2), task links and
-//! schedules may still name a per-machine session of a legacy daemon: their nullable
-//! `machine_id` column says which machine; `NULL` means a global session.
+//! "missing session". Sessions are global (the agent daemon's), so they are named by id alone.
 
 use rusqlite::Connection;
 
 use super::{StoreError, StoreResult};
 
 /// The schema version, kept in `PRAGMA user_version`.
-pub(super) const VERSION: u32 = 4;
+pub(super) const VERSION: u32 = 5;
 
 const SCHEMA: &str = r#"
 CREATE TABLE installation (
@@ -69,9 +65,8 @@ CREATE TABLE machines (
     -- The daemon's `hello` capabilities (JSON array of strings).
     capabilities     TEXT NOT NULL DEFAULT '[]',
     last_seen        INTEGER,
-    -- The latest doctor report and daemon settings (protocol JSON).
+    -- The latest doctor report (protocol JSON).
     doctor           TEXT,
-    daemon_settings  TEXT,
     created_at       INTEGER NOT NULL,
     UNIQUE (id, owner_id),
     UNIQUE (owner_id, name),
@@ -129,8 +124,6 @@ CREATE TABLE task_links (
     owner_id    TEXT NOT NULL REFERENCES owners(id),
     task_id     TEXT NOT NULL,
     session_id  TEXT NOT NULL,
-    -- A legacy daemon's machine (old UI API); NULL for a global session.
-    machine_id  TEXT,
     created_at  INTEGER NOT NULL,
     PRIMARY KEY (task_id, session_id),
     FOREIGN KEY (task_id, owner_id) REFERENCES tasks (id, owner_id) ON DELETE CASCADE
@@ -204,8 +197,6 @@ CREATE INDEX push_deliveries_age ON push_deliveries (sent_at);
 CREATE TABLE schedules (
     id           TEXT PRIMARY KEY NOT NULL,
     owner_id     TEXT NOT NULL REFERENCES owners(id),
-    -- A legacy daemon's machine (old UI API); NULL for a global session.
-    machine_id   TEXT,
     session_id   TEXT NOT NULL,
     name         TEXT NOT NULL,
     spec         TEXT NOT NULL,

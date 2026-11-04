@@ -3,9 +3,8 @@
 
 use std::collections::BTreeSet;
 
-use controlroom_protocol::daemon::methods as dm;
-use controlroom_protocol::daemon::notifications as dm_notes;
-use controlroom_protocol::daemon::*;
+use controlroom_protocol::agentd::methods as dm;
+use controlroom_protocol::agentd::*;
 use controlroom_protocol::ids::*;
 use controlroom_protocol::session::*;
 use controlroom_protocol::timeline::*;
@@ -32,6 +31,7 @@ const MID: &str = "01HZY3K6W8Q9X2V4N7B5C1D3E7";
 const SUB: &str = "01HZY3K6W8Q9X2V4N7B5C1D3E8";
 const DID: &str = "01HZY3K6W8Q9X2V4N7B5C1D3E9";
 const CID: &str = "01HZY3K6W8Q9X2V4N7B5C1D3EA";
+const WID: &str = "01HZY3K6W8Q9X2V4N7B5C1D3EF";
 
 fn sid() -> SessionId {
     SID.parse().unwrap()
@@ -79,13 +79,30 @@ fn summary() -> SessionSummary {
         id: sid(),
         name: Some("fix flaky test".into()),
         title: None,
-        cwd: "/home/alice/src/app".into(),
-        agent: "pi".into(),
+        workspaces: vec![Workspace {
+            id: WID.parse().unwrap(),
+            machine_id: MID.parse().unwrap(),
+            path: "~/src/app".into(),
+            root: Some("/home/alice/src/app".into()),
+            primary: true,
+            added_at: UnixMillis(1_000),
+            availability: Availability {
+                connectivity: Connectivity::Connected,
+                since: UnixMillis(900),
+            },
+        }],
+        shells: vec![Shell {
+            name: "devbox".into(),
+            workspace_id: WID.parse().unwrap(),
+            cwd: "/home/alice/src/app".into(),
+            state: ShellState::Idle,
+            reset_pending: false,
+            foreground: None,
+        }],
         created_at: UnixMillis(1_000),
         updated_at: UnixMillis(2_000),
         closed_at: None,
         parent_id: None,
-        spawned_by: None,
         state: SessionState::AwaitingPermission,
         last_outcome: Some(RunOutcome::Completed),
         last_error: None,
@@ -146,13 +163,27 @@ fn summary_json() -> Value {
         "id": SID,
         "name": "fix flaky test",
         "title": null,
-        "cwd": "/home/alice/src/app",
-        "agent": "pi",
+        "workspaces": [{
+            "id": WID,
+            "machine_id": MID,
+            "path": "~/src/app",
+            "root": "/home/alice/src/app",
+            "primary": true,
+            "added_at": 1000,
+            "availability": {"connectivity": {"state": "connected"}, "since": 900}
+        }],
+        "shells": [{
+            "name": "devbox",
+            "workspace_id": WID,
+            "cwd": "/home/alice/src/app",
+            "state": {"state": "idle"},
+            "reset_pending": false,
+            "foreground": null
+        }],
         "created_at": 1000,
         "updated_at": 2000,
         "closed_at": null,
         "parent_id": null,
-        "spawned_by": null,
         "state": "awaiting_permission",
         "last_outcome": "completed",
         "last_error": null,
@@ -207,11 +238,11 @@ fn summary_json() -> Value {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-fn golden_daemon_hello_request() {
+fn golden_agentd_hello_request() {
     let request = RpcRequest::new::<dm::Hello>(
         1,
         HelloParams {
-            protocol_version: DAEMON_PROTOCOL_VERSION,
+            protocol_version: AGENTD_PROTOCOL_VERSION,
             client_name: "controlroom-web 0.1.0".into(),
             role: ClientRole::Controller {
                 controller_id: CID.parse().unwrap(),
@@ -233,7 +264,7 @@ fn golden_daemon_hello_request() {
     );
     let debug: HelloParams = serde_json::from_value(json!({
         "protocol_version": {"major": 1, "minor": 0},
-        "client_name": "controlroomd ctl",
+        "client_name": "controlroom-agentd ctl",
         "role": {"kind": "debug"}
     }))
     .unwrap();
@@ -272,8 +303,7 @@ fn golden_controller_conflict_error() {
 fn sandbox_override_fields() {
     let create: SessionCreateParams = serde_json::from_value(json!({
         "op_id": "op-9",
-        "agent": "pi",
-        "cwd": "~/src/legacy",
+        "workspaces": [{"machine_id": MID, "path": "~/src/app"}],
         "sandbox_level": "off",
         "sandbox": {"level": "strict", "grants": [], "domains": ["example.com"], "mediated": []}
     }))
@@ -283,8 +313,11 @@ fn sandbox_override_fields() {
         create.sandbox.as_ref().map(|s| s.level),
         Some(SandboxLevel::Strict)
     );
-    let plain: SessionCreateParams =
-        serde_json::from_value(json!({"op_id": "op-10", "agent": "pi", "cwd": "~"})).unwrap();
+    let plain: SessionCreateParams = serde_json::from_value(json!({
+        "op_id": "op-10",
+        "workspaces": [{"machine_id": MID, "path": "~"}]
+    }))
+    .unwrap();
     assert_eq!((plain.sandbox_level, plain.sandbox), (None, None));
 
     use SandboxLevel::*;
@@ -294,39 +327,6 @@ fn sandbox_override_fields() {
     // An unknown level counts as the strictest.
     assert!(!Strict.is_looser_than(Unknown) && Relaxed.is_looser_than(Unknown));
     assert!(!Unknown.is_looser_than(Strict));
-}
-
-#[test]
-fn golden_machine_events_notification() {
-    let note = RpcNotification::new::<dm_notes::MachineEvents>(MachineEventsParams {
-        subscription_id: sub(),
-        changes: vec![
-            MachineChange {
-                rev: Rev(41),
-                event: MachineEvent::SessionUpserted {
-                    session: Box::new(summary()),
-                },
-            },
-            MachineChange {
-                rev: Rev(42),
-                event: MachineEvent::SessionRemoved { id: sid() },
-            },
-        ],
-    });
-    golden(
-        &note,
-        json!({
-            "jsonrpc": "2.0",
-            "method": "machine.events",
-            "params": {
-                "subscription_id": SUB,
-                "changes": [
-                    {"rev": 41, "kind": "session_upserted", "session": summary_json()},
-                    {"rev": 42, "kind": "session_removed", "id": SID}
-                ]
-            }
-        }),
-    );
 }
 
 #[test]
@@ -394,20 +394,17 @@ fn golden_session_events_with_timeline_ops() {
 fn golden_ui_request_respond_pass_through() {
     let request = RpcRequest::new::<um::RequestRespond>(
         "c7",
-        OnMachine::new(
-            MID.parse().unwrap(),
-            RequestRespondParams {
-                op_id: OpId::new("op-1"),
-                id: sid(),
-                request_id: RequestId::new("r1"),
-                response: Response::Choice {
-                    option_id: "deny".into(),
-                    reason: Some("push to a branch".into()),
-                },
-                then: Some(vec![ContentPart::text("push to fix/flaky instead")]),
-                by: None,
+        RequestRespondParams {
+            op_id: OpId::new("op-1"),
+            id: sid(),
+            request_id: RequestId::new("r1"),
+            response: Response::Choice {
+                option_id: "deny".into(),
+                reason: Some("push to a branch".into()),
             },
-        ),
+            then: Some(vec![ContentPart::text("push to fix/flaky instead")]),
+            by: None,
+        },
     );
     golden(
         &request,
@@ -416,7 +413,6 @@ fn golden_ui_request_respond_pass_through() {
             "id": "c7",
             "method": "request.respond",
             "params": {
-                "machine_id": MID,
                 "op_id": "op-1",
                 "id": SID,
                 "request_id": "r1",
@@ -428,7 +424,7 @@ fn golden_ui_request_respond_pass_through() {
 }
 
 #[test]
-fn golden_daemon_request_respond_carries_the_deciding_device() {
+fn golden_agentd_request_respond_carries_the_deciding_device() {
     let params = RequestRespondParams {
         op_id: OpId::new("op-2"),
         id: sid(),
@@ -459,11 +455,12 @@ fn golden_daemon_request_respond_carries_the_deciding_device() {
 fn golden_session_create_with_a_first_prompt() {
     let params = SessionCreateParams {
         op_id: OpId::new("op-3"),
-        agent: "pi".into(),
-        cwd: "~/src/app".into(),
+        workspaces: vec![WorkspaceSpec {
+            machine_id: MID.parse().unwrap(),
+            path: "~/src/app".into(),
+        }],
         name: None,
         parent_id: None,
-        spawned_by: None,
         sandbox_level: None,
         sandbox: None,
         prompt: Some(InitialPrompt {
@@ -475,8 +472,7 @@ fn golden_session_create_with_a_first_prompt() {
         &params,
         json!({
             "op_id": "op-3",
-            "agent": "pi",
-            "cwd": "~/src/app",
+            "workspaces": [{"machine_id": MID, "path": "~/src/app"}],
             "prompt": {
                 "content": [{"kind": "text", "text": "fix the flaky test"}],
                 "origin": {"kind": "user", "device": null}
@@ -575,14 +571,11 @@ fn golden_error_response() {
 fn golden_state_event_and_connectivity() {
     let change = StateChange {
         rev: Rev(3),
-        event: StateEvent::SessionRemoved {
-            machine_id: MID.parse().unwrap(),
-            session_id: sid(),
-        },
+        event: StateEvent::SessionRemoved { session_id: sid() },
     };
     golden(
         &change,
-        json!({"rev": 3, "kind": "session_removed", "machine_id": MID, "session_id": SID}),
+        json!({"rev": 3, "kind": "session_removed", "session_id": SID}),
     );
     golden(
         &Connectivity::ActionRequired {
@@ -598,36 +591,6 @@ fn golden_state_event_and_connectivity() {
             "presented_host_key": {"algorithm": "ssh-ed25519", "fingerprint": "SHA256:abc"}
         }),
     );
-}
-
-#[test]
-fn golden_outbox_ack() {
-    golden(
-        &OutboxAckParams {
-            item: "01HZY3K6W8Q9X2V4N7B5C1D3EC".parse().unwrap(),
-            outcome: OutboxOutcome::ConnectionLost {
-                scope: LinkScope::Peer,
-                since: UnixMillis(5_000),
-            },
-        },
-        json!({
-            "item": "01HZY3K6W8Q9X2V4N7B5C1D3EC",
-            "outcome": {"outcome": "connection_lost", "scope": "peer", "since": 5000}
-        }),
-    );
-}
-
-#[test]
-fn summaries_round_trip_inside_ui_machine_sessions() {
-    let session = MachineSession {
-        machine_id: MID.parse().unwrap(),
-        stale: true,
-        session: summary(),
-    };
-    let mut expected = summary_json();
-    expected["machine_id"] = json!(MID);
-    expected["stale"] = json!(true);
-    golden(&session, expected);
 }
 
 #[test]
@@ -660,8 +623,11 @@ fn optional_params_may_be_omitted() {
     assert_eq!(follow.buffer_seconds, None);
 
     // P4 additions are optional params: older clients keep working.
-    let create: SessionCreateParams =
-        serde_json::from_value(json!({"op_id": "op-4", "agent": "pi", "cwd": "~"})).unwrap();
+    let create: SessionCreateParams = serde_json::from_value(json!({
+        "op_id": "op-4",
+        "workspaces": [{"machine_id": MID, "path": "~"}]
+    }))
+    .unwrap();
     assert_eq!(create.prompt, None);
     let first: InitialPrompt =
         serde_json::from_value(json!({"content": [{"kind": "text", "text": "hi"}]})).unwrap();
@@ -753,10 +719,10 @@ fn unknown_timeline_kinds_and_ops_decode_as_unknown() {
 
 #[test]
 fn unknown_feed_events_decode_as_unknown() {
-    let change: MachineChange =
+    let change: SessionsChange =
         serde_json::from_value(json!({"rev": 7, "kind": "session_teleported", "to": "mars"}))
             .unwrap();
-    assert_eq!(change.event, MachineEvent::Unknown);
+    assert_eq!(change.event, SessionsEvent::Unknown);
     let change: StateChange =
         serde_json::from_value(json!({"rev": 7, "kind": "template_upserted", "template": {}}))
             .unwrap();
@@ -813,7 +779,7 @@ fn newer_result_variants_and_fields_still_decode() {
     assert!(
         hello
             .protocol_version
-            .is_compatible_with(DAEMON_PROTOCOL_VERSION)
+            .is_compatible_with(AGENTD_PROTOCOL_VERSION)
     );
     assert!(hello.capabilities.contains(&Capability::JOBS));
     assert!(hello.capabilities.contains(&Capability::new("terminals")));
@@ -850,13 +816,13 @@ fn newer_result_variants_and_fields_still_decode() {
 
 #[test]
 fn unknown_notifications_and_methods_are_typed_errors() {
-    let err = DaemonNotification::from_parts("session.sparkles", json!({})).unwrap_err();
+    let err = AgentdNotification::from_parts("session.sparkles", json!({})).unwrap_err();
     assert_eq!(err.data, Some(ErrorData::MethodNotFound));
-    let err = DaemonRequest::from_parts("session.teleport", json!({})).unwrap_err();
+    let err = AgentdRequest::from_parts("session.teleport", json!({})).unwrap_err();
     assert_eq!(err.data, Some(ErrorData::MethodNotFound));
-    let err = DaemonRequest::from_parts("session.cancel", json!({"id": SID})).unwrap_err();
+    let err = AgentdRequest::from_parts("session.cancel", json!({"id": SID})).unwrap_err();
     assert_eq!(err.data, Some(ErrorData::InvalidParams));
-    let ok = DaemonRequest::from_parts("agents.list", Value::Null).unwrap();
+    let ok = UiRequest::from_parts("agents.list", Value::Null).unwrap();
     assert_eq!(ok.method(), "agents.list");
 }
 
@@ -866,41 +832,12 @@ fn unknown_notifications_and_methods_are_typed_errors() {
 
 #[test]
 fn method_names_are_unique() {
-    for names in [
-        DaemonRequest::METHODS,
-        DaemonNotification::NOTIFICATIONS,
-        UiRequest::METHODS,
-        UiNotification::NOTIFICATIONS,
-    ] {
+    for names in [UiRequest::METHODS, UiNotification::NOTIFICATIONS] {
         let set: BTreeSet<_> = names.iter().collect();
         assert_eq!(set.len(), names.len(), "duplicate method name in {names:?}");
     }
 }
 
-#[test]
-fn ui_passes_through_every_session_scoped_daemon_method() {
-    // Daemon methods that are connection- or controller-level and never passed through.
-    let daemon_only = [
-        "hello",
-        "machine.subscribe",
-        "unsubscribe",
-        "outbox.subscribe",
-        "outbox.ack",
-        "inbox.deliver",
-    ];
-    let ui: BTreeSet<_> = UiRequest::METHODS.iter().copied().collect();
-    for method in DaemonRequest::METHODS {
-        if !daemon_only.contains(method) {
-            assert!(
-                ui.contains(method),
-                "{method} is not passed through by the UI API"
-            );
-        }
-    }
-}
-
-/// Request and job items nest their payload: flattened, their own `id`/`kind` would collide
-/// with the item's and the item could not cross the wire.
 #[test]
 fn request_and_job_items_round_trip() {
     let item = |id: &str, body: ItemBody| TimelineItem {

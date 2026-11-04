@@ -2,11 +2,11 @@
 import type { MachineId } from "./MachineId";
 
 /**
- * Adds the target machine to a daemon command's params: on the wire, `machine_id` sits next to
- * the daemon params' own fields.
+ * Adds the target machine to a host command's params: on the wire, `machine_id` sits next to
+ * the command's own fields.
  */
 export type OnMachine<P> = { 
 /**
- * The machine whose daemon handles the command.
+ * The machine whose host daemon handles the command.
  */
 machine_id: MachineId, } & P;

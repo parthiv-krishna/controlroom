@@ -2,11 +2,6 @@
 import type { ProtocolVersion } from "./ProtocolVersion";
 
 /**
- * The daemon API version. Peers are compatible iff their majors match.
- */
-export const DAEMON_PROTOCOL_VERSION: ProtocolVersion = { major: 1, minor: 0 };
-
-/**
  * The UI API version, sent in the UI `hello`. Peers are compatible iff their majors match.
  */
 export const UI_PROTOCOL_VERSION: ProtocolVersion = { major: 1, minor: 0 };

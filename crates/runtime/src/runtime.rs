@@ -9,12 +9,12 @@ use controlroom_protocol::agentd::{
     DaemonSettings, HostMachine, HostOpRequest, PromptResult, QueueEditParams, QueueRemoveParams,
     QueueReorderParams, QueueSendNowParams, ReadCursor, RequestRespondParams, RequestRespondResult,
     RetentionPolicy, SendNowResult, SessionMarkReadParams, SessionOpParams, SessionPromptParams,
-    SessionResumeParams, SessionSetOptionParams, SessionStartFreshParams, SessionSummary,
-    SessionUpdateParams, SessionsChange, SessionsSnapshot, SettingsSetParams, StartFreshResult,
+    SessionResumeParams, SessionSetOptionParams, SessionStartFreshParams, SessionUpdateParams,
+    SessionsChange, SessionsSnapshot, SettingsSetParams, StartFreshResult,
 };
 use controlroom_protocol::ids::{DaemonId, HostOpId, Rev, Seq, SessionId, SubscriptionId};
 use controlroom_protocol::jsonrpc::RpcOutcome;
-use controlroom_protocol::session::SessionDetail;
+use controlroom_protocol::session::{SessionDetail, SessionSummary};
 use controlroom_protocol::timeline::{RawFrame, TimelineItem};
 use serde::Serialize;
 use serde::de::DeserializeOwned;

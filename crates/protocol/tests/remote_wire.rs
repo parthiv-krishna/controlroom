@@ -1,15 +1,16 @@
 //! Wire-shape tests for the remote-tools APIs (host, agent daemon, the agent API's remote tools
-//! and the next UI API): golden JSON, forward compatibility (unknown variants and fields, a bad
+//! and the UI API): golden JSON, forward compatibility (unknown variants and fields, a bad
 //! result for one id) and the method tables.
 
 use std::collections::BTreeSet;
 
 use controlroom_protocol::agent::{self, AgentNotification, AgentRequest};
-use controlroom_protocol::agentd::{self, AgentdNotification, AgentdRequest};
-use controlroom_protocol::daemon::{
-    ClientRole, DaemonRequest, FollowFrom, FsEntry, FsEntryKind, HelloParams, InitialPrompt,
+use controlroom_protocol::agentd::{
+    self, AgentdNotification, AgentdRequest, ClientRole, FollowFrom, HelloParams, InitialPrompt,
 };
-use controlroom_protocol::host::{self, HostNotification, HostOp, HostRequest, HostResult};
+use controlroom_protocol::host::{
+    self, FsEntry, FsEntryKind, HostNotification, HostOp, HostRequest, HostResult,
+};
 use controlroom_protocol::ids::{
     CallId, Epoch, HostOpId, JobId, MachineId, OpId, ProjectId, SessionId, ShellId, SubscriptionId,
     WorkspaceId,
@@ -17,11 +18,10 @@ use controlroom_protocol::ids::{
 use controlroom_protocol::session::{
     Attention, AttentionRollup, Availability, ContentPart, LiveWork, PromptOrigin, QueueStatus,
     RequestBody, RequestKind, RequestState, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec,
-    SessionState, Shell, ShellState, Workspace, WorkspaceSpec,
+    SessionState, SessionSummary, Shell, ShellState, Workspace, WorkspaceSpec,
 };
 use controlroom_protocol::timeline::InjectOrigin;
-use controlroom_protocol::ui::next as ui;
-use controlroom_protocol::ui::{Connectivity, StateCursor};
+use controlroom_protocol::ui::{self, Connectivity, StateCursor};
 use controlroom_protocol::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -119,8 +119,8 @@ fn shell_json() -> Value {
     })
 }
 
-fn summary() -> agentd::SessionSummary {
-    agentd::SessionSummary {
+fn summary() -> SessionSummary {
+    SessionSummary {
         id: sid(),
         name: Some("api tests".into()),
         title: None,
@@ -942,11 +942,11 @@ fn job_run_names_a_machine() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Next UI API
+// UI API
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-fn golden_next_ui_state_events() {
+fn golden_ui_state_events() {
     let feed = ui::FeedSession {
         project_ids: vec![PID.parse::<ProjectId>().unwrap()],
         session: summary(),
@@ -1019,7 +1019,7 @@ fn golden_next_ui_state_events() {
 }
 
 #[test]
-fn golden_next_ui_session_create_and_links() {
+fn golden_ui_session_create_and_links() {
     let create: ui::UiSessionCreateParams = serde_json::from_value(json!({
         "op_id": "op-2",
         "workspaces": [{"machine_id": MID, "path": "~/src/api"}],
@@ -1111,7 +1111,7 @@ fn unknown_variants_decode_as_unknown() {
     newer["workspaces"][0]["mounts"] = json!(["x"]);
     newer["shells"][0]["state"] = json!({"state": "paused"});
     newer["future"] = json!(true);
-    let decoded: agentd::SessionSummary = serde_json::from_value(newer).unwrap();
+    let decoded: SessionSummary = serde_json::from_value(newer).unwrap();
     assert_eq!(decoded.shells[0].state, ShellState::Unknown);
     // The old daemon's live work (without host calls) still decodes.
     let old: LiveWork =
@@ -1211,7 +1211,7 @@ fn method_names_are_unique() {
 }
 
 #[test]
-fn next_ui_passes_through_every_session_scoped_agentd_method() {
+fn ui_passes_through_every_session_scoped_agentd_method() {
     // Agent daemon methods that are connection- or controller-level and never passed through.
     let agentd_only = [
         "hello",
@@ -1233,27 +1233,6 @@ fn next_ui_passes_through_every_session_scoped_agentd_method() {
     }
     // `doctor.report` exists too, with its own target (a machine or the server).
     assert!(ui.contains("doctor.report"));
-}
-
-#[test]
-fn agentd_keeps_every_session_method_of_the_daemon_api() {
-    // The agent daemon API generalizes the daemon API: only machine-level and mailbox methods
-    // go away (and `machine.subscribe` becomes `sessions.subscribe`).
-    let gone = [
-        "machine.subscribe",
-        "fs.list",
-        "outbox.subscribe",
-        "outbox.ack",
-        "inbox.deliver",
-    ];
-    for method in DaemonRequest::METHODS {
-        if !gone.contains(method) {
-            assert!(
-                AgentdRequest::METHODS.contains(method),
-                "{method} is missing from the agent daemon API"
-            );
-        }
-    }
 }
 
 #[test]

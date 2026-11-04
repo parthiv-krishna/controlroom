@@ -14,7 +14,7 @@ use controlroom_protocol::ids::{CallId, HostOpId, MachineId, WorkspaceId};
 use controlroom_protocol::ui::Connectivity;
 use controlroom_protocol::{ErrorData, RpcOutcome};
 use serde_json::{Value, json};
-use support::{add_machine, add_machine_at, controller_with_agentd, ui_next};
+use support::{add_machine, add_machine_at, controller_with_agentd, ui};
 
 /// A `tool.run` request: `bash` (held while the command starts with `hold`).
 fn bash(machine: MachineId, call: &str, command: &str) -> HostOpRequest {
@@ -59,7 +59,7 @@ async fn host_requests_are_routed_and_answered_verbatim() {
     let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
     let host = RemoteHost::start().await;
     let fake = FakeHost::start(&host);
-    let mut ui = ui_next(&setup.controller, "laptop").await;
+    let mut ui = ui(&setup.controller, "laptop").await;
     agentd.wait_connected(1).await;
     let id = machine_id(&add_machine(&mut ui, &host, "devbox").await);
 
@@ -132,7 +132,7 @@ async fn host_requests_are_routed_and_answered_verbatim() {
     result(agentd.response(&HostOpId::new("c3")).await);
     assert!(agentd.responses(&HostOpId::new("w1")).is_empty());
 
-    // The next UI's fs.list goes to the host daemon.
+    // The UI's fs.list goes to the host daemon.
     let listing = ui
         .ok(
             "fs.list",
@@ -151,7 +151,7 @@ async fn unanswered_requests_are_resent_after_a_reconnect() {
     let host = RemoteHost::start().await;
     let fake = FakeHost::start(&host);
     let relay = Relay::start(host.port()).await;
-    let mut ui = ui_next(&setup.controller, "laptop").await;
+    let mut ui = ui(&setup.controller, "laptop").await;
     agentd.wait_connected(1).await;
     let id = machine_id(&add_machine_at(&mut ui, &host, "devbox", relay.port).await);
     let first = agentd
@@ -200,7 +200,7 @@ async fn a_host_restart_reports_a_new_epoch_and_lost_calls() {
     let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
     let host = RemoteHost::start().await;
     let fake = FakeHost::start(&host);
-    let mut ui = ui_next(&setup.controller, "laptop").await;
+    let mut ui = ui(&setup.controller, "laptop").await;
     agentd.wait_connected(1).await;
     let id = machine_id(&add_machine(&mut ui, &host, "devbox").await);
     let old = fake.epoch();
@@ -231,7 +231,7 @@ async fn an_agentd_reconnect_keeps_calls_with_their_host() {
     let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
     let host = RemoteHost::start().await;
     let fake = FakeHost::start(&host);
-    let mut ui = ui_next(&setup.controller, "laptop").await;
+    let mut ui = ui(&setup.controller, "laptop").await;
     agentd.wait_connected(1).await;
     let id = machine_id(&add_machine(&mut ui, &host, "devbox").await);
 
@@ -258,7 +258,7 @@ async fn machine_names_and_the_grace_setting_reach_the_agent_daemon() {
     let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
     let host = RemoteHost::start().await;
     let _fake = FakeHost::start(&host);
-    let mut ui = ui_next(&setup.controller, "laptop").await;
+    let mut ui = ui(&setup.controller, "laptop").await;
     agentd.wait_connected(1).await;
     let id = add_machine(&mut ui, &host, "devbox").await;
     assert_eq!(ui.mirror.machine(&id)["grace_s"], 600);
@@ -318,7 +318,7 @@ async fn the_real_host_daemon_runs_routed_calls_across_a_link_drop() {
     let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
     let host = RemoteHost::start().await;
     let relay = Relay::start(host.port()).await;
-    let mut ui = ui_next(&setup.controller, "laptop").await;
+    let mut ui = ui(&setup.controller, "laptop").await;
     agentd.wait_connected(1).await;
     let id = machine_id(&add_machine_at(&mut ui, &host, "devbox", relay.port).await);
     agentd

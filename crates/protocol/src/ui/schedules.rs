@@ -1,17 +1,16 @@
 //! Schedules: owned by the controller, each wakes one session with a canned message.
 //!
-//! The scheduler fires `session.prompt` with op id `<schedule id>:<scheduled unix ms>`, so a
-//! restart or retry can never double-fire. The run's trigger shows as `schedule: <name>`.
-//! Closing the session disables its schedules. Not exposed to agents.
-//!
-//! **Deprecated:** [`Schedule`] and [`SchedulesCreateParams`] (which name the session's machine)
-//! are replaced by those of [`crate::ui::next`]; the spec, policy, outcome and update types stay.
+//! The scheduler fires `session.prompt` at the agent daemon with op id
+//! `<schedule id>:<scheduled unix ms>`, so a restart or retry can never double-fire. A due time
+//! while the agent daemon can't be reached stays `pending_run` until `next_run`, then is
+//! missed. The run's trigger shows as `schedule: <name>`. Closing or deleting the session
+//! disables its schedules. Not exposed to agents.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::daemon::IfBusy;
-use crate::ids::{MachineId, ScheduleId, SessionId, UnixMillis};
+use crate::agentd::IfBusy;
+use crate::ids::{ScheduleId, SessionId, UnixMillis};
 
 /// When a schedule fires.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -87,8 +86,6 @@ pub struct ScheduleRun {
 pub struct Schedule {
     /// The schedule.
     pub id: ScheduleId,
-    /// The session's machine.
-    pub machine_id: MachineId,
     /// The session it wakes.
     pub session_id: SessionId,
     /// Display name.
@@ -108,8 +105,8 @@ pub struct Schedule {
     /// The next due time, while enabled. While a run is pending, it is also that run's
     /// deadline.
     pub next_run: Option<UnixMillis>,
-    /// A due time that hasn't been delivered yet because the machine is unreachable. It is
-    /// retried until `next_run`, then recorded as missed.
+    /// A due time that hasn't been delivered yet because the agent daemon can't be reached. It
+    /// is retried until `next_run`, then recorded as missed.
     pub pending_run: Option<UnixMillis>,
     /// Recent due times, newest first (bounded).
     pub recent_runs: Vec<ScheduleRun>,
@@ -120,8 +117,6 @@ pub struct Schedule {
 /// Params of `schedules.create`. Absent fields take the defaults noted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct SchedulesCreateParams {
-    /// The session's machine.
-    pub machine_id: MachineId,
     /// The session.
     pub session_id: SessionId,
     /// Display name.

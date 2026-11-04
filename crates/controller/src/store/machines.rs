@@ -2,7 +2,7 @@
 //! last learned about it. Every setter updates only its own columns.
 
 use controlroom_protocol::UnixMillis;
-use controlroom_protocol::daemon::{DaemonSettings, DoctorReport};
+use controlroom_protocol::host::DoctorReport;
 use controlroom_protocol::ids::{DaemonId, KeyId, MachineId};
 use controlroom_protocol::version::Capability;
 use rusqlite::OptionalExtension;
@@ -49,8 +49,6 @@ pub struct MachineRow {
     pub last_seen: Option<UnixMillis>,
     /// The latest doctor report.
     pub doctor: Option<DoctorReport>,
-    /// The daemon's settings, as last reported.
-    pub daemon_settings: Option<DaemonSettings>,
     /// When it was added.
     pub created_at: UnixMillis,
 }
@@ -97,7 +95,7 @@ pub struct Machines<'a> {
 
 const COLUMNS: &str = "id, name, host, port, username, key_id, auth_key_id, host_key, \
                        auto_upgrade, daemon_id, home, arch, version, last_seen, doctor, \
-                       daemon_settings, created_at, capabilities, grace_s";
+                       created_at, capabilities, grace_s";
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<MachineRow> {
     Ok(MachineRow {
@@ -116,10 +114,9 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<MachineRow> {
         version: row.get(12)?,
         last_seen: row.get::<_, Option<i64>>(13)?.map(UnixMillis),
         doctor: json_col_opt(row, 14)?,
-        daemon_settings: json_col_opt(row, 15)?,
-        created_at: UnixMillis(row.get(16)?),
-        capabilities: json_col(row, 17)?,
-        grace_s: row.get(18)?,
+        created_at: UnixMillis(row.get(15)?),
+        capabilities: json_col(row, 16)?,
+        grace_s: row.get(17)?,
     })
 }
 
@@ -249,15 +246,6 @@ impl<'a> Machines<'a> {
     /// Stores the latest doctor report.
     pub fn set_doctor(&self, id: MachineId, report: &DoctorReport) -> StoreResult<bool> {
         self.set(id, "doctor", &to_json(report)?)
-    }
-
-    /// Stores the daemon's settings as it reported them.
-    pub fn set_daemon_settings(
-        &self,
-        id: MachineId,
-        settings: &DaemonSettings,
-    ) -> StoreResult<bool> {
-        self.set(id, "daemon_settings", &to_json(settings)?)
     }
 
     /// Records a successful contact; absent fields keep their stored values.

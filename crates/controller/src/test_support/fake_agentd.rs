@@ -13,14 +13,14 @@ use controlroom_protocol::agentd::notifications::{
     HostOpsRequest, HostOpsWithdraw, SessionsEvents,
 };
 use controlroom_protocol::agentd::{
-    HostMachine, HostOpRequest, HostOpsNotifyParams, HostOpsRequestParams, HostOpsRespondParams,
-    HostOpsSubscribeResult, HostOpsWithdrawParams, SessionCreateParams, SessionCreateResult,
-    SessionSummary, SessionsChange, SessionsEvent, SessionsEventsParams, SessionsSnapshot,
-    SessionsSubscribeParams, SessionsSubscribeResult,
+    DaemonSettings, HelloResult, HostMachine, HostOpRequest, HostOpsNotifyParams,
+    HostOpsRequestParams, HostOpsRespondParams, HostOpsSubscribeResult, HostOpsWithdrawParams,
+    PromptResult, RetentionPolicy, SessionCreateParams, SessionCreateResult, SessionEventsParams,
+    SessionsChange, SessionsEvent, SessionsEventsParams, SessionsSnapshot, SessionsSubscribeParams,
+    SessionsSubscribeResult,
 };
-use controlroom_protocol::daemon::{DaemonSettings, HelloResult, PromptResult, RetentionPolicy};
 use controlroom_protocol::ids::{DaemonId, HostOpId, SessionId, SubscriptionId, WorkspaceId};
-use controlroom_protocol::session::{Availability, SessionState, Workspace};
+use controlroom_protocol::session::{Availability, SessionState, SessionSummary, Workspace};
 use controlroom_protocol::ui::Connectivity;
 use controlroom_protocol::{
     AGENTD_PROTOCOL_VERSION, ErrorData, Rev, RpcError, RpcOutcome, UnixMillis,
@@ -275,7 +275,7 @@ impl FakeAgentd {
             panic!("session {id} has no subscription");
         };
         peer.notify::<controlroom_protocol::agentd::notifications::SessionEvents>(
-            controlroom_protocol::daemon::SessionEventsParams {
+            SessionEventsParams {
                 subscription_id: *sub,
                 id,
                 head_seq: controlroom_protocol::Seq(seq),

@@ -8,7 +8,7 @@
 
 use std::str::FromStr;
 
-use controlroom_protocol::daemon::OptionValue;
+use controlroom_protocol::agentd::OptionValue;
 use controlroom_protocol::ids::{OpId, QueueId};
 use controlroom_protocol::session::{
     Question, RequestKind, RequestOption, Response, RunOutcome, SessionOption,

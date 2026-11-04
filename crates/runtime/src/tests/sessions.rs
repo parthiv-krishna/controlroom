@@ -290,7 +290,7 @@ fn set(id: SessionId, option: &str, value: OptionValue) -> SessionSetOptionParam
     }
 }
 
-fn model(s: &controlroom_protocol::agentd::SessionSummary) -> String {
+fn model(s: &controlroom_protocol::session::SessionSummary) -> String {
     match &s.options[0].control {
         OptionControl::Select { value, .. } => value.clone(),
         _ => unreachable!(),

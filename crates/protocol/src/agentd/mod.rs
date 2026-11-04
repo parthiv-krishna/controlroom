@@ -1,7 +1,7 @@
 //! The agent daemon API: controller ↔ `controlroom-agentd`, over the local unix socket
 //! `/run/controlroom-agent/agentd.sock`.
 //!
-//! The agent daemon runs every pi session on the server. It is the old daemon API generalized:
+//! The agent daemon runs every pi session on the server. It is session-scoped:
 //! sessions are global (they name workspaces instead of a cwd, and nothing session-scoped
 //! carries a machine), the mailbox is local (no outbox or inbox), and hosts are reached through
 //! the controller's `hostops` bridge (see [`hostops`](self::HostOpsRequestParams)), so the agent
@@ -15,8 +15,8 @@
 //!    `hostops.machines`. After a reconnect it resubscribes with the last `rev` / `head_seq`.
 //! 3. Mutating commands carry an `op_id`; repeating one returns the original result.
 //!
-//! The session-scoped command types, the `hello` types and the settings live here; the
-//! deprecated daemon API ([`crate::daemon`]) re-exports them until it is deleted.
+//! The session-scoped command types, the `hello` types and the settings live here; the UI API
+//! reuses them for its pass-through methods.
 
 mod commands;
 mod create;

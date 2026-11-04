@@ -1,4 +1,4 @@
-//! Ref-counted session subscriptions: one daemon `session.subscribe` per session, fanned out to
+//! Ref-counted session subscriptions: one agent daemon `session.subscribe` per session, fanned out to
 //! every UI subscription on it, so several tabs share one daemon subscription.
 //!
 //! Each UI subscriber has its own `delivered` seq (the last `head_seq` it was sent). The shared
@@ -17,28 +17,17 @@
 use std::collections::BTreeMap;
 
 use controlroom_protocol::Seq;
-use controlroom_protocol::daemon::SessionEventsParams;
-use controlroom_protocol::ids::{MachineId, SessionId, SubscriptionId};
+use controlroom_protocol::agentd::SessionEventsParams;
+use controlroom_protocol::ids::{SessionId, SubscriptionId};
 use controlroom_protocol::session::SessionDetail;
 use controlroom_protocol::timeline::{RawFrame, TimelineOp};
 
 use super::clients::ClientId;
 
-/// Where a session lives: on a legacy daemon's machine (old UI API), or on the agent daemon
-/// (global sessions).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum Source {
-    /// A legacy daemon.
-    Machine(MachineId),
-    /// The agent daemon.
-    Agentd,
-}
-
 /// Identifies a fanout: a session, whether it carries the timeline, and the owning UI
 /// subscription for raw-frame fanouts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct TimelineKey {
-    pub source: Source,
     pub session_id: SessionId,
     /// `Some` for a dedicated raw-frame fanout.
     pub raw_owner: Option<SubscriptionId>,

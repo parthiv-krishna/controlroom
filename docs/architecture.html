@@ -246,7 +246,7 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 <li><code>state.subscribe</code> (epoch+rev cursor): one aggregated feed of machines (incl. connectivity and doctor), sessions (global, each with its workspaces, their availability and its shells, plus its project membership: the projects of its linked tasks, else "Unassigned"), <code>overlaps[]</code> (directories used by several open sessions, for the warning), projects, tasks, grants, schedules, devices and contact requests.</li>
 <li><b>Pass-through</b> of every session/queue/todo/job/request command to the agent daemon, unchanged (no <code>machine_id</code>). <code>fs.list</code> names a machine; <code>doctor.report</code> a machine or the server.</li>
 <li><code>session.subscribe</code>: ref-counted, shared by tabs, resumed without duplicates.</li>
-<li><code>machines.*</code> (add → add_confirm, confirm_host_key, remove, reconnect, upgrade, set_settings incl. auto_upgrade), <code>keys.*</code> (incl. rotate), <code>projects.*</code> (name and color: projects are task groups), <code>tasks.*</code> (project_ids, session links, checklist), <code>grants.*</code>, <code>notifications.*</code> (web push only), <code>schedules.*</code>, <code>sandbox.*</code>, <code>client.focus</code>.</li>
+<li><code>machines.*</code> (add → add_confirm, confirm_host_key, remove, reconnect, upgrade, set_settings incl. auto_upgrade and the tool-call grace), <code>keys.*</code> (incl. rotate), <code>projects.*</code> (name and color: projects are task groups), <code>tasks.*</code> (project_ids, session links, checklist), <code>grants.*</code>, <code>notifications.*</code> (web push only), <code>schedules.*</code>, <code>sandbox.*</code>, <code>client.focus</code>.</li>
 <li>Connectivity per machine: connected · connecting · unreachable · incompatible · action_required{host_key_changed | auth_failed | host_key_unconfirmed | controller_conflict} · plus <code>update_available</code>.</li>
 </ul>
 <h3>5.5 Agent API (extension ↔ agent daemon)</h3>
@@ -589,7 +589,7 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <li>a <b>session-stream store</b> (several concurrent subscriptions for the parent and children, per-item fine-grained state, in-place text appends, eviction);</li>
 <li>one <b>RequestCard</b> for permission, question, dialog, sandbox, spawn, contact, privileged and terminal-input requests. Questions are always non-blocking (the lighter tier); approvals are blocking;</li>
 <li><b>workspaces:</b> the new-session dialog picks one or more <code>machine:path</code>s (<code>fs.list</code> per machine); the session header shows each workspace with its availability ("devbox unreachable since 10:42") and an <b>overlap warning</b> when another open session uses the same directory;</li>
-<li><b>project rail by task groups:</b> a session appears under each project of its linked tasks, else under <b>Unassigned</b>; no location prefixes;</li>
+<li><b>project rail by task groups:</b> a session appears under each project of its linked tasks, else under <b>Unassigned</b>; no location prefixes. The session list groups by task (default), by machine (a session is listed under every machine it touches) or by state, and filters by state, task and machine;</li>
 <li><b>terminals per shell</b> (one tab per named shell, with its machine and cwd) in the terminal dock;</li>
 <li>a <b>todo panel</b> with an auto-continue control;</li>
 <li>a <b>subagent tree</b>, a jobs strip and message entries;</li>

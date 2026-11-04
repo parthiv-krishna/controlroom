@@ -4,8 +4,8 @@
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::ids::{DeviceId, GrantId, SessionId};
 use controlroom_protocol::session::DeviceRef;
+use controlroom_protocol::ui::ContactGrant;
 use controlroom_protocol::ui::ContactScope;
-use controlroom_protocol::ui::next::ContactGrant;
 
 use super::{OwnerId, Store, StoreResult, enum_col, enum_str, parsed_col};
 

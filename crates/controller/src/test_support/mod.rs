@@ -366,7 +366,7 @@ pub struct Mirror {
     pub schedules: HashMap<String, Value>,
     /// Grants.
     pub grants: HashMap<String, Value>,
-    /// Overlaps (next UI API).
+    /// Overlaps.
     pub overlaps: Value,
     /// How often each machine became `connected`.
     pub connected_count: HashMap<String, u32>,

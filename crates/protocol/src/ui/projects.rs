@@ -1,32 +1,16 @@
 //! Projects and tasks (the kanban board).
 //!
-//! **Deprecated** with the old UI method table: location prefixes and machine-scoped
-//! [`SessionLink`]s go away. [`crate::ui::next`] has projects as task groups and tasks that link
-//! global session ids. [`TaskStatus`], [`Priority`], [`ChecklistItem`] and the checklist and
-//! move params stay.
+//! A project has no location: it is a named, colored group of tasks. A session belongs to the
+//! projects of the tasks that link it (possibly several); a session no task links is
+//! **Unassigned**. The controller computes the membership ([`super::FeedSession::project_ids`]);
+//! clients derive nothing.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{
-    ChecklistItemId, MachineId, ProjectId, RemotePath, SessionId, TaskId, UnixMillis,
-};
+use crate::ids::{ChecklistItemId, ProjectId, SessionId, TaskId, UnixMillis};
 
-/// One location filter of a project; matches the directory and everything below it.
-///
-/// - machine + path: that directory on that machine;
-/// - no machine + path (e.g. `~/src/app`): that path on any machine;
-/// - machine + empty path: the whole machine.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct LocationPrefix {
-    /// The machine, or `null` for any machine.
-    pub machine_id: Option<MachineId>,
-    /// The path prefix; empty for the whole machine.
-    pub path_prefix: RemotePath,
-}
-
-/// A project: a saved view over sessions and tasks. Tasks belong to it when assigned to it;
-/// sessions when their location matches a prefix or they are linked to one of its tasks.
+/// A project: a named, colored group of tasks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Project {
     /// The project.
@@ -35,8 +19,6 @@ pub struct Project {
     pub name: String,
     /// A CSS color, e.g. `"#a78bfa"`.
     pub color: String,
-    /// Sessions at these locations belong to the project.
-    pub location_prefixes: Vec<LocationPrefix>,
 }
 
 /// Params of `projects.create`.
@@ -46,8 +28,6 @@ pub struct ProjectsCreateParams {
     pub name: String,
     /// A CSS color.
     pub color: String,
-    /// Location filters.
-    pub location_prefixes: Vec<LocationPrefix>,
 }
 
 /// Params of `projects.update`. Absent fields are left unchanged.
@@ -61,9 +41,6 @@ pub struct ProjectsUpdateParams {
     /// New color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
-    /// New location filters (replaces the list).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub location_prefixes: Option<Vec<LocationPrefix>>,
 }
 
 /// Params of `projects.delete`.
@@ -120,17 +97,8 @@ pub struct ChecklistItem {
     pub done: bool,
 }
 
-/// A link from a controller object (a task, a contact grant) to a session. Never
-/// cascade-deleted: a link whose session or machine is gone renders as "missing session".
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
-pub struct SessionLink {
-    /// The session's machine.
-    pub machine_id: MachineId,
-    /// The session.
-    pub session_id: SessionId,
-}
-
-/// A kanban task. Sessions linked to the same task may see and message each other.
+/// A kanban task. Sessions linked to the same task may see and message each other, and belong
+/// to the task's projects.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct Task {
     /// The task.
@@ -149,8 +117,8 @@ pub struct Task {
     pub notes: String,
     /// Checklist.
     pub checklist: Vec<ChecklistItem>,
-    /// Linked sessions, possibly dangling.
-    pub links: Vec<SessionLink>,
+    /// Linked sessions, possibly dangling (a deleted session renders as "missing session").
+    pub links: Vec<SessionId>,
     /// When created.
     pub created_at: UnixMillis,
     /// When last changed.
@@ -182,7 +150,7 @@ pub struct TasksCreateParams {
     pub checklist: Vec<String>,
     /// Linked sessions; default none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub links: Vec<SessionLink>,
+    pub links: Vec<SessionId>,
 }
 
 /// Params of `tasks.update`. Absent fields are left unchanged.
@@ -227,9 +195,8 @@ pub struct TaskRef {
 pub struct TasksLinkParams {
     /// The task.
     pub task_id: TaskId,
-    /// The session link to add or remove.
-    #[serde(flatten)]
-    pub link: SessionLink,
+    /// The session to link or unlink.
+    pub session_id: SessionId,
 }
 
 /// Params of `tasks.checklist_add`.

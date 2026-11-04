@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use controlroom_protocol::NotificationMethod;
 use controlroom_protocol::RpcNotification;
 use controlroom_protocol::ids::{DeviceId, SessionId, SubscriptionId};
-use controlroom_protocol::ui;
+use controlroom_protocol::ui::StateChange;
 use tokio::sync::{mpsc, watch};
 
 /// Identifies one UI connection within a hub.
@@ -72,21 +72,12 @@ impl ClientSink {
     }
 }
 
-/// A state subscription of the old or the next UI API; its buffer is `Some` until the
-/// subscribe response was sent.
-pub(crate) enum StateSub {
-    /// The old UI API (`ui::StateEvent`).
-    Legacy(Option<Vec<ui::StateChange>>),
-    /// The next UI API (`ui::next::StateEvent`).
-    Next(Option<Vec<ui::next::StateChange>>),
-}
-
 /// What a client shows, for push deduplication.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Focus {
     /// Its device.
     pub device_id: DeviceId,
-    /// The open session (session ids are unique across machines).
+    /// The open session.
     pub session_id: Option<SessionId>,
     /// Whether the page is visible and focused.
     pub visible: bool,
@@ -95,8 +86,8 @@ pub(crate) struct Focus {
 /// A connected UI client.
 pub(crate) struct ClientEntry {
     pub sink: ClientSink,
-    /// State subscriptions.
-    pub state_subs: HashMap<SubscriptionId, StateSub>,
+    /// State subscriptions, with the changes buffered until the subscribe response was sent.
+    pub state_subs: HashMap<SubscriptionId, Option<Vec<StateChange>>>,
     /// What it shows, for push deduplication.
     pub focus: Option<Focus>,
     /// Its device, from `hello` or `devices.register`.

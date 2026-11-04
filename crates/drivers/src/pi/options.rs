@@ -1,6 +1,6 @@
 //! pi's model and thinking level as neutral select options.
 
-use controlroom_protocol::daemon::OptionValue;
+use controlroom_protocol::agentd::OptionValue;
 use controlroom_protocol::session::{OptionChoice, OptionControl, SessionOption};
 use serde_json::{Value, json};
 

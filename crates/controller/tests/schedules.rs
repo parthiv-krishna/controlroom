@@ -16,7 +16,7 @@ use controlroom_protocol::ids::{MachineId, SessionId};
 use controlroom_protocol::session::{SessionState, WorkspaceSpec};
 use controlroom_protocol::ui::SchedulesUpdateParams;
 use serde_json::{Value, json};
-use support::{config, ui_next};
+use support::{config, ui};
 
 /// Monday 2025-01-06 08:00 UTC.
 const T0: i64 = 1_736_150_400_000;
@@ -112,7 +112,7 @@ async fn a_due_time_fires_once_across_restarts() {
     let session = session(&agentd, SessionState::Idle);
 
     let first = start(&store, &clock, &agentd);
-    let mut a = ui_next(&first, "laptop").await;
+    let mut a = ui(&first, "laptop").await;
     let hello = a
         .ok(
             "hello",
@@ -163,7 +163,7 @@ async fn a_due_time_fires_once_across_restarts() {
     assert!(rewound);
 
     let second = start(&store, &clock, &agentd);
-    let mut b = ui_next(&second, "laptop").await;
+    let mut b = ui(&second, "laptop").await;
     let s = wait_run(&mut b, &id, T0 + MIN, "fired").await;
     assert_eq!(s["recent_runs"].as_array().unwrap().len(), 1, "{s}");
     assert_eq!(
@@ -196,7 +196,7 @@ async fn a_busy_session_skips_or_queues() {
     let agentd = FakeAgentd::start().await;
     let session = session(&agentd, SessionState::Working);
     let c = start(&dir.path().join("c.sqlite"), &clock, &agentd);
-    let mut a = ui_next(&c, "laptop").await;
+    let mut a = ui(&c, "laptop").await;
     wait_state(&mut a, session, "working").await;
     let skip = every_minute(&mut a, session, "skipper", json!({"if_busy": "skip"})).await;
     let queue = every_minute(&mut a, session, "queuer", json!({})).await;
@@ -221,7 +221,7 @@ async fn downtime_skips_or_runs_once() {
     let session = session(&agentd, SessionState::Idle);
 
     let first = start(&store, &clock, &agentd);
-    let mut a = ui_next(&first, "laptop").await;
+    let mut a = ui(&first, "laptop").await;
     let skip = every_minute(&mut a, session, "skipper", json!({})).await;
     let once = every_minute(&mut a, session, "catcher", json!({"missed": "run_once"})).await;
     drop(a);
@@ -230,7 +230,7 @@ async fn downtime_skips_or_runs_once() {
     // Down for three due times (+1, +2 and +3 min).
     time.advance(Duration::from_secs(210));
     let second = start(&store, &clock, &agentd);
-    let mut b = ui_next(&second, "laptop").await;
+    let mut b = ui(&second, "laptop").await;
     let s = wait_run(&mut b, &skip, T0 + MIN, "missed").await;
     let run = &s["recent_runs"][0];
     assert_eq!(
@@ -264,7 +264,7 @@ async fn an_unreachable_agent_daemon_is_retried_until_the_next_due_time() {
     let agentd = FakeAgentd::start().await;
     let session = session(&agentd, SessionState::Idle);
     let c = start(&dir.path().join("c.sqlite"), &clock, &agentd);
-    let mut a = ui_next(&c, "laptop").await;
+    let mut a = ui(&c, "laptop").await;
     agentd.wait_connected(1).await;
     let id = every_minute(&mut a, session, "inbox", json!({})).await;
 
@@ -329,7 +329,7 @@ async fn closed_and_deleted_sessions_disable_their_schedules() {
     let agentd = FakeAgentd::start().await;
     let session = session(&agentd, SessionState::Idle);
     let c = start(&dir.path().join("c.sqlite"), &clock, &agentd);
-    let mut a = ui_next(&c, "laptop").await;
+    let mut a = ui(&c, "laptop").await;
     wait_state(&mut a, session, "idle").await;
     let id = every_minute(&mut a, session, "inbox", json!({})).await;
 

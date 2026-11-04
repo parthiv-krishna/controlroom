@@ -78,6 +78,6 @@ pub use controller::{Controller, StartError};
 pub use controlroom_client_core::MasterKey;
 pub use hub::CloseReason;
 pub use notify::{PushConfig, PushOutcome, PushSender, VapidKey, VapidKeyError, WebPushSender};
-pub use rpc::{Closed, UiApi, UiClient, UiReceiver, UiSender};
+pub use rpc::{Closed, UiClient, UiReceiver, UiSender};
 pub use schedules::{Clock, ManualClock};
 pub use store::OwnerId;

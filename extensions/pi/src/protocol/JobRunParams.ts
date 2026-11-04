@@ -16,12 +16,12 @@ call_id: string,
 command: string, 
 /**
  * With remote tools: the machine's display name (one of the session's workspaces);
- * default the primary workspace's. The old daemon ignores it.
+ * default the primary workspace's.
  */
 machine?: string | null, 
 /**
  * The working directory: absolute or relative to the (machine's primary) workspace root,
- * and inside it (the old daemon: relative to the session's cwd).
+ * and inside it.
  */
 cwd?: RemotePath | null, 
 /**

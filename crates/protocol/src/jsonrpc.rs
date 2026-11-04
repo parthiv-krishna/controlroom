@@ -211,7 +211,7 @@ pub struct Ack {}
 pub struct NoParams {}
 
 /// Ties a request method name to its params and result types. Implemented by the zero-sized
-/// marker types in [`crate::daemon::methods`] and [`crate::ui::methods`].
+/// marker types in [`crate::agentd::methods`] and [`crate::ui::methods`].
 pub trait Method {
     /// The JSON-RPC method name.
     const NAME: &'static str;
@@ -222,7 +222,7 @@ pub trait Method {
 }
 
 /// Ties a notification name to its params type. Implemented by the marker types in
-/// [`crate::daemon::notifications`] and [`crate::ui::notifications`].
+/// [`crate::agentd::notifications`] and [`crate::ui::notifications`].
 pub trait NotificationMethod {
     /// The JSON-RPC method name of the notification.
     const NAME: &'static str;

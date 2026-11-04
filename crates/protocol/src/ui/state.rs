@@ -1,30 +1,39 @@
-//! The aggregated state feed (`state.subscribe`): machines, sessions of every machine, and the
-//! controller's own data, behind one epoch+rev cursor.
-//!
-//! **Deprecated** with the old UI method table: [`crate::ui::next`] has the feed with global
-//! sessions (no [`MachineSession`], no `stale`), project membership and workspace overlaps.
-//! [`StateCursor`] and [`StateSubscribeParams`] stay.
+//! The aggregated state feed (`state.subscribe`): machines, the agent daemon's global sessions
+//! with their project membership, workspace overlaps, and the controller's own data, behind
+//! one epoch+rev cursor.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ids::{
-    DeviceId, Epoch, GrantId, MachineId, ProjectId, Rev, ScheduleId, SessionId, SubscriptionId,
-    TaskId,
+    DeviceId, Epoch, GrantId, MachineId, ProjectId, RemotePath, Rev, ScheduleId, SessionId,
+    SubscriptionId, TaskId,
 };
 use crate::session::SessionSummary;
 use crate::ui::{ContactGrant, Device, Machine, Project, Schedule, Task};
 
-/// A daemon session summary tagged with its machine.
+/// A session in the state feed: the agent daemon's summary plus its project membership.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-pub struct MachineSession {
-    /// The session's machine.
-    pub machine_id: MachineId,
-    /// The machine is unreachable: this is the last known state.
-    pub stale: bool,
-    /// The daemon's summary.
+pub struct FeedSession {
+    /// The projects of the tasks that link the session, in project order; empty means
+    /// "Unassigned".
+    pub project_ids: Vec<ProjectId>,
+    /// The agent daemon's summary.
     #[serde(flatten)]
     pub session: SessionSummary,
+}
+
+/// A directory used by several open sessions' workspaces at once. Allowed, but the UI warns:
+/// their edits can collide (each write is compare-and-swap, so a collision is a `conflict`,
+/// never a lost update).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Overlap {
+    /// The machine.
+    pub machine_id: MachineId,
+    /// The shared directory (the workspaces' resolved root).
+    pub path: RemotePath,
+    /// The sessions sharing it (at least two), oldest first.
+    pub session_ids: Vec<SessionId>,
 }
 
 /// A position in the state feed. A new `epoch` (the controller restarted) invalidates every
@@ -50,8 +59,10 @@ pub struct StateSubscribeParams {
 pub struct StateSnapshot {
     /// Every machine.
     pub machines: Vec<Machine>,
-    /// Every known session on every machine.
-    pub sessions: Vec<MachineSession>,
+    /// Every session.
+    pub sessions: Vec<FeedSession>,
+    /// Directories shared by several open sessions.
+    pub overlaps: Vec<Overlap>,
     /// Every project.
     pub projects: Vec<Project>,
     /// Every task.
@@ -81,27 +92,31 @@ pub struct StateSubscribeResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StateEvent {
-    /// A machine was added or changed.
+    /// A machine was added or changed. Sessions with a workspace on it are upserted too when
+    /// their workspace availability changes.
     MachineUpserted {
         /// The machine.
         machine: Box<Machine>,
     },
-    /// A machine was removed; drop its sessions too.
+    /// A machine was removed (its sessions stay; their workspaces there become unavailable).
     MachineRemoved {
         /// The machine.
         machine_id: MachineId,
     },
-    /// A session appeared or changed.
+    /// A session appeared or changed, or its project membership changed.
     SessionUpserted {
         /// The session.
-        session: Box<MachineSession>,
+        session: Box<FeedSession>,
     },
-    /// A session was deleted on its machine.
+    /// A session was deleted.
     SessionRemoved {
-        /// The machine.
-        machine_id: MachineId,
         /// The session.
         session_id: SessionId,
+    },
+    /// The overlapping directories changed; replaces the whole list.
+    OverlapsChanged {
+        /// The new list.
+        overlaps: Vec<Overlap>,
     },
     /// A project was created or changed.
     ProjectUpserted {

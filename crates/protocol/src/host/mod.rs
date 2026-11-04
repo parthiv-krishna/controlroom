@@ -1,7 +1,6 @@
 //! The host API: controller ↔ `controlroomd` in the host role, on every execution machine.
 //!
-//! Newline-delimited JSON-RPC over an SSH exec channel running `controlroomd connect`, as the
-//! daemon API before it. A host keeps no sessions: it knows **workspaces** (one session's
+//! Newline-delimited JSON-RPC over an SSH exec channel running `controlroomd connect`. A host keeps no sessions: it knows **workspaces** (one session's
 //! directory with its own sandbox profile), **shells** (PTY supervisors in a workspace),
 //! **jobs**, and a **journal** of tool calls keyed by [`crate::ids::CallId`]. pi, its
 //! extensions and model credentials never run here.

@@ -14,7 +14,7 @@ use controlroom_controller::test_support::{
 use controlroom_protocol::ids::SessionId;
 use controlroom_protocol::session::{Attention, Request, WorkspaceSpec};
 use serde_json::json;
-use support::{add_machine, controller, ui, ui_next};
+use support::{add_machine, controller, ui};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_installs() {
@@ -61,15 +61,12 @@ async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_instal
     assert_eq!(machine["update_available"], false);
     assert_eq!(machine["arch"], std::env::consts::ARCH);
     assert!(machine["daemon_id"].is_string());
-    // A host daemon has no daemon settings (they belong to the agent daemon).
-    assert!(machine["settings"].is_null(), "{machine}");
 
     // The same host can't be added twice.
     ui.err("machines.add", new, "invalid_params").await;
 
-    // A directory listing from the host daemon (next UI API).
-    let mut next = ui_next(&setup.controller, "laptop").await;
-    let listing = next
+    // A directory listing from the host daemon.
+    let listing = ui
         .ok("fs.list", json!({"machine_id": id, "path": host.work()}))
         .await;
     assert!(listing["entries"].is_array());
@@ -83,8 +80,8 @@ async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_instal
     })
     .await;
     ui.err(
-        "session.cancel",
-        json!({"machine_id": id, "op_id": op(), "id": "01HZY3K6W8Q9X2V4N7B5C1D3E6"}),
+        "fs.list",
+        json!({"machine_id": id, "path": "~"}),
         "machine_unavailable",
     )
     .await;
@@ -199,8 +196,7 @@ async fn an_unreachable_machine_does_not_block_others() {
 
     // Another machine is added and answers meanwhile.
     let machine = add_machine(&mut ui, &host, "devbox").await;
-    let mut next = ui_next(&controller, "laptop").await;
-    let listing = next
+    let listing = ui
         .ok(
             "fs.list",
             json!({"machine_id": machine, "path": host.work(), "include_files": true}),
@@ -209,7 +205,7 @@ async fn an_unreachable_machine_does_not_block_others() {
     assert!(listing["entries"].is_array(), "{listing}");
     // Calls to the stuck machine fail at once instead of waiting.
     let started = std::time::Instant::now();
-    next.err(
+    ui.err(
         "fs.list",
         json!({"machine_id": stuck, "path": "~"}),
         "machine_unavailable",
@@ -278,8 +274,8 @@ async fn approvals_push_once_per_device_and_the_answer_is_attributed() {
     config.agentd_socket = Some(agentd.socket().to_owned());
     let controller = controlroom_controller::Controller::start(config).unwrap();
     let host = RemoteHost::start().await;
-    let mut laptop = ui_next(&controller, "laptop").await;
-    let mut phone = ui_next(&controller, "phone").await;
+    let mut laptop = ui(&controller, "laptop").await;
+    let mut phone = ui(&controller, "phone").await;
     for (ui, (device, n)) in [(&mut laptop, ("laptop", 1)), (&mut phone, ("phone", 2))] {
         ui.ok(
             "notifications.subscribe",

@@ -1,5 +1,5 @@
-//! Global sessions: the summary every client sees, and the agent daemon's sessions feed
-//! (`sessions.subscribe`, `sessions.events`).
+//! The agent daemon's sessions feed (`sessions.subscribe`, `sessions.events`) of global
+//! sessions ([`SessionSummary`]).
 //!
 //! Sessions belong to the server, not to a machine: a session's files are in its workspaces,
 //! which may sit on several machines. A session never goes stale with a machine; only its
@@ -9,73 +9,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::agentd::DaemonSettings;
-use crate::ids::{Rev, Seq, SessionId, SubscriptionId, UnixMillis};
-use crate::session::{
-    Attention, AttentionRollup, ContextUsage, LiveWork, QueueStatus, Request, RunOutcome,
-    SandboxInfo, SessionOption, SessionState, Shell, TodoRollup, Workspace,
-};
-
-/// What every client knows about a session. Sent whole on every change.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-pub struct SessionSummary {
-    /// The session.
-    pub id: SessionId,
-    /// The user-set name, if any.
-    pub name: Option<String>,
-    /// The agent-reported title, if any. Clients show `name`, else `title`, else the primary
-    /// workspace.
-    pub title: Option<String>,
-    /// Its workspaces, the primary one first.
-    pub workspaces: Vec<Workspace>,
-    /// Its named shells, in creation order.
-    pub shells: Vec<Shell>,
-    /// When it was created.
-    pub created_at: UnixMillis,
-    /// When anything in the summary last changed.
-    pub updated_at: UnixMillis,
-    /// When it was closed, while closed.
-    pub closed_at: Option<UnixMillis>,
-    /// The parent session, for subagents.
-    pub parent_id: Option<SessionId>,
-    /// The state.
-    pub state: SessionState,
-    /// How the last run ended.
-    pub last_outcome: Option<RunOutcome>,
-    /// The last run's error, when it failed.
-    pub last_error: Option<String>,
-    /// The shared read cursor: everything up to here has been seen.
-    pub read_seq: Seq,
-    /// Where the last run ended (any ending: completed, failed, interrupted, reboot).
-    pub last_turn_end_seq: Seq,
-    /// Whether output after `read_seq` is unread.
-    pub unread: bool,
-    /// One line of at most 200 characters, plain text: the pending request, else the error,
-    /// else the running tool, else the last agent text. Updated at most once a second.
-    pub preview: String,
-    /// What the session needs from the user, if anything.
-    pub attention: Option<Attention>,
-    /// What its descendants need.
-    pub rollup: AttentionRollup,
-    /// Context usage, once reported.
-    pub context: Option<ContextUsage>,
-    /// Queue state.
-    pub queue: QueueStatus,
-    /// Pending requests, including descendants' (with `origin_child`).
-    pub requests: Vec<Request>,
-    /// The todo roll-up; `null` while the list is empty.
-    pub todo: Option<TodoRollup>,
-    /// Background work that will wake the agent (jobs, children, asks, waiting host calls).
-    pub live_work: LiveWork,
-    /// Agent options (model, thinking level, ...).
-    pub options: Vec<SessionOption>,
-    /// A live, ready agent process is attached: options can be changed and the agent's own
-    /// requests answered. Clients disable option pickers while it is `false`.
-    pub agent_live: bool,
-    /// The sandbox (one level for the agent and every workspace).
-    pub sandbox: SandboxInfo,
-    /// Whether the agent session can be reattached after it stops.
-    pub resumable: bool,
-}
+use crate::ids::{Rev, SessionId, SubscriptionId};
+use crate::session::SessionSummary;
 
 /// Params of `sessions.subscribe`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

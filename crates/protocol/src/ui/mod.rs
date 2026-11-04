@@ -1,26 +1,22 @@
 //! The UI API: browser ↔ controller, JSON-RPC over one WebSocket per tab.
 //!
-//! **Deprecated method table:** this module's [`UiRequest`] (sessions per machine) is replaced
-//! by [`next::UiRequest`] (global sessions on workspaces, projects as task groups). The types
-//! both share (machines, keys, devices, push, sandbox defaults, checklists) stay here; the ones
-//! that name a session's machine ([`MachineSession`], [`SessionLink`], [`Project`] with location
-//! prefixes, [`Task`], [`Schedule`], [`ContactGrant`], the state feed) go with the old table.
-//!
-//! The API mirrors the daemon's session commands with a `machine_id` added ([`OnMachine`]),
-//! aggregates every machine into one state feed (`state.subscribe`), and adds the controller's
-//! own data: machines, keys, projects, tasks, contact grants, devices, schedules, sandbox
-//! defaults and push.
+//! Sessions are global: they live on the agent daemon, have workspaces on one or more machines,
+//! and session commands pass through to the agent daemon unchanged (no `machine_id`). The
+//! state feed (`state.subscribe`) aggregates the machines, the agent daemon's sessions with
+//! their project membership and the workspaces several sessions share ([`Overlap`]), and the
+//! controller's own data: keys, projects (named groups of tasks), tasks, contact grants,
+//! devices, schedules, sandbox defaults and push. `fs.list` goes to a machine's host daemon,
+//! `doctor.report` to a host or the server.
 //!
 //! **Connection lifecycle:** `hello` (with the device id), `devices.register`, then
-//! `state.subscribe {since}` and `session.subscribe {machine_id, id, since_seq}` per open
-//! session. Session subscriptions are shared by the server across tabs and resumed without
-//! duplicates. `op_id`s pass through to the daemon unchanged; a pass-through command for an
-//! unreachable machine fails with `machine_unavailable` and is never queued by the server.
+//! `state.subscribe {since}` and `session.subscribe {id, since_seq}` per open session. Session
+//! subscriptions are shared by the server across tabs and resumed without duplicates. `op_id`s
+//! pass through to the agent daemon unchanged; while the agent daemon can't be reached, a
+//! pass-through command fails with `timeout` and is never queued by the server.
 
 mod hello;
 mod keys;
 mod machines;
-pub mod next;
 mod people;
 mod projects;
 mod sandbox;
@@ -41,24 +37,25 @@ pub use state::*;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::daemon::*;
+use crate::agentd::*;
+use crate::host::{DoctorReport, FsListParams, FsListResult};
 use crate::ids::MachineId;
 use crate::jsonrpc::{Ack, NoParams};
-use crate::session::{Job, Todo};
+use crate::session::{Job, Todo, Workspace};
 
-/// Adds the target machine to a daemon command's params: on the wire, `machine_id` sits next to
-/// the daemon params' own fields.
+/// Adds the target machine to a host command's params: on the wire, `machine_id` sits next to
+/// the command's own fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct OnMachine<P> {
-    /// The machine whose daemon handles the command.
+    /// The machine whose host daemon handles the command.
     pub machine_id: MachineId,
-    /// The daemon command's params.
+    /// The command's params.
     #[serde(flatten)]
     pub params: P,
 }
 
 impl<P> OnMachine<P> {
-    /// Wraps daemon params for `machine_id`.
+    /// Wraps params for `machine_id`.
     pub fn new(machine_id: MachineId, params: P) -> Self {
         OnMachine { machine_id, params }
     }
@@ -79,7 +76,7 @@ pub mod methods {
         /// Subscribe to the aggregated state feed.
         StateSubscribe = "state.subscribe" (StateSubscribeParams) -> StateSubscribeResult;
         /// Subscribe to one session's timeline and detail.
-        SessionSubscribe = "session.subscribe" (OnMachine<SessionSubscribeParams>) -> SessionSubscribeResult;
+        SessionSubscribe = "session.subscribe" (SessionSubscribeParams) -> SessionSubscribeResult;
         /// End a subscription.
         Unsubscribe = "unsubscribe" (UnsubscribeParams) -> Ack;
 
@@ -89,11 +86,11 @@ pub mod methods {
         MachinesAddConfirm = "machines.add_confirm" (MachinesAddConfirmParams) -> MachinesAddConfirmResult;
         /// Pin a machine's (new) host key and reconnect.
         MachinesConfirmHostKey = "machines.confirm_host_key" (MachinesConfirmHostKeyParams) -> Machine;
-        /// Remove a machine record (its sessions keep running).
+        /// Remove a machine record (sessions keep their other workspaces).
         MachinesRemove = "machines.remove" (MachineRef) -> Ack;
         /// Reconnect now.
         MachinesReconnect = "machines.reconnect" (MachineRef) -> Ack;
-        /// Upgrade the daemon now.
+        /// Upgrade the host daemon now.
         MachinesUpgrade = "machines.upgrade" (MachineRef) -> Ack;
         /// Change the controller's machine settings.
         MachinesSetSettings = "machines.set_settings" (MachinesSetSettingsParams) -> Machine;
@@ -111,9 +108,9 @@ pub mod methods {
 
         /// Create a project.
         ProjectsCreate = "projects.create" (ProjectsCreateParams) -> Project;
-        /// Change a project.
+        /// Rename or recolor a project.
         ProjectsUpdate = "projects.update" (ProjectsUpdateParams) -> Project;
-        /// Delete a project.
+        /// Delete a project (its tasks stay, unassigned from it).
         ProjectsDelete = "projects.delete" (ProjectRef) -> Ack;
 
         /// Create a task.
@@ -171,72 +168,76 @@ pub mod methods {
         /// Report what this client shows, for push deduplication.
         ClientFocus = "client.focus" (ClientFocusParams) -> Ack;
 
-        /// Create a session with its first prompt and link it to tasks.
+        /// Create a session on its workspaces with its first prompt, and link it to tasks.
         SessionCreate = "session.create" (UiSessionCreateParams) -> SessionCreateResult;
+        /// Pass-through: give a session another workspace.
+        SessionWorkspaceAdd = "session.workspace_add" (WorkspaceAddParams) -> Workspace;
+        /// Pass-through: drop a session's workspace.
+        SessionWorkspaceRemove = "session.workspace_remove" (WorkspaceRemoveParams) -> Ack;
         /// Pass-through: send or queue a prompt.
-        SessionPrompt = "session.prompt" (OnMachine<SessionPromptParams>) -> PromptResult;
+        SessionPrompt = "session.prompt" (SessionPromptParams) -> PromptResult;
         /// Pass-through: cancel the active run.
-        SessionCancel = "session.cancel" (OnMachine<SessionOpParams>) -> Ack;
+        SessionCancel = "session.cancel" (SessionOpParams) -> Ack;
         /// Pass-through: close a session.
-        SessionClose = "session.close" (OnMachine<SessionOpParams>) -> Ack;
+        SessionClose = "session.close" (SessionOpParams) -> Ack;
         /// Pass-through: reopen a closed session.
-        SessionReopen = "session.reopen" (OnMachine<SessionOpParams>) -> Ack;
+        SessionReopen = "session.reopen" (SessionOpParams) -> Ack;
         /// Pass-through: reattach a session's agent.
-        SessionResume = "session.resume" (OnMachine<SessionResumeParams>) -> Ack;
+        SessionResume = "session.resume" (SessionResumeParams) -> Ack;
         /// Pass-through: start a new agent session.
-        SessionStartFresh = "session.start_fresh" (OnMachine<SessionStartFreshParams>) -> StartFreshResult;
+        SessionStartFresh = "session.start_fresh" (SessionStartFreshParams) -> StartFreshResult;
         /// Pass-through: delete a session.
-        SessionDelete = "session.delete" (OnMachine<SessionOpParams>) -> Ack;
+        SessionDelete = "session.delete" (SessionOpParams) -> Ack;
         /// Pass-through: rename a session or change its settings.
-        SessionUpdate = "session.update" (OnMachine<SessionUpdateParams>) -> Ack;
+        SessionUpdate = "session.update" (SessionUpdateParams) -> Ack;
         /// Pass-through: move the read cursor forward.
-        SessionMarkRead = "session.mark_read" (OnMachine<SessionMarkReadParams>) -> ReadCursor;
+        SessionMarkRead = "session.mark_read" (SessionMarkReadParams) -> ReadCursor;
         /// Pass-through: mark the last run unread.
-        SessionMarkUnread = "session.mark_unread" (OnMachine<SessionOpParams>) -> ReadCursor;
+        SessionMarkUnread = "session.mark_unread" (SessionOpParams) -> ReadCursor;
         /// Pass-through: change an agent option.
-        SessionSetOption = "session.set_option" (OnMachine<SessionSetOptionParams>) -> Ack;
+        SessionSetOption = "session.set_option" (SessionSetOptionParams) -> Ack;
         /// Pass-through: send a queued item now.
-        QueueSendNow = "queue.send_now" (OnMachine<QueueSendNowParams>) -> SendNowResult;
+        QueueSendNow = "queue.send_now" (QueueSendNowParams) -> SendNowResult;
         /// Pass-through: edit a queued item.
-        QueueEdit = "queue.edit" (OnMachine<QueueEditParams>) -> Ack;
+        QueueEdit = "queue.edit" (QueueEditParams) -> Ack;
         /// Pass-through: remove a queued item.
-        QueueRemove = "queue.remove" (OnMachine<QueueRemoveParams>) -> Ack;
+        QueueRemove = "queue.remove" (QueueRemoveParams) -> Ack;
         /// Pass-through: move a queued item.
-        QueueReorder = "queue.reorder" (OnMachine<QueueReorderParams>) -> Ack;
+        QueueReorder = "queue.reorder" (QueueReorderParams) -> Ack;
         /// Pass-through: restart a paused queue.
-        QueueResume = "queue.resume" (OnMachine<SessionOpParams>) -> Ack;
+        QueueResume = "queue.resume" (SessionOpParams) -> Ack;
         /// Pass-through: answer a request.
-        RequestRespond = "request.respond" (OnMachine<RequestRespondParams>) -> RequestRespondResult;
+        RequestRespond = "request.respond" (RequestRespondParams) -> RequestRespondResult;
         /// Pass-through: add todo entries.
-        TodoAdd = "todo.add" (OnMachine<TodoAddParams>) -> TodoAddResult;
+        TodoAdd = "todo.add" (TodoAddParams) -> TodoAddResult;
         /// Pass-through: edit a todo entry.
-        TodoUpdate = "todo.update" (OnMachine<TodoUpdateParams>) -> Todo;
+        TodoUpdate = "todo.update" (TodoUpdateParams) -> Todo;
         /// Pass-through: remove a todo entry.
-        TodoRemove = "todo.remove" (OnMachine<TodoRemoveParams>) -> Ack;
+        TodoRemove = "todo.remove" (TodoRemoveParams) -> Ack;
         /// Pass-through: move a todo entry.
-        TodoReorder = "todo.reorder" (OnMachine<TodoReorderParams>) -> Ack;
+        TodoReorder = "todo.reorder" (TodoReorderParams) -> Ack;
         /// Pass-through: list a session's jobs.
-        JobList = "job.list" (OnMachine<JobListParams>) -> JobListResult;
+        JobList = "job.list" (JobListParams) -> JobListResult;
         /// Pass-through: read a job's log.
-        JobLogsMethod = "job.logs" (OnMachine<JobLogsParams>) -> JobLogs;
+        JobLogsMethod = "job.logs" (JobLogsParams) -> JobLogs;
         /// Pass-through: kill a job.
-        JobKill = "job.kill" (OnMachine<JobOpParams>) -> Job;
+        JobKill = "job.kill" (JobOpParams) -> Job;
         /// Pass-through: follow a job's output.
-        JobFollowMethod = "job.follow" (OnMachine<JobFollowParams>) -> Job;
+        JobFollowMethod = "job.follow" (JobFollowParams) -> Job;
         /// Pass-through: stop following a job.
-        JobUnfollow = "job.unfollow" (OnMachine<JobOpParams>) -> Job;
+        JobUnfollow = "job.unfollow" (JobOpParams) -> Job;
         /// Pass-through: remove a session's sandbox grant.
-        SandboxRevoke = "sandbox.revoke" (OnMachine<SandboxRevokeParams>) -> Ack;
-        /// Pass-through: a machine's agents.
-        AgentsList = "agents.list" (OnMachine<NoParams>) -> AgentsListResult;
-        /// Pass-through: list a directory on a machine.
+        SandboxRevoke = "sandbox.revoke" (SandboxRevokeParams) -> Ack;
+        /// Pass-through: the agents the server can run.
+        AgentsList = "agents.list" (NoParams) -> AgentsListResult;
+        /// Pass-through: the agent daemon's settings.
+        SettingsGet = "settings.get" (NoParams) -> DaemonSettings;
+        /// Pass-through: change the agent daemon's settings.
+        SettingsSet = "settings.set" (SettingsSetParams) -> DaemonSettings;
+        /// List a directory on a machine (its host daemon, with the user's own access).
         FsList = "fs.list" (OnMachine<FsListParams>) -> FsListResult;
-        /// Pass-through: re-run a machine's doctor checks.
-        DoctorReportMethod = "doctor.report" (OnMachine<NoParams>) -> DoctorReport;
-        /// Pass-through: read a machine's daemon settings.
-        SettingsGet = "settings.get" (OnMachine<NoParams>) -> DaemonSettings;
-        /// Pass-through: change a machine's daemon settings.
-        SettingsSet = "settings.set" (OnMachine<SettingsSetParams>) -> DaemonSettings;
+        /// Re-run a machine's or the server's doctor checks.
+        DoctorReportMethod = "doctor.report" (DoctorReportParams) -> DoctorReport;
     }
 }
 
@@ -251,7 +252,7 @@ pub mod notifications {
         /// Changes for a `state.subscribe` subscription.
         StateEvents = "state.events" (StateEventsParams);
         /// Timeline ops, raw frames and detail for a `session.subscribe` subscription.
-        SessionEvents = "session.events" (OnMachine<SessionEventsParams>);
+        SessionEvents = "session.events" (SessionEventsParams);
     }
 }
 

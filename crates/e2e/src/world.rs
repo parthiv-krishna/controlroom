@@ -1,4 +1,4 @@
-//! The whole topology of one test: the controller (in process, next UI API), the real agent
+//! The whole topology of one test: the controller (in process, UI API), the real agent
 //! daemon, and two real host daemons ("devbox", "buildbox") reached over SSH through relays
 //! that can cut their links.
 
@@ -10,7 +10,7 @@ use controlroom_controller::test_support::{
     Relay, RemoteHost, UiDriver, bundled_daemons, controlroomd, wait_until,
 };
 use controlroom_controller::{
-    AuthPolicy, Backoff, Controller, ControllerConfig, Identity, MasterKey, Tuning, UiApi,
+    AuthPolicy, Backoff, Controller, ControllerConfig, Identity, MasterKey, Tuning,
 };
 use controlroom_protocol::ui::AuthMode;
 use serde_json::json;
@@ -306,12 +306,10 @@ fn start_controller(store: &Path, bundled: &Path, agentd: &Path) -> Controller {
     .unwrap()
 }
 
-/// A browser tab on the next UI API (device `laptop`), with the state feed mirrored.
+/// A browser tab on the UI API (device `laptop`), with the state feed mirrored.
 async fn open_ui(controller: &Controller) -> UiDriver {
     let principal = controller.resolve(&Identity::DevToken).unwrap();
-    let client = controller
-        .open_trusted_client_with(principal, UiApi::Next)
-        .unwrap();
+    let client = controller.open_trusted_client(principal).unwrap();
     let mut ui = UiDriver::new(client);
     ui.hello("laptop", "laptop (Firefox on Linux)").await;
     ui.subscribe_state().await;

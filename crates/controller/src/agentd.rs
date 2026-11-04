@@ -4,7 +4,7 @@
 //! After each `hello` (as this controller) it subscribes to every session's summary
 //! (`sessions.subscribe` from the last applied revision), takes over the pending host requests
 //! (`hostops.subscribe`), reports the machines (`hostops.machines`) and resumes every open
-//! session subscription of the next UI API. Response hooks apply each subscription's result
+//! UI session subscription. Response hooks apply each subscription's result
 //! before any of its notifications are routed. Disconnecting does nothing on the agent daemon's
 //! side: its sessions keep running, and host calls only pause.
 
@@ -86,7 +86,7 @@ async fn connect(hub: &Arc<Hub>, socket: &std::path::Path) -> Result<DaemonClien
         hub.agentd_disconnected(&client);
         return Err(e);
     }
-    crate::rpc::resubscribe_global(hub, &client).await;
+    crate::rpc::resubscribe(hub, &client).await;
     Ok(client)
 }
 
@@ -137,7 +137,7 @@ async fn subscribe(hub: &Arc<Hub>, client: &DaemonClient) -> Result<(), String> 
 fn on_notification(hub: &Arc<Hub>, n: RpcNotification<Value>) {
     match AgentdNotification::from_parts(&n.method, n.params) {
         Ok(AgentdNotification::SessionsEvents(p)) => hub.lock().sessions_events(p),
-        Ok(AgentdNotification::SessionEvents(p)) => hub.global_timeline_events(&p),
+        Ok(AgentdNotification::SessionEvents(p)) => hub.timeline_events(&p),
         Ok(AgentdNotification::HostOpsRequest(p)) => {
             let mut st = hub.lock();
             hub.hostops_requested(&mut st, p.subscription_id, p.requests);

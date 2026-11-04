@@ -346,7 +346,7 @@ fn is_invalid_response(outcome: &Result<Value, CallError>) -> bool {
 
 #[tokio::test]
 async fn hello_sends_the_controller_role_and_maps_refusals() {
-    use controlroom_client_core::daemon::{HelloError, hello};
+    use controlroom_client_core::daemon::{HelloError, agentd_hello};
     use controlroom_protocol::ids::{ControllerId, DaemonId};
 
     let controller_id = ControllerId::generate();
@@ -368,7 +368,7 @@ async fn hello_sends_the_controller_role_and_maps_refusals() {
         async move {
             let mut out = Vec::new();
             for _ in 0..4 {
-                out.push(hello(&client, "controlroom-test", controller_id).await);
+                out.push(agentd_hello(&client, "controlroom-test", controller_id).await);
             }
             out
         }

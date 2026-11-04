@@ -1,7 +1,7 @@
 # controlroom protocol 1.0
 
 The contract between the browser, the controller (`controlroom-web`), the agent daemon (`controlroom-agentd`), the host daemons (`controlroomd`) and the agent's extension (`@controlroom/pi`).
-Source of truth: `crates/protocol` (Rust). TypeScript is generated (read-only for its users) into `web/src/lib/protocol/` and `web/src/lib/protocol/next/` (UI API) and `extensions/pi/src/protocol/` (agent API).
+Source of truth: `crates/protocol` (Rust). TypeScript is generated (read-only for its users) into `web/src/lib/protocol/` (UI API) and `extensions/pi/src/protocol/` (agent API).
 Spec: `docs/architecture.html` §3, §5, §7, §8, §8.1, §9, §11.4, §11.6, §12, §13, §22. Rationale: `docs/design/remote-tools.md`.
 
 **Model.** pi runs only on the server, inside the agent daemon. Execution hosts run `controlroomd` in the host role: workspaces, named PTY shells, a tool executor with a journal, jobs, files, nono. A session is global and has one or more **workspaces** (`machine:path`); the agent addresses files as `machine:path`. The controller keeps sole custody of SSH keys and routes every host request.
@@ -12,12 +12,12 @@ Four APIs, all JSON-RPC 2.0 with newline-delimited framing (one compact JSON obj
 | --- | --- | --- | --- | --- |
 | Agent daemon API | controller ↔ `controlroom-agentd` | local unix socket `/run/controlroom-agent/agentd.sock` | `agentd` | `AGENTD_PROTOCOL_VERSION` = 1.0 |
 | Host API | controller ↔ `controlroomd` host role | SSH exec channel `controlroomd connect` | `host` | `HOST_PROTOCOL_VERSION` = 1.0 |
-| UI API | browser ↔ controller | one WebSocket per tab | `ui::next` | `UI_PROTOCOL_VERSION` = 1.0 |
+| UI API | browser ↔ controller | one WebSocket per tab | `ui` | `UI_PROTOCOL_VERSION` = 1.0 |
 | Agent API | `@controlroom/pi` ↔ agent daemon | the session's unix socket `run/<id>.agent.sock` | `agent` | `AGENT_PROTOCOL_VERSION` = 1.0 |
 
-Nothing is deployed, so the APIs are redefined in place as 1.0. During the switch-over the per-machine daemon API (`daemon`) and the old UI method table (`ui::UiRequest`) still compile; §10 lists what goes away.
+Nothing is deployed, so the APIs are redefined in place as 1.0. §10 lists what the switch-over removed.
 
-Rust areas (crate root modules): `ids`, `jsonrpc`, `error`, `version`, `session` (model), `timeline`, `agentd`, `host`, `agent`, `ui` (`ui::next`), `typescript`, and the deprecated `daemon`.
+Rust areas (crate root modules): `ids`, `jsonrpc`, `error`, `version`, `session` (model), `timeline`, `agentd`, `host`, `agent`, `ui`, `typescript`.
 
 ## 1. Conventions
 
@@ -59,7 +59,7 @@ Everything else is a major change. The agent daemon and the controller deploy to
 
 ## 3. Session model (`session`, `agentd`)
 
-**`SessionSummary`** (`agentd::SessionSummary`; every session, fed by `sessions.subscribe`, sent whole on each change; preview throttled to 1/s):
+**`SessionSummary`** (`session::SessionSummary`; every session, fed by `sessions.subscribe`, sent whole on each change; preview throttled to 1/s):
 `id, name?, title?, workspaces[], shells[], created_at, updated_at, closed_at?, parent_id?, state, last_outcome?, last_error?, read_seq, last_turn_end_seq, unread, preview, attention?, rollup, context?, queue, requests[], todo?, live_work, options[], agent_live, sandbox, resumable`.
 Sessions are global: no `machine_id`, no `cwd`; a session never goes stale with a machine, only its workspaces become unavailable.
 
@@ -114,7 +114,7 @@ Answers are `Response`: `choice {option_id, reason?}` · `answers {answers[]}` �
 
 ## 5. Agent daemon API (`agentd`)
 
-Controller ↔ `controlroom-agentd`, the old daemon API generalized: sessions are global, the mailbox is local (no outbox or inbox), and hosts are reached through the controller's `hostops` bridge. The agent daemon never calls the controller.
+Controller ↔ `controlroom-agentd`, session-scoped: sessions are global, the mailbox is local (no outbox or inbox), and hosts are reached through the controller's `hostops` bridge. The agent daemon never calls the controller.
 
 Lifecycle: `hello` first (else `hello_required`), then subscriptions. Disconnecting never triggers anything. Every mutating command carries `op_id`; a repeat returns the original result, a reuse for a different command is `op_id_conflict`.
 **One controller per daemon.** `hello.role` is `{kind: "controller", controller_id}` or `{kind: "debug"}` (`controlroom-agentd ctl`). A different `controller_id` while one is connected fails with `controller_conflict {controller_id, connected_since}`; the same one replaces its old connection. Debug clients connect alongside but get `unsupported` from `hostops.*`.
@@ -196,7 +196,7 @@ Notifications: `tool.output {call_id, text}` (ANSI-stripped, coalesced; to every
 
 **Job event log.** The host follows every running job and appends `JobEvent {rev, at, job_id, kind, …}` to a persisted log with one revision sequence per host: `started {session_id, workspace_id, name, command, cwd, log_path, timeout_s?, follow?}` (logged before the process exists) · `progress {lines, offset, matches[]}` · `follow {pattern?, buffer_seconds, from, matches[]}` · `unfollow` · `killed {by}` · `exit {exit_code?, signal?, timed_out, lost?, lines, duration_ms}` (once the output is fully scanned; `lost: "host rebooted"` when the supervisor is gone). The host never decides wakes. After every `hello` the agent daemon subscribes from its cursor, gets the backlog, then live `jobs.event`; it commits the new cursor, the pending follow matches and the wakes they produce in one transaction (wake ids `exit:<machine>/<job>` and `follow:<machine>/<job>:<first>-<last>`), so each wake is delivered exactly once, and acks with `jobs.ack {rev}` so the host can prune ended jobs' events (design §3.6).
 
-## 7. UI API (`ui::next`)
+## 7. UI API (`ui`)
 
 Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.subscribe` per open session (shared across tabs by the server, resumed without duplicates). `op_id`s pass through unchanged.
 
@@ -223,7 +223,7 @@ Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.
 `FeedSession` = the agent daemon's `SessionSummary` + `project_ids[]` (the projects of the tasks that link it; empty = **Unassigned**; the controller computes it). `Overlap {machine_id, path, session_ids[]}`: a directory used by several open sessions' workspaces (allowed; the UI warns). `ContactGrant {id, from: session_id, to: session_id, scope, granted_at, by?}`.
 Notifications: `state.events`, `session.events`.
 
-**Connectivity** (`Machine.connectivity`, by `state`): `connected · connecting · unreachable · incompatible · action_required {reason: host_key_changed|auth_failed|host_key_unconfirmed|controller_conflict, presented_host_key?}`, plus `Machine.update_available`. `Machine.settings` (daemon settings) is `null` for hosts.
+**Connectivity** (`Machine.connectivity`, by `state`): `connected · connecting · unreachable · incompatible · action_required {reason: host_key_changed|auth_failed|host_key_unconfirmed|controller_conflict, presented_host_key?}`, plus `Machine.update_available`. The agent daemon's settings (idle stop, retention) are the server's (`settings.get` / `settings.set`), not a machine's.
 UI-only errors: `unauthenticated · machine_unavailable{machine_id, connectivity} · host_key_mismatch · unsupported_platform · key_in_use · invalid_key`.
 
 ## 8. Agent API (`agent`)
@@ -264,23 +264,22 @@ Daemon → extension traffic goes through this socket rather than `/controlroom 
 
 ## 9. TypeScript
 
-Three sets, each with one file per type, a method map, `versions.ts` and `index.ts`:
+Two sets, each with one file per type, a method map, `versions.ts` and `index.ts`:
 
-- `web/src/lib/protocol/`: the deprecated daemon API and old UI API (`DaemonMethods.ts`, `UiMethods.ts`), which the UI uses until it switches;
-- `web/src/lib/protocol/next/`: the UI API of this document (`UiMethods.ts`). A separate set because its types reuse names with new shapes (`SessionSummary`, `Project`, `Task`, …); it replaces the first set when the UI has switched;
+- `web/src/lib/protocol/`: the UI API (`UiMethods.ts`);
 - `extensions/pi/src/protocol/`: the agent API (`AgentMethods.ts`).
 
-The host and agent daemon APIs have no TypeScript consumer, so no set. Regenerate all: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --test typescript`. The `protocol-ts-drift` flake check fails when the checked-in files differ; `web-check` type-checks both web sets.
+The host and agent daemon APIs have no TypeScript consumer, so no set. Regenerate both: `CONTROLROOM_UPDATE_TS=1 cargo test -p controlroom-protocol --test typescript`. The `protocol-ts-drift` flake check fails when the checked-in files differ; `web-check` type-checks the web set.
 
-## 10. Transition (deprecated, removed by the R1/R2 lanes)
+## 10. Transition (done)
 
-Kept compiling so every crate builds while the lanes switch over:
+The R1/R2 lanes removed the per-machine model:
 
-- the daemon API (`daemon::DaemonRequest`, `DAEMON_PROTOCOL_VERSION`): `machine.subscribe` and its feed (`MachineSnapshot`, `MachineEvent`, `MachineChange`), the cwd-based `SessionCreateParams` / `SessionCreateResult`, `fs.list` on the daemon, the mailbox (`outbox.*`, `inbox.deliver`, `OutboxItem`, `InboxDelivery`). The session-scoped command types, `HelloParams` / `HelloResult` / `ClientRole`, `FsListParams` / `FsListResult` / `FsEntry`, `DoctorReport` and `DaemonSettings` are reused by the new APIs and move into `agentd` / `host` when `daemon` is deleted;
-- `session::SessionSummary` (with `cwd`, `agent`, `spawned_by`), replaced by `agentd::SessionSummary`;
-- the old UI method table (`ui::UiRequest`, `ui::UiNotification`) with `OnMachine` pass-through, `MachineSession`, `SessionLink`, `Project` with `location_prefixes` (`LocationPrefix`), `Task`, `TasksCreateParams`, `TasksLinkParams`, `Schedule`, `SchedulesCreateParams`, `ContactGrant`, `ClientFocusParams`, `UiSessionCreateParams` and the old state feed, replaced by `ui::next`, which is then promoted to `ui` (and its TypeScript to `web/src/lib/protocol/`). `OnMachine` stays for `fs.list`.
+- the daemon API (`daemon`, `DAEMON_PROTOCOL_VERSION`): `machine.subscribe` and its feed, the cwd-based `session.create`, `fs.list` on the daemon, and the mailbox (`outbox.*`, `inbox.deliver`). The session-scoped command types, `hello` and the settings live in `agentd`; `fs.list` and `doctor.report` in `host`;
+- the per-machine `SessionSummary` (`cwd`, `agent`, `spawned_by`): `session::SessionSummary` is the global one;
+- the old UI method table with `OnMachine` pass-through, `MachineSession` (`stale`), `SessionLink`, projects with location prefixes (`LocationPrefix`), machine-scoped tasks, schedules, grants and focus, and `Machine.settings`: `ui::next` became `ui` (its TypeScript `web/src/lib/protocol/`). `OnMachine` stays for `fs.list`.
 
-Additions to shared types are backward compatible with the old daemon: `Job.machine_id` / `workspace_id` (null from it), `JobStatus::lost`, `LiveWork.host_calls` (0), request kinds `terminal_input` and `privileged`, `JobRunParams.machine` (ignored by it), the new error kinds and resources, and the new agent methods (the old daemon answers them `unsupported` and doesn't advertise `remote_tools`).
+`Job.machine_id` / `workspace_id` stay optional on the wire (a host's `job_*` results can't fill them); the agent daemon always fills them.
 
 ## 11. Open questions (judgment calls to review)
 

@@ -169,7 +169,7 @@ pub enum OptionValue {
 /// Params of `session.set_option`: change an agent option such as the model. Works in any live
 /// state, including during a run. Errors: `not_found` (`option`) for an unknown option,
 /// `invalid_params` for a value the option doesn't allow, `invalid_state` without a live agent
-/// (see [`SessionSummary::agent_live`]).
+/// (see [`crate::session::SessionSummary::agent_live`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct SessionSetOptionParams {
     /// Idempotency key.

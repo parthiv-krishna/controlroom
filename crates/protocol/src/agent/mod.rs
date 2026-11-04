@@ -1,5 +1,5 @@
 //! The agent API: `@controlroom/pi` (the extension inside the agent) ↔ the agent daemon
-//! (`controlroom-agentd` on the server; the old per-machine `controlroomd` until it is removed).
+//! (`controlroom-agentd` on the server).
 //!
 //! Newline-delimited JSON-RPC 2.0 over a **per-session unix socket**, `<state>/run/<id>.agent.sock`.
 //! The daemon serves one socket per session, and the session's sandbox profile grants only that

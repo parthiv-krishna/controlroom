@@ -31,7 +31,7 @@ mod pi;
 pub use fake::FakeDriver;
 pub use pi::PiDriver;
 
-use controlroom_protocol::daemon::OptionValue;
+use controlroom_protocol::agentd::OptionValue;
 use controlroom_protocol::ids::{OpId, QueueId, RequestId};
 use controlroom_protocol::session::{
     ContentPart, ContextUsage, DriverKind, Request, Response, RunOutcome, SessionOption,

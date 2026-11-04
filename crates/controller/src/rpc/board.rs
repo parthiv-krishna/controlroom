@@ -1,20 +1,18 @@
-//! Projects and tasks (`projects.*`, `tasks.*`) for both UI APIs. Each handler writes the
-//! changed columns and emits the result to both feeds under the hub lock, so the feed order
-//! matches the store's; it returns the stored row, which the dispatcher renders in its API's
-//! shape.
+//! Projects and tasks (`projects.*`, `tasks.*`). Each handler writes the changed columns and
+//! emits the result to the state feed under the hub lock, so the feed order matches the
+//! store's.
 
 use controlroom_protocol::error::Resource;
-use controlroom_protocol::ids::{ProjectId, TaskId};
-use controlroom_protocol::ui::next::Project;
+use controlroom_protocol::ids::{ProjectId, SessionId, TaskId};
 use controlroom_protocol::ui::{
-    ChecklistAddParams, ChecklistRemoveParams, ChecklistUpdateParams, ProjectRef, TaskRef,
-    TasksMoveParams, TasksUpdateParams,
+    ChecklistAddParams, ChecklistRemoveParams, ChecklistUpdateParams, Project, ProjectRef, Task,
+    TaskRef, TasksMoveParams, TasksUpdateParams,
 };
 use controlroom_protocol::{Ack, RpcError};
 
 use super::Conn;
 use crate::errors::{invalid_params, not_found, store_error};
-use crate::store::{NewTask, StoreResult, TaskLink, TaskRow, Tasks};
+use crate::store::{NewTask, StoreResult, Tasks};
 
 fn project(conn: &Conn, id: ProjectId) -> Result<Project, RpcError> {
     conn.hub
@@ -96,7 +94,7 @@ fn edit_task(
     conn: &Conn,
     id: TaskId,
     write: impl FnOnce(&Tasks<'_>) -> StoreResult<bool>,
-) -> Result<TaskRow, RpcError> {
+) -> Result<Task, RpcError> {
     let mut st = conn.hub.lock();
     let repo = conn.hub.repo();
     if !write(&repo.tasks()).map_err(store_error)? {
@@ -107,7 +105,7 @@ fn edit_task(
     Ok(task)
 }
 
-pub(super) fn tasks_create(conn: &Conn, task: NewTask) -> Result<TaskRow, RpcError> {
+pub(super) fn tasks_create(conn: &Conn, task: NewTask) -> Result<Task, RpcError> {
     check_projects(conn, &task.project_ids)?;
     let task = NewTask {
         order: task.order.map(finite).transpose()?,
@@ -119,7 +117,7 @@ pub(super) fn tasks_create(conn: &Conn, task: NewTask) -> Result<TaskRow, RpcErr
     Ok(task)
 }
 
-pub(super) fn tasks_update(conn: &Conn, p: TasksUpdateParams) -> Result<TaskRow, RpcError> {
+pub(super) fn tasks_update(conn: &Conn, p: TasksUpdateParams) -> Result<Task, RpcError> {
     if let Some(projects) = &p.project_ids {
         check_projects(conn, projects)?;
     }
@@ -134,7 +132,7 @@ pub(super) fn tasks_update(conn: &Conn, p: TasksUpdateParams) -> Result<TaskRow,
     })
 }
 
-pub(super) fn tasks_move(conn: &Conn, p: TasksMoveParams) -> Result<TaskRow, RpcError> {
+pub(super) fn tasks_move(conn: &Conn, p: TasksMoveParams) -> Result<Task, RpcError> {
     let order = finite(p.order)?;
     edit_task(conn, p.task_id, |tasks| {
         tasks.move_to(p.task_id, p.status, order)
@@ -157,25 +155,25 @@ pub(super) fn tasks_delete(conn: &Conn, p: TaskRef) -> Result<Ack, RpcError> {
 }
 
 /// Links can dangle: the session need not exist.
-pub(super) fn tasks_link(conn: &Conn, task: TaskId, link: TaskLink) -> Result<TaskRow, RpcError> {
-    edit_task(conn, task, |tasks| tasks.link(task, &link))
+pub(super) fn tasks_link(conn: &Conn, task: TaskId, session: SessionId) -> Result<Task, RpcError> {
+    edit_task(conn, task, |tasks| tasks.link(task, session))
 }
 
 pub(super) fn tasks_unlink(
     conn: &Conn,
     task: TaskId,
-    session: controlroom_protocol::ids::SessionId,
-) -> Result<TaskRow, RpcError> {
+    session: SessionId,
+) -> Result<Task, RpcError> {
     edit_task(conn, task, |tasks| tasks.unlink(task, session))
 }
 
-pub(super) fn checklist_add(conn: &Conn, p: ChecklistAddParams) -> Result<TaskRow, RpcError> {
+pub(super) fn checklist_add(conn: &Conn, p: ChecklistAddParams) -> Result<Task, RpcError> {
     edit_task(conn, p.task_id, |tasks| {
         tasks.checklist_add(p.task_id, &p.text, p.index)
     })
 }
 
-pub(super) fn checklist_update(conn: &Conn, p: ChecklistUpdateParams) -> Result<TaskRow, RpcError> {
+pub(super) fn checklist_update(conn: &Conn, p: ChecklistUpdateParams) -> Result<Task, RpcError> {
     conn.hub.task(p.task_id)?;
     edit_task(conn, p.task_id, |tasks| {
         tasks.checklist_update(p.task_id, p.item_id, p.text.as_deref(), p.done)
@@ -183,7 +181,7 @@ pub(super) fn checklist_update(conn: &Conn, p: ChecklistUpdateParams) -> Result<
     .map_err(|_| not_found(Resource::ChecklistItem, p.item_id))
 }
 
-pub(super) fn checklist_remove(conn: &Conn, p: ChecklistRemoveParams) -> Result<TaskRow, RpcError> {
+pub(super) fn checklist_remove(conn: &Conn, p: ChecklistRemoveParams) -> Result<Task, RpcError> {
     conn.hub.task(p.task_id)?;
     edit_task(conn, p.task_id, |tasks| {
         tasks.checklist_remove(p.task_id, p.item_id)

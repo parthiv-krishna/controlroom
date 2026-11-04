@@ -1,19 +1,17 @@
 //! The controller's `hello`: protocol version, the controller role and the
 //! typed refusals a daemon can answer with.
 //!
-//! The daemon API, the agent daemon API and the host API share the `hello`
-//! params and refusals; they differ in the protocol version and the result.
-//! [`hello`] speaks the daemon API, [`agentd_hello`] the agent daemon API and
-//! [`host_hello`] the host API. [`hello_value`] returns the raw result, for a
-//! caller that must tell daemon generations apart by its shape.
+//! The agent daemon API and the host API share the `hello` params and
+//! refusals; they differ in the protocol version and the result.
+//! [`agentd_hello`] speaks the agent daemon API and [`host_hello`] the host
+//! API.
 
-use controlroom_protocol::daemon::methods::Hello;
-use controlroom_protocol::daemon::{ClientRole, HelloParams, HelloResult};
+use controlroom_protocol::agentd::methods::Hello;
+use controlroom_protocol::agentd::{ClientRole, HelloParams, HelloResult};
 use controlroom_protocol::host::HostHelloResult;
 use controlroom_protocol::ids::ControllerId;
 use controlroom_protocol::{
-    AGENTD_PROTOCOL_VERSION, DAEMON_PROTOCOL_VERSION, ErrorData, HOST_PROTOCOL_VERSION, Method,
-    ProtocolVersion, UnixMillis,
+    AGENTD_PROTOCOL_VERSION, ErrorData, HOST_PROTOCOL_VERSION, Method, ProtocolVersion, UnixMillis,
 };
 use serde_json::Value;
 
@@ -44,24 +42,6 @@ pub enum HelloError {
     /// The call itself failed.
     #[error("daemon hello failed: {0}")]
     Call(CallError),
-}
-
-/// Says the daemon API `hello` as controller `controller_id`. A daemon
-/// answering with an incompatible version is reported as
-/// [`HelloError::Incompatible`].
-pub async fn hello(
-    client: &DaemonClient,
-    client_name: &str,
-    controller_id: ControllerId,
-) -> Result<HelloResult, HelloError> {
-    let result: HelloResult =
-        typed(hello_value(client, DAEMON_PROTOCOL_VERSION, client_name, controller_id).await?)?;
-    check_version(
-        DAEMON_PROTOCOL_VERSION,
-        &result.daemon_version,
-        result.protocol_version,
-    )?;
-    Ok(result)
 }
 
 /// Says the agent daemon API `hello` as controller `controller_id`.
@@ -99,7 +79,7 @@ pub async fn host_hello(
 /// Says `hello` speaking `version` as controller `controller_id` and returns the raw result.
 /// Typed refusals (incompatible version, another controller) are mapped; the result's version
 /// is not checked.
-pub async fn hello_value(
+async fn hello_value(
     client: &DaemonClient,
     version: ProtocolVersion,
     client_name: &str,
@@ -147,7 +127,7 @@ fn typed<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, HelloError> 
 }
 
 /// A compatible-looking answer with another major is incompatible too.
-pub fn check_version(
+fn check_version(
     expected: ProtocolVersion,
     daemon_version: &str,
     protocol_version: ProtocolVersion,

@@ -17,11 +17,11 @@ pub struct JobRunParams {
     /// The command line, run by the login shell.
     pub command: String,
     /// With remote tools: the machine's display name (one of the session's workspaces);
-    /// default the primary workspace's. The old daemon ignores it.
+    /// default the primary workspace's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<String>,
     /// The working directory: absolute or relative to the (machine's primary) workspace root,
-    /// and inside it (the old daemon: relative to the session's cwd).
+    /// and inside it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<RemotePath>,
     /// Stop the job after this many seconds (it ends `timed_out`).

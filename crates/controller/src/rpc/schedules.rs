@@ -1,28 +1,28 @@
-//! Schedules (`schedules.*`, spec §8.1) for both UI APIs. Edits validate the spec and time
-//! zone and reset the timing when the spec, zone or `enabled` changes; the scheduler
-//! (`crate::schedules`) fires them. A schedule can't be enabled on a session that is known to
-//! be closed. The old UI API's schedules wake a legacy daemon's session (created on a known
-//! machine); the next API's wake a global session. Each API only sees and edits its own.
+//! Schedules (`schedules.*`, spec §8.1). Edits validate the spec and time zone and reset the
+//! timing when the spec, zone or `enabled` changes; the scheduler (`crate::schedules`) fires
+//! them at the agent daemon. A schedule can't be enabled on a session that is known to be
+//! closed.
 //!
 //! Every write happens under the hub lock, like the scheduler's, so edits and the scheduler
 //! never interleave.
 
-use controlroom_protocol::daemon::IfBusy;
+use controlroom_protocol::agentd::IfBusy;
 use controlroom_protocol::error::Resource;
-use controlroom_protocol::ids::{MachineId, ScheduleId, SessionId};
+use controlroom_protocol::ids::{ScheduleId, SessionId};
 use controlroom_protocol::session::SessionState;
-use controlroom_protocol::ui::{MissedPolicy, ScheduleRef, ScheduleSpec, SchedulesUpdateParams};
+use controlroom_protocol::ui::{
+    MissedPolicy, Schedule, ScheduleRef, ScheduleSpec, SchedulesUpdateParams,
+};
 use controlroom_protocol::{Ack, RpcError};
 
-use super::{Conn, UiApi};
+use super::Conn;
 use crate::errors::{invalid_params, not_found, store_error};
 use crate::hub::HubState;
 use crate::schedules::{Recurrence, run_now as fire_now};
-use crate::store::{NewSchedule, ScheduleRow, Timing};
+use crate::store::{NewSchedule, Timing};
 
-/// A schedule to create, from either API's params.
+/// A schedule to create.
 pub(super) struct Create {
-    pub machine_id: Option<MachineId>,
     pub session_id: SessionId,
     pub name: String,
     pub spec: ScheduleSpec,
@@ -48,19 +48,8 @@ fn check_text(name: &str, message: &str) -> Result<(), RpcError> {
 }
 
 /// Refuses enabling a schedule on a closed session (closing disables them).
-fn check_open(
-    st: &HubState,
-    machine: Option<MachineId>,
-    session: SessionId,
-) -> Result<(), RpcError> {
-    let state = match machine {
-        Some(machine) => st
-            .machines
-            .get(&machine)
-            .and_then(|m| m.sessions.get(&session))
-            .map(|s| s.state),
-        None => st.global.sessions.get(&session).map(|s| s.state),
-    };
+fn check_open(st: &HubState, session: SessionId) -> Result<(), RpcError> {
+    let state = st.global.sessions.get(&session).map(|s| s.state);
     if state == Some(SessionState::Closed) {
         return Err(invalid_params(
             "the session is closed; reopen it to enable its schedules",
@@ -69,38 +58,31 @@ fn check_open(
     Ok(())
 }
 
-/// A schedule of `api`, or `not_found`.
-fn get(conn: &Conn, id: ScheduleId, api: UiApi) -> Result<ScheduleRow, RpcError> {
+/// A schedule, or `not_found`.
+fn get(conn: &Conn, id: ScheduleId) -> Result<Schedule, RpcError> {
     conn.hub
         .repo()
         .schedules()
         .get(id)
         .map_err(store_error)?
-        .filter(|s| s.machine_id.is_some() == (api == UiApi::Legacy))
         .ok_or_else(|| not_found(Resource::Schedule, id))
 }
 
-pub(super) fn create(conn: &Conn, p: Create) -> Result<ScheduleRow, RpcError> {
+pub(super) fn create(conn: &Conn, p: Create) -> Result<Schedule, RpcError> {
     let r = recurrence(&p.spec, &p.timezone)?;
     check_text(&p.name, &p.message)?;
     let enabled = p.enabled.unwrap_or(true);
     let now = conn.hub.services.tuning.clock.now();
     let schedule = {
         let mut st = conn.hub.lock();
-        if let Some(machine) = p.machine_id
-            && !st.machines.contains_key(&machine)
-        {
-            return Err(not_found(Resource::Machine, machine));
-        }
         if enabled {
-            check_open(&st, p.machine_id, p.session_id)?;
+            check_open(&st, p.session_id)?;
         }
         let schedule = conn
             .hub
             .repo()
             .schedules()
             .insert(NewSchedule {
-                machine_id: p.machine_id,
                 session_id: p.session_id,
                 name: p.name,
                 spec: p.spec,
@@ -119,15 +101,11 @@ pub(super) fn create(conn: &Conn, p: Create) -> Result<ScheduleRow, RpcError> {
     Ok(schedule)
 }
 
-pub(super) fn update(
-    conn: &Conn,
-    p: SchedulesUpdateParams,
-    api: UiApi,
-) -> Result<ScheduleRow, RpcError> {
+pub(super) fn update(conn: &Conn, p: SchedulesUpdateParams) -> Result<Schedule, RpcError> {
     let now = conn.hub.services.tuning.clock.now();
     let schedule = {
         let mut st = conn.hub.lock();
-        let old = get(conn, p.schedule_id, api)?;
+        let old = get(conn, p.schedule_id)?;
         let spec = p.spec.as_ref().unwrap_or(&old.spec);
         let timezone = p.timezone.as_deref().unwrap_or(&old.timezone);
         let r = recurrence(spec, timezone)?;
@@ -137,7 +115,7 @@ pub(super) fn update(
         )?;
         let enabled = p.enabled.unwrap_or(old.enabled);
         if enabled && !old.enabled {
-            check_open(&st, old.machine_id, old.session_id)?;
+            check_open(&st, old.session_id)?;
         }
         let retimed = *spec != old.spec || timezone != old.timezone || enabled != old.enabled;
         let timing = retimed.then(|| Timing {
@@ -153,7 +131,7 @@ pub(super) fn update(
         {
             return Err(not_found(Resource::Schedule, p.schedule_id));
         }
-        let schedule = get(conn, p.schedule_id, api)?;
+        let schedule = get(conn, p.schedule_id)?;
         st.emit_schedule(&schedule);
         schedule
     };
@@ -161,9 +139,9 @@ pub(super) fn update(
     Ok(schedule)
 }
 
-pub(super) fn delete(conn: &Conn, p: ScheduleRef, api: UiApi) -> Result<Ack, RpcError> {
+pub(super) fn delete(conn: &Conn, p: ScheduleRef) -> Result<Ack, RpcError> {
     let mut st = conn.hub.lock();
-    get(conn, p.schedule_id, api)?;
+    get(conn, p.schedule_id)?;
     if !conn
         .hub
         .repo()
@@ -177,12 +155,8 @@ pub(super) fn delete(conn: &Conn, p: ScheduleRef, api: UiApi) -> Result<Ack, Rpc
     Ok(Ack {})
 }
 
-/// Sends the message now and records the outcome; an unreachable daemon is an error.
-pub(super) async fn run_now(
-    conn: &Conn,
-    p: ScheduleRef,
-    api: UiApi,
-) -> Result<ScheduleRow, RpcError> {
-    get(conn, p.schedule_id, api)?;
+/// Sends the message now and records the outcome; an unreachable agent daemon is an error.
+pub(super) async fn run_now(conn: &Conn, p: ScheduleRef) -> Result<Schedule, RpcError> {
+    get(conn, p.schedule_id)?;
     fire_now(&conn.hub, p.schedule_id).await
 }

@@ -17,12 +17,10 @@ use std::time::Duration;
 use controlroom_protocol::RpcError;
 use controlroom_protocol::Seq;
 use controlroom_protocol::agent::{AgentState, SessionInfo};
-use controlroom_protocol::agentd::{
-    DaemonSettings, HostOpRequest, SessionSummary, SessionsChange, SessionsEvent,
-};
+use controlroom_protocol::agentd::{DaemonSettings, HostOpRequest, SessionsChange, SessionsEvent};
 use controlroom_protocol::host::HostRequest;
 use controlroom_protocol::ids::{CallId, DaemonId, HostOpId, MachineId, Rev, SessionId};
-use controlroom_protocol::session::{AttentionRollup, SessionDetail};
+use controlroom_protocol::session::{AttentionRollup, SessionDetail, SessionSummary};
 use tokio::sync::{broadcast, watch};
 
 use crate::errors::{internal, unknown_session};

@@ -121,12 +121,12 @@ pub struct Job {
     pub command: String,
     /// The working directory (on the job's machine).
     pub cwd: RemotePath,
-    /// The machine it runs on; `null` from a host daemon (which doesn't know its machine id)
-    /// and from the old per-machine daemon. The agent daemon always fills it.
+    /// The machine it runs on; `null` from a host daemon (which doesn't know its machine id).
+    /// The agent daemon always fills it.
     #[serde(default)]
     pub machine_id: Option<MachineId>,
-    /// The workspace it runs in (under that workspace's sandbox); `null` from the old
-    /// per-machine daemon.
+    /// The workspace it runs in (under that workspace's sandbox). The agent daemon always
+    /// fills it.
     #[serde(default)]
     pub workspace_id: Option<WorkspaceId>,
     /// Its status.
@@ -141,8 +141,7 @@ pub struct Job {
     pub ended_at: Option<UnixMillis>,
     /// Its timeout, if any.
     pub timeout_s: Option<u32>,
-    /// The plain-text log, on the job's machine: `<workspace root>/.controlroom/jobs/<id>.log`
-    /// (the old daemon: `<session cwd>/.controlroom/jobs/<id>.log`).
+    /// The plain-text log, on the job's machine: `<workspace root>/.controlroom/jobs/<id>.log`.
     pub log_path: RemotePath,
     /// Lines in the log so far.
     pub lines: u64,

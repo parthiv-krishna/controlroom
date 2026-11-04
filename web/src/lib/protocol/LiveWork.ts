@@ -18,6 +18,6 @@ children: number,
 asks: number, 
 /**
  * Tool calls waiting for an unreachable host, or past the grace period with their late
- * result still to come. Always `0` from the old per-machine daemon.
+ * result still to come.
  */
 host_calls: number, };

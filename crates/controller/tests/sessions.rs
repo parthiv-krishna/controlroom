@@ -1,4 +1,4 @@
-//! The next UI API's server side against a fake agent daemon: global sessions in the state feed
+//! The UI API's sessions against a fake agent daemon: global sessions in the state feed
 //! with their project membership (Unassigned without a linked task) and the workspace overlaps,
 //! session creation and pass-through, shared session subscriptions, and schedules on global
 //! sessions.
@@ -12,7 +12,7 @@ use controlroom_protocol::UnixMillis;
 use controlroom_protocol::ids::{MachineId, SessionId};
 use controlroom_protocol::session::{SessionState, WorkspaceSpec};
 use serde_json::{Value, json};
-use support::{add_machine, controller_with_agentd, ui, ui_next};
+use support::{add_machine, controller_with_agentd, ui};
 
 fn spec(machine: MachineId, path: &str) -> WorkspaceSpec {
     WorkspaceSpec {
@@ -29,8 +29,8 @@ fn s(id: SessionId) -> String {
 async fn the_feed_shows_global_sessions_with_projects_and_overlaps() {
     let agentd = FakeAgentd::start().await;
     let setup = controller_with_agentd(None, agentd.socket());
-    let mut next = ui_next(&setup.controller, "laptop").await;
-    let mut old = ui(&setup.controller, "phone").await;
+    let mut next = ui(&setup.controller, "laptop").await;
+    let mut phone = ui(&setup.controller, "phone").await;
     agentd.wait_connected(1).await;
 
     // Two open sessions in one directory (one through a resolved root) overlap; a third
@@ -112,15 +112,15 @@ async fn the_feed_shows_global_sessions_with_projects_and_overlaps() {
     })
     .await;
 
-    // The old UI API sees neither global sessions nor global links, but the same projects.
-    old.wait("the project reaches the old feed", |m| {
-        m.projects.contains_key(web["id"].as_str().unwrap())
-    })
-    .await;
-    assert!(old.mirror.sessions.is_empty());
+    // Another tab sees the same sessions and projects (projects have no locations).
+    phone
+        .wait("the other tab sees the sessions and the project", |m| {
+            m.sessions.len() == 3 && m.projects.contains_key(web["id"].as_str().unwrap())
+        })
+        .await;
     assert_eq!(
-        old.mirror.projects[web["id"].as_str().unwrap()]["location_prefixes"],
-        json!([])
+        phone.mirror.projects[web["id"].as_str().unwrap()],
+        json!({"id": web["id"], "name": "web", "color": "#a78bfa"})
     );
 
     // Closing a session ends its overlap; deleting it removes it.
@@ -146,7 +146,7 @@ async fn sessions_are_created_and_driven_through_the_agent_daemon() {
     let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
     let host = RemoteHost::start().await;
     let _fake = FakeHost::start(&host);
-    let mut next = ui_next(&setup.controller, "laptop").await;
+    let mut next = ui(&setup.controller, "laptop").await;
     agentd.wait_connected(1).await;
     let devbox = add_machine(&mut next, &host, "devbox").await;
     next.ok(
@@ -214,7 +214,7 @@ async fn sessions_are_created_and_driven_through_the_agent_daemon() {
 
     // Two tabs share one agent daemon subscription; text arrives once per tab, without a
     // machine.
-    let mut tab = ui_next(&setup.controller, "phone").await;
+    let mut tab = ui(&setup.controller, "phone").await;
     let first = next
         .ok(
             "session.subscribe",
@@ -288,7 +288,7 @@ async fn a_create_waits_for_the_agent_daemon_to_see_what_the_ui_saw() {
     let host = RemoteHost::start().await;
     let _fake = FakeHost::start(&host);
     let relay = Relay::start(host.port()).await;
-    let mut next = ui_next(&setup.controller, "laptop").await;
+    let mut next = ui(&setup.controller, "laptop").await;
     agentd.wait_connected(1).await;
     let devbox = support::add_machine_at(&mut next, &host, "devbox", relay.port).await;
     let id: MachineId = devbox.parse().unwrap();

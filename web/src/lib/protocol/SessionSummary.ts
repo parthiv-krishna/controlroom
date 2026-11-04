@@ -3,9 +3,7 @@ import type { Attention } from "./Attention";
 import type { AttentionRollup } from "./AttentionRollup";
 import type { ContextUsage } from "./ContextUsage";
 import type { LiveWork } from "./LiveWork";
-import type { PeerRef } from "./PeerRef";
 import type { QueueStatus } from "./QueueStatus";
-import type { RemotePath } from "./RemotePath";
 import type { Request } from "./Request";
 import type { RunOutcome } from "./RunOutcome";
 import type { SandboxInfo } from "./SandboxInfo";
@@ -13,15 +11,13 @@ import type { Seq } from "./Seq";
 import type { SessionId } from "./SessionId";
 import type { SessionOption } from "./SessionOption";
 import type { SessionState } from "./SessionState";
+import type { Shell } from "./Shell";
 import type { TodoRollup } from "./TodoRollup";
 import type { UnixMillis } from "./UnixMillis";
+import type { Workspace } from "./Workspace";
 
 /**
  * What every client knows about a session. Sent whole on every change.
- *
- * **Deprecated** with the daemon API (sessions per machine, one `cwd`): the agent daemon's
- * global sessions use [`crate::agentd::SessionSummary`] (workspaces and shells instead of
- * `cwd`, no `agent` or `spawned_by`).
  */
 export type SessionSummary = { 
 /**
@@ -33,17 +29,18 @@ id: SessionId,
  */
 name: string | null, 
 /**
- * The agent-reported title, if any. Clients show `name`, else `title`, else the cwd.
+ * The agent-reported title, if any. Clients show `name`, else `title`, else the primary
+ * workspace.
  */
 title: string | null, 
 /**
- * The working directory, with `~` expanded.
+ * Its workspaces, the primary one first.
  */
-cwd: RemotePath, 
+workspaces: Array<Workspace>, 
 /**
- * The agent key in the machine's `agents.toml`.
+ * Its named shells, in creation order.
  */
-agent: string, 
+shells: Array<Shell>, 
 /**
  * When it was created.
  */
@@ -57,13 +54,9 @@ updated_at: UnixMillis,
  */
 closed_at: UnixMillis | null, 
 /**
- * The parent session on the same machine, for subagents.
+ * The parent session, for subagents.
  */
 parent_id: SessionId | null, 
-/**
- * The session that spawned this one from another machine, for cross-machine subagents.
- */
-spawned_by: PeerRef | null, 
 /**
  * The state.
  */
@@ -118,7 +111,7 @@ requests: Array<Request>,
  */
 todo: TodoRollup | null, 
 /**
- * Background work that will wake the agent.
+ * Background work that will wake the agent (jobs, children, asks, waiting host calls).
  */
 live_work: LiveWork, 
 /**
@@ -131,7 +124,7 @@ options: Array<SessionOption>,
  */
 agent_live: boolean, 
 /**
- * The sandbox.
+ * The sandbox (one level for the agent and every workspace).
  */
 sandbox: SandboxInfo, 
 /**

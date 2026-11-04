@@ -1,6 +1,6 @@
 //! Global sessions: the agent daemon's sessions feed (`sessions.subscribe`) applied to the hub's
 //! cache, each session's project membership (the projects of the tasks that link it), and the
-//! workspace overlaps. Everything here feeds the next UI API's state feed.
+//! workspace overlaps. Everything here feeds the UI state feed.
 //!
 //! The cache survives a lost link to the agent daemon (sessions never go stale; their
 //! workspaces carry their own availability) and is replaced by the next snapshot.
@@ -10,14 +10,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use controlroom_protocol::RemotePath;
 use controlroom_protocol::Rev;
 use controlroom_protocol::agentd::{
-    SessionSummary, SessionsChange, SessionsEvent, SessionsEventsParams, SessionsSubscribeResult,
+    SessionsChange, SessionsEvent, SessionsEventsParams, SessionsSubscribeResult,
 };
 use controlroom_protocol::ids::{MachineId, ProjectId, SessionId, SubscriptionId};
-use controlroom_protocol::session::SessionState;
-use controlroom_protocol::ui::next::{FeedSession, Overlap, Project, StateEvent};
+use controlroom_protocol::session::{SessionState, SessionSummary};
+use controlroom_protocol::ui::{FeedSession, Overlap, Project, StateEvent, Task};
 
 use super::{BusEvent, Hub, HubState};
-use crate::store::TaskRow;
 
 /// The hub's view of the agent daemon's sessions.
 #[derive(Debug, Default)]
@@ -59,17 +58,17 @@ impl GlobalSessions {
     }
 }
 
-/// Each session's projects: the union of the projects of the tasks that link it (global links
-/// only), in project order.
+/// Each session's projects: the union of the projects of the tasks that link it, in project
+/// order.
 pub(crate) fn membership(
-    tasks: &[TaskRow],
+    tasks: &[Task],
     projects: &[Project],
 ) -> HashMap<SessionId, Vec<ProjectId>> {
     let mut linked: HashMap<SessionId, HashSet<ProjectId>> = HashMap::new();
     for task in tasks {
-        for link in task.links.iter().filter(|l| l.machine_id.is_none()) {
+        for session in &task.links {
             linked
-                .entry(link.session_id)
+                .entry(*session)
                 .or_default()
                 .extend(task.project_ids.iter().copied());
         }
@@ -121,12 +120,12 @@ impl HubState {
         if previous.as_ref() == Some(&session) {
             return;
         }
-        let _ = self.bus.send(BusEvent::GlobalSession {
+        let _ = self.bus.send(BusEvent::Session {
             previous: previous.map(Box::new),
             current: Box::new(session.clone()),
         });
         let feed = self.global.feed_session(&session);
-        self.emit_next(StateEvent::SessionUpserted {
+        self.emit(StateEvent::SessionUpserted {
             session: Box::new(feed),
         });
     }
@@ -135,10 +134,8 @@ impl HubState {
         if self.global.sessions.remove(&id).is_none() {
             return;
         }
-        let _ = self
-            .bus
-            .send(BusEvent::GlobalSessionRemoved { session_id: id });
-        self.emit_next(StateEvent::SessionRemoved { session_id: id });
+        let _ = self.bus.send(BusEvent::SessionRemoved { session_id: id });
+        self.emit(StateEvent::SessionRemoved { session_id: id });
     }
 
     /// Emits the overlaps if they changed.
@@ -146,7 +143,7 @@ impl HubState {
         let now = overlaps(self.global.sessions.values());
         if now != self.global.overlaps {
             self.global.overlaps = now.clone();
-            self.emit_next(StateEvent::OverlapsChanged { overlaps: now });
+            self.emit(StateEvent::OverlapsChanged { overlaps: now });
         }
     }
 
@@ -215,7 +212,7 @@ impl Hub {
         for id in changed {
             if let Some(session) = st.global.sessions.get(&id) {
                 let feed = st.global.feed_session(session);
-                st.emit_next(StateEvent::SessionUpserted {
+                st.emit(StateEvent::SessionUpserted {
                     session: Box::new(feed),
                 });
             }
@@ -232,7 +229,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::store::TaskLink;
 
     fn session(created: i64, dirs: &[(MachineId, &str, Option<&str>)]) -> SessionSummary {
         let mut s: SessionSummary = serde_json::from_value(json!({
@@ -303,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn membership_follows_global_links_in_project_order() {
+    fn membership_follows_links_in_project_order() {
         let projects: Vec<Project> = ["web", "api", "ops"]
             .iter()
             .map(|name| Project {
@@ -312,12 +308,8 @@ mod tests {
                 color: "#000".into(),
             })
             .collect();
-        let (s1, s2, legacy) = (
-            SessionId::generate(),
-            SessionId::generate(),
-            SessionId::generate(),
-        );
-        let task = |projects: Vec<ProjectId>, links: Vec<TaskLink>| TaskRow {
+        let (s1, s2) = (SessionId::generate(), SessionId::generate());
+        let task = |projects: Vec<ProjectId>, links: Vec<SessionId>| Task {
             id: TaskId::generate(),
             title: "t".into(),
             status: TaskStatus::Doing,
@@ -331,19 +323,9 @@ mod tests {
             updated_at: UnixMillis(0),
         };
         let tasks = [
-            task(vec![projects[2].id], vec![TaskLink::global(s1)]),
-            task(
-                vec![projects[0].id, projects[2].id],
-                vec![TaskLink::global(s1)],
-            ),
-            task(vec![], vec![TaskLink::global(s2)]),
-            task(
-                vec![projects[1].id],
-                vec![TaskLink {
-                    session_id: legacy,
-                    machine_id: Some(MachineId::generate()),
-                }],
-            ),
+            task(vec![projects[2].id], vec![s1]),
+            task(vec![projects[0].id, projects[2].id], vec![s1]),
+            task(vec![], vec![s2]),
         ];
         let m = membership(&tasks, &projects);
         assert_eq!(m.get(&s1), Some(&vec![projects[0].id, projects[2].id]));
@@ -352,6 +334,5 @@ mod tests {
             None,
             "a task without projects leaves it Unassigned"
         );
-        assert_eq!(m.get(&legacy), None, "legacy links don't count");
     }
 }

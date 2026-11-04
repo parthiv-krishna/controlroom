@@ -2,7 +2,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use controlroom_protocol::daemon::OptionValue;
+use controlroom_protocol::agentd::OptionValue;
 use controlroom_protocol::session::{
     OptionControl, RequestKind, RequestOption, Response, RunOutcome, SessionOption,
 };

@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use controlroom_drivers::{AgentView, Driver, FoldOut, LineTag};
 use controlroom_protocol::agent::{AgentState, SessionInfo};
-use controlroom_protocol::agentd::SessionSummary;
 use controlroom_protocol::host::{ToolOutputParams, ToolWaitingInputParams};
 use controlroom_protocol::ids::{HostOpId, ItemId, OpId, RequestId, Seq, UnixMillis};
+use controlroom_protocol::session::SessionSummary;
 use controlroom_protocol::session::{
     AgentSession, Attention, AutoContinueStatus, ContextUsage, LiveWork, Request, RequestKind,
     RequestState, SessionDetail, SessionState,

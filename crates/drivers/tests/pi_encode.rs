@@ -6,7 +6,7 @@ mod support;
 use controlroom_drivers::{
     Driver, DriverEvent, EncodeError, Intent, LineTag, NativeRef, PiDriver, StartMode,
 };
-use controlroom_protocol::daemon::OptionValue;
+use controlroom_protocol::agentd::OptionValue;
 use controlroom_protocol::ids::{OpId, QueueId};
 use controlroom_protocol::session::{
     ContentPart, QuestionAnswer, RequestKind, RequestState, Response, RunOutcome,

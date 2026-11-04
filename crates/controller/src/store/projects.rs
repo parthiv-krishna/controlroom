@@ -3,7 +3,7 @@
 
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::ids::ProjectId;
-use controlroom_protocol::ui::next::Project;
+use controlroom_protocol::ui::Project;
 use rusqlite::OptionalExtension;
 
 use super::{OwnerId, Store, StoreResult, parsed_col};

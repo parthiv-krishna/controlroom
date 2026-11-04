@@ -3,9 +3,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::agentd::SessionSummary;
 use crate::agentd::{InitialPrompt, PromptResult};
 use crate::ids::{OpId, SessionId, WorkspaceId};
+use crate::session::SessionSummary;
 use crate::session::{SandboxLevel, SandboxSpec, WorkspaceSpec};
 
 /// Params of `session.create`: create a session on its workspaces and start its agent (pi, on

@@ -2,13 +2,14 @@
 import type { ChecklistItem } from "./ChecklistItem";
 import type { Priority } from "./Priority";
 import type { ProjectId } from "./ProjectId";
-import type { SessionLink } from "./SessionLink";
+import type { SessionId } from "./SessionId";
 import type { TaskId } from "./TaskId";
 import type { TaskStatus } from "./TaskStatus";
 import type { UnixMillis } from "./UnixMillis";
 
 /**
- * A kanban task. Sessions linked to the same task may see and message each other.
+ * A kanban task. Sessions linked to the same task may see and message each other, and belong
+ * to the task's projects.
  */
 export type Task = { 
 /**
@@ -44,9 +45,9 @@ notes: string,
  */
 checklist: Array<ChecklistItem>, 
 /**
- * Linked sessions, possibly dangling.
+ * Linked sessions, possibly dangling (a deleted session renders as "missing session").
  */
-links: Array<SessionLink>, 
+links: Array<SessionId>, 
 /**
  * When created.
  */

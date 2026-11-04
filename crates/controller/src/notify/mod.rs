@@ -4,8 +4,8 @@
 //! - **Dedup:** each device gets at most one push per (session, attention event), claimed in
 //!   the store before sending (released again if the send fails, so a later change retries).
 //! - **Focus:** a device with a visible client showing the session is skipped.
-//! - **Payloads** carry metadata only: session and machine ids and names, the attention kind,
-//!   and a deep link. Never code, prompts or tool output.
+//! - **Payloads** carry metadata only: the session id, the session's and its primary machine's
+//!   names, the attention kind, and a deep link. Never code, prompts or tool output.
 //! - Subscriptions the push service reports gone (404/410) are deleted.
 //! - **SSRF guard:** endpoints must be public `https` host names, are checked again at send
 //!   time, must resolve to public addresses, and redirects aren't followed (`endpoint`).
@@ -20,8 +20,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use controlroom_protocol::UnixMillis;
-use controlroom_protocol::agentd;
-use controlroom_protocol::ids::{DeviceId, MachineId, SessionId};
+use controlroom_protocol::ids::{DeviceId, SessionId};
 use controlroom_protocol::session::SessionSummary;
 use controlroom_protocol::ui::NotificationPreferences;
 use futures::future::BoxFuture;
@@ -89,13 +88,10 @@ impl PushConfig {
 /// The JSON payload of a push. The service worker builds the deep link from it.
 #[derive(Debug, Clone, Serialize)]
 struct Payload<'a> {
-    /// A legacy daemon's machine; absent for a global session.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    machine_id: Option<MachineId>,
     session_id: SessionId,
     /// The session's display name.
     name: String,
-    /// The machine's name.
+    /// The primary workspace's machine name.
     machine: String,
     /// The attention kind.
     state: &'a str,
@@ -158,35 +154,18 @@ fn truncate(s: &str) -> String {
 /// The session a notification is about, as its payload shows it.
 struct Subject {
     session_id: SessionId,
-    /// A legacy daemon's machine; `None` for a global session.
-    machine_id: Option<MachineId>,
     /// The session's display name.
     name: String,
-    /// The machine's name (a global session's primary workspace's machine).
+    /// The primary workspace's machine name.
     machine: String,
 }
 
 impl Subject {
-    /// A legacy daemon's session: the user's name, else the agent's title, else the cwd.
-    fn legacy(hub: &Hub, machine_id: MachineId, session: &SessionSummary) -> Self {
-        Self {
-            session_id: session.id,
-            machine_id: Some(machine_id),
-            name: session
-                .name
-                .clone()
-                .or_else(|| session.title.clone())
-                .unwrap_or_else(|| session.cwd.to_string()),
-            machine: hub.machine_name(machine_id).unwrap_or_default(),
-        }
-    }
-
-    /// A global session: the user's name, else the agent's title, else the primary workspace.
-    fn global(hub: &Hub, session: &agentd::SessionSummary) -> Self {
+    /// The user's name, else the agent's title, else the primary workspace's path.
+    fn of(hub: &Hub, session: &SessionSummary) -> Self {
         let primary = session.workspaces.iter().find(|w| w.primary);
         Self {
             session_id: session.id,
-            machine_id: None,
             name: session
                 .name
                 .clone()
@@ -201,15 +180,11 @@ impl Subject {
 
     fn payload<'a>(&self, kind: AttentionKind) -> Payload<'a> {
         Payload {
-            machine_id: self.machine_id,
             session_id: self.session_id,
             name: truncate(&self.name),
             machine: truncate(&self.machine),
             state: kind.as_str(),
-            url: match self.machine_id {
-                Some(machine_id) => format!("#/s/{machine_id}/{}", self.session_id),
-                None => format!("#/s/{}", self.session_id),
-            },
+            url: format!("#/s/{}", self.session_id),
         }
     }
 }
@@ -231,20 +206,11 @@ pub(crate) async fn run(
         };
         let Some(hub) = hub.upgrade() else { return };
         let (subject, events) = match event {
-            BusEvent::Session {
-                machine_id,
-                previous,
-                current,
-            } => (
-                Subject::legacy(&hub, machine_id, &current),
-                attention::detect(previous.as_deref(), &*current),
+            BusEvent::Session { previous, current } => (
+                Subject::of(&hub, &current),
+                attention::detect(previous.as_deref(), &current),
             ),
-            BusEvent::GlobalSession { previous, current } => (
-                Subject::global(&hub, &current),
-                attention::detect(previous.as_deref(), &*current),
-            ),
-            BusEvent::SessionRemoved { session_id, .. }
-            | BusEvent::GlobalSessionRemoved { session_id } => {
+            BusEvent::SessionRemoved { session_id } => {
                 if let Err(e) = hub.repo().push().forget_session(session_id) {
                     tracing::warn!(error = %e, "forgetting a deleted session's pushes");
                 }

@@ -3,7 +3,6 @@ import type { BootstrapProgress } from "./BootstrapProgress";
 import type { Capability } from "./Capability";
 import type { Connectivity } from "./Connectivity";
 import type { DaemonId } from "./DaemonId";
-import type { DaemonSettings } from "./DaemonSettings";
 import type { DoctorReport } from "./DoctorReport";
 import type { HostKeyInfo } from "./HostKeyInfo";
 import type { KeyId } from "./KeyId";
@@ -84,10 +83,6 @@ last_error: string | null,
  * The daemon's optional features, from its `hello`.
  */
 capabilities: Array<Capability>, 
-/**
- * The daemon's settings, once connected.
- */
-settings: DaemonSettings | null, 
 /**
  * The latest doctor report, once bootstrapped.
  */

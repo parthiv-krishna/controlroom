@@ -2,10 +2,11 @@
 import type { ContactGrant } from "./ContactGrant";
 import type { Device } from "./Device";
 import type { DeviceId } from "./DeviceId";
+import type { FeedSession } from "./FeedSession";
 import type { GrantId } from "./GrantId";
 import type { Machine } from "./Machine";
 import type { MachineId } from "./MachineId";
-import type { MachineSession } from "./MachineSession";
+import type { Overlap } from "./Overlap";
 import type { Project } from "./Project";
 import type { ProjectId } from "./ProjectId";
 import type { Rev } from "./Rev";
@@ -34,15 +35,15 @@ machine_id: MachineId, } | { "kind": "session_upserted",
 /**
  * The session.
  */
-session: MachineSession, } | { "kind": "session_removed", 
-/**
- * The machine.
- */
-machine_id: MachineId, 
+session: FeedSession, } | { "kind": "session_removed", 
 /**
  * The session.
  */
-session_id: SessionId, } | { "kind": "project_upserted", 
+session_id: SessionId, } | { "kind": "overlaps_changed", 
+/**
+ * The new list.
+ */
+overlaps: Array<Overlap>, } | { "kind": "project_upserted", 
 /**
  * The project.
  */

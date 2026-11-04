@@ -15,13 +15,11 @@ mod board;
 mod dispatch;
 mod keys;
 mod machines;
-mod next;
 mod order;
 mod passthrough;
 mod people;
 mod sandbox;
 mod schedules;
-mod sessions;
 mod state;
 mod subscriptions;
 
@@ -36,7 +34,7 @@ use serde_json::Value;
 use tokio::sync::{Semaphore, mpsc, watch};
 
 pub(crate) use passthrough::agentd_error;
-pub(crate) use subscriptions::{resubscribe_global, resubscribe_sessions};
+pub(crate) use subscriptions::resubscribe;
 
 use crate::auth::{AuthError, Principal};
 use crate::errors::internal;
@@ -44,17 +42,6 @@ use crate::hub::{ClientId, ClientSink, CloseReason, Hub};
 
 /// Frames buffered from the shell before it waits.
 const INCOMING_QUEUE: usize = 64;
-
-/// Which UI API a connection speaks. Until the UI switches (R2), the web shell opens
-/// [`UiApi::Legacy`] connections; [`UiApi::Next`] serves the global-session model (`ui::next`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum UiApi {
-    /// The old UI API (`ui::UiRequest`): sessions on legacy per-machine daemons.
-    #[default]
-    Legacy,
-    /// The next UI API (`ui::next::UiRequest`): global sessions on the agent daemon.
-    Next,
-}
 
 /// One UI connection, as the shell sees it.
 pub struct UiClient {
@@ -162,8 +149,6 @@ pub(crate) struct Conn {
     /// The login session, re-checked per request; `None` for a trusted embedding.
     pub token_hash: Option<String>,
     pub sink: ClientSink,
-    /// The UI API it speaks.
-    pub api: UiApi,
     pub device: Mutex<Option<DeviceId>>,
     helloed: AtomicBool,
 }
@@ -227,12 +212,7 @@ pub(crate) fn reply<T: Serialize>(result: T) -> Result<Reply, RpcError> {
 }
 
 /// Opens a connection for `principal` on `hub` and starts serving it.
-pub(crate) fn open(
-    hub: Arc<Hub>,
-    principal: Principal,
-    token_hash: Option<String>,
-    api: UiApi,
-) -> UiClient {
+pub(crate) fn open(hub: Arc<Hub>, principal: Principal, token_hash: Option<String>) -> UiClient {
     let tuning = &hub.services.tuning;
     let (out_tx, out_rx) = mpsc::channel(tuning.client_buffer.max(1));
     let (in_tx, in_rx) = mpsc::channel(INCOMING_QUEUE);
@@ -245,7 +225,6 @@ pub(crate) fn open(
         principal,
         token_hash,
         sink,
-        api,
         device: Mutex::new(None),
         helloed: AtomicBool::new(false),
     });
@@ -320,11 +299,7 @@ async fn serve(
 /// Handles one request and queues its response.
 async fn run(conn: &Arc<Conn>, request: RpcRequest<Value>) {
     let id = request.id.clone();
-    let dispatched = match conn.api {
-        UiApi::Legacy => dispatch::dispatch(conn, request).await,
-        UiApi::Next => next::dispatch(conn, request).await,
-    };
-    let (response, after) = match dispatched {
+    let (response, after) = match dispatch::dispatch(conn, request).await {
         Ok(Reply { value, after }) => (RpcResponse::success(id, value), after),
         Err(error) => (RpcResponse::error(Some(id), error), None),
     };

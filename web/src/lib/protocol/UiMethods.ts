@@ -12,6 +12,7 @@ import type { DeviceRefParams } from "./DeviceRefParams";
 import type { DevicesRegisterParams } from "./DevicesRegisterParams";
 import type { DevicesRenameParams } from "./DevicesRenameParams";
 import type { DoctorReport } from "./DoctorReport";
+import type { DoctorReportParams } from "./DoctorReportParams";
 import type { FsListParams } from "./FsListParams";
 import type { FsListResult } from "./FsListResult";
 import type { GrantsRevokeParams } from "./GrantsRevokeParams";
@@ -92,6 +93,9 @@ import type { UiHelloParams } from "./UiHelloParams";
 import type { UiHelloResult } from "./UiHelloResult";
 import type { UiSessionCreateParams } from "./UiSessionCreateParams";
 import type { UnsubscribeParams } from "./UnsubscribeParams";
+import type { Workspace } from "./Workspace";
+import type { WorkspaceAddParams } from "./WorkspaceAddParams";
+import type { WorkspaceRemoveParams } from "./WorkspaceRemoveParams";
 
 /**
  * Every Ui API request method by name, with its params and result types.
@@ -112,7 +116,7 @@ export type UiMethods = {
   /**
    * Subscribe to one session's timeline and detail.
    */
-  "session.subscribe": { params: OnMachine<SessionSubscribeParams>, result: SessionSubscribeResult },
+  "session.subscribe": { params: SessionSubscribeParams, result: SessionSubscribeResult },
   /**
    * End a subscription.
    */
@@ -130,7 +134,7 @@ export type UiMethods = {
    */
   "machines.confirm_host_key": { params: MachinesConfirmHostKeyParams, result: Machine },
   /**
-   * Remove a machine record (its sessions keep running).
+   * Remove a machine record (sessions keep their other workspaces).
    */
   "machines.remove": { params: MachineRef, result: Ack },
   /**
@@ -138,7 +142,7 @@ export type UiMethods = {
    */
   "machines.reconnect": { params: MachineRef, result: Ack },
   /**
-   * Upgrade the daemon now.
+   * Upgrade the host daemon now.
    */
   "machines.upgrade": { params: MachineRef, result: Ack },
   /**
@@ -170,11 +174,11 @@ export type UiMethods = {
    */
   "projects.create": { params: ProjectsCreateParams, result: Project },
   /**
-   * Change a project.
+   * Rename or recolor a project.
    */
   "projects.update": { params: ProjectsUpdateParams, result: Project },
   /**
-   * Delete a project.
+   * Delete a project (its tasks stay, unassigned from it).
    */
   "projects.delete": { params: ProjectRef, result: Ack },
   /**
@@ -274,137 +278,145 @@ export type UiMethods = {
    */
   "client.focus": { params: ClientFocusParams, result: Ack },
   /**
-   * Create a session with its first prompt and link it to tasks.
+   * Create a session on its workspaces with its first prompt, and link it to tasks.
    */
   "session.create": { params: UiSessionCreateParams, result: SessionCreateResult },
   /**
+   * Pass-through: give a session another workspace.
+   */
+  "session.workspace_add": { params: WorkspaceAddParams, result: Workspace },
+  /**
+   * Pass-through: drop a session's workspace.
+   */
+  "session.workspace_remove": { params: WorkspaceRemoveParams, result: Ack },
+  /**
    * Pass-through: send or queue a prompt.
    */
-  "session.prompt": { params: OnMachine<SessionPromptParams>, result: PromptResult },
+  "session.prompt": { params: SessionPromptParams, result: PromptResult },
   /**
    * Pass-through: cancel the active run.
    */
-  "session.cancel": { params: OnMachine<SessionOpParams>, result: Ack },
+  "session.cancel": { params: SessionOpParams, result: Ack },
   /**
    * Pass-through: close a session.
    */
-  "session.close": { params: OnMachine<SessionOpParams>, result: Ack },
+  "session.close": { params: SessionOpParams, result: Ack },
   /**
    * Pass-through: reopen a closed session.
    */
-  "session.reopen": { params: OnMachine<SessionOpParams>, result: Ack },
+  "session.reopen": { params: SessionOpParams, result: Ack },
   /**
    * Pass-through: reattach a session's agent.
    */
-  "session.resume": { params: OnMachine<SessionResumeParams>, result: Ack },
+  "session.resume": { params: SessionResumeParams, result: Ack },
   /**
    * Pass-through: start a new agent session.
    */
-  "session.start_fresh": { params: OnMachine<SessionStartFreshParams>, result: StartFreshResult },
+  "session.start_fresh": { params: SessionStartFreshParams, result: StartFreshResult },
   /**
    * Pass-through: delete a session.
    */
-  "session.delete": { params: OnMachine<SessionOpParams>, result: Ack },
+  "session.delete": { params: SessionOpParams, result: Ack },
   /**
    * Pass-through: rename a session or change its settings.
    */
-  "session.update": { params: OnMachine<SessionUpdateParams>, result: Ack },
+  "session.update": { params: SessionUpdateParams, result: Ack },
   /**
    * Pass-through: move the read cursor forward.
    */
-  "session.mark_read": { params: OnMachine<SessionMarkReadParams>, result: ReadCursor },
+  "session.mark_read": { params: SessionMarkReadParams, result: ReadCursor },
   /**
    * Pass-through: mark the last run unread.
    */
-  "session.mark_unread": { params: OnMachine<SessionOpParams>, result: ReadCursor },
+  "session.mark_unread": { params: SessionOpParams, result: ReadCursor },
   /**
    * Pass-through: change an agent option.
    */
-  "session.set_option": { params: OnMachine<SessionSetOptionParams>, result: Ack },
+  "session.set_option": { params: SessionSetOptionParams, result: Ack },
   /**
    * Pass-through: send a queued item now.
    */
-  "queue.send_now": { params: OnMachine<QueueSendNowParams>, result: SendNowResult },
+  "queue.send_now": { params: QueueSendNowParams, result: SendNowResult },
   /**
    * Pass-through: edit a queued item.
    */
-  "queue.edit": { params: OnMachine<QueueEditParams>, result: Ack },
+  "queue.edit": { params: QueueEditParams, result: Ack },
   /**
    * Pass-through: remove a queued item.
    */
-  "queue.remove": { params: OnMachine<QueueRemoveParams>, result: Ack },
+  "queue.remove": { params: QueueRemoveParams, result: Ack },
   /**
    * Pass-through: move a queued item.
    */
-  "queue.reorder": { params: OnMachine<QueueReorderParams>, result: Ack },
+  "queue.reorder": { params: QueueReorderParams, result: Ack },
   /**
    * Pass-through: restart a paused queue.
    */
-  "queue.resume": { params: OnMachine<SessionOpParams>, result: Ack },
+  "queue.resume": { params: SessionOpParams, result: Ack },
   /**
    * Pass-through: answer a request.
    */
-  "request.respond": { params: OnMachine<RequestRespondParams>, result: RequestRespondResult },
+  "request.respond": { params: RequestRespondParams, result: RequestRespondResult },
   /**
    * Pass-through: add todo entries.
    */
-  "todo.add": { params: OnMachine<TodoAddParams>, result: TodoAddResult },
+  "todo.add": { params: TodoAddParams, result: TodoAddResult },
   /**
    * Pass-through: edit a todo entry.
    */
-  "todo.update": { params: OnMachine<TodoUpdateParams>, result: Todo },
+  "todo.update": { params: TodoUpdateParams, result: Todo },
   /**
    * Pass-through: remove a todo entry.
    */
-  "todo.remove": { params: OnMachine<TodoRemoveParams>, result: Ack },
+  "todo.remove": { params: TodoRemoveParams, result: Ack },
   /**
    * Pass-through: move a todo entry.
    */
-  "todo.reorder": { params: OnMachine<TodoReorderParams>, result: Ack },
+  "todo.reorder": { params: TodoReorderParams, result: Ack },
   /**
    * Pass-through: list a session's jobs.
    */
-  "job.list": { params: OnMachine<JobListParams>, result: JobListResult },
+  "job.list": { params: JobListParams, result: JobListResult },
   /**
    * Pass-through: read a job's log.
    */
-  "job.logs": { params: OnMachine<JobLogsParams>, result: JobLogs },
+  "job.logs": { params: JobLogsParams, result: JobLogs },
   /**
    * Pass-through: kill a job.
    */
-  "job.kill": { params: OnMachine<JobOpParams>, result: Job },
+  "job.kill": { params: JobOpParams, result: Job },
   /**
    * Pass-through: follow a job's output.
    */
-  "job.follow": { params: OnMachine<JobFollowParams>, result: Job },
+  "job.follow": { params: JobFollowParams, result: Job },
   /**
    * Pass-through: stop following a job.
    */
-  "job.unfollow": { params: OnMachine<JobOpParams>, result: Job },
+  "job.unfollow": { params: JobOpParams, result: Job },
   /**
    * Pass-through: remove a session's sandbox grant.
    */
-  "sandbox.revoke": { params: OnMachine<SandboxRevokeParams>, result: Ack },
+  "sandbox.revoke": { params: SandboxRevokeParams, result: Ack },
   /**
-   * Pass-through: a machine's agents.
+   * Pass-through: the agents the server can run.
    */
-  "agents.list": { params: OnMachine<NoParams>, result: AgentsListResult },
+  "agents.list": { params: NoParams, result: AgentsListResult },
   /**
-   * Pass-through: list a directory on a machine.
+   * Pass-through: the agent daemon's settings.
+   */
+  "settings.get": { params: NoParams, result: DaemonSettings },
+  /**
+   * Pass-through: change the agent daemon's settings.
+   */
+  "settings.set": { params: SettingsSetParams, result: DaemonSettings },
+  /**
+   * List a directory on a machine (its host daemon, with the user's own access).
    */
   "fs.list": { params: OnMachine<FsListParams>, result: FsListResult },
   /**
-   * Pass-through: re-run a machine's doctor checks.
+   * Re-run a machine's or the server's doctor checks.
    */
-  "doctor.report": { params: OnMachine<NoParams>, result: DoctorReport },
-  /**
-   * Pass-through: read a machine's daemon settings.
-   */
-  "settings.get": { params: OnMachine<NoParams>, result: DaemonSettings },
-  /**
-   * Pass-through: change a machine's daemon settings.
-   */
-  "settings.set": { params: OnMachine<SettingsSetParams>, result: DaemonSettings },
+  "doctor.report": { params: DoctorReportParams, result: DoctorReport },
 };
 
 /**
@@ -423,7 +435,7 @@ export type UiNotifications = {
   /**
    * Timeline ops, raw frames and detail for a `session.subscribe` subscription.
    */
-  "session.events": OnMachine<SessionEventsParams>,
+  "session.events": SessionEventsParams,
 };
 
 /**

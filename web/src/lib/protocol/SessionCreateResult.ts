@@ -11,7 +11,6 @@ export type SessionCreateResult = {
  */
 session: SessionSummary, 
 /**
- * What happened to the first prompt, if one was given: `queued` (it is sent once the
- * agent is ready).
+ * What happened to the first prompt, if one was given: `queued`.
  */
 prompt: PromptResult | null, };

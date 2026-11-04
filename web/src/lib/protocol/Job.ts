@@ -29,13 +29,13 @@ command: string,
  */
 cwd: RemotePath, 
 /**
- * The machine it runs on; `null` from a host daemon (which doesn't know its machine id)
- * and from the old per-machine daemon. The agent daemon always fills it.
+ * The machine it runs on; `null` from a host daemon (which doesn't know its machine id).
+ * The agent daemon always fills it.
  */
 machine_id: MachineId | null, 
 /**
- * The workspace it runs in (under that workspace's sandbox); `null` from the old
- * per-machine daemon.
+ * The workspace it runs in (under that workspace's sandbox). The agent daemon always
+ * fills it.
  */
 workspace_id: WorkspaceId | null, 
 /**
@@ -63,8 +63,7 @@ ended_at: UnixMillis | null,
  */
 timeout_s: number | null, 
 /**
- * The plain-text log, on the job's machine: `<workspace root>/.controlroom/jobs/<id>.log`
- * (the old daemon: `<session cwd>/.controlroom/jobs/<id>.log`).
+ * The plain-text log, on the job's machine: `<workspace root>/.controlroom/jobs/<id>.log`.
  */
 log_path: RemotePath, 
 /**

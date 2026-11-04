@@ -27,10 +27,12 @@ use controlroom_drivers::fake::FakeScript;
 use controlroom_protocol::RpcError;
 use controlroom_protocol::agentd::{
     IfBusy, PromptResult, SessionCreateParams, SessionOpParams, SessionPromptParams,
-    SessionSummary, SessionsChange, SessionsEvent,
+    SessionsChange, SessionsEvent,
 };
 use controlroom_protocol::ids::{MachineId, OpId, RemotePath, SessionId};
-use controlroom_protocol::session::{ContentPart, PromptOrigin, SessionState, WorkspaceSpec};
+use controlroom_protocol::session::{
+    ContentPart, PromptOrigin, SessionState, SessionSummary, WorkspaceSpec,
+};
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 

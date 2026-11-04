@@ -15,7 +15,7 @@ use crate::config::{ControllerConfig, Services};
 use crate::errors::{invalid_params, not_found, store_error};
 use crate::hub::{CloseReason, Hub};
 use crate::notify::parse_subscription;
-use crate::rpc::{self, UiApi, UiClient};
+use crate::rpc::{self, UiClient};
 use crate::store::{NewAuthSession, OwnerId, Store, StoreError};
 
 /// Why the controller couldn't start.
@@ -217,40 +217,22 @@ impl Controller {
 
     // --- UI connections ---------------------------------------------------------------------
 
-    /// Opens an old-UI-API connection for an authenticated login session (see
-    /// [`Self::open_client_with`]).
+    /// Opens a UI connection for an authenticated login session. Every request on it
+    /// re-checks the session and the allow-list; revoking the session closes it.
     pub fn open_client(&self, auth: &Authenticated) -> Result<UiClient, RpcError> {
-        self.open_client_with(auth, UiApi::Legacy)
-    }
-
-    /// Opens a UI connection speaking `api` for an authenticated login session. Every request
-    /// on it re-checks the session and the allow-list; revoking the session closes it.
-    pub fn open_client_with(&self, auth: &Authenticated, api: UiApi) -> Result<UiClient, RpcError> {
         let hub = self.hub(&auth.principal.owner)?;
         Ok(rpc::open(
             hub,
             auth.principal.clone(),
             Some(auth.token_hash.clone()),
-            api,
         ))
     }
 
-    /// Opens an old-UI-API connection without a login session (see
-    /// [`Self::open_trusted_client_with`]).
+    /// Opens a UI connection for a principal without a login session (an embedding that
+    /// authenticates otherwise, and tests). The allow-list is still re-checked per request.
     pub fn open_trusted_client(&self, principal: Principal) -> Result<UiClient, RpcError> {
-        self.open_trusted_client_with(principal, UiApi::Legacy)
-    }
-
-    /// Opens a UI connection speaking `api` for a principal without a login session (an
-    /// embedding that authenticates otherwise, and tests). The allow-list is still re-checked
-    /// per request.
-    pub fn open_trusted_client_with(
-        &self,
-        principal: Principal,
-        api: UiApi,
-    ) -> Result<UiClient, RpcError> {
         let hub = self.hub(&principal.owner)?;
-        Ok(rpc::open(hub, principal, None, api))
+        Ok(rpc::open(hub, principal, None))
     }
 
     /// Attaches a browser's `PushSubscription.toJSON()` to a registered device (the same as

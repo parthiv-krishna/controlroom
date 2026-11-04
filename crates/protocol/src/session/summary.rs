@@ -1,12 +1,12 @@
-//! The session summary: what every client knows about every session, fed by
-//! `machine.subscribe`. Attention and roll-ups are computed by the daemon; clients derive
-//! nothing.
+//! The session summary: what every client knows about every session, fed by the agent
+//! daemon's `sessions.subscribe`. Attention and roll-ups are computed by the agent daemon;
+//! clients derive nothing.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{RemotePath, Seq, SessionId, UnixMillis};
-use crate::session::{AutoContinueStatus, PeerRef, Request, SandboxInfo};
+use crate::ids::{Seq, SessionId, UnixMillis};
+use crate::session::{AutoContinueStatus, Request, SandboxInfo, Shell, Workspace};
 
 /// A session's state. `working` means a run is active, whoever started it (user, queue, steer,
 /// job completion, message, auto-continue).
@@ -107,7 +107,7 @@ pub struct LiveWork {
     /// Outstanding mailbox asks awaiting a reply.
     pub asks: u32,
     /// Tool calls waiting for an unreachable host, or past the grace period with their late
-    /// result still to come. Always `0` from the old per-machine daemon.
+    /// result still to come.
     #[serde(default)]
     pub host_calls: u32,
 }
@@ -180,32 +180,27 @@ pub struct SessionOption {
 }
 
 /// What every client knows about a session. Sent whole on every change.
-///
-/// **Deprecated** with the daemon API (sessions per machine, one `cwd`): the agent daemon's
-/// global sessions use [`crate::agentd::SessionSummary`] (workspaces and shells instead of
-/// `cwd`, no `agent` or `spawned_by`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct SessionSummary {
     /// The session.
     pub id: SessionId,
     /// The user-set name, if any.
     pub name: Option<String>,
-    /// The agent-reported title, if any. Clients show `name`, else `title`, else the cwd.
+    /// The agent-reported title, if any. Clients show `name`, else `title`, else the primary
+    /// workspace.
     pub title: Option<String>,
-    /// The working directory, with `~` expanded.
-    pub cwd: RemotePath,
-    /// The agent key in the machine's `agents.toml`.
-    pub agent: String,
+    /// Its workspaces, the primary one first.
+    pub workspaces: Vec<Workspace>,
+    /// Its named shells, in creation order.
+    pub shells: Vec<Shell>,
     /// When it was created.
     pub created_at: UnixMillis,
     /// When anything in the summary last changed.
     pub updated_at: UnixMillis,
     /// When it was closed, while closed.
     pub closed_at: Option<UnixMillis>,
-    /// The parent session on the same machine, for subagents.
+    /// The parent session, for subagents.
     pub parent_id: Option<SessionId>,
-    /// The session that spawned this one from another machine, for cross-machine subagents.
-    pub spawned_by: Option<PeerRef>,
     /// The state.
     pub state: SessionState,
     /// How the last run ended.
@@ -233,14 +228,14 @@ pub struct SessionSummary {
     pub requests: Vec<Request>,
     /// The todo roll-up; `null` while the list is empty.
     pub todo: Option<TodoRollup>,
-    /// Background work that will wake the agent.
+    /// Background work that will wake the agent (jobs, children, asks, waiting host calls).
     pub live_work: LiveWork,
     /// Agent options (model, thinking level, ...).
     pub options: Vec<SessionOption>,
     /// A live, ready agent process is attached: options can be changed and the agent's own
     /// requests answered. Clients disable option pickers while it is `false`.
     pub agent_live: bool,
-    /// The sandbox.
+    /// The sandbox (one level for the agent and every workspace).
     pub sandbox: SandboxInfo,
     /// Whether the agent session can be reattached after it stops.
     pub resumable: bool,

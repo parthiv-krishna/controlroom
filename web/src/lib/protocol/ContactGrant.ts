@@ -2,7 +2,7 @@
 import type { ContactScope } from "./ContactScope";
 import type { DeviceRef } from "./DeviceRef";
 import type { GrantId } from "./GrantId";
-import type { SessionLink } from "./SessionLink";
+import type { SessionId } from "./SessionId";
 import type { UnixMillis } from "./UnixMillis";
 
 /**
@@ -17,11 +17,11 @@ id: GrantId,
 /**
  * The requesting session.
  */
-from: SessionLink, 
+from: SessionId, 
 /**
  * The contacted session.
  */
-to: SessionLink, 
+to: SessionId, 
 /**
  * How long it lasts.
  */

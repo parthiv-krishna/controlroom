@@ -1,6 +1,6 @@
 //! End-to-end harness for the remote-tools model (test-only crate).
 //!
-//! It wires the real pieces together: the controller (in process, speaking the next UI API to
+//! It wires the real pieces together: the controller (in process, speaking the UI API to
 //! one browser tab), the real `controlroom-agentd` binary connected through its socket, and two
 //! real host daemons (`controlroomd`, installed by the controller from the bundled daemons)
 //! on "devbox" and "buildbox", each a separate `$HOME` behind client-core's in-process SSH

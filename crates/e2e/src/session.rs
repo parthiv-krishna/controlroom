@@ -1,4 +1,4 @@
-//! Sessions as the UI sees them: created, prompted and watched through the next UI API.
+//! Sessions as the UI sees them: created, prompted and watched through the UI API.
 
 use std::collections::BTreeMap;
 

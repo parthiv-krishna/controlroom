@@ -10,7 +10,7 @@ use controlroom_client_core::ssh::ConnectOptions;
 use controlroom_controller::test_support::{RemoteHost, UiDriver};
 use controlroom_controller::{
     AuthPolicy, Backoff, Controller, ControllerConfig, Identity, MasterKey, PushConfig,
-    PushOutcome, PushSender, Tuning, UiApi,
+    PushOutcome, PushSender, Tuning,
 };
 use controlroom_protocol::ui::AuthMode;
 use futures::future::BoxFuture;
@@ -81,20 +81,6 @@ pub fn controller_with_agentd(bundled: Option<&Path>, agentd: &Path) -> Setup {
     Setup { controller, dir }
 }
 
-/// A next-UI-API connection for the dev user, handshaken as `device`, with the state feed
-/// mirrored.
-pub async fn ui_next(controller: &Controller, device: &str) -> UiDriver {
-    let principal = controller.resolve(&Identity::DevToken).unwrap();
-    let client = controller
-        .open_trusted_client_with(principal, UiApi::Next)
-        .unwrap();
-    let mut ui = UiDriver::new(client);
-    ui.hello(device, &format!("{device} (Firefox on Linux)"))
-        .await;
-    ui.subscribe_state().await;
-    ui
-}
-
 /// A UI connection for the dev user, handshaken as `device`, with the state feed mirrored.
 pub async fn ui(controller: &Controller, device: &str) -> UiDriver {
     let principal = controller.resolve(&Identity::DevToken).unwrap();
@@ -136,22 +122,6 @@ pub async fn add_machine_at(ui: &mut UiDriver, host: &RemoteHost, name: &str, po
     })
     .await;
     id
-}
-
-/// Creates a session (sandbox off: tests run without nono) and waits until it is idle.
-pub async fn create_session(
-    ui: &mut UiDriver,
-    machine: &str,
-    host: &RemoteHost,
-    extra: Value,
-) -> String {
-    let mut params = json!({"machine_id": machine, "op_id": controlroom_controller::test_support::op(),
-        "agent": "fake", "cwd": host.work(), "sandbox_level": "off"});
-    for (k, v) in extra.as_object().into_iter().flatten() {
-        params[k] = v.clone();
-    }
-    let created = ui.ok("session.create", params).await;
-    created["session"]["id"].as_str().unwrap().to_owned()
 }
 
 /// Records every push.

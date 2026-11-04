@@ -1,15 +1,11 @@
-//! Devices, push notifications, focus, and contact grants.
-//!
-//! **Deprecated:** [`ContactGrant`] and [`ClientFocusParams`] (which name sessions with their
-//! machine) are replaced by those of [`crate::ui::next`]; everything else stays.
+//! Devices, push notifications and contact grants.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::ids::{DeviceId, GrantId, UnixMillis};
+use crate::ids::{DeviceId, GrantId, SessionId, UnixMillis};
 use crate::session::DeviceRef;
-use crate::ui::SessionLink;
 
 /// A browser the user signed in from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -88,20 +84,6 @@ pub struct NotificationsSubscribeParams {
     pub subscription: Value,
 }
 
-/// Params of `client.focus`: what this client shows, so pushes for a session the user is
-/// looking at are skipped. Send it whenever the open session, visibility or focus changes;
-/// closing the connection clears it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct ClientFocusParams {
-    /// This browser's device.
-    pub device_id: DeviceId,
-    /// The open session, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<SessionLink>,
-    /// Whether the page is visible and focused.
-    pub visible: bool,
-}
-
 /// How long a contact grant lasts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -122,9 +104,9 @@ pub struct ContactGrant {
     /// The grant.
     pub id: GrantId,
     /// The requesting session.
-    pub from: SessionLink,
+    pub from: SessionId,
     /// The contacted session.
-    pub to: SessionLink,
+    pub to: SessionId,
     /// How long it lasts.
     pub scope: ContactScope,
     /// When it was granted.

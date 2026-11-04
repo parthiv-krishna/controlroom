@@ -20,7 +20,7 @@ use controlroom_protocol::agentd::HostOpRequest;
 use controlroom_protocol::host::{HostOp, HostRequest, ToolRunParams};
 use controlroom_protocol::ids::{CallId, HostOpId, MachineId, WorkspaceId};
 use serde_json::json;
-use support::{add_machine, config, ui, ui_next};
+use support::{add_machine, config, ui};
 
 const OLD: &str = "0.0.0";
 
@@ -171,8 +171,7 @@ async fn a_bad_upgrade_rolls_back_and_keeps_the_machine_usable() {
     assert_eq!(machine["update_available"], true);
     assert_eq!(machine["version"], DAEMON_VERSION);
     // The machine still works: its host daemon answers.
-    let mut next = ui_next(&second, "laptop").await;
-    next.ok("fs.list", json!({"machine_id": id, "path": "~"}))
+    ui.ok("fs.list", json!({"machine_id": id, "path": "~"}))
         .await;
     second.shutdown().await;
 }

@@ -36,9 +36,7 @@ use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{mpsc, oneshot, watch};
 
-pub use self::handshake::{
-    HelloError, agentd_hello, check_version, hello, hello_value, host_hello,
-};
+pub use self::handshake::{HelloError, agentd_hello, host_hello};
 use self::line::{Line, read_line};
 
 /// Receives every notification, in wire order, on the reader task. It must not

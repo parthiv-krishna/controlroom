@@ -1,55 +1,14 @@
 //! Server-owned attention: which session changes deserve a notification.
 //!
-//! The daemon computes each session's `attention` and pending `requests` (spec §13: the
+//! The agent daemon computes each session's `attention` and pending `requests` (spec §13: the
 //! controller and UI derive nothing). [`detect`] compares two summaries of one session and
 //! returns the occurrences that are new, each with a key that identifies it within the session.
 //! Delivery deduplicates on that key, so "at most one push per device per (session, attention
 //! event)" holds across restarts.
 
-use controlroom_protocol::Seq;
-use controlroom_protocol::agentd;
 use controlroom_protocol::session::{
     Attention, Request, RequestState, RunOutcome, SessionState, SessionSummary,
 };
-
-/// The summary fields attention is computed from, shared by legacy daemons' and the agent
-/// daemon's sessions.
-pub(crate) trait Observed {
-    fn requests(&self) -> &[Request];
-    fn attention(&self) -> Option<Attention>;
-    fn last_turn_end_seq(&self) -> Seq;
-    fn unread(&self) -> bool;
-    fn last_outcome(&self) -> Option<RunOutcome>;
-    fn state(&self) -> SessionState;
-}
-
-macro_rules! observed {
-    ($t:ty) => {
-        impl Observed for $t {
-            fn requests(&self) -> &[Request] {
-                &self.requests
-            }
-            fn attention(&self) -> Option<Attention> {
-                self.attention
-            }
-            fn last_turn_end_seq(&self) -> Seq {
-                self.last_turn_end_seq
-            }
-            fn unread(&self) -> bool {
-                self.unread
-            }
-            fn last_outcome(&self) -> Option<RunOutcome> {
-                self.last_outcome
-            }
-            fn state(&self) -> SessionState {
-                self.state
-            }
-        }
-    };
-}
-
-observed!(SessionSummary);
-observed!(agentd::SessionSummary);
 
 /// What a notification is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -86,16 +45,16 @@ pub(crate) struct AttentionEvent {
 
 /// The session's own pending requests of one tier (descendants' roll up from their own
 /// summaries).
-fn pending<S: Observed>(session: &S, blocking: bool) -> impl Iterator<Item = &Request> {
-    session.requests().iter().filter(move |r| {
+fn pending(session: &SessionSummary, blocking: bool) -> impl Iterator<Item = &Request> {
+    session.requests.iter().filter(move |r| {
         r.state == RequestState::Pending && r.blocking == blocking && r.origin_child.is_none()
     })
 }
 
 /// The newest request of `current` in a tier that `previous` didn't have pending.
-fn new_request<'a, S: Observed>(
-    previous: Option<&S>,
-    current: &'a S,
+fn new_request<'a>(
+    previous: Option<&SessionSummary>,
+    current: &'a SessionSummary,
     blocking: bool,
 ) -> Option<&'a Request> {
     pending(current, blocking)
@@ -108,7 +67,10 @@ fn new_request<'a, S: Observed>(
 /// With no previous summary (first observation, e.g. after a controller restart), only pending
 /// requests fire: they may have arrived while nobody watched, while old failures and finished
 /// runs must not alert again. Repeats are absorbed by delivery dedup.
-pub(crate) fn detect<S: Observed>(previous: Option<&S>, current: &S) -> Vec<AttentionEvent> {
+pub(crate) fn detect(
+    previous: Option<&SessionSummary>,
+    current: &SessionSummary,
+) -> Vec<AttentionEvent> {
     let mut events = Vec::new();
     for (blocking, kind, prefix) in [
         (true, AttentionKind::Approval, "approval"),
@@ -124,25 +86,25 @@ pub(crate) fn detect<S: Observed>(previous: Option<&S>, current: &S) -> Vec<Atte
     let Some(previous) = previous else {
         return events;
     };
-    let turn_ended = current.last_turn_end_seq() > previous.last_turn_end_seq();
-    if current.attention() == Some(Attention::Problem)
-        && (previous.attention() != Some(Attention::Problem) || turn_ended)
+    let turn_ended = current.last_turn_end_seq > previous.last_turn_end_seq;
+    if current.attention == Some(Attention::Problem)
+        && (previous.attention != Some(Attention::Problem) || turn_ended)
     {
         events.push(AttentionEvent {
             kind: AttentionKind::Problem,
-            event_key: format!("problem@{}", current.last_turn_end_seq().0),
+            event_key: format!("problem@{}", current.last_turn_end_seq.0),
         });
     } else if turn_ended
-        && current.unread()
-        && current.last_outcome() == Some(RunOutcome::Completed)
+        && current.unread
+        && current.last_outcome == Some(RunOutcome::Completed)
         && !matches!(
-            current.state(),
+            current.state,
             SessionState::Working | SessionState::Starting
         )
     {
         events.push(AttentionEvent {
             kind: AttentionKind::TurnEnd,
-            event_key: format!("turn_end@{}", current.last_turn_end_seq().0),
+            event_key: format!("turn_end@{}", current.last_turn_end_seq.0),
         });
     }
     events
@@ -160,9 +122,9 @@ mod tests {
 
     fn summary() -> SessionSummary {
         serde_json::from_value(json!({
-            "id": "01HZY3K6W8Q9X2V4N7B5C1D3E6", "name": null, "title": null, "cwd": "~/src/app",
-            "agent": "pi", "created_at": 0, "updated_at": 0, "closed_at": null,
-            "parent_id": null, "spawned_by": null, "state": "idle", "last_outcome": null,
+            "id": "01HZY3K6W8Q9X2V4N7B5C1D3E6", "name": null, "title": null, "workspaces": [],
+            "shells": [], "created_at": 0, "updated_at": 0, "closed_at": null,
+            "parent_id": null, "state": "idle", "last_outcome": null,
             "last_error": null, "read_seq": 0, "last_turn_end_seq": 0, "unread": false,
             "preview": "", "attention": null,
             "rollup": {"approvals": 0, "questions": 0, "problems": 0, "unread": 0},

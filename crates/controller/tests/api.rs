@@ -47,8 +47,7 @@ async fn projects_and_tasks_reach_every_tab_in_order() {
     let project = a
         .ok(
             "projects.create",
-            json!({"name": "app", "color": "#a78bfa",
-                   "location_prefixes": [{"machine_id": null, "path_prefix": "~/src/app"}]}),
+            json!({"name": "app", "color": "#a78bfa"}),
         )
         .await;
     let pid = project["id"].as_str().unwrap().to_owned();
@@ -184,10 +183,7 @@ async fn devices_preferences_and_sandbox_profiles() {
     );
 
     let project = a
-        .ok(
-            "projects.create",
-            json!({"name": "p", "color": "#000", "location_prefixes": []}),
-        )
+        .ok("projects.create", json!({"name": "p", "color": "#000"}))
         .await;
     let scope = json!({"kind": "project", "project_id": project["id"]});
     let profiles = a
@@ -205,14 +201,13 @@ async fn devices_preferences_and_sandbox_profiles() {
     )
     .await;
 
-    // Schedules need a known machine (the rest is in tests/schedules.rs).
+    // Schedules need a valid spec (the rest is in tests/schedules.rs).
     a.err(
         "schedules.create",
-        json!({"machine_id": "01HZY3K6W8Q9X2V4N7B5C1D3E6",
-               "session_id": "01HZY3K6W8Q9X2V4N7B5C1D3E7", "name": "inbox",
-               "spec": {"kind": "cron", "expr": "0 9 * * 1-5"}, "timezone": "Etc/UTC",
+        json!({"session_id": "01HZY3K6W8Q9X2V4N7B5C1D3E7", "name": "inbox",
+               "spec": {"kind": "cron", "expr": "0 9 * *"}, "timezone": "Etc/UTC",
                "message": "Check inbox/"}),
-        "not_found",
+        "invalid_params",
     )
     .await;
     a.wait("the feed carries devices", |m| {

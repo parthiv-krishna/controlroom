@@ -5,7 +5,7 @@
 mod support;
 
 use controlroom_drivers::{Driver, DriverEvent, Intent, LineTag, PiDriver};
-use controlroom_protocol::daemon::OptionValue;
+use controlroom_protocol::agentd::OptionValue;
 use controlroom_protocol::ids::{OpId, RequestId};
 use controlroom_protocol::session::{ContentPart, Response};
 use controlroom_transcript::{Body, Line, Record};
