@@ -158,6 +158,11 @@ impl Drop for HostEnv {
     fn drop(&mut self) {
         self.kill_daemon();
         kill_everything_under(self.dir.path());
+        // What killed nono processes leave (read-only trees the temp dir removal can't delete).
+        controlroom_sandbox::tempdirs::clean_leaked_nono_dirs(
+            &self.dir.path().join("t"),
+            Duration::ZERO,
+        );
         if std::thread::panicking() {
             eprintln!("--- host.log ---\n{}", self.log());
         }

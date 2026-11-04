@@ -8,9 +8,9 @@
 //! worker (`controlroomd workspace-exec`) that serves the file and search ops.
 //!
 //! Startup: claim the instance (`run/host.lock`, `run/host.sock`), open `host.sqlite`, bind
-//! the approval webhook, restore workspaces, recover the journal (reattaching shells whose
-//! supervisors survived), resume following jobs, report ready, then serve. A new `epoch`
-//! marks every start. SIGTERM/SIGINT stop the daemon (shells and jobs keep running under
+//! the approval webhook, clean nono temp dirs that killed sandboxes leaked, restore
+//! workspaces, recover the journal (reattaching shells whose supervisors survived), resume
+//! following jobs, report ready, then serve. A new `epoch` marks every start. SIGTERM/SIGINT stop the daemon (shells and jobs keep running under
 //! their supervisors); SIGHUP is ignored.
 //!
 //! - [`conn`], [`conns`], [`dispatch`]: the API surface;
@@ -64,6 +64,8 @@ use crate::shell::{login_shell, resolve_program};
 
 /// How often the journal is pruned.
 const PRUNE_EVERY: Duration = Duration::from_secs(3600);
+/// Leaked nono temp dirs older than this are removed at start (spec §11.5).
+const NONO_TMP_MIN_AGE: Duration = Duration::from_secs(3600);
 
 /// The host daemon's shared state.
 pub struct Host {
@@ -239,6 +241,16 @@ async fn start(paths: HostPaths) -> anyhow::Result<Arc<Host>> {
         tokio::task::spawn_blocking(move || SandboxEnv::load(&paths, exe)).await?
     };
     let bash = tokio::task::spawn_blocking(find_bash).await?;
+    let nono_tmp = sandbox.settings.nono_tmp.clone();
+    tokio::task::spawn_blocking(move || {
+        let removed = controlroom_sandbox::tempdirs::clean_leaked_nono_dirs(
+            nono_tmp.as_path(),
+            NONO_TMP_MIN_AGE,
+        );
+        if !removed.is_empty() {
+            tracing::info!("removed {} leaked nono temp dirs", removed.len());
+        }
+    });
     let conns = Arc::new(Conns::default());
     let host = Arc::new(Host {
         paths,

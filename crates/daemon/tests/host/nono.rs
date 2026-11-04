@@ -56,7 +56,15 @@ async fn env() -> HostEnv {
     let mut env = HostEnv::new_in("/var/tmp");
     let config = env.home().join(".config/controlroom");
     std::fs::create_dir_all(&config).unwrap();
-    std::fs::write(config.join("sandbox.toml"), format!("nono = {nono:?}\n")).unwrap();
+    // nono's own temp dirs go into the scratch dir, so the harness can clean what a killed
+    // nono leaves (a short path: nono binds sockets in it).
+    let nono_tmp = env.dir.path().join("t");
+    std::fs::create_dir(&nono_tmp).unwrap();
+    std::fs::write(
+        config.join("sandbox.toml"),
+        format!("nono = {nono:?}\nnono_tmp = {nono_tmp:?}\n"),
+    )
+    .unwrap();
     std::fs::write(env.home().join("secret.txt"), "outside the workspace\n").unwrap();
     // The stand-in login shell lives outside every sandbox; jobs need a real one.
     env.login_shell = crate::harness::bash();
