@@ -32,19 +32,32 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 /// A scratch home with a host daemon.
 pub struct HostEnv {
     pub dir: tempfile::TempDir,
+    /// The daemon's `$SHELL` (jobs run in it): a stand-in by default.
+    pub login_shell: PathBuf,
     daemon: Option<Child>,
 }
 
 impl HostEnv {
     /// A scratch home (no daemon yet).
     pub fn new() -> Self {
+        Self::new_in("/tmp")
+    }
+
+    /// A scratch home under `base` (real-nono tests use `/var/tmp`: nono's system groups grant
+    /// `/tmp`, which would hide confinement).
+    pub fn new_in(base: &str) -> Self {
         let dir = tempfile::Builder::new()
             .prefix("crh")
-            .tempdir_in("/tmp")
+            .tempdir_in(base)
             .unwrap();
         std::fs::create_dir_all(dir.path().join("home/project/sub")).unwrap();
-        write_executable(&dir.path().join("login-shell"), LOGIN_SHELL);
-        Self { dir, daemon: None }
+        let login_shell = dir.path().join("login-shell");
+        write_executable(&login_shell, LOGIN_SHELL);
+        Self {
+            dir,
+            login_shell,
+            daemon: None,
+        }
     }
 
     /// A scratch home with a running daemon.
@@ -74,7 +87,7 @@ impl HostEnv {
     pub fn command(&self) -> Command {
         let mut cmd = Command::new(BIN);
         cmd.env("HOME", self.home())
-            .env("SHELL", self.dir.path().join("login-shell"))
+            .env("SHELL", &self.login_shell)
             .env("CONTROLROOMD_LOG", "debug")
             .env_remove("PI_CODING_AGENT_DIR");
         cmd

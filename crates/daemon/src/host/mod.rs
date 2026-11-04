@@ -235,8 +235,8 @@ async fn start(paths: HostPaths) -> anyhow::Result<Arc<Host>> {
         .context("resolving the controlroomd path")?;
     let exe = AbsPath::from_path(&exe)?;
     let sandbox = {
-        let paths = paths.clone();
-        tokio::task::spawn_blocking(move || SandboxEnv::load(&paths)).await?
+        let (paths, exe) = (paths.clone(), exe.clone());
+        tokio::task::spawn_blocking(move || SandboxEnv::load(&paths, exe)).await?
     };
     let bash = tokio::task::spawn_blocking(find_bash).await?;
     let conns = Arc::new(Conns::default());

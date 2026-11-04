@@ -41,7 +41,7 @@ async fn records_both_directions_in_order() {
     assert_eq!(meta.id, "s1");
     assert_eq!(meta.argv[1..], ["-lc", ECHO_BOTH]);
     assert_eq!(meta.child_pid, sup.info.child_pid);
-    assert_eq!(meta.protocol_version, 1);
+    assert_eq!(meta.protocol_version, controlroom_supervisor::PROTOCOL_VERSION);
     assert_eq!(meta.format, controlroom_transcript::FORMAT_VERSION);
     seqs_increase_by_one(&records);
     let pos = |d: &str, raw: &str| {

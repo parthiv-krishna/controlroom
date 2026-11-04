@@ -51,11 +51,13 @@ pub struct SandboxEnv {
     pub nono: Option<AbsPath>,
     /// The daemon's `PATH`, which mediated commands are pinned against.
     pub path_var: String,
+    /// This `controlroomd`: the fs worker runs it inside the sandbox, so profiles may read it.
+    pub exe: AbsPath,
 }
 
 impl SandboxEnv {
     /// Reads `sandbox.toml` and looks for nono through the login shell.
-    pub fn load(paths: &HostPaths) -> Self {
+    pub fn load(paths: &HostPaths, exe: AbsPath) -> Self {
         let dirs = paths.dirs();
         let loaded = sandbox_config::load(dirs);
         if let Some(e) = &loaded.error {
@@ -77,6 +79,7 @@ impl SandboxEnv {
             settings,
             nono,
             path_var: std::env::var("PATH").unwrap_or_default(),
+            exe,
         }
     }
 }
@@ -214,6 +217,9 @@ pub fn write_profile(
     let dirs = paths.dirs();
     let mut read_only = env.settings.read_only.clone();
     read_only.push(input.files.view());
+    if !read_only.iter().any(|r| r.contains(&env.exe)) {
+        read_only.push(env.exe.clone());
+    }
     let ssh = dirs.home().join(".ssh");
     let spec = WorkspaceSandboxSpec {
         id: SessionId::new(input.id).map_err(|e| unavailable(e.to_string()))?,
