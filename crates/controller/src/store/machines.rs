@@ -33,6 +33,8 @@ pub struct MachineRow {
     pub host_key: Option<String>,
     /// Upgrade a compatible, older daemon automatically while idle.
     pub auto_upgrade: bool,
+    /// How long tool calls wait for the machine while it is unreachable (seconds).
+    pub grace_s: u32,
     /// The daemon's id, once known.
     pub daemon_id: Option<DaemonId>,
     /// The remote `$HOME`, once probed.
@@ -95,7 +97,7 @@ pub struct Machines<'a> {
 
 const COLUMNS: &str = "id, name, host, port, username, key_id, auth_key_id, host_key, \
                        auto_upgrade, daemon_id, home, arch, version, last_seen, doctor, \
-                       daemon_settings, created_at, capabilities";
+                       daemon_settings, created_at, capabilities, grace_s";
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<MachineRow> {
     Ok(MachineRow {
@@ -117,6 +119,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<MachineRow> {
         daemon_settings: json_col_opt(row, 15)?,
         created_at: UnixMillis(row.get(16)?),
         capabilities: json_col(row, 17)?,
+        grace_s: row.get(18)?,
     })
 }
 
@@ -226,6 +229,11 @@ impl<'a> Machines<'a> {
     /// Turns automatic upgrades on or off.
     pub fn set_auto_upgrade(&self, id: MachineId, on: bool) -> StoreResult<bool> {
         self.set(id, "auto_upgrade", &on)
+    }
+
+    /// Sets the tool-call grace period (seconds).
+    pub fn set_grace(&self, id: MachineId, grace_s: u32) -> StoreResult<bool> {
+        self.set(id, "grace_s", &grace_s)
     }
 
     /// Pins (or re-pins, after the user confirmed it) the host key.

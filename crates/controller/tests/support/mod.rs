@@ -61,6 +61,7 @@ pub fn config(
         },
         push,
         key_comment: "controlroom@controlroom.example.com".into(),
+        agentd_socket: None,
         tuning: tuning(),
     }
 }

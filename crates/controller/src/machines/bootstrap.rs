@@ -90,11 +90,11 @@ pub(crate) async fn upgrade(
         let link = daemon::open(hub, id, conn)
             .await
             .map_err(|e| e.to_string())?;
-        if link.hello.daemon_version != bundled {
+        if link.hello.version() != bundled {
             link.client.close();
             return Err(format!(
                 "the new daemon reports {} instead of {bundled}",
-                link.hello.daemon_version
+                link.hello.version()
             ));
         }
         Ok::<_, String>(link)

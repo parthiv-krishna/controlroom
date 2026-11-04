@@ -5,8 +5,7 @@ use controlroom_protocol::daemon::{CheckStatus, DaemonSettings, DoctorReport, Re
 use controlroom_protocol::ids::{DeviceId, KeyId, MachineId, SessionId};
 use controlroom_protocol::session::SandboxLevel;
 use controlroom_protocol::ui::{
-    AuthMode, ContactScope, LocationPrefix, Priority, ProfileChange, ProfileScope, SessionLink,
-    TaskStatus,
+    AuthMode, ContactScope, Priority, ProfileChange, ProfileScope, SessionLink, TaskStatus,
 };
 
 use super::*;
@@ -98,7 +97,7 @@ fn rows_are_scoped_to_their_owner() {
     store
         .owner(&alice)
         .projects()
-        .insert("app", "#fff", &[])
+        .insert("app", "#fff")
         .unwrap();
     assert!(store.owner(&bob).machines().get(m.id).unwrap().is_none());
     assert!(store.owner(&bob).machines().list().unwrap().is_empty());
@@ -245,22 +244,14 @@ fn additional_keys_in_use_cannot_be_deleted() {
 fn tasks_with_checklist_projects_and_dangling_links() {
     let (store, owner) = store();
     let repo = store.owner(&owner);
-    let p1 = repo.projects().insert("one", "#111", &[]).unwrap();
-    let p2 = repo
-        .projects()
-        .insert(
-            "two",
-            "#222",
-            &[LocationPrefix {
-                machine_id: None,
-                path_prefix: "~/src".into(),
-            }],
-        )
-        .unwrap();
-    let link = SessionLink {
+    let p1 = repo.projects().insert("one", "#111").unwrap();
+    let p2 = repo.projects().insert("two", "#222").unwrap();
+    let legacy = SessionLink {
         machine_id: MachineId::generate(),
         session_id: SessionId::generate(),
     };
+    let link = tasks::TaskLink::legacy(&legacy);
+    let global = tasks::TaskLink::global(SessionId::generate());
     let task = repo
         .tasks()
         .insert(tasks::NewTask {
@@ -271,12 +262,15 @@ fn tasks_with_checklist_projects_and_dangling_links() {
             project_ids: vec![p2.id, p1.id],
             notes: String::new(),
             checklist: vec!["a".into(), "c".into()],
-            links: vec![link.clone()],
+            links: vec![link, global],
         })
         .unwrap();
     assert_eq!(task.project_ids, [p2.id, p1.id]);
-    assert_eq!(task.links, std::slice::from_ref(&link));
-    let texts = |t: &controlroom_protocol::ui::Task| {
+    assert_eq!(task.links, [link, global]);
+    // Each UI API sees its own links.
+    assert_eq!(task.legacy().links, [legacy]);
+    assert_eq!(task.next().links, [global.session_id]);
+    let texts = |t: &tasks::TaskRow| {
         t.checklist
             .iter()
             .map(|c| c.text.clone())
@@ -307,12 +301,7 @@ fn tasks_with_checklist_projects_and_dangling_links() {
     assert!(repo.projects().delete(p2.id).unwrap());
     let task = repo.tasks().get(task.id).unwrap().unwrap();
     assert_eq!(task.project_ids, [p1.id]);
-    assert_eq!(
-        repo.tasks()
-            .linked_to(link.machine_id, link.session_id)
-            .unwrap(),
-        [task.id]
-    );
+    assert_eq!(repo.tasks().linked_to(link.session_id).unwrap(), [task.id]);
     // Moving only from the given columns.
     assert!(
         repo.tasks()
@@ -336,7 +325,7 @@ fn tasks_with_checklist_projects_and_dangling_links() {
     assert!(repo.tasks().delete(task.id).unwrap());
     assert!(
         repo.tasks()
-            .linked_to(link.machine_id, link.session_id)
+            .linked_to(global.session_id)
             .unwrap()
             .is_empty()
     );
@@ -381,7 +370,6 @@ fn devices_sessions_and_push_cascade_on_removal() {
     assert!(repo.devices().get(&phone).unwrap().unwrap().push);
     let delivery = Delivery {
         device_id: &phone,
-        machine_id: MachineId::generate(),
         session_id: SessionId::generate(),
         event_key: "approval:r1",
     };
@@ -476,13 +464,10 @@ fn sandbox_profiles_and_grants() {
         .unwrap();
     assert!(repo.sandbox_profiles().list().unwrap().is_empty());
 
-    let a = SessionLink {
-        machine_id: m,
-        session_id: SessionId::generate(),
-    };
+    let a = SessionId::generate();
     let grant = repo
         .grants()
-        .insert(&a, &a, ContactScope::Pair, None)
+        .insert(a, a, ContactScope::Pair, None)
         .unwrap();
     assert_eq!(repo.grants().list().unwrap(), std::slice::from_ref(&grant));
     assert!(repo.grants().delete(grant.id).unwrap());

@@ -1,10 +1,11 @@
 //! The hub's event bus. Subsystems that react to machine and session changes subscribe here
-//! and keep their own state, instead of growing the hub: the notifier (attention and push) and
-//! each machine's auto-upgrade watcher now; the broker, policy and timeline cache later.
+//! and keep their own state, instead of growing the hub: the notifier (attention and push),
+//! the scheduler and each machine's auto-upgrade watcher.
 //!
 //! Events are sent under the hub lock, so every subscriber sees them in feed order. The bus is
 //! bounded: a subscriber that falls behind is told how many events it missed.
 
+use controlroom_protocol::agentd;
 use controlroom_protocol::ids::{MachineId, SessionId};
 use controlroom_protocol::session::SessionSummary;
 use controlroom_protocol::ui::Connectivity;
@@ -22,27 +23,39 @@ pub(crate) enum BusEvent {
     },
     /// A machine's record changed (e.g. its settings).
     MachineChanged { machine_id: MachineId },
-    /// A session appeared or its summary changed.
+    /// A legacy daemon's session appeared or its summary changed.
     Session {
         machine_id: MachineId,
         previous: Option<Box<SessionSummary>>,
         current: Box<SessionSummary>,
     },
-    /// A session was deleted on its machine.
+    /// A legacy daemon's session was deleted on its machine.
     SessionRemoved {
         machine_id: MachineId,
         session_id: SessionId,
     },
+    /// A global session (the agent daemon's) appeared or its summary changed.
+    GlobalSession {
+        previous: Option<Box<agentd::SessionSummary>>,
+        current: Box<agentd::SessionSummary>,
+    },
+    /// A global session was deleted.
+    GlobalSessionRemoved { session_id: SessionId },
+    /// The link to the agent daemon came up (`true`) or went down.
+    Agentd { connected: bool },
 }
 
 impl BusEvent {
-    /// The machine the event is about.
-    pub(crate) fn machine_id(&self) -> MachineId {
+    /// The machine the event is about, if any.
+    pub(crate) fn machine_id(&self) -> Option<MachineId> {
         match self {
             BusEvent::Connectivity { machine_id, .. }
             | BusEvent::MachineChanged { machine_id }
             | BusEvent::Session { machine_id, .. }
-            | BusEvent::SessionRemoved { machine_id, .. } => *machine_id,
+            | BusEvent::SessionRemoved { machine_id, .. } => Some(*machine_id),
+            BusEvent::GlobalSession { .. }
+            | BusEvent::GlobalSessionRemoved { .. }
+            | BusEvent::Agentd { .. } => None,
         }
     }
 }

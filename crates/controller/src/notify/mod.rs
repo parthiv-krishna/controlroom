@@ -20,6 +20,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use controlroom_protocol::UnixMillis;
+use controlroom_protocol::agentd;
 use controlroom_protocol::ids::{DeviceId, MachineId, SessionId};
 use controlroom_protocol::session::SessionSummary;
 use controlroom_protocol::ui::NotificationPreferences;
@@ -88,7 +89,9 @@ impl PushConfig {
 /// The JSON payload of a push. The service worker builds the deep link from it.
 #[derive(Debug, Clone, Serialize)]
 struct Payload<'a> {
-    machine_id: MachineId,
+    /// A legacy daemon's machine; absent for a global session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    machine_id: Option<MachineId>,
     session_id: SessionId,
     /// The session's display name.
     name: String,
@@ -152,13 +155,63 @@ fn truncate(s: &str) -> String {
     s.chars().take(MAX_NAME_CHARS).collect()
 }
 
-/// The display name the UI uses: the user's name, else the agent's title, else the cwd.
-fn display_name(session: &SessionSummary) -> String {
-    session
-        .name
-        .clone()
-        .or_else(|| session.title.clone())
-        .unwrap_or_else(|| session.cwd.to_string())
+/// The session a notification is about, as its payload shows it.
+struct Subject {
+    session_id: SessionId,
+    /// A legacy daemon's machine; `None` for a global session.
+    machine_id: Option<MachineId>,
+    /// The session's display name.
+    name: String,
+    /// The machine's name (a global session's primary workspace's machine).
+    machine: String,
+}
+
+impl Subject {
+    /// A legacy daemon's session: the user's name, else the agent's title, else the cwd.
+    fn legacy(hub: &Hub, machine_id: MachineId, session: &SessionSummary) -> Self {
+        Self {
+            session_id: session.id,
+            machine_id: Some(machine_id),
+            name: session
+                .name
+                .clone()
+                .or_else(|| session.title.clone())
+                .unwrap_or_else(|| session.cwd.to_string()),
+            machine: hub.machine_name(machine_id).unwrap_or_default(),
+        }
+    }
+
+    /// A global session: the user's name, else the agent's title, else the primary workspace.
+    fn global(hub: &Hub, session: &agentd::SessionSummary) -> Self {
+        let primary = session.workspaces.iter().find(|w| w.primary);
+        Self {
+            session_id: session.id,
+            machine_id: None,
+            name: session
+                .name
+                .clone()
+                .or_else(|| session.title.clone())
+                .or_else(|| primary.map(|w| w.path.to_string()))
+                .unwrap_or_default(),
+            machine: primary
+                .and_then(|w| hub.machine_name(w.machine_id))
+                .unwrap_or_default(),
+        }
+    }
+
+    fn payload<'a>(&self, kind: AttentionKind) -> Payload<'a> {
+        Payload {
+            machine_id: self.machine_id,
+            session_id: self.session_id,
+            name: truncate(&self.name),
+            machine: truncate(&self.machine),
+            state: kind.as_str(),
+            url: match self.machine_id {
+                Some(machine_id) => format!("#/s/{machine_id}/{}", self.session_id),
+                None => format!("#/s/{}", self.session_id),
+            },
+        }
+    }
 }
 
 /// Consumes the hub's bus until the hub is gone, pushing attention events.
@@ -176,31 +229,31 @@ pub(crate) async fn run(
             }
             Err(broadcast::error::RecvError::Closed) => return,
         };
-        let (machine_id, previous, current) = match event {
+        let Some(hub) = hub.upgrade() else { return };
+        let (subject, events) = match event {
             BusEvent::Session {
                 machine_id,
                 previous,
                 current,
-            } => (machine_id, previous, current),
-            BusEvent::SessionRemoved {
-                machine_id,
-                session_id,
-            } => {
-                let Some(hub) = hub.upgrade() else { return };
-                if let Err(e) = hub.repo().push().forget_session(machine_id, session_id) {
+            } => (
+                Subject::legacy(&hub, machine_id, &current),
+                attention::detect(previous.as_deref(), &*current),
+            ),
+            BusEvent::GlobalSession { previous, current } => (
+                Subject::global(&hub, &current),
+                attention::detect(previous.as_deref(), &*current),
+            ),
+            BusEvent::SessionRemoved { session_id, .. }
+            | BusEvent::GlobalSessionRemoved { session_id } => {
+                if let Err(e) = hub.repo().push().forget_session(session_id) {
                     tracing::warn!(error = %e, "forgetting a deleted session's pushes");
                 }
                 continue;
             }
             _ => continue,
         };
-        let events = attention::detect(previous.as_deref(), &current);
-        if events.is_empty() {
-            continue;
-        }
-        let Some(hub) = hub.upgrade() else { return };
         for event in events {
-            if let Err(e) = deliver(&hub, &config, machine_id, &current, &event).await {
+            if let Err(e) = deliver(&hub, &config, &subject, &event).await {
                 tracing::warn!(error = %e, "delivering a notification");
             }
         }
@@ -210,25 +263,16 @@ pub(crate) async fn run(
 async fn deliver(
     hub: &Hub,
     config: &PushConfig,
-    machine_id: MachineId,
-    session: &SessionSummary,
+    subject: &Subject,
     event: &AttentionEvent,
 ) -> StoreResult<()> {
     let repo = hub.repo();
     if !wanted(&prefs::load(&repo.prefs())?, event.kind) {
         return Ok(());
     }
-    let payload = Payload {
-        machine_id,
-        session_id: session.id,
-        name: truncate(&display_name(session)),
-        machine: truncate(&hub.machine_name(machine_id).unwrap_or_default()),
-        state: event.kind.as_str(),
-        url: format!("#/s/{machine_id}/{}", session.id),
-    };
-    let body = serde_json::to_vec(&payload)?;
+    let body = serde_json::to_vec(&subject.payload(event.kind))?;
     let urgent = event.kind == AttentionKind::Approval;
-    let focused: Vec<DeviceId> = hub.focused_devices(machine_id, session.id);
+    let focused: Vec<DeviceId> = hub.focused_devices(subject.session_id);
     let push = repo.push();
     push.prune_deliveries(UnixMillis(
         UnixMillis::now().0 - DEDUP_RETENTION.as_millis() as i64,
@@ -239,8 +283,7 @@ async fn deliver(
         }
         let delivery = Delivery {
             device_id: &sub.device_id,
-            machine_id,
-            session_id: session.id,
+            session_id: subject.session_id,
             event_key: &event.event_key,
         };
         if !push.claim(delivery)? {

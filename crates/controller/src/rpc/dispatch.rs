@@ -1,17 +1,31 @@
-//! Routes one request to its handler. Params are validated against the method's type first,
-//! so malformed params are `invalid_params` before anything happens.
+//! Routes one request of the old UI API to its handler. Params are validated against the
+//! method's type first, so malformed params are `invalid_params` before anything happens.
 
 use std::sync::Arc;
 
-use controlroom_protocol::ui::UiRequest;
+use controlroom_protocol::ui::{Priority, ScheduleRef, TaskStatus, UiRequest};
 use controlroom_protocol::{Ack, RpcError, RpcRequest};
 use serde_json::Value;
 
 use super::{
-    Conn, Reply, board, keys, machines, passthrough, people, reply, sandbox, schedules, sessions,
-    state, subscriptions,
+    Conn, Reply, UiApi, board, keys, machines, passthrough, people, reply, sandbox, schedules,
+    sessions, state, subscriptions,
 };
-use crate::errors::internal;
+use crate::errors::{internal, not_found};
+use crate::hub::{Focus, Source, legacy_project};
+use crate::store::{NewTask, ScheduleRow, TaskLink, TaskRow};
+
+fn task(row: TaskRow) -> Result<Reply, RpcError> {
+    reply(row.legacy())
+}
+
+fn schedule(row: ScheduleRow) -> Result<Reply, RpcError> {
+    let id = row.id;
+    reply(
+        row.legacy()
+            .ok_or_else(|| not_found(controlroom_protocol::error::Resource::Schedule, id))?,
+    )
+}
 
 pub(super) async fn dispatch(
     conn: &Arc<Conn>,
@@ -26,7 +40,9 @@ pub(super) async fn dispatch(
         UiRequest::Hello(p) => reply(state::hello(conn, p)?),
         UiRequest::Ping(_) => reply(Ack {}),
         UiRequest::StateSubscribe(p) => state::subscribe(conn, p),
-        UiRequest::SessionSubscribe(p) => subscriptions::subscribe(conn, p).await,
+        UiRequest::SessionSubscribe(p) => {
+            subscriptions::subscribe(conn, Source::Machine(p.machine_id), p.params).await
+        }
         UiRequest::Unsubscribe(p) => reply(subscriptions::unsubscribe(conn, p).await?),
         UiRequest::SessionCreate(p) => reply(sessions::create(conn, p).await?),
 
@@ -44,18 +60,42 @@ pub(super) async fn dispatch(
         UiRequest::KeysImport(p) => reply(keys::import(conn, p)?),
         UiRequest::KeysDelete(p) => reply(keys::delete(conn, p)?),
 
-        UiRequest::ProjectsCreate(p) => reply(board::projects_create(conn, p)?),
-        UiRequest::ProjectsUpdate(p) => reply(board::projects_update(conn, p)?),
+        // Location prefixes are gone: projects group tasks.
+        UiRequest::ProjectsCreate(p) => reply(legacy_project(board::projects_create(
+            conn, &p.name, &p.color,
+        )?)),
+        UiRequest::ProjectsUpdate(p) => reply(legacy_project(board::projects_update(
+            conn,
+            p.project_id,
+            p.name.as_deref(),
+            p.color.as_deref(),
+        )?)),
         UiRequest::ProjectsDelete(p) => reply(board::projects_delete(conn, p)?),
-        UiRequest::TasksCreate(p) => reply(board::tasks_create(conn, p)?),
-        UiRequest::TasksUpdate(p) => reply(board::tasks_update(conn, p)?),
-        UiRequest::TasksMove(p) => reply(board::tasks_move(conn, p)?),
+        UiRequest::TasksCreate(p) => task(board::tasks_create(
+            conn,
+            NewTask {
+                title: p.title,
+                status: p.status.unwrap_or(TaskStatus::Backlog),
+                order: p.order,
+                priority: p.priority.unwrap_or(Priority::P2),
+                project_ids: p.project_ids,
+                notes: p.notes,
+                checklist: p.checklist,
+                links: p.links.iter().map(TaskLink::legacy).collect(),
+            },
+        )?),
+        UiRequest::TasksUpdate(p) => task(board::tasks_update(conn, p)?),
+        UiRequest::TasksMove(p) => task(board::tasks_move(conn, p)?),
         UiRequest::TasksDelete(p) => reply(board::tasks_delete(conn, p)?),
-        UiRequest::TasksLink(p) => reply(board::tasks_link(conn, p, true)?),
-        UiRequest::TasksUnlink(p) => reply(board::tasks_link(conn, p, false)?),
-        UiRequest::TasksChecklistAdd(p) => reply(board::checklist_add(conn, p)?),
-        UiRequest::TasksChecklistUpdate(p) => reply(board::checklist_update(conn, p)?),
-        UiRequest::TasksChecklistRemove(p) => reply(board::checklist_remove(conn, p)?),
+        UiRequest::TasksLink(p) => task(board::tasks_link(
+            conn,
+            p.task_id,
+            TaskLink::legacy(&p.link),
+        )?),
+        UiRequest::TasksUnlink(p) => task(board::tasks_unlink(conn, p.task_id, p.link.session_id)?),
+        UiRequest::TasksChecklistAdd(p) => task(board::checklist_add(conn, p)?),
+        UiRequest::TasksChecklistUpdate(p) => task(board::checklist_update(conn, p)?),
+        UiRequest::TasksChecklistRemove(p) => task(board::checklist_remove(conn, p)?),
 
         UiRequest::GrantsRevoke(p) => reply(people::grants_revoke(conn, p)?),
         UiRequest::DevicesRegister(p) => reply(people::devices_register(conn, p)?),
@@ -65,12 +105,32 @@ pub(super) async fn dispatch(
         UiRequest::NotificationsSetPreferences(p) => reply(people::set_preferences(conn, p)?),
         UiRequest::NotificationsSubscribe(p) => reply(people::push_subscribe(conn, p)?),
         UiRequest::NotificationsUnsubscribe(p) => reply(people::push_unsubscribe(conn, p)?),
-        UiRequest::ClientFocus(p) => reply(people::focus(conn, p)),
+        UiRequest::ClientFocus(p) => reply(people::focus(
+            conn,
+            Focus {
+                device_id: p.device_id,
+                session_id: p.session.map(|s| s.session_id),
+                visible: p.visible,
+            },
+        )),
 
-        UiRequest::SchedulesCreate(p) => reply(schedules::create(conn, p)?),
-        UiRequest::SchedulesUpdate(p) => reply(schedules::update(conn, p)?),
-        UiRequest::SchedulesDelete(p) => reply(schedules::delete(conn, p)?),
-        UiRequest::SchedulesRunNow(p) => reply(schedules::run_now(conn, p).await?),
+        UiRequest::SchedulesCreate(p) => schedule(schedules::create(
+            conn,
+            schedules::Create {
+                machine_id: Some(p.machine_id),
+                session_id: p.session_id,
+                name: p.name,
+                spec: p.spec,
+                timezone: p.timezone,
+                message: p.message,
+                enabled: p.enabled,
+                if_busy: p.if_busy,
+                missed: p.missed,
+            },
+        )?),
+        UiRequest::SchedulesUpdate(p) => schedule(schedules::update(conn, p, UiApi::Legacy)?),
+        UiRequest::SchedulesDelete(p) => reply(schedules::delete(conn, p, UiApi::Legacy)?),
+        UiRequest::SchedulesRunNow(p) => run_now(conn, p).await,
 
         UiRequest::SandboxProfiles(_) => reply(sandbox::profiles(conn)?),
         UiRequest::SandboxSetProfile(p) => reply(sandbox::set_profile(conn, p)?),
@@ -78,6 +138,10 @@ pub(super) async fn dispatch(
         // Everything else is in the pass-through table (checked above).
         other => Err(internal(format!("{} is not dispatched", other.method()))),
     }
+}
+
+async fn run_now(conn: &Arc<Conn>, p: ScheduleRef) -> Result<Reply, RpcError> {
+    schedule(schedules::run_now(conn, p, UiApi::Legacy).await?)
 }
 
 #[cfg(test)]

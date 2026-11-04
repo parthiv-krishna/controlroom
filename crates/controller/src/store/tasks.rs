@@ -1,18 +1,122 @@
 //! Tasks (kanban items), their checklists, project assignments and session links.
 //!
-//! Links reference `(machine_id, session_id)` without foreign keys: removing a machine or
-//! purging a session never deletes them. Deleting the task removes its links, checklist and
-//! assignments. Checklist entries are rows of their own, so editing one entry never rewrites
-//! the others.
+//! Links name a session without foreign keys: purging a session or removing a machine never
+//! deletes them. A link to a legacy daemon's session (old UI API, until R2) also records its
+//! machine. Deleting the task removes its links, checklist and assignments. Checklist entries
+//! are rows of their own, so editing one entry never rewrites the others.
 
 use std::collections::HashMap;
 
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::ids::{ChecklistItemId, MachineId, ProjectId, SessionId, TaskId};
-use controlroom_protocol::ui::{ChecklistItem, Priority, SessionLink, Task, TaskStatus};
+use controlroom_protocol::ui::{self, ChecklistItem, Priority, SessionLink, TaskStatus};
 use rusqlite::{Connection, OptionalExtension};
 
-use super::{OwnerId, Store, StoreResult, enum_col, enum_str, parsed_col};
+use super::{OwnerId, Store, StoreResult, enum_col, enum_str, parsed_col, parsed_col_opt};
+
+/// A task's link to a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TaskLink {
+    /// The session.
+    pub session_id: SessionId,
+    /// A legacy daemon's machine (old UI API); `None` for a global session.
+    pub machine_id: Option<MachineId>,
+}
+
+impl TaskLink {
+    /// A link to a global session.
+    pub fn global(session_id: SessionId) -> Self {
+        Self {
+            session_id,
+            machine_id: None,
+        }
+    }
+
+    /// A link to a legacy daemon's session.
+    pub fn legacy(link: &SessionLink) -> Self {
+        Self {
+            session_id: link.session_id,
+            machine_id: Some(link.machine_id),
+        }
+    }
+}
+
+/// A task as stored; [`Self::legacy`] and [`Self::next`] are its views in the two UI APIs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskRow {
+    /// The task.
+    pub id: TaskId,
+    /// Title.
+    pub title: String,
+    /// Column.
+    pub status: TaskStatus,
+    /// Sort key within the column.
+    pub order: f64,
+    /// Priority.
+    pub priority: Priority,
+    /// Assigned projects, in assignment order.
+    pub project_ids: Vec<ProjectId>,
+    /// Notes.
+    pub notes: String,
+    /// Checklist.
+    pub checklist: Vec<ChecklistItem>,
+    /// Linked sessions, oldest first.
+    pub links: Vec<TaskLink>,
+    /// When created.
+    pub created_at: UnixMillis,
+    /// When last changed.
+    pub updated_at: UnixMillis,
+}
+
+impl TaskRow {
+    /// The old UI API's view: links to legacy sessions only.
+    pub fn legacy(&self) -> ui::Task {
+        ui::Task {
+            id: self.id,
+            title: self.title.clone(),
+            status: self.status,
+            order: self.order,
+            priority: self.priority,
+            project_ids: self.project_ids.clone(),
+            notes: self.notes.clone(),
+            checklist: self.checklist.clone(),
+            links: self
+                .links
+                .iter()
+                .filter_map(|l| {
+                    Some(SessionLink {
+                        machine_id: l.machine_id?,
+                        session_id: l.session_id,
+                    })
+                })
+                .collect(),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+
+    /// The next UI API's view: links to global sessions only.
+    pub fn next(&self) -> ui::next::Task {
+        ui::next::Task {
+            id: self.id,
+            title: self.title.clone(),
+            status: self.status,
+            order: self.order,
+            priority: self.priority,
+            project_ids: self.project_ids.clone(),
+            notes: self.notes.clone(),
+            checklist: self.checklist.clone(),
+            links: self
+                .links
+                .iter()
+                .filter(|l| l.machine_id.is_none())
+                .map(|l| l.session_id)
+                .collect(),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
 
 /// The fields of a new task.
 #[derive(Debug, Clone)]
@@ -32,7 +136,7 @@ pub struct NewTask {
     /// Checklist texts.
     pub checklist: Vec<String>,
     /// Linked sessions.
-    pub links: Vec<SessionLink>,
+    pub links: Vec<TaskLink>,
 }
 
 /// Owner-scoped task operations.
@@ -43,8 +147,8 @@ pub struct Tasks<'a> {
 
 const COLUMNS: &str = "id, title, status, position, priority, notes, created_at, updated_at";
 
-fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
-    Ok(Task {
+fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRow> {
+    Ok(TaskRow {
         id: parsed_col(row, 0)?,
         title: row.get(1)?,
         status: enum_col(row, 2)?,
@@ -60,7 +164,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
 }
 
 /// Fills in the child rows (assignments, checklist, links) of `tasks`.
-fn attach_children(conn: &Connection, owner: &OwnerId, tasks: &mut [Task]) -> StoreResult<()> {
+fn attach_children(conn: &Connection, owner: &OwnerId, tasks: &mut [TaskRow]) -> StoreResult<()> {
     let index: HashMap<TaskId, usize> = tasks.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
     let mut stmt = conn.prepare(
         "SELECT task_id, project_id FROM task_projects WHERE owner_id = ?1 ORDER BY position",
@@ -95,15 +199,15 @@ fn attach_children(conn: &Connection, owner: &OwnerId, tasks: &mut [Task]) -> St
         }
     }
     let mut stmt = conn.prepare(
-        "SELECT task_id, machine_id, session_id FROM task_links WHERE owner_id = ?1
-         ORDER BY created_at, machine_id, session_id",
+        "SELECT task_id, session_id, machine_id FROM task_links WHERE owner_id = ?1
+         ORDER BY created_at, rowid",
     )?;
     let rows = stmt.query_map([owner.as_str()], |r| {
         Ok((
             parsed_col::<TaskId>(r, 0)?,
-            SessionLink {
-                machine_id: parsed_col(r, 1)?,
-                session_id: parsed_col(r, 2)?,
+            TaskLink {
+                session_id: parsed_col(r, 1)?,
+                machine_id: parsed_col_opt(r, 2)?,
             },
         ))
     })?;
@@ -149,20 +253,15 @@ fn set_projects(
     Ok(())
 }
 
-fn add_link(
-    conn: &Connection,
-    owner: &OwnerId,
-    task: TaskId,
-    link: &SessionLink,
-) -> StoreResult<()> {
+fn add_link(conn: &Connection, owner: &OwnerId, task: TaskId, link: &TaskLink) -> StoreResult<()> {
     conn.execute(
-        "INSERT OR IGNORE INTO task_links (owner_id, task_id, machine_id, session_id, created_at)
+        "INSERT OR IGNORE INTO task_links (owner_id, task_id, session_id, machine_id, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![
             owner.as_str(),
             task.to_string(),
-            link.machine_id.to_string(),
             link.session_id.to_string(),
+            link.machine_id.map(|m| m.to_string()),
             UnixMillis::now().0
         ],
     )?;
@@ -196,7 +295,7 @@ impl<'a> Tasks<'a> {
     }
 
     /// Creates a task with its checklist, assignments and links. Projects must exist.
-    pub fn insert(&self, task: NewTask) -> StoreResult<Task> {
+    pub fn insert(&self, task: NewTask) -> StoreResult<TaskRow> {
         let id = TaskId::generate();
         let now = UnixMillis::now().0;
         let status = enum_str(&task.status)?;
@@ -239,7 +338,7 @@ impl<'a> Tasks<'a> {
     }
 
     /// A task by id, with its children.
-    pub fn get(&self, id: TaskId) -> StoreResult<Option<Task>> {
+    pub fn get(&self, id: TaskId) -> StoreResult<Option<TaskRow>> {
         let conn = self.store.lock();
         let Some(task) = conn
             .query_row(
@@ -258,7 +357,7 @@ impl<'a> Tasks<'a> {
     }
 
     /// Every task with its children.
-    pub fn list(&self) -> StoreResult<Vec<Task>> {
+    pub fn list(&self) -> StoreResult<Vec<TaskRow>> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM tasks WHERE owner_id = ?1 ORDER BY status, position, id"
@@ -363,8 +462,9 @@ impl<'a> Tasks<'a> {
         Ok(n > 0)
     }
 
-    /// Links a session (which need not exist); returns whether the task exists.
-    pub fn link(&self, id: TaskId, link: &SessionLink) -> StoreResult<bool> {
+    /// Links a session (which need not exist); returns whether the task exists. Linking it
+    /// again keeps the first link.
+    pub fn link(&self, id: TaskId, link: &TaskLink) -> StoreResult<bool> {
         self.store.transaction(|tx| {
             if !touch(tx, self.owner, id)? {
                 return Ok(false);
@@ -375,41 +475,30 @@ impl<'a> Tasks<'a> {
     }
 
     /// Unlinks a session; returns whether the task exists.
-    pub fn unlink(&self, id: TaskId, link: &SessionLink) -> StoreResult<bool> {
+    pub fn unlink(&self, id: TaskId, session: SessionId) -> StoreResult<bool> {
         self.store.transaction(|tx| {
             if !touch(tx, self.owner, id)? {
                 return Ok(false);
             }
             tx.execute(
-                "DELETE FROM task_links WHERE owner_id = ?1 AND task_id = ?2
-                 AND machine_id = ?3 AND session_id = ?4",
-                rusqlite::params![
-                    self.owner.as_str(),
-                    id.to_string(),
-                    link.machine_id.to_string(),
-                    link.session_id.to_string()
-                ],
+                "DELETE FROM task_links WHERE owner_id = ?1 AND task_id = ?2 AND session_id = ?3",
+                rusqlite::params![self.owner.as_str(), id.to_string(), session.to_string()],
             )?;
             Ok(true)
         })
     }
 
-    /// The tasks a session is linked to.
-    pub fn linked_to(&self, machine: MachineId, session: SessionId) -> StoreResult<Vec<TaskId>> {
+    /// The tasks a session is linked to, oldest link first.
+    pub fn linked_to(&self, session: SessionId) -> StoreResult<Vec<TaskId>> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(
-            "SELECT task_id FROM task_links WHERE owner_id = ?1 AND machine_id = ?2
-             AND session_id = ?3 ORDER BY created_at",
+            "SELECT task_id FROM task_links WHERE owner_id = ?1 AND session_id = ?2
+             ORDER BY created_at",
         )?;
         let rows = stmt
-            .query_map(
-                (
-                    self.owner.as_str(),
-                    machine.to_string(),
-                    session.to_string(),
-                ),
-                |r| parsed_col(r, 0),
-            )?
+            .query_map((self.owner.as_str(), session.to_string()), |r| {
+                parsed_col(r, 0)
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }

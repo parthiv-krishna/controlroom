@@ -55,6 +55,48 @@ fn target(m: &NewMachine) -> Result<SshTarget, RpcError> {
     Ok(SshTarget::new(host, m.port, user))
 }
 
+/// Longest machine name.
+const MAX_NAME_CHARS: usize = 64;
+
+/// Whether `c` may appear in a machine name. Agents write paths as `machine:path` and shells
+/// are named after machines (`<session>/<name>` on the host), so `:`, `/`, whitespace and
+/// control characters are out.
+fn name_char(c: char) -> bool {
+    c != ':' && c != '/' && !c.is_whitespace() && !c.is_control()
+}
+
+/// A user-chosen machine name, checked.
+fn machine_name(name: &str) -> Result<String, RpcError> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > MAX_NAME_CHARS {
+        return Err(invalid_params(format!(
+            "a machine name has 1 to {MAX_NAME_CHARS} characters"
+        )));
+    }
+    if !name.chars().all(name_char) {
+        return Err(invalid_params(
+            "a machine name can't contain ':', '/', spaces or control characters \
+             (agents address files as machine:path)",
+        ));
+    }
+    Ok(name.to_owned())
+}
+
+/// The default name: the host, with characters a name can't have replaced (e.g. an IPv6
+/// address's colons).
+fn default_name(host: &str) -> String {
+    let name: String = host
+        .chars()
+        .map(|c| if name_char(c) { c } else { '-' })
+        .take(MAX_NAME_CHARS)
+        .collect();
+    if name.is_empty() {
+        "machine".to_owned()
+    } else {
+        name
+    }
+}
+
 /// Refuses a machine that is already added (same user, host and port).
 fn check_new(conn: &Conn, t: &SshTarget) -> Result<(), RpcError> {
     let existing = conn
@@ -123,14 +165,10 @@ pub(super) async fn add_confirm(
     let hub = &conn.hub;
     let t = target(&p.machine)?;
     check_new(conn, &t)?;
-    let name = p
-        .machine
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|n| !n.is_empty())
-        .unwrap_or(&t.host)
-        .to_owned();
+    let name = match p.machine.name.as_deref().map(str::trim) {
+        Some(name) if !name.is_empty() => machine_name(name)?,
+        _ => default_name(&t.host),
+    };
     let key = key_for(conn, p.machine.key_id)?;
     let host_key = confirmed_host_key(conn, &t, &p.host_key_fingerprint).await?;
     let plan = ConnectPlan {
@@ -239,6 +277,9 @@ pub(super) fn upgrade(conn: &Conn, p: MachineRef) -> Result<Ack, RpcError> {
     Ok(Ack {})
 }
 
+/// The longest tool-call grace period (a week).
+const MAX_GRACE_S: u32 = 7 * 24 * 60 * 60;
+
 /// Writes only the given settings (never the whole record); a new key reconnects.
 pub(super) fn set_settings(conn: &Conn, p: MachinesSetSettingsParams) -> Result<Machine, RpcError> {
     let hub = &conn.hub;
@@ -249,11 +290,22 @@ pub(super) fn set_settings(conn: &Conn, p: MachinesSetSettingsParams) -> Result<
         .get(id)
         .map_err(store_error)?
         .ok_or_else(|| not_found(Resource::Machine, id))?;
-    if let Some(name) = p.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+    let name = p.name.as_deref().map(machine_name).transpose()?;
+    if let Some(grace) = p.grace_s
+        && grace > MAX_GRACE_S
+    {
+        return Err(invalid_params(format!(
+            "the grace period is at most {MAX_GRACE_S} seconds"
+        )));
+    }
+    if let Some(name) = &name {
         machines.set_name(id, name).map_err(store_error)?;
     }
     if let Some(on) = p.auto_upgrade {
         machines.set_auto_upgrade(id, on).map_err(store_error)?;
+    }
+    if let Some(grace) = p.grace_s {
+        machines.set_grace(id, grace).map_err(store_error)?;
     }
     let mut reconnect = false;
     if let Some(choice) = &p.key {
@@ -268,4 +320,31 @@ pub(super) fn set_settings(conn: &Conn, p: MachinesSetSettingsParams) -> Result<
         hub.command(id, MachineCommand::Reconnect)?;
     }
     hub.machine_view(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn machine_names_suit_machine_paths() {
+        assert_eq!(machine_name(" devbox ").unwrap(), "devbox");
+        assert_eq!(
+            machine_name("build.example.com").unwrap(),
+            "build.example.com"
+        );
+        for bad in [
+            "",
+            "  ",
+            "dev:box",
+            "dev/box",
+            "dev box",
+            "dev\tbox",
+            &"x".repeat(65),
+        ] {
+            assert!(machine_name(bad).is_err(), "{bad:?}");
+        }
+        assert_eq!(default_name("::1"), "--1");
+        assert_eq!(default_name("devbox.example.com"), "devbox.example.com");
+    }
 }

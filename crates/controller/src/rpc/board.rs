@@ -1,18 +1,20 @@
-//! Projects and tasks (`projects.*`, `tasks.*`). Each handler writes the changed columns and
-//! emits the result under the hub lock, so the feed order matches the store's.
+//! Projects and tasks (`projects.*`, `tasks.*`) for both UI APIs. Each handler writes the
+//! changed columns and emits the result to both feeds under the hub lock, so the feed order
+//! matches the store's; it returns the stored row, which the dispatcher renders in its API's
+//! shape.
 
 use controlroom_protocol::error::Resource;
 use controlroom_protocol::ids::{ProjectId, TaskId};
+use controlroom_protocol::ui::next::Project;
 use controlroom_protocol::ui::{
-    ChecklistAddParams, ChecklistRemoveParams, ChecklistUpdateParams, Priority, Project,
-    ProjectRef, ProjectsCreateParams, ProjectsUpdateParams, StateEvent, Task, TaskRef, TaskStatus,
-    TasksCreateParams, TasksLinkParams, TasksMoveParams, TasksUpdateParams,
+    ChecklistAddParams, ChecklistRemoveParams, ChecklistUpdateParams, ProjectRef, TaskRef,
+    TasksMoveParams, TasksUpdateParams,
 };
 use controlroom_protocol::{Ack, RpcError};
 
 use super::Conn;
 use crate::errors::{invalid_params, not_found, store_error};
-use crate::store::{NewTask, StoreResult, Tasks};
+use crate::store::{NewTask, StoreResult, TaskLink, TaskRow, Tasks};
 
 fn project(conn: &Conn, id: ProjectId) -> Result<Project, RpcError> {
     conn.hub
@@ -39,40 +41,36 @@ fn finite(order: f64) -> Result<f64, RpcError> {
     }
 }
 
-pub(super) fn projects_create(conn: &Conn, p: ProjectsCreateParams) -> Result<Project, RpcError> {
+pub(super) fn projects_create(conn: &Conn, name: &str, color: &str) -> Result<Project, RpcError> {
     let mut st = conn.hub.lock();
     let project = conn
         .hub
         .repo()
         .projects()
-        .insert(&p.name, &p.color, &p.location_prefixes)
+        .insert(name, color)
         .map_err(store_error)?;
-    st.emit(StateEvent::ProjectUpserted {
-        project: project.clone(),
-    });
+    conn.hub.emit_project(&mut st, &project);
     Ok(project)
 }
 
-pub(super) fn projects_update(conn: &Conn, p: ProjectsUpdateParams) -> Result<Project, RpcError> {
+pub(super) fn projects_update(
+    conn: &Conn,
+    id: ProjectId,
+    name: Option<&str>,
+    color: Option<&str>,
+) -> Result<Project, RpcError> {
     let mut st = conn.hub.lock();
     let updated = conn
         .hub
         .repo()
         .projects()
-        .update(
-            p.project_id,
-            p.name.as_deref(),
-            p.color.as_deref(),
-            p.location_prefixes.as_deref(),
-        )
+        .update(id, name, color)
         .map_err(store_error)?;
     if !updated {
-        return Err(not_found(Resource::Project, p.project_id));
+        return Err(not_found(Resource::Project, id));
     }
-    let project = project(conn, p.project_id)?;
-    st.emit(StateEvent::ProjectUpserted {
-        project: project.clone(),
-    });
+    let project = project(conn, id)?;
+    conn.hub.emit_project(&mut st, &project);
     Ok(project)
 }
 
@@ -85,13 +83,10 @@ pub(super) fn projects_delete(conn: &Conn, p: ProjectRef) -> Result<Ack, RpcErro
         return Err(not_found(Resource::Project, p.project_id));
     }
     for task in assigned {
-        st.emit(StateEvent::TaskUpserted {
-            task: conn.hub.task(task)?,
-        });
+        let task = conn.hub.task(task)?;
+        conn.hub.emit_task(&mut st, &task);
     }
-    st.emit(StateEvent::ProjectRemoved {
-        project_id: p.project_id,
-    });
+    conn.hub.emit_project_removed(&mut st, p.project_id);
     Ok(Ack {})
 }
 
@@ -101,41 +96,30 @@ fn edit_task(
     conn: &Conn,
     id: TaskId,
     write: impl FnOnce(&Tasks<'_>) -> StoreResult<bool>,
-) -> Result<Task, RpcError> {
+) -> Result<TaskRow, RpcError> {
     let mut st = conn.hub.lock();
     let repo = conn.hub.repo();
     if !write(&repo.tasks()).map_err(store_error)? {
         return Err(not_found(Resource::Task, id));
     }
     let task = conn.hub.task(id)?;
-    st.emit(StateEvent::TaskUpserted { task: task.clone() });
+    conn.hub.emit_task(&mut st, &task);
     Ok(task)
 }
 
-pub(super) fn tasks_create(conn: &Conn, p: TasksCreateParams) -> Result<Task, RpcError> {
-    check_projects(conn, &p.project_ids)?;
-    let order = p.order.map(finite).transpose()?;
+pub(super) fn tasks_create(conn: &Conn, task: NewTask) -> Result<TaskRow, RpcError> {
+    check_projects(conn, &task.project_ids)?;
+    let task = NewTask {
+        order: task.order.map(finite).transpose()?,
+        ..task
+    };
     let mut st = conn.hub.lock();
-    let task = conn
-        .hub
-        .repo()
-        .tasks()
-        .insert(NewTask {
-            title: p.title,
-            status: p.status.unwrap_or(TaskStatus::Backlog),
-            order,
-            priority: p.priority.unwrap_or(Priority::P2),
-            project_ids: p.project_ids,
-            notes: p.notes,
-            checklist: p.checklist,
-            links: p.links,
-        })
-        .map_err(store_error)?;
-    st.emit(StateEvent::TaskUpserted { task: task.clone() });
+    let task = conn.hub.repo().tasks().insert(task).map_err(store_error)?;
+    conn.hub.emit_task(&mut st, &task);
     Ok(task)
 }
 
-pub(super) fn tasks_update(conn: &Conn, p: TasksUpdateParams) -> Result<Task, RpcError> {
+pub(super) fn tasks_update(conn: &Conn, p: TasksUpdateParams) -> Result<TaskRow, RpcError> {
     if let Some(projects) = &p.project_ids {
         check_projects(conn, projects)?;
     }
@@ -150,7 +134,7 @@ pub(super) fn tasks_update(conn: &Conn, p: TasksUpdateParams) -> Result<Task, Rp
     })
 }
 
-pub(super) fn tasks_move(conn: &Conn, p: TasksMoveParams) -> Result<Task, RpcError> {
+pub(super) fn tasks_move(conn: &Conn, p: TasksMoveParams) -> Result<TaskRow, RpcError> {
     let order = finite(p.order)?;
     edit_task(conn, p.task_id, |tasks| {
         tasks.move_to(p.task_id, p.status, order)
@@ -168,28 +152,30 @@ pub(super) fn tasks_delete(conn: &Conn, p: TaskRef) -> Result<Ack, RpcError> {
     {
         return Err(not_found(Resource::Task, p.task_id));
     }
-    st.emit(StateEvent::TaskRemoved { task_id: p.task_id });
+    conn.hub.emit_task_removed(&mut st, p.task_id);
     Ok(Ack {})
 }
 
-/// Links can dangle: the machine or session need not exist.
-pub(super) fn tasks_link(conn: &Conn, p: TasksLinkParams, link: bool) -> Result<Task, RpcError> {
-    edit_task(conn, p.task_id, |tasks| {
-        if link {
-            tasks.link(p.task_id, &p.link)
-        } else {
-            tasks.unlink(p.task_id, &p.link)
-        }
-    })
+/// Links can dangle: the session need not exist.
+pub(super) fn tasks_link(conn: &Conn, task: TaskId, link: TaskLink) -> Result<TaskRow, RpcError> {
+    edit_task(conn, task, |tasks| tasks.link(task, &link))
 }
 
-pub(super) fn checklist_add(conn: &Conn, p: ChecklistAddParams) -> Result<Task, RpcError> {
+pub(super) fn tasks_unlink(
+    conn: &Conn,
+    task: TaskId,
+    session: controlroom_protocol::ids::SessionId,
+) -> Result<TaskRow, RpcError> {
+    edit_task(conn, task, |tasks| tasks.unlink(task, session))
+}
+
+pub(super) fn checklist_add(conn: &Conn, p: ChecklistAddParams) -> Result<TaskRow, RpcError> {
     edit_task(conn, p.task_id, |tasks| {
         tasks.checklist_add(p.task_id, &p.text, p.index)
     })
 }
 
-pub(super) fn checklist_update(conn: &Conn, p: ChecklistUpdateParams) -> Result<Task, RpcError> {
+pub(super) fn checklist_update(conn: &Conn, p: ChecklistUpdateParams) -> Result<TaskRow, RpcError> {
     conn.hub.task(p.task_id)?;
     edit_task(conn, p.task_id, |tasks| {
         tasks.checklist_update(p.task_id, p.item_id, p.text.as_deref(), p.done)
@@ -197,7 +183,7 @@ pub(super) fn checklist_update(conn: &Conn, p: ChecklistUpdateParams) -> Result<
     .map_err(|_| not_found(Resource::ChecklistItem, p.item_id))
 }
 
-pub(super) fn checklist_remove(conn: &Conn, p: ChecklistRemoveParams) -> Result<Task, RpcError> {
+pub(super) fn checklist_remove(conn: &Conn, p: ChecklistRemoveParams) -> Result<TaskRow, RpcError> {
     conn.hub.task(p.task_id)?;
     edit_task(conn, p.task_id, |tasks| {
         tasks.checklist_remove(p.task_id, p.item_id)

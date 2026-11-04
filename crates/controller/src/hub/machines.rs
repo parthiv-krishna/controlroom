@@ -6,15 +6,30 @@ use std::sync::Arc;
 
 use controlroom_client_core::daemon::DaemonClient;
 use controlroom_client_core::ssh::{HostKey, SshConnection};
-use controlroom_protocol::Rev;
-use controlroom_protocol::ids::{KeyId, SessionId, SubscriptionId};
+use controlroom_protocol::agentd::HostMachine;
+use controlroom_protocol::ids::{Epoch, KeyId, SessionId, SubscriptionId};
+use controlroom_protocol::session::Availability;
 use controlroom_protocol::session::{SessionState, SessionSummary};
 use controlroom_protocol::ui::{BootstrapProgress, Connectivity, HostKeyInfo, Machine};
+use controlroom_protocol::{Rev, UnixMillis};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::machines::MachineCommand;
 use crate::store::MachineRow;
+
+/// Which API a machine's daemon speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinkKind {
+    /// The host API (`controlroomd` in the host role): requests come from the agent daemon
+    /// through the host router.
+    Host {
+        /// The host daemon's lifetime, from its `hello`.
+        epoch: Epoch,
+    },
+    /// The deprecated per-machine daemon API (sessions on the machine; old UI API until R2).
+    Legacy,
+}
 
 /// A live daemon connection.
 #[derive(Clone)]
@@ -23,6 +38,8 @@ pub(crate) struct Link {
     pub ssh: Arc<SshConnection>,
     /// The key this connection authenticated with.
     pub auth_key_id: KeyId,
+    /// The API it speaks.
+    pub kind: LinkKind,
 }
 
 /// Live status beyond the stored record.
@@ -32,6 +49,9 @@ pub(crate) struct MachineLive {
     pub update_available: bool,
     pub last_error: Option<String>,
     pub bootstrap: Option<BootstrapProgress>,
+    /// While connected: since when (a new value means a new connection). Otherwise: since
+    /// the last disconnect (or the controller start), kept across reconnect attempts.
+    pub since: UnixMillis,
 }
 
 impl Default for MachineLive {
@@ -41,6 +61,17 @@ impl Default for MachineLive {
             update_available: false,
             last_error: None,
             bootstrap: None,
+            since: UnixMillis::now(),
+        }
+    }
+}
+
+impl MachineLive {
+    /// Moves `since` when the machine connects or stops being connected.
+    pub(crate) fn track_since(&mut self, before: &Connectivity) {
+        let connected = Connectivity::Connected;
+        if (*before == connected) != (self.connectivity == connected) {
+            self.since = UnixMillis::now();
         }
     }
 }
@@ -60,6 +91,8 @@ pub(crate) struct MachineEntry {
     pub task: Option<JoinHandle<()>>,
     /// Serializes session subscription changes on this machine.
     pub sub_lock: Arc<tokio::sync::Mutex<()>>,
+    /// The host daemon's epoch from its latest `hello` (kept while disconnected).
+    pub epoch: Option<Epoch>,
 }
 
 /// Whether a machine is due for an automatic upgrade.
@@ -99,13 +132,13 @@ impl MachineEntry {
 
     /// Only a connected daemon older than the bundled version qualifies (`update_available`
     /// is never set for a newer one), so this never downgrades.
-    pub(crate) fn upgrade_check(&self) -> UpgradeCheck {
+    pub(crate) fn upgrade_check(&self, host_calls: bool) -> UpgradeCheck {
         let due = self.record.auto_upgrade
             && self.live.update_available
             && self.live.connectivity == Connectivity::Connected;
         if !due {
             UpgradeCheck::Off
-        } else if self.sessions.values().any(run_in_flight) {
+        } else if host_calls || self.sessions.values().any(run_in_flight) {
             UpgradeCheck::Busy
         } else {
             UpgradeCheck::Idle
@@ -131,8 +164,7 @@ impl MachineEntry {
             connectivity: self.live.connectivity.clone(),
             update_available: self.live.update_available,
             auto_upgrade: r.auto_upgrade,
-            // The default grace; the machine setting comes with the host router.
-            grace_s: 600,
+            grace_s: r.grace_s,
             last_seen: r.last_seen,
             version: r.version.clone(),
             arch: r.arch.clone(),
@@ -141,6 +173,31 @@ impl MachineEntry {
             settings: r.daemon_settings.clone(),
             doctor: r.doctor.clone(),
             bootstrap: self.live.bootstrap.clone(),
+        }
+    }
+}
+
+impl MachineEntry {
+    /// The machine as the agent daemon sees it. A legacy daemon can't serve host requests, so
+    /// it counts as `incompatible`.
+    pub(crate) fn host_machine(&self) -> HostMachine {
+        let legacy = self
+            .link
+            .as_ref()
+            .is_some_and(|l| l.kind == LinkKind::Legacy);
+        HostMachine {
+            machine_id: self.record.id,
+            name: self.record.name.clone(),
+            availability: Availability {
+                connectivity: if legacy {
+                    Connectivity::Incompatible
+                } else {
+                    self.live.connectivity.clone()
+                },
+                since: self.live.since,
+            },
+            epoch: self.epoch,
+            grace_s: self.record.grace_s,
         }
     }
 }

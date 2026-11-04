@@ -1,21 +1,18 @@
 //! Sandbox defaults (spec §11.6): `sandbox.profiles`, `sandbox.set_profile`, and the defaults
 //! the controller fills into session create, resume and start fresh.
 //!
-//! A session's defaults combine its machine's profile and the profiles of every project it
-//! belongs to (by location prefix or through a linked task): the strictest level (`strict`
-//! when none is set), and the union of grants, domains and mediated commands. An explicit
-//! session level is the daemon's to apply on top, in either direction.
+//! A session's defaults combine the profiles of its workspaces' machines and of every project
+//! it belongs to (through its linked tasks): the strictest level (`strict` when none is set),
+//! and the union of grants, domains and mediated commands. An explicit session level is the
+//! daemon's to apply on top, in either direction.
 
 use std::sync::Arc;
 
-use controlroom_protocol::RemotePath;
 use controlroom_protocol::RpcError;
 use controlroom_protocol::error::Resource;
 use controlroom_protocol::ids::{MachineId, ProjectId, TaskId};
 use controlroom_protocol::session::{MediationAction, SandboxLevel, SandboxSpec};
-use controlroom_protocol::ui::{
-    LocationPrefix, ProfileScope, SandboxProfilesResult, SandboxSetProfileParams,
-};
+use controlroom_protocol::ui::{ProfileScope, SandboxProfilesResult, SandboxSetProfileParams};
 
 use super::Conn;
 use crate::errors::{invalid_params, not_found, store_error};
@@ -60,65 +57,11 @@ pub(super) fn set_profile(
     profiles(conn)
 }
 
-/// Resolves a leading `~` against the machine's home, and drops trailing slashes.
-fn normalize(path: &str, home: Option<&str>) -> String {
-    let expanded = match (path.strip_prefix('~'), home) {
-        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
-            format!("{}{rest}", home.trim_end_matches('/'))
-        }
-        _ => path.to_owned(),
-    };
-    match expanded.trim_end_matches('/') {
-        "" if expanded.starts_with('/') => "/".to_owned(),
-        trimmed => trimmed.to_owned(),
-    }
-}
-
-/// Whether a project location matches `cwd` on `machine` (a directory and everything below).
-pub(crate) fn prefix_matches(
-    prefix: &LocationPrefix,
-    machine: MachineId,
-    cwd: &RemotePath,
-    home: Option<&str>,
-) -> bool {
-    if prefix.machine_id.is_some_and(|m| m != machine) {
-        return false;
-    }
-    if prefix.path_prefix.as_str().is_empty() {
-        return true;
-    }
-    let prefix = normalize(prefix.path_prefix.as_str(), home);
-    let cwd = normalize(cwd.as_str(), home);
-    prefix == "/" || cwd == prefix || cwd.starts_with(&format!("{prefix}/"))
-}
-
-/// The projects a session belongs to: by location, and through its linked tasks.
-fn matching_projects(
-    hub: &Hub,
-    machine: MachineId,
-    cwd: &RemotePath,
-    tasks: &[TaskId],
-) -> Result<Vec<ProjectId>, RpcError> {
-    let repo = hub.repo();
-    let home = hub
-        .lock()
-        .machines
-        .get(&machine)
-        .and_then(|e| e.record.home.clone());
-    let mut out: Vec<ProjectId> = repo
-        .projects()
-        .list()
-        .map_err(store_error)?
-        .into_iter()
-        .filter(|p| {
-            p.location_prefixes
-                .iter()
-                .any(|l| prefix_matches(l, machine, cwd, home.as_deref()))
-        })
-        .map(|p| p.id)
-        .collect();
+/// The projects of `tasks`, in order.
+fn task_projects(hub: &Hub, tasks: &[TaskId]) -> Result<Vec<ProjectId>, RpcError> {
+    let mut out: Vec<ProjectId> = Vec::new();
     for task in tasks {
-        if let Some(task) = repo.tasks().get(*task).map_err(store_error)? {
+        if let Some(task) = hub.repo().tasks().get(*task).map_err(store_error)? {
             for project in task.project_ids {
                 if !out.contains(&project) {
                     out.push(project);
@@ -129,17 +72,16 @@ fn matching_projects(
     Ok(out)
 }
 
-/// The sandbox defaults of a session at `cwd` on `machine`, linked to `tasks`.
+/// The sandbox defaults of a session with workspaces on `machines`, linked to `tasks`.
 pub(crate) fn defaults(
     hub: &Arc<Hub>,
-    machine: MachineId,
-    cwd: &RemotePath,
+    machines: &[MachineId],
     tasks: &[TaskId],
 ) -> Result<SandboxSpec, RpcError> {
-    let projects = matching_projects(hub, machine, cwd, tasks)?;
+    let projects = task_projects(hub, tasks)?;
     let profiles = hub.repo().sandbox_profiles().list().map_err(store_error)?;
     let applies = |scope: &ProfileScope| match scope {
-        ProfileScope::Machine { machine_id } => *machine_id == machine,
+        ProfileScope::Machine { machine_id } => machines.contains(machine_id),
         ProfileScope::Project { project_id } => projects.contains(project_id),
         ProfileScope::Unknown => false,
     };
@@ -185,40 +127,4 @@ pub(crate) fn defaults(
     }
     spec.level = level.unwrap_or(SandboxLevel::Strict);
     Ok(spec)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn prefix(machine: Option<MachineId>, path: &str) -> LocationPrefix {
-        LocationPrefix {
-            machine_id: machine,
-            path_prefix: path.into(),
-        }
-    }
-
-    #[test]
-    fn location_prefixes_match_directories_and_below() {
-        let (m, other) = (MachineId::generate(), MachineId::generate());
-        let home = Some("/home/alice");
-        let cwd = RemotePath::from("/home/alice/src/app/web");
-        assert!(prefix_matches(&prefix(None, "~/src/app"), m, &cwd, home));
-        assert!(prefix_matches(
-            &prefix(Some(m), "/home/alice/src/"),
-            m,
-            &cwd,
-            home
-        ));
-        assert!(prefix_matches(&prefix(Some(m), ""), m, &cwd, home));
-        assert!(!prefix_matches(&prefix(Some(other), ""), m, &cwd, home));
-        assert!(!prefix_matches(&prefix(None, "~/src/ap"), m, &cwd, home));
-        assert!(prefix_matches(
-            &prefix(None, "~/src"),
-            m,
-            &"~/src/x".into(),
-            None
-        ));
-        assert!(prefix_matches(&prefix(None, "/"), m, &cwd, home));
-    }
 }

@@ -1,11 +1,12 @@
-//! Projects: saved views over sessions (by location prefix) and tasks (by assignment).
+//! Projects: named, colored groups of tasks. A session belongs to the projects of the tasks
+//! that link it.
 
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::ids::ProjectId;
-use controlroom_protocol::ui::{LocationPrefix, Project};
+use controlroom_protocol::ui::next::Project;
 use rusqlite::OptionalExtension;
 
-use super::{OwnerId, Store, StoreResult, json_col, parsed_col, to_json};
+use super::{OwnerId, Store, StoreResult, parsed_col};
 
 /// Owner-scoped project operations.
 pub struct Projects<'a> {
@@ -13,14 +14,13 @@ pub struct Projects<'a> {
     owner: &'a OwnerId,
 }
 
-const COLUMNS: &str = "id, name, color, location_prefixes";
+const COLUMNS: &str = "id, name, color";
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     Ok(Project {
         id: parsed_col(row, 0)?,
         name: row.get(1)?,
         color: row.get(2)?,
-        location_prefixes: json_col(row, 3)?,
     })
 }
 
@@ -30,22 +30,16 @@ impl<'a> Projects<'a> {
     }
 
     /// Creates a project.
-    pub fn insert(
-        &self,
-        name: &str,
-        color: &str,
-        location_prefixes: &[LocationPrefix],
-    ) -> StoreResult<Project> {
+    pub fn insert(&self, name: &str, color: &str) -> StoreResult<Project> {
         let id = ProjectId::generate();
         self.store.lock().execute(
-            "INSERT INTO projects (id, owner_id, name, color, location_prefixes, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO projects (id, owner_id, name, color, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![
                 id.to_string(),
                 self.owner.as_str(),
                 name,
                 color,
-                to_json(&location_prefixes)?,
                 UnixMillis::now().0
             ],
         )?;
@@ -53,7 +47,6 @@ impl<'a> Projects<'a> {
             id,
             name: name.to_owned(),
             color: color.to_owned(),
-            location_prefixes: location_prefixes.to_vec(),
         })
     }
 
@@ -88,14 +81,11 @@ impl<'a> Projects<'a> {
         id: ProjectId,
         name: Option<&str>,
         color: Option<&str>,
-        location_prefixes: Option<&[LocationPrefix]>,
     ) -> StoreResult<bool> {
-        let prefixes = location_prefixes.map(to_json).transpose()?;
         let n = self.store.lock().execute(
-            "UPDATE projects SET name = COALESCE(?3, name), color = COALESCE(?4, color),
-                 location_prefixes = COALESCE(?5, location_prefixes)
+            "UPDATE projects SET name = COALESCE(?3, name), color = COALESCE(?4, color)
              WHERE owner_id = ?1 AND id = ?2",
-            rusqlite::params![self.owner.as_str(), id.to_string(), name, color, prefixes],
+            rusqlite::params![self.owner.as_str(), id.to_string(), name, color],
         )?;
         Ok(n > 0)
     }

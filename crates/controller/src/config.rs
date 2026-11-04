@@ -32,6 +32,9 @@ pub struct ControllerConfig {
     pub push: Option<PushConfig>,
     /// The comment of generated SSH keys, e.g. `controlroom@controlroom.example.com`.
     pub key_comment: String,
+    /// The agent daemon's local socket (`/run/controlroom-agent/agentd.sock` in a deployment);
+    /// `None` runs without one (no global sessions, no host routing).
+    pub agentd_socket: Option<PathBuf>,
     /// Timeouts, backoff and limits.
     pub tuning: Tuning,
 }
@@ -123,6 +126,7 @@ pub(crate) struct Services {
     pub auth: AuthPolicy,
     pub push: Option<PushConfig>,
     pub key_comment: String,
+    pub agentd_socket: Option<PathBuf>,
     pub tuning: Tuning,
 }
 

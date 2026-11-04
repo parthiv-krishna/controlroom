@@ -1,26 +1,57 @@
 //! The aggregated state feed's cursor logic (`state.subscribe` / `state.events`): one epoch per
 //! hub lifetime, a revision per change, and a bounded log of recent changes so a client that
-//! reconnects catches up without a snapshot.
+//! reconnects catches up without a snapshot. Generic over the change type, because the old and
+//! the next UI API each have their own feed.
 
 use std::collections::VecDeque;
 
 use controlroom_protocol::Rev;
 use controlroom_protocol::ids::Epoch;
-use controlroom_protocol::ui::{StateChange, StateCursor, StateEvent};
+use controlroom_protocol::ui::{self, StateCursor};
 
 /// How many recent changes a feed keeps for catching up.
 pub(crate) const RETAINED_CHANGES: usize = 4096;
 
+/// A feed's change type: an event with its revision.
+pub(crate) trait Change: Clone {
+    /// The event.
+    type Event;
+    /// The event at `rev`.
+    fn new(rev: Rev, event: Self::Event) -> Self;
+    /// Its revision.
+    fn rev(&self) -> Rev;
+}
+
+impl Change for ui::StateChange {
+    type Event = ui::StateEvent;
+    fn new(rev: Rev, event: ui::StateEvent) -> Self {
+        Self { rev, event }
+    }
+    fn rev(&self) -> Rev {
+        self.rev
+    }
+}
+
+impl Change for ui::next::StateChange {
+    type Event = ui::next::StateEvent;
+    fn new(rev: Rev, event: ui::next::StateEvent) -> Self {
+        Self { rev, event }
+    }
+    fn rev(&self) -> Rev {
+        self.rev
+    }
+}
+
 /// One owner's change log.
 #[derive(Debug)]
-pub(crate) struct StateFeed {
+pub(crate) struct StateFeed<C> {
     epoch: Epoch,
     rev: u64,
-    log: VecDeque<StateChange>,
+    log: VecDeque<C>,
     capacity: usize,
 }
 
-impl StateFeed {
+impl<C: Change> StateFeed<C> {
     pub(crate) fn new(capacity: usize) -> Self {
         Self {
             epoch: Epoch::generate(),
@@ -38,12 +69,9 @@ impl StateFeed {
     }
 
     /// Records a change and returns it with its revision.
-    pub(crate) fn push(&mut self, event: StateEvent) -> StateChange {
+    pub(crate) fn push(&mut self, event: C::Event) -> C {
         self.rev += 1;
-        let change = StateChange {
-            rev: Rev(self.rev),
-            event,
-        };
+        let change = C::new(Rev(self.rev), event);
         if self.log.len() == self.capacity {
             self.log.pop_front();
         }
@@ -54,20 +82,20 @@ impl StateFeed {
     /// Every change after `since`, or `None` when the client needs a snapshot: no cursor,
     /// another epoch (the controller restarted), a cursor from the future, or one older than
     /// the retained log.
-    pub(crate) fn changes_since(&self, since: Option<StateCursor>) -> Option<Vec<StateChange>> {
+    pub(crate) fn changes_since(&self, since: Option<StateCursor>) -> Option<Vec<C>> {
         let since = since?;
         if since.epoch != self.epoch || since.rev.0 > self.rev {
             return None;
         }
         let oldest_needed = since.rev.0 + 1;
-        let oldest_kept = self.log.front().map_or(self.rev + 1, |c| c.rev.0);
+        let oldest_kept = self.log.front().map_or(self.rev + 1, |c| c.rev().0);
         if oldest_needed < oldest_kept {
             return None;
         }
         Some(
             self.log
                 .iter()
-                .filter(|c| c.rev.0 > since.rev.0)
+                .filter(|c| c.rev().0 > since.rev.0)
                 .cloned()
                 .collect(),
         )
@@ -77,6 +105,7 @@ impl StateFeed {
 #[cfg(test)]
 mod tests {
     use controlroom_protocol::ids::ProjectId;
+    use controlroom_protocol::ui::{StateChange, StateEvent};
 
     use super::*;
 
@@ -88,7 +117,7 @@ mod tests {
 
     #[test]
     fn catch_up_within_the_log_and_snapshot_otherwise() {
-        let mut feed = StateFeed::new(3);
+        let mut feed: StateFeed<StateChange> = StateFeed::new(3);
         let at = |rev| StateCursor {
             epoch: feed.epoch,
             rev: Rev(rev),

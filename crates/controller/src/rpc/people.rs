@@ -2,14 +2,14 @@
 
 use controlroom_protocol::error::Resource;
 use controlroom_protocol::ui::{
-    ClientFocusParams, Device, DeviceRefParams, DevicesRegisterParams, DevicesRenameParams,
-    GrantsRevokeParams, NotificationPreferences, NotificationsSetPreferencesParams,
-    NotificationsSubscribeParams, StateEvent,
+    Device, DeviceRefParams, DevicesRegisterParams, DevicesRenameParams, GrantsRevokeParams,
+    NotificationPreferences, NotificationsSetPreferencesParams, NotificationsSubscribeParams,
 };
 use controlroom_protocol::{Ack, RpcError};
 
 use super::Conn;
 use crate::errors::{invalid_params, not_found, store_error};
+use crate::hub::Focus;
 use crate::notify::prefs;
 
 /// Longest device label.
@@ -43,9 +43,7 @@ pub(super) fn grants_revoke(conn: &Conn, p: GrantsRevokeParams) -> Result<Ack, R
     {
         return Err(not_found(Resource::Grant, p.grant_id));
     }
-    st.emit(StateEvent::GrantRemoved {
-        grant_id: p.grant_id,
-    });
+    st.emit_grant_removed(p.grant_id);
     Ok(Ack {})
 }
 
@@ -61,9 +59,7 @@ pub(super) fn devices_register(conn: &Conn, p: DevicesRegisterParams) -> Result<
             .devices()
             .register(&p.device_id, &label)
             .map_err(store_error)?;
-        st.emit(StateEvent::DeviceUpserted {
-            device: device.clone(),
-        });
+        st.emit_device(device.clone());
         device
     };
     if let Some(hash) = &conn.token_hash
@@ -92,9 +88,7 @@ pub(super) fn devices_rename(conn: &Conn, p: DevicesRenameParams) -> Result<Devi
         return Err(not_found(Resource::Device, &p.device_id));
     }
     let device = device(conn, &p.device_id)?;
-    st.emit(StateEvent::DeviceUpserted {
-        device: device.clone(),
-    });
+    st.emit_device(device.clone());
     Ok(device)
 }
 
@@ -129,9 +123,7 @@ pub(super) fn push_subscribe(
         return Err(not_found(Resource::Device, &p.device_id));
     }
     let device = device(conn, &p.device_id)?;
-    st.emit(StateEvent::DeviceUpserted {
-        device: device.clone(),
-    });
+    st.emit_device(device.clone());
     Ok(device)
 }
 
@@ -143,17 +135,15 @@ pub(super) fn push_unsubscribe(conn: &Conn, p: DeviceRefParams) -> Result<Device
         .delete(&p.device_id)
         .map_err(store_error)?;
     let device = device(conn, &p.device_id)?;
-    st.emit(StateEvent::DeviceUpserted {
-        device: device.clone(),
-    });
+    st.emit_device(device.clone());
     Ok(device)
 }
 
 /// `client.focus`: what this connection shows, for push deduplication. Closing the connection
 /// clears it.
-pub(super) fn focus(conn: &Conn, p: ClientFocusParams) -> Ack {
+pub(super) fn focus(conn: &Conn, focus: Focus) -> Ack {
     if let Some(client) = conn.hub.lock().clients.get_mut(&conn.client) {
-        client.focus = Some(p);
+        client.focus = Some(focus);
     }
     Ack {}
 }

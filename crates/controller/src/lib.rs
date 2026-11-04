@@ -52,6 +52,7 @@
 //! - `schedules`: the scheduler that wakes sessions on cron or interval specs ([`Clock`] in
 //!   [`Tuning`] is its time source).
 
+mod agentd;
 mod attention;
 mod auth;
 mod config;
@@ -62,6 +63,7 @@ mod keys;
 mod machines;
 mod notify;
 mod rotation;
+mod router;
 mod rpc;
 mod schedules;
 pub mod store;
@@ -76,6 +78,6 @@ pub use controller::{Controller, StartError};
 pub use controlroom_client_core::MasterKey;
 pub use hub::CloseReason;
 pub use notify::{PushConfig, PushOutcome, PushSender, VapidKey, VapidKeyError, WebPushSender};
-pub use rpc::{Closed, UiClient, UiReceiver, UiSender};
+pub use rpc::{Closed, UiApi, UiClient, UiReceiver, UiSender};
 pub use schedules::{Clock, ManualClock};
 pub use store::OwnerId;

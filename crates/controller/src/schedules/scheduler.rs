@@ -4,13 +4,14 @@
 //! applies [`plan::step`], records misses, claims due times, and starts a delivery for each
 //! pending due time that isn't being delivered or waiting to retry. Deliveries run
 //! concurrently, so a slow machine never holds up another schedule. A delivery that can't
-//! reach the machine is retried when the machine connects, or after
-//! [`Tuning::schedule_retry`](crate::Tuning), until the due time's deadline.
+//! reach its daemon (a legacy daemon's machine, or the agent daemon) is retried when that
+//! daemon connects, or after [`Tuning::schedule_retry`](crate::Tuning), until the due time's
+//! deadline.
 //!
 //! Passes run when a time is due, when a schedule changes ([`Scheduler::wake`]), when a
-//! delivery ends, and on bus events that matter: a machine connecting, a session closing or
-//! being removed. The first pass after a start applies each schedule's `missed` policy to the
-//! due times that passed while the controller was down.
+//! delivery ends, and on bus events that matter: a machine or the agent daemon connecting, a
+//! session closing or being removed. The first pass after a start applies each schedule's
+//! `missed` policy to the due times that passed while the controller was down.
 //!
 //! Schedules of a closed or removed session, or a removed machine, are disabled.
 
@@ -20,7 +21,7 @@ use std::sync::{Arc, Mutex, Weak};
 use controlroom_protocol::error::Resource;
 use controlroom_protocol::ids::{MachineId, ScheduleId};
 use controlroom_protocol::session::SessionState;
-use controlroom_protocol::ui::{Connectivity, Schedule, ScheduleRun, StateEvent};
+use controlroom_protocol::ui::{Connectivity, ScheduleRun};
 use controlroom_protocol::{RpcError, UnixMillis};
 use tokio::sync::{Notify, broadcast};
 use tokio::task::{JoinHandle, JoinSet};
@@ -31,7 +32,7 @@ use super::recurrence::Recurrence;
 use super::runs;
 use crate::errors::{not_found, store_error};
 use crate::hub::{BusEvent, Hub, HubState};
-use crate::store::Timing;
+use crate::store::{ScheduleRow, Timing};
 
 /// The handle the hub keeps: wakes and stops the task.
 #[derive(Default)]
@@ -75,10 +76,25 @@ impl Scheduler {
     }
 }
 
+/// Where a schedule's prompt goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Target {
+    /// A legacy daemon's machine.
+    Machine(MachineId),
+    /// The agent daemon.
+    Agentd,
+}
+
+impl Target {
+    fn of(s: &ScheduleRow) -> Self {
+        s.machine_id.map_or(Target::Agentd, Target::Machine)
+    }
+}
+
 /// A finished delivery.
 struct Attempt {
     id: ScheduleId,
-    machine: MachineId,
+    target: Target,
     at: UnixMillis,
     result: Delivered,
 }
@@ -88,8 +104,8 @@ struct Task {
     wake: Arc<Notify>,
     /// Schedules with a delivery running.
     in_flight: HashSet<ScheduleId>,
-    /// After a failed delivery: retry at this time, or when the machine connects.
-    retry_at: HashMap<ScheduleId, (MachineId, UnixMillis)>,
+    /// After a failed delivery: retry at this time, or when its target connects.
+    retry_at: HashMap<ScheduleId, (Target, UnixMillis)>,
     /// Notes for claimed due times, added to their run entry.
     notes: HashMap<(ScheduleId, UnixMillis), String>,
     attempts: JoinSet<Attempt>,
@@ -143,19 +159,20 @@ impl Task {
                 machine_id,
                 connectivity: Connectivity::Connected,
             } => {
-                self.retry_at.retain(|_, (m, _)| *m != machine_id);
+                self.retry_at
+                    .retain(|_, (t, _)| *t != Target::Machine(machine_id));
+                true
+            }
+            BusEvent::Agentd { connected: true } => {
+                self.retry_at.retain(|_, (t, _)| *t != Target::Agentd);
                 true
             }
             BusEvent::Session { current, .. } => current.state == SessionState::Closed,
-            BusEvent::SessionRemoved {
-                machine_id,
-                session_id,
-            } => {
+            BusEvent::GlobalSession { current, .. } => current.state == SessionState::Closed,
+            BusEvent::SessionRemoved { session_id, .. }
+            | BusEvent::GlobalSessionRemoved { session_id } => {
                 if let Some(hub) = self.hub.upgrade() {
-                    let ids = hub
-                        .repo()
-                        .schedules()
-                        .enabled_for_session(machine_id, session_id);
+                    let ids = hub.repo().schedules().enabled_for_session(session_id);
                     match ids {
                         Ok(ids) => ids.into_iter().for_each(|id| disable(&hub, id)),
                         Err(e) => tracing::warn!(error = %e, "reading schedules"),
@@ -163,7 +180,9 @@ impl Task {
                 }
                 false
             }
-            BusEvent::Connectivity { .. } | BusEvent::MachineChanged { .. } => false,
+            BusEvent::Connectivity { .. }
+            | BusEvent::MachineChanged { .. }
+            | BusEvent::Agentd { connected: false } => false,
         }
     }
 
@@ -209,7 +228,7 @@ impl Task {
         id: ScheduleId,
         now: UnixMillis,
         first: bool,
-    ) -> Option<Schedule> {
+    ) -> Option<ScheduleRow> {
         let mut st = hub.lock();
         let repo = hub.repo();
         let s = repo.schedules().get(id).ok().flatten()?;
@@ -241,9 +260,7 @@ impl Task {
         };
         match repo.schedules().advance(id, &step.missed, timing) {
             Ok(Some(s)) => {
-                st.emit(StateEvent::ScheduleUpserted {
-                    schedule: s.clone(),
-                });
+                st.emit_schedule(&s);
                 Some(s)
             }
             Ok(None) => None,
@@ -254,14 +271,14 @@ impl Task {
         }
     }
 
-    fn start_delivery(&mut self, hub: &Arc<Hub>, s: Schedule, at: UnixMillis) {
+    fn start_delivery(&mut self, hub: &Arc<Hub>, s: ScheduleRow, at: UnixMillis) {
         self.in_flight.insert(s.id);
         let hub = hub.clone();
         self.attempts.spawn(async move {
             let result = deliver(&hub, &s, at).await;
             Attempt {
                 id: s.id,
-                machine: s.machine_id,
+                target: Target::of(&s),
                 at,
                 result,
             }
@@ -271,7 +288,7 @@ impl Task {
     fn finish(&mut self, hub: &Hub, attempt: Attempt, now: UnixMillis) {
         let Attempt {
             id,
-            machine,
+            target,
             at,
             result,
         } = attempt;
@@ -279,7 +296,7 @@ impl Task {
         match result {
             Delivered::Retry(e) => {
                 tracing::debug!(schedule = %id, error = %e.message, "schedule delivery will be retried");
-                self.retry_at.insert(id, (machine, retry_time(hub, now)));
+                self.retry_at.insert(id, (target, retry_time(hub, now)));
             }
             Delivered::Done {
                 outcome,
@@ -307,13 +324,21 @@ fn retry_time(hub: &Hub, now: UnixMillis) -> UnixMillis {
 }
 
 /// The schedule's machine was removed, or its session is closed.
-fn gone(st: &HubState, s: &Schedule) -> bool {
-    match st.machines.get(&s.machine_id) {
-        None => true,
-        Some(entry) => entry
+fn gone(st: &HubState, s: &ScheduleRow) -> bool {
+    let closed = |state: SessionState| state == SessionState::Closed;
+    match s.machine_id {
+        Some(machine) => match st.machines.get(&machine) {
+            None => true,
+            Some(entry) => entry
+                .sessions
+                .get(&s.session_id)
+                .is_some_and(|session| closed(session.state)),
+        },
+        None => st
+            .global
             .sessions
             .get(&s.session_id)
-            .is_some_and(|session| session.state == SessionState::Closed),
+            .is_some_and(|session| closed(session.state)),
     }
 }
 
@@ -324,7 +349,7 @@ fn disable(hub: &Hub, id: ScheduleId) {
 
 fn disable_locked(hub: &Hub, st: &mut HubState, id: ScheduleId) {
     match hub.repo().schedules().disable(id) {
-        Ok(Some(schedule)) => st.emit(StateEvent::ScheduleUpserted { schedule }),
+        Ok(Some(schedule)) => st.emit_schedule(&schedule),
         Ok(None) => {}
         Err(e) => tracing::warn!(error = %e, "disabling a schedule"),
     }
@@ -336,13 +361,11 @@ fn record(
     id: ScheduleId,
     run: ScheduleRun,
     resolves: Option<UnixMillis>,
-) -> Option<Schedule> {
+) -> Option<ScheduleRow> {
     let mut st = hub.lock();
     match hub.repo().schedules().record(id, run, resolves) {
         Ok(Some(schedule)) => {
-            st.emit(StateEvent::ScheduleUpserted {
-                schedule: schedule.clone(),
-            });
+            st.emit_schedule(&schedule);
             Some(schedule)
         }
         Ok(None) => None,
@@ -355,7 +378,7 @@ fn record(
 
 /// `schedules.run_now`: delivers the message now (same busy rule), as due time "now". An
 /// unreachable machine is an error and records nothing.
-pub(crate) async fn run_now(hub: &Hub, id: ScheduleId) -> Result<Schedule, RpcError> {
+pub(crate) async fn run_now(hub: &Hub, id: ScheduleId) -> Result<ScheduleRow, RpcError> {
     let schedule = hub
         .repo()
         .schedules()

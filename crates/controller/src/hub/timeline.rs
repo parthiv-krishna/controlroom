@@ -24,11 +24,21 @@ use controlroom_protocol::timeline::{RawFrame, TimelineOp};
 
 use super::clients::ClientId;
 
+/// Where a session lives: on a legacy daemon's machine (old UI API), or on the agent daemon
+/// (global sessions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum Source {
+    /// A legacy daemon.
+    Machine(MachineId),
+    /// The agent daemon.
+    Agentd,
+}
+
 /// Identifies a fanout: a session, whether it carries the timeline, and the owning UI
 /// subscription for raw-frame fanouts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct TimelineKey {
-    pub machine_id: MachineId,
+    pub source: Source,
     pub session_id: SessionId,
     /// `Some` for a dedicated raw-frame fanout.
     pub raw_owner: Option<SubscriptionId>,

@@ -1,10 +1,11 @@
 //! Contact grants: user-approved permissions for two sessions to contact each other outside the
-//! default policy. Created by the broker (P7); listed in the state feed and revocable.
+//! default policy. Created by the mailbox (R3); listed in the state feed and revocable.
 
 use controlroom_protocol::UnixMillis;
-use controlroom_protocol::ids::{DeviceId, GrantId};
+use controlroom_protocol::ids::{DeviceId, GrantId, SessionId};
 use controlroom_protocol::session::DeviceRef;
-use controlroom_protocol::ui::{ContactGrant, ContactScope, SessionLink};
+use controlroom_protocol::ui::ContactScope;
+use controlroom_protocol::ui::next::ContactGrant;
 
 use super::{OwnerId, Store, StoreResult, enum_col, enum_str, parsed_col};
 
@@ -15,20 +16,14 @@ pub struct Grants<'a> {
 }
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContactGrant> {
-    let device: Option<String> = row.get(7)?;
-    let label: Option<String> = row.get(8)?;
+    let device: Option<String> = row.get(5)?;
+    let label: Option<String> = row.get(6)?;
     Ok(ContactGrant {
         id: parsed_col(row, 0)?,
-        from: SessionLink {
-            machine_id: parsed_col(row, 1)?,
-            session_id: parsed_col(row, 2)?,
-        },
-        to: SessionLink {
-            machine_id: parsed_col(row, 3)?,
-            session_id: parsed_col(row, 4)?,
-        },
-        scope: enum_col(row, 5)?,
-        granted_at: UnixMillis(row.get(6)?),
+        from: parsed_col(row, 1)?,
+        to: parsed_col(row, 2)?,
+        scope: enum_col(row, 3)?,
+        granted_at: UnixMillis(row.get(4)?),
         by: device.map(|device_id| DeviceRef {
             device_id: DeviceId::new(device_id),
             label: label.unwrap_or_default(),
@@ -44,30 +39,28 @@ impl<'a> Grants<'a> {
     /// Records a grant.
     pub fn insert(
         &self,
-        from: &SessionLink,
-        to: &SessionLink,
+        from: SessionId,
+        to: SessionId,
         scope: ContactScope,
         by: Option<&DeviceRef>,
     ) -> StoreResult<ContactGrant> {
         let grant = ContactGrant {
             id: GrantId::generate(),
-            from: from.clone(),
-            to: to.clone(),
+            from,
+            to,
             scope,
             granted_at: UnixMillis::now(),
             by: by.cloned(),
         };
         self.store.lock().execute(
-            "INSERT INTO grants (id, owner_id, from_machine, from_session, to_machine, to_session,
-                                 scope, granted_at, by_device, by_label)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO grants (id, owner_id, from_session, to_session, scope, granted_at,
+                                 by_device, by_label)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
                 grant.id.to_string(),
                 self.owner.as_str(),
-                from.machine_id.to_string(),
-                from.session_id.to_string(),
-                to.machine_id.to_string(),
-                to.session_id.to_string(),
+                from.to_string(),
+                to.to_string(),
                 enum_str(&scope)?,
                 grant.granted_at.0,
                 by.map(|d| d.device_id.as_str().to_owned()),
@@ -81,8 +74,7 @@ impl<'a> Grants<'a> {
     pub fn list(&self) -> StoreResult<Vec<ContactGrant>> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, from_machine, from_session, to_machine, to_session, scope, granted_at,
-                    by_device, by_label
+            "SELECT id, from_session, to_session, scope, granted_at, by_device, by_label
              FROM grants WHERE owner_id = ?1 ORDER BY granted_at, id",
         )?;
         let rows = stmt

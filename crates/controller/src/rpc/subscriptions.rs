@@ -1,5 +1,7 @@
 //! UI session subscriptions over the shared daemon subscriptions of the hub's fanouts:
-//! subscribing, resubscribing after a reconnect, and ending them.
+//! subscribing, resubscribing after a reconnect, and ending them. The same logic serves legacy
+//! daemons' sessions (old UI API) and the agent daemon's global sessions (next UI API); only
+//! the [`Source`] differs.
 
 use std::sync::{Arc, Mutex};
 
@@ -10,19 +12,43 @@ use controlroom_protocol::daemon::{
 };
 use controlroom_protocol::error::Resource;
 use controlroom_protocol::ids::{MachineId, SubscriptionId};
-use controlroom_protocol::ui::OnMachine;
 use controlroom_protocol::{Ack, RpcError, RpcOutcome, Seq};
 
 use super::{Conn, Reply, reply};
 use crate::errors::{call_error, not_found};
-use crate::hub::{Hub, JoinPlan, TimelineKey, client_gone};
+use crate::hub::{Hub, JoinPlan, Source, TimelineKey, client_gone};
 
-fn sub_lock(hub: &Hub, machine_id: MachineId) -> Result<Arc<tokio::sync::Mutex<()>>, RpcError> {
-    hub.lock()
-        .machines
-        .get(&machine_id)
-        .map(|e| e.sub_lock.clone())
-        .ok_or_else(|| not_found(Resource::Machine, machine_id))
+/// Serializes subscription changes per source.
+fn sub_lock(hub: &Hub, source: Source) -> Result<Arc<tokio::sync::Mutex<()>>, RpcError> {
+    match source {
+        Source::Machine(machine_id) => hub
+            .lock()
+            .machines
+            .get(&machine_id)
+            .map(|e| e.sub_lock.clone())
+            .ok_or_else(|| not_found(Resource::Machine, machine_id)),
+        Source::Agentd => Ok(hub.agentd_sub_lock.clone()),
+    }
+}
+
+/// The source's connected daemon.
+fn daemon(hub: &Hub, source: Source) -> Result<DaemonClient, RpcError> {
+    match source {
+        Source::Machine(machine_id) => hub.daemon(machine_id),
+        Source::Agentd => hub.agentd(),
+    }
+}
+
+/// A failed call to the source, for the UI.
+fn source_error(
+    hub: &Hub,
+    source: Source,
+    e: controlroom_client_core::daemon::CallError,
+) -> RpcError {
+    match source {
+        Source::Machine(machine_id) => call_error(e, machine_id, || hub.connectivity(machine_id)),
+        Source::Agentd => crate::rpc::passthrough::agentd_error(e),
+    }
 }
 
 /// Opens (or replaces) the daemon subscription of a fanout. The response hook records it
@@ -64,9 +90,9 @@ async fn open(
     let result = daemon
         .call_with::<SessionSubscribe>(&params, options)
         .await
-        .map_err(|e| call_error(e, key.machine_id, || hub.connectivity(key.machine_id)))?;
+        .map_err(|e| source_error(hub, key.source, e))?;
     if let Some(old) = ended.lock().unwrap_or_else(|p| p.into_inner()).take() {
-        hub.unsubscribe_daemon(key.machine_id, old);
+        hub.unsubscribe_source(key.source, old);
     }
     Ok(result)
 }
@@ -76,19 +102,19 @@ async fn open(
 /// buffered) until the response is queued.
 pub(super) async fn subscribe(
     conn: &Arc<Conn>,
-    p: OnMachine<SessionSubscribeParams>,
+    source: Source,
+    p: SessionSubscribeParams,
 ) -> Result<Reply, RpcError> {
     let hub = &conn.hub;
-    let machine_id = p.machine_id;
-    let lock = sub_lock(hub, machine_id)?;
+    let lock = sub_lock(hub, source)?;
     let _guard = lock.lock().await;
-    let daemon = hub.daemon(machine_id)?;
+    let daemon = daemon(hub, source)?;
     let ui_sub = SubscriptionId::generate();
     let key = TimelineKey {
-        machine_id,
-        session_id: p.params.id,
-        raw_owner: p.params.raw_since.map(|_| ui_sub),
-        timeline: p.params.timeline,
+        source,
+        session_id: p.id,
+        raw_owner: p.raw_since.map(|_| ui_sub),
+        timeline: p.timeline,
     };
     let (plan, joined) = {
         let mut st = hub.lock();
@@ -97,13 +123,7 @@ pub(super) async fn subscribe(
             return Err(client_gone());
         }
         let fanout = st.timelines.entry(key).or_default();
-        let plan = fanout.add(
-            ui_sub,
-            conn.client,
-            p.params.since_seq,
-            p.params.raw_since,
-            key.timeline,
-        );
+        let plan = fanout.add(ui_sub, conn.client, p.since_seq, p.raw_since, key.timeline);
         (plan, fanout.snapshot())
     };
     let (head_seq, detail) = match plan {
@@ -165,7 +185,7 @@ pub(super) async fn unsubscribe(conn: &Conn, p: UnsubscribeParams) -> Result<Ack
     let Some(key) = found else {
         return Err(not_found(Resource::Subscription, sub));
     };
-    let lock = sub_lock(hub, key.machine_id)?;
+    let lock = sub_lock(hub, key.source)?;
     let _guard = lock.lock().await;
     let ended = {
         let mut st = hub.lock();
@@ -177,19 +197,15 @@ pub(super) async fn unsubscribe(conn: &Conn, p: UnsubscribeParams) -> Result<Ack
         }
     };
     if let Some(daemon_sub) = ended {
-        hub.unsubscribe_daemon(key.machine_id, daemon_sub);
+        hub.unsubscribe_source(key.source, daemon_sub);
     }
     Ok(Ack {})
 }
 
-/// After a reconnect: resumes every session subscription of the machine from the lowest seq
-/// its subscribers have, so they get exactly what they missed.
-pub(crate) async fn resubscribe_sessions(
-    hub: &Arc<Hub>,
-    machine_id: MachineId,
-    daemon: &DaemonClient,
-) {
-    let Ok(lock) = sub_lock(hub, machine_id) else {
+/// After a reconnect: resumes every session subscription of the source from the lowest seq its
+/// subscribers have, so they get exactly what they missed.
+async fn resubscribe(hub: &Arc<Hub>, source: Source, daemon: &DaemonClient) {
+    let Ok(lock) = sub_lock(hub, source) else {
         return;
     };
     let _guard = lock.lock().await;
@@ -197,7 +213,7 @@ pub(crate) async fn resubscribe_sessions(
         let st = hub.lock();
         st.timelines
             .iter()
-            .filter(|(k, f)| k.machine_id == machine_id && f.daemon_sub().is_none())
+            .filter(|(k, f)| k.source == source && f.daemon_sub().is_none())
             .filter_map(|(k, f)| Some((*k, f.resume_plan()?)))
             .collect()
     };
@@ -206,7 +222,21 @@ pub(crate) async fn resubscribe_sessions(
             continue;
         };
         if let Err(e) = open(hub, daemon, key, since, raw_since).await {
-            tracing::warn!(machine = %machine_id, session = %key.session_id, error = %e.message, "resubscribing a session");
+            tracing::warn!(?source, session = %key.session_id, error = %e.message, "resubscribing a session");
         }
     }
+}
+
+/// After a legacy daemon reconnected.
+pub(crate) async fn resubscribe_sessions(
+    hub: &Arc<Hub>,
+    machine_id: MachineId,
+    daemon: &DaemonClient,
+) {
+    resubscribe(hub, Source::Machine(machine_id), daemon).await;
+}
+
+/// After the agent daemon reconnected.
+pub(crate) async fn resubscribe_global(hub: &Arc<Hub>, daemon: &DaemonClient) {
+    resubscribe(hub, Source::Agentd, daemon).await;
 }

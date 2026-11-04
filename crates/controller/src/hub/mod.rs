@@ -1,15 +1,22 @@
-//! One owner's live state: machines and their daemon links, the aggregated session cache, the
-//! state feed, session subscription fan-out, connected UI clients and their focus, and the
-//! event bus.
+//! One owner's live state: machines and their daemon links, the session caches (legacy
+//! daemons' sessions and the agent daemon's global sessions), the state feeds of the old and
+//! the next UI API, session subscription fan-out, the host router's pending requests,
+//! connected UI clients and their focus, and the event bus.
 //!
 //! The state sits behind one `std::sync::Mutex` that is never held across an `.await`. Store
 //! writes that produce feed events run under it too (lock order: hub, then store), so the feed
 //! order matches the store's. Subsystems react to changes through the [`bus`] instead of
 //! adding state here.
+//!
+//! **Two UI APIs.** Until the UI switches (R2), connections speak either the old UI API (its
+//! feed: machines, legacy sessions, projects with location prefixes, ...) or the next one
+//! (global sessions with project membership, overlaps, ...). Controller data is stored once
+//! and emitted to both feeds in each API's shape (the `emit_*` helpers).
 
 mod bus;
 mod clients;
 mod feed;
+mod global;
 mod machines;
 mod sessions;
 mod timeline;
@@ -21,38 +28,58 @@ use std::time::Duration;
 
 use controlroom_client_core::daemon::DaemonClient;
 use controlroom_client_core::ssh::SshConnection;
+use controlroom_protocol::agentd::{HostMachine, HostOpsMachinesParams, HostOpsNotifyParams};
 use controlroom_protocol::daemon::{
-    DaemonNotification, DaemonSettings, DoctorReport, MachineSubscribeResult,
+    DaemonNotification, DaemonSettings, DoctorReport, MachineSubscribeResult, SessionEventsParams,
 };
 use controlroom_protocol::error::Resource;
-use controlroom_protocol::ids::{DeviceId, KeyId, MachineId, SessionId, SubscriptionId};
+use controlroom_protocol::host::HostNotification;
+use controlroom_protocol::ids::{
+    DeviceId, GrantId, KeyId, MachineId, ProjectId, ScheduleId, SessionId, SubscriptionId, TaskId,
+};
+use controlroom_protocol::ui::next;
 use controlroom_protocol::ui::notifications::{SessionEvents, StateEvents};
 use controlroom_protocol::ui::{
-    Connectivity, Machine, MachineSession, OnMachine, StateEvent, StateEventsParams, StateSnapshot,
+    Connectivity, Device, Machine, MachineSession, OnMachine, StateEvent, StateEventsParams,
+    StateSnapshot,
 };
-use controlroom_protocol::{RpcError, RpcNotification};
+use controlroom_protocol::{ErrorData, RpcError, RpcNotification};
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc};
 
 pub(crate) use bus::BusEvent;
 pub use clients::CloseReason;
-pub(crate) use clients::{ClientEntry, ClientId, ClientSink};
-pub(crate) use machines::{Link, MachineEntry, MachineLive, UpgradeCheck, host_key_info};
-pub(crate) use timeline::{Delivery, Fanout, JoinPlan, TimelineKey};
+pub(crate) use clients::{ClientEntry, ClientId, ClientSink, Focus, StateSub};
+pub(crate) use global::GlobalSessions;
+pub(crate) use machines::{Link, LinkKind, MachineEntry, MachineLive, UpgradeCheck, host_key_info};
+pub(crate) use timeline::{Delivery, Fanout, JoinPlan, Source, TimelineKey};
 
 use crate::config::Services;
 use crate::errors::{internal, machine_unavailable, not_found, store_error};
 use crate::keys;
 use crate::machines::{self as machine_tasks, InstallPolicy, MachineCommand};
-use crate::store::{MachineRow, OwnerId, OwnerRepo, SeenUpdate};
+use crate::router::Router;
+use crate::router::outbound::{self, OutboundQueue};
+use crate::store::{MachineRow, OwnerId, OwnerRepo, ScheduleRow, SeenUpdate, TaskRow};
 
 /// Commands buffered per machine task; a full queue drops the command (they are idempotent).
 const COMMAND_QUEUE: usize = 16;
 
 /// The hub's mutable state.
 pub(crate) struct HubState {
-    pub feed: feed::StateFeed,
+    /// The old UI API's feed.
+    pub feed: feed::StateFeed<controlroom_protocol::ui::StateChange>,
+    /// The next UI API's feed.
+    pub next_feed: feed::StateFeed<next::StateChange>,
     pub machines: BTreeMap<MachineId, MachineEntry>,
+    /// The agent daemon's sessions.
+    pub global: GlobalSessions,
+    /// The connection to the agent daemon, while it is up.
+    pub agentd: Option<DaemonClient>,
+    /// The host router's pending requests.
+    pub router: Router,
+    /// The last machine report sent to the agent daemon.
+    reported_machines: Vec<HostMachine>,
     pub clients: HashMap<ClientId, ClientEntry>,
     pub timelines: HashMap<TimelineKey, Fanout>,
     bus: broadcast::Sender<BusEvent>,
@@ -65,14 +92,20 @@ pub(crate) struct Hub {
     state: Mutex<HubState>,
     /// Serializes key rotations.
     pub rotation: tokio::sync::Mutex<()>,
+    /// Serializes session subscription changes on the agent daemon.
+    pub agentd_sub_lock: Arc<tokio::sync::Mutex<()>>,
     /// Fires the owner's schedules.
     pub scheduler: crate::schedules::Scheduler,
+    /// The host router's ordered queue to the agent daemon.
+    pub outbound: OutboundQueue,
+    /// The agent daemon link and outbound queue tasks.
+    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     next_client: AtomicU64,
 }
 
 impl Hub {
-    /// Loads the owner's machines, ensures the controlroom key, and starts every machine task
-    /// and the notifier.
+    /// Loads the owner's machines, ensures the controlroom key, and starts every machine task,
+    /// the notifier, the scheduler and the agent daemon link.
     pub(crate) fn start(services: Arc<Services>, owner: OwnerId) -> Result<Arc<Self>, RpcError> {
         services.store.ensure_owner(&owner).map_err(store_error)?;
         keys::ensure_controlroom_key(&services, &owner)?;
@@ -83,20 +116,33 @@ impl Hub {
             .list()
             .map_err(store_error)?;
         let (bus, _) = broadcast::channel(bus::BUS_CAPACITY);
+        let (outbound, outbound_rx) = OutboundQueue::new();
         let hub = Arc::new(Self {
             owner,
             services: services.clone(),
             state: Mutex::new(HubState {
                 feed: feed::StateFeed::new(feed::RETAINED_CHANGES),
+                next_feed: feed::StateFeed::new(feed::RETAINED_CHANGES),
                 machines: BTreeMap::new(),
+                global: GlobalSessions::default(),
+                agentd: None,
+                router: Router::default(),
+                reported_machines: Vec::new(),
                 clients: HashMap::new(),
                 timelines: HashMap::new(),
                 bus,
             }),
             rotation: tokio::sync::Mutex::new(()),
+            agentd_sub_lock: Arc::default(),
             scheduler: crate::schedules::Scheduler::default(),
+            outbound,
+            tasks: Mutex::new(Vec::new()),
             next_client: AtomicU64::new(1),
         });
+        {
+            let mut st = hub.lock();
+            hub.refresh_membership(&mut st);
+        }
         if let Some(push) = services.push.clone() {
             let events = hub.subscribe_bus();
             tokio::spawn(crate::notify::run(Arc::downgrade(&hub), push, events));
@@ -105,6 +151,17 @@ impl Hub {
             hub.spawn_machine(record, None, InstallPolicy::IfMissing);
         }
         hub.scheduler.start(&hub);
+        let mut tasks = vec![tokio::spawn(outbound::run(
+            Arc::downgrade(&hub),
+            outbound_rx,
+        ))];
+        if let Some(socket) = services.agentd_socket.clone() {
+            tasks.push(tokio::spawn(crate::agentd::run(
+                Arc::downgrade(&hub),
+                socket,
+            )));
+        }
+        *hub.tasks.lock().unwrap_or_else(|p| p.into_inner()) = tasks;
         Ok(hub)
     }
 
@@ -147,9 +204,11 @@ impl Hub {
                     control,
                     task: None,
                     sub_lock: Arc::new(tokio::sync::Mutex::new(())),
+                    epoch: None,
                 },
             );
             st.emit_machine(id);
+            self.report_machines_locked(&mut st, false);
         }
         let task = tokio::spawn(machine_tasks::run(self.clone(), id, rx, initial, policy));
         if let Some(entry) = self.lock().machines.get_mut(&id) {
@@ -157,7 +216,8 @@ impl Hub {
         }
     }
 
-    /// Stops a machine's task and forgets it; its sessions leave the feed.
+    /// Stops a machine's task and forgets it; its legacy sessions leave the old feed, and its
+    /// pending host requests are answered `not_found`.
     pub(crate) async fn remove_machine(&self, id: MachineId) {
         let task = {
             let mut st = self.lock();
@@ -168,8 +228,12 @@ impl Hub {
             if let Some(link) = &entry.link {
                 link.daemon.close();
             }
-            st.timelines.retain(|key, _| key.machine_id != id);
+            st.timelines
+                .retain(|key, _| key.source != Source::Machine(id));
             st.emit(StateEvent::MachineRemoved { machine_id: id });
+            st.emit_next(next::StateEvent::MachineRemoved { machine_id: id });
+            self.host_removed(&mut st, id);
+            self.report_machines_locked(&mut st, false);
             entry.task.take()
         };
         // Its schedules are disabled on the next pass.
@@ -179,13 +243,24 @@ impl Hub {
         }
     }
 
-    /// Stops every machine task.
+    /// Stops every machine task and the agent daemon link.
     pub(crate) async fn shutdown(&self) {
         self.scheduler.stop().await;
+        for task in self
+            .tasks
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .drain(..)
+        {
+            task.abort();
+        }
         let tasks: Vec<_> = {
             let mut st = self.lock();
             for client in st.clients.values() {
                 client.sink.close(CloseReason::Shutdown);
+            }
+            if let Some(agentd) = st.agentd.take() {
+                agentd.close();
             }
             st.machines
                 .values_mut()
@@ -213,8 +288,9 @@ impl Hub {
         Ok(())
     }
 
-    /// The connected daemon of a machine, or `machine_unavailable`.
-    pub(crate) fn daemon(&self, id: MachineId) -> Result<DaemonClient, RpcError> {
+    /// The connected daemon of a machine of `kind`, or `machine_unavailable`; a connected
+    /// daemon of the other kind is `unsupported`.
+    fn link_of(&self, id: MachineId, host: bool) -> Result<DaemonClient, RpcError> {
         let st = self.lock();
         let entry = st
             .machines
@@ -222,10 +298,32 @@ impl Hub {
             .ok_or_else(|| not_found(Resource::Machine, id))?;
         match &entry.link {
             Some(link) if entry.live.connectivity == Connectivity::Connected => {
-                Ok(link.daemon.clone())
+                if matches!(link.kind, LinkKind::Host { .. }) == host {
+                    Ok(link.daemon.clone())
+                } else if host {
+                    Err(RpcError::new(
+                        ErrorData::Unsupported,
+                        "this machine runs the per-machine daemon; upgrade it to the host daemon",
+                    ))
+                } else {
+                    Err(RpcError::new(
+                        ErrorData::Unsupported,
+                        "this machine runs the host daemon; sessions live on the agent daemon",
+                    ))
+                }
             }
             _ => Err(machine_unavailable(id, entry.live.connectivity.clone())),
         }
+    }
+
+    /// The connected legacy daemon of a machine (old UI API).
+    pub(crate) fn daemon(&self, id: MachineId) -> Result<DaemonClient, RpcError> {
+        self.link_of(id, false)
+    }
+
+    /// The connected host daemon of a machine (next UI API: `fs.list`, `doctor.report`).
+    pub(crate) fn host(&self, id: MachineId) -> Result<DaemonClient, RpcError> {
+        self.link_of(id, true)
     }
 
     /// A machine's connectivity (`unreachable` once it is gone).
@@ -250,7 +348,7 @@ impl Hub {
         self.lock().machines.get(&id).map(|e| e.record.name.clone())
     }
 
-    /// A cached session summary.
+    /// A cached legacy session summary.
     pub(crate) fn session(
         &self,
         machine: MachineId,
@@ -264,6 +362,14 @@ impl Hub {
             .cloned()
     }
 
+    /// A cached global session summary.
+    pub(crate) fn global_session(
+        &self,
+        session: SessionId,
+    ) -> Option<controlroom_protocol::agentd::SessionSummary> {
+        self.lock().global.sessions.get(&session).cloned()
+    }
+
     /// Updates a machine's live status; emits a change if anything differs.
     pub(crate) fn update_live(&self, id: MachineId, f: impl FnOnce(&mut MachineLive)) {
         let mut st = self.lock();
@@ -272,6 +378,7 @@ impl Hub {
         };
         let before = entry.live.clone();
         f(&mut entry.live);
+        entry.live.track_since(&before.connectivity);
         if entry.live == before {
             return;
         }
@@ -283,6 +390,7 @@ impl Hub {
                 machine_id: id,
                 connectivity,
             });
+            self.report_machines_locked(&mut st, false);
         }
     }
 
@@ -295,6 +403,7 @@ impl Hub {
             entry.record = record;
             st.emit_machine(id);
             let _ = st.bus.send(BusEvent::MachineChanged { machine_id: id });
+            self.report_machines_locked(&mut st, false);
         }
         Ok(())
     }
@@ -324,22 +433,16 @@ impl Hub {
     }
 
     pub(crate) fn upgrade_check(&self, id: MachineId) -> UpgradeCheck {
-        self.lock()
-            .machines
-            .get(&id)
-            .map_or(UpgradeCheck::Off, MachineEntry::upgrade_check)
+        self.lock().upgrade_check(id)
     }
 
     /// Starts an automatic upgrade if it is still due and the machine idle. Under the lock, so
     /// no UI call reaches the daemon afterwards: the link is dropped as on a disconnect.
     pub(crate) fn begin_auto_upgrade(&self, id: MachineId) -> bool {
         let mut st = self.lock();
-        let due = st
-            .machines
-            .get(&id)
-            .is_some_and(|e| e.upgrade_check() == UpgradeCheck::Idle);
+        let due = st.upgrade_check(id) == UpgradeCheck::Idle;
         if due {
-            st.disconnected(id, Connectivity::Connecting, None);
+            self.disconnected_locked(&mut st, id, Connectivity::Connecting, None);
         }
         due
     }
@@ -359,9 +462,9 @@ impl Hub {
     // --- Connection lifecycle (the machine task) --------------------------------------------
 
     /// The daemon said hello: records the link and what we learned. A different daemon
-    /// installation drops the cached sessions.
+    /// installation drops the cached sessions. A host daemon gets its waiting requests.
     pub(crate) fn connected(
-        &self,
+        self: &Arc<Self>,
         id: MachineId,
         link: Link,
         seen: SeenUpdate,
@@ -390,13 +493,22 @@ impl Hub {
             Vec::new()
         };
         let was_stale = entry.stale();
+        let host = match link.kind {
+            LinkKind::Host { epoch } => {
+                entry.epoch = Some(epoch);
+                true
+            }
+            LinkKind::Legacy => false,
+        };
         entry.link = Some(link);
         entry.machine_sub = None;
+        // Every hello is a new connection, even after a quick drop.
         entry.live = MachineLive {
             connectivity: Connectivity::Connected,
             update_available,
             last_error: None,
             bootstrap: None,
+            since: now,
         };
         for session_id in gone {
             st.session_removed(id, session_id);
@@ -409,16 +521,35 @@ impl Hub {
             machine_id: id,
             connectivity: Connectivity::Connected,
         });
+        // The agent daemon learns of the new connection before its notifications arrive.
+        self.report_machines_locked(&mut st, false);
+        if host {
+            self.host_connected(&mut st, id);
+        }
     }
 
-    /// The connection is gone; sessions stay cached, marked stale.
+    /// The connection is gone; legacy sessions stay cached, marked stale; host requests wait
+    /// for the next connection.
     pub(crate) fn disconnected(
         &self,
         id: MachineId,
         connectivity: Connectivity,
         error: Option<String>,
     ) {
-        self.lock().disconnected(id, connectivity, error);
+        let mut st = self.lock();
+        self.disconnected_locked(&mut st, id, connectivity, error);
+    }
+
+    fn disconnected_locked(
+        &self,
+        st: &mut HubState,
+        id: MachineId,
+        connectivity: Connectivity,
+        error: Option<String>,
+    ) {
+        st.disconnected(id, connectivity, error);
+        self.host_disconnected(st, id);
+        self.report_machines_locked(st, false);
     }
 
     /// The `machine.subscribe` response hook: runs before any `machine.events` of it.
@@ -432,7 +563,7 @@ impl Hub {
         }
     }
 
-    /// Routes a daemon notification (called on the daemon reader task).
+    /// Routes a legacy daemon notification (called on the daemon reader task).
     pub(crate) fn on_daemon_notification(&self, id: MachineId, n: RpcNotification<Value>) {
         match DaemonNotification::from_parts(&n.method, n.params) {
             Ok(DaemonNotification::MachineEvents(p)) => {
@@ -445,27 +576,107 @@ impl Hub {
                 }
             }
             Ok(DaemonNotification::SessionEvents(p)) => {
-                let st = &mut *self.lock();
-                let key = st
-                    .timelines
-                    .iter()
-                    .find(|(k, f)| k.machine_id == id && f.daemon_sub() == Some(p.subscription_id))
-                    .map(|(k, _)| *k);
-                if let Some(key) = key {
-                    let deliveries = st
-                        .timelines
-                        .get_mut(&key)
-                        .map(|f| f.deliver(&p))
-                        .unwrap_or_default();
-                    st.send_timeline(key, deliveries);
-                }
+                self.timeline_events(Source::Machine(id), &p);
             }
             Ok(DaemonNotification::OutboxItems(_)) => {
-                // The mailbox broker arrives in P7; nothing subscribes to the outbox yet.
+                // The legacy mailbox is never consumed (the agent daemon's mailbox is local).
             }
             Err(e) => {
                 tracing::warn!(method = %n.method, error = %e.message, "bad daemon notification")
             }
+        }
+    }
+
+    /// Forwards a host daemon's notification to the agent daemon (called on the host reader
+    /// task, so the order is the host's).
+    pub(crate) fn on_host_notification(&self, id: MachineId, n: RpcNotification<Value>) {
+        match HostNotification::from_parts(&n.method, n.params) {
+            Ok(notification) => self.outbound.notify(HostOpsNotifyParams {
+                machine_id: id,
+                notification,
+            }),
+            Err(e) => {
+                tracing::warn!(machine = %id, method = %n.method, error = %e.message, "bad host notification")
+            }
+        }
+    }
+
+    /// Routes a session subscription's events to its fanout.
+    fn timeline_events(&self, source: Source, p: &SessionEventsParams) {
+        let st = &mut *self.lock();
+        let key = st
+            .timelines
+            .iter()
+            .find(|(k, f)| k.source == source && f.daemon_sub() == Some(p.subscription_id))
+            .map(|(k, _)| *k);
+        if let Some(key) = key {
+            let deliveries = st
+                .timelines
+                .get_mut(&key)
+                .map(|f| f.deliver(p))
+                .unwrap_or_default();
+            st.send_timeline(key, deliveries);
+        }
+    }
+
+    // --- The agent daemon -------------------------------------------------------------------
+
+    /// The agent daemon said hello.
+    pub(crate) fn agentd_connected(&self, client: DaemonClient) {
+        let mut st = self.lock();
+        st.agentd = Some(client);
+        let _ = st.bus.send(BusEvent::Agentd { connected: true });
+    }
+
+    /// The agent daemon connection `client` is gone (a newer one is left alone).
+    pub(crate) fn agentd_disconnected(&self, client: &DaemonClient) {
+        let mut st = self.lock();
+        let current = st
+            .agentd
+            .as_ref()
+            .is_some_and(|c| c.same_connection(client));
+        if !current {
+            return;
+        }
+        st.agentd = None;
+        st.global.sub = None;
+        for (key, fanout) in st.timelines.iter_mut() {
+            if key.source == Source::Agentd {
+                fanout.disconnected();
+            }
+        }
+        self.hostops_reset(&mut st);
+        let _ = st.bus.send(BusEvent::Agentd { connected: false });
+    }
+
+    /// The agent daemon connection, or `timeout` (the protocol's answer while it can't be
+    /// reached).
+    pub(crate) fn agentd(&self) -> Result<DaemonClient, RpcError> {
+        self.agentd_client().ok_or_else(agentd_unavailable)
+    }
+
+    /// The agent daemon connection, while it is up.
+    pub(crate) fn agentd_client(&self) -> Option<DaemonClient> {
+        self.lock().agentd.clone()
+    }
+
+    /// Routes a global session subscription's events.
+    pub(crate) fn global_timeline_events(&self, p: &SessionEventsParams) {
+        self.timeline_events(Source::Agentd, p);
+    }
+
+    /// Reports the machines to the agent daemon if they changed since the last report (or
+    /// always, after a new `hello`).
+    pub(crate) fn report_machines(&self, force: bool) {
+        let mut st = self.lock();
+        self.report_machines_locked(&mut st, force);
+    }
+
+    fn report_machines_locked(&self, st: &mut HubState, force: bool) {
+        let machines = st.host_machines();
+        if force || machines != st.reported_machines {
+            st.reported_machines = machines.clone();
+            self.outbound.machines(HostOpsMachinesParams { machines });
         }
     }
 
@@ -487,8 +698,8 @@ impl Hub {
         id
     }
 
-    /// Drops a client's subscriptions and focus; ends daemon session subscriptions nobody
-    /// needs anymore.
+    /// Drops a client's subscriptions and focus; ends session subscriptions nobody needs
+    /// anymore.
     pub(crate) fn remove_client(&self, id: ClientId) {
         let ended = {
             let mut st = self.lock();
@@ -496,7 +707,7 @@ impl Hub {
             let mut ended = Vec::new();
             st.timelines.retain(|key, fanout| {
                 if fanout.remove_client(id) {
-                    ended.push((key.machine_id, fanout.daemon_sub()));
+                    ended.push((key.source, fanout.daemon_sub()));
                     false
                 } else {
                     true
@@ -504,16 +715,20 @@ impl Hub {
             });
             ended
         };
-        for (machine_id, sub) in ended {
+        for (source, sub) in ended {
             if let Some(sub) = sub {
-                self.unsubscribe_daemon(machine_id, sub);
+                self.unsubscribe_source(source, sub);
             }
         }
     }
 
-    /// Ends a daemon subscription in the background.
-    pub(crate) fn unsubscribe_daemon(&self, machine_id: MachineId, sub: SubscriptionId) {
-        if let Ok(daemon) = self.daemon(machine_id) {
+    /// Ends a session subscription on its daemon in the background.
+    pub(crate) fn unsubscribe_source(&self, source: Source, sub: SubscriptionId) {
+        let daemon = match source {
+            Source::Machine(id) => self.daemon(id),
+            Source::Agentd => self.agentd(),
+        };
+        if let Ok(daemon) = daemon {
             tokio::spawn(async move {
                 let params = controlroom_protocol::daemon::UnsubscribeParams {
                     subscription_id: sub,
@@ -533,17 +748,13 @@ impl Hub {
     }
 
     /// Devices with a visible client focused on a session.
-    pub(crate) fn focused_devices(&self, machine: MachineId, session: SessionId) -> Vec<DeviceId> {
+    pub(crate) fn focused_devices(&self, session: SessionId) -> Vec<DeviceId> {
         self.lock()
             .clients
             .values()
             .filter_map(|c| {
                 let f = c.focus.as_ref()?;
-                let on = f
-                    .session
-                    .as_ref()
-                    .is_some_and(|s| s.machine_id == machine && s.session_id == session);
-                (f.visible && on).then(|| f.device_id.clone())
+                (f.visible && f.session_id == Some(session)).then(|| f.device_id.clone())
             })
             .collect()
     }
@@ -552,15 +763,13 @@ impl Hub {
     pub(crate) fn device_changed(&self, device: &DeviceId) {
         let mut st = self.lock();
         match self.repo().devices().get(device) {
-            Ok(Some(device)) => st.emit(StateEvent::DeviceUpserted { device }),
-            Ok(None) => st.emit(StateEvent::DeviceRemoved {
-                device_id: device.clone(),
-            }),
+            Ok(Some(device)) => st.emit_device(device),
+            Ok(None) => st.device_removed(device),
             Err(e) => tracing::warn!(error = %e, "reading a device"),
         }
     }
 
-    /// The full state, for a snapshot.
+    /// The old UI API's full state, for a snapshot.
     pub(crate) fn snapshot(&self, st: &HubState) -> Result<StateSnapshot, RpcError> {
         let repo = self.repo();
         Ok(StateSnapshot {
@@ -576,53 +785,226 @@ impl Hub {
                     })
                 })
                 .collect(),
-            projects: repo.projects().list().map_err(store_error)?,
-            tasks: repo.tasks().list().map_err(store_error)?,
-            grants: repo.grants().list().map_err(store_error)?,
-            schedules: repo.schedules().list().map_err(store_error)?,
+            projects: repo
+                .projects()
+                .list()
+                .map_err(store_error)?
+                .into_iter()
+                .map(legacy_project)
+                .collect(),
+            tasks: repo
+                .tasks()
+                .list()
+                .map_err(store_error)?
+                .iter()
+                .map(TaskRow::legacy)
+                .collect(),
+            // Grants name global sessions; the old UI API has no way to show them.
+            grants: Vec::new(),
+            schedules: repo
+                .schedules()
+                .list()
+                .map_err(store_error)?
+                .iter()
+                .filter_map(ScheduleRow::legacy)
+                .collect(),
             devices: repo.devices().list().map_err(store_error)?,
         })
     }
 
-    /// A store-backed task view, or `not_found`.
-    pub(crate) fn task(
-        &self,
-        id: controlroom_protocol::ids::TaskId,
-    ) -> Result<controlroom_protocol::ui::Task, RpcError> {
+    /// The next UI API's full state, for a snapshot.
+    pub(crate) fn next_snapshot(&self, st: &HubState) -> Result<next::StateSnapshot, RpcError> {
+        let repo = self.repo();
+        Ok(next::StateSnapshot {
+            machines: st.machines.values().map(MachineEntry::view).collect(),
+            sessions: st.global.feed(),
+            overlaps: st.global.overlaps.clone(),
+            projects: repo.projects().list().map_err(store_error)?,
+            tasks: repo
+                .tasks()
+                .list()
+                .map_err(store_error)?
+                .iter()
+                .map(TaskRow::next)
+                .collect(),
+            grants: repo.grants().list().map_err(store_error)?,
+            schedules: repo
+                .schedules()
+                .list()
+                .map_err(store_error)?
+                .iter()
+                .filter_map(ScheduleRow::next)
+                .collect(),
+            devices: repo.devices().list().map_err(store_error)?,
+        })
+    }
+
+    /// A stored task, or `not_found`.
+    pub(crate) fn task(&self, id: TaskId) -> Result<TaskRow, RpcError> {
         self.repo()
             .tasks()
             .get(id)
             .map_err(store_error)?
             .ok_or_else(|| not_found(Resource::Task, id))
     }
+
+    // --- Controller data, emitted to both feeds --------------------------------------------
+
+    /// Emits a task to both feeds; its sessions' project membership follows.
+    pub(crate) fn emit_task(&self, st: &mut HubState, task: &TaskRow) {
+        st.emit(StateEvent::TaskUpserted {
+            task: task.legacy(),
+        });
+        st.emit_next(next::StateEvent::TaskUpserted { task: task.next() });
+        self.refresh_membership(st);
+    }
+
+    /// Emits a task's removal to both feeds.
+    pub(crate) fn emit_task_removed(&self, st: &mut HubState, task_id: TaskId) {
+        st.emit(StateEvent::TaskRemoved { task_id });
+        st.emit_next(next::StateEvent::TaskRemoved { task_id });
+        self.refresh_membership(st);
+    }
+
+    /// Emits a project to both feeds.
+    pub(crate) fn emit_project(&self, st: &mut HubState, project: &next::Project) {
+        st.emit(StateEvent::ProjectUpserted {
+            project: legacy_project(project.clone()),
+        });
+        st.emit_next(next::StateEvent::ProjectUpserted {
+            project: project.clone(),
+        });
+    }
+
+    /// Emits a project's removal to both feeds.
+    pub(crate) fn emit_project_removed(&self, st: &mut HubState, project_id: ProjectId) {
+        st.emit(StateEvent::ProjectRemoved { project_id });
+        st.emit_next(next::StateEvent::ProjectRemoved { project_id });
+        self.refresh_membership(st);
+    }
+}
+
+/// The old UI API's view of a project (location prefixes are gone).
+pub(crate) fn legacy_project(p: next::Project) -> controlroom_protocol::ui::Project {
+    controlroom_protocol::ui::Project {
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        location_prefixes: Vec::new(),
+    }
+}
+
+/// The error while the agent daemon can't be reached.
+pub(crate) fn agentd_unavailable() -> RpcError {
+    RpcError::new(ErrorData::Timeout, "the agent daemon can't be reached")
 }
 
 impl HubState {
-    /// Records a change and fans it out to every state subscription.
+    /// Records a change of the old UI API's feed and fans it out to its subscriptions.
     pub(crate) fn emit(&mut self, event: StateEvent) {
         let change = self.feed.push(event);
         for client in self.clients.values_mut() {
-            for (sub, pending) in client.state_subs.iter_mut() {
-                match pending {
-                    Some(buffer) => buffer.push(change.clone()),
-                    None => client.sink.notify::<StateEvents>(StateEventsParams {
-                        subscription_id: *sub,
-                        changes: vec![change.clone()],
-                    }),
+            for (sub, state) in client.state_subs.iter_mut() {
+                match state {
+                    StateSub::Legacy(Some(buffer)) => buffer.push(change.clone()),
+                    StateSub::Legacy(None) => {
+                        client.sink.notify::<StateEvents>(StateEventsParams {
+                            subscription_id: *sub,
+                            changes: vec![change.clone()],
+                        })
+                    }
+                    StateSub::Next(_) => {}
                 }
             }
         }
     }
 
-    /// Emits a machine's current view.
-    pub(crate) fn emit_machine(&mut self, id: MachineId) {
-        if let Some(entry) = self.machines.get(&id) {
-            let machine = Box::new(entry.view());
-            self.emit(StateEvent::MachineUpserted { machine });
+    /// Records a change of the next UI API's feed and fans it out to its subscriptions.
+    pub(crate) fn emit_next(&mut self, event: next::StateEvent) {
+        let change = self.next_feed.push(event);
+        for client in self.clients.values_mut() {
+            for (sub, state) in client.state_subs.iter_mut() {
+                match state {
+                    StateSub::Next(Some(buffer)) => buffer.push(change.clone()),
+                    StateSub::Next(None) => client.sink.notify::<next::notifications::StateEvents>(
+                        next::StateEventsParams {
+                            subscription_id: *sub,
+                            changes: vec![change.clone()],
+                        },
+                    ),
+                    StateSub::Legacy(_) => {}
+                }
+            }
         }
     }
 
-    /// Emits every session of a machine (after its staleness changed).
+    /// Emits a machine's current view to both feeds.
+    pub(crate) fn emit_machine(&mut self, id: MachineId) {
+        if let Some(entry) = self.machines.get(&id) {
+            let machine = Box::new(entry.view());
+            self.emit(StateEvent::MachineUpserted {
+                machine: machine.clone(),
+            });
+            self.emit_next(next::StateEvent::MachineUpserted { machine });
+        }
+    }
+
+    /// Emits a device to both feeds.
+    pub(crate) fn emit_device(&mut self, device: Device) {
+        self.emit(StateEvent::DeviceUpserted {
+            device: device.clone(),
+        });
+        self.emit_next(next::StateEvent::DeviceUpserted { device });
+    }
+
+    /// Emits a device's removal to both feeds.
+    pub(crate) fn device_removed(&mut self, device_id: &DeviceId) {
+        self.emit(StateEvent::DeviceRemoved {
+            device_id: device_id.clone(),
+        });
+        self.emit_next(next::StateEvent::DeviceRemoved {
+            device_id: device_id.clone(),
+        });
+    }
+
+    /// Emits a schedule to the feed of its API.
+    pub(crate) fn emit_schedule(&mut self, schedule: &ScheduleRow) {
+        if let Some(legacy) = schedule.legacy() {
+            self.emit(StateEvent::ScheduleUpserted { schedule: legacy });
+        }
+        if let Some(next) = schedule.next() {
+            self.emit_next(next::StateEvent::ScheduleUpserted { schedule: next });
+        }
+    }
+
+    /// Emits a schedule's removal to both feeds.
+    pub(crate) fn emit_schedule_removed(&mut self, schedule_id: ScheduleId) {
+        self.emit(StateEvent::ScheduleRemoved { schedule_id });
+        self.emit_next(next::StateEvent::ScheduleRemoved { schedule_id });
+    }
+
+    /// Emits a grant's removal to both feeds.
+    pub(crate) fn emit_grant_removed(&mut self, grant_id: GrantId) {
+        self.emit(StateEvent::GrantRemoved { grant_id });
+        self.emit_next(next::StateEvent::GrantRemoved { grant_id });
+    }
+
+    /// Every machine as the agent daemon sees it.
+    pub(crate) fn host_machines(&self) -> Vec<HostMachine> {
+        self.machines
+            .values()
+            .map(MachineEntry::host_machine)
+            .collect()
+    }
+
+    /// Whether a machine is due for an automatic upgrade.
+    fn upgrade_check(&self, id: MachineId) -> UpgradeCheck {
+        self.machines.get(&id).map_or(UpgradeCheck::Off, |e| {
+            e.upgrade_check(self.router.in_flight(id))
+        })
+    }
+
+    /// Emits every legacy session of a machine (after its staleness changed).
     fn emit_sessions(&mut self, id: MachineId) {
         let Some(entry) = self.machines.get(&id) else {
             return;
@@ -665,13 +1047,14 @@ impl HubState {
             link.daemon.close();
         }
         entry.machine_sub = None;
-        entry.live.connectivity = connectivity.clone();
+        let before = std::mem::replace(&mut entry.live.connectivity, connectivity.clone());
+        entry.live.track_since(&before);
         entry.live.bootstrap = None;
         if error.is_some() {
             entry.live.last_error = error;
         }
         for (key, fanout) in self.timelines.iter_mut() {
-            if key.machine_id == id {
+            if key.source == Source::Machine(id) {
                 fanout.disconnected();
             }
         }
@@ -685,23 +1068,28 @@ impl HubState {
         });
     }
 
-    /// Sends timeline deliveries to their clients.
+    /// Sends timeline deliveries to their clients, in their API's shape.
     pub(crate) fn send_timeline(&self, key: TimelineKey, deliveries: Vec<Delivery>) {
         for d in deliveries {
             let Some(client) = self.clients.get(&d.client) else {
                 continue;
             };
-            client.sink.notify::<SessionEvents>(OnMachine::new(
-                key.machine_id,
-                controlroom_protocol::daemon::SessionEventsParams {
-                    subscription_id: d.subscription_id,
-                    id: key.session_id,
-                    head_seq: d.batch.head_seq,
-                    ops: d.batch.ops,
-                    raw: d.batch.raw,
-                    detail: d.batch.detail,
-                },
-            ));
+            let params = SessionEventsParams {
+                subscription_id: d.subscription_id,
+                id: key.session_id,
+                head_seq: d.batch.head_seq,
+                ops: d.batch.ops,
+                raw: d.batch.raw,
+                detail: d.batch.detail,
+            };
+            match key.source {
+                Source::Machine(machine_id) => client
+                    .sink
+                    .notify::<SessionEvents>(OnMachine::new(machine_id, params)),
+                Source::Agentd => client
+                    .sink
+                    .notify::<next::notifications::SessionEvents>(params),
+            }
         }
     }
 }

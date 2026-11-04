@@ -1,5 +1,6 @@
 //! Delivering one due time: `session.prompt` with the schedule's message, `origin: schedule`,
-//! its busy policy, and the deterministic op id `<schedule id>:<scheduled unix ms>`. The daemon
+//! its busy policy, and the deterministic op id `<schedule id>:<scheduled unix ms>`, to the agent
+//! daemon (a global session) or a legacy daemon (the old UI API's schedules). The daemon
 //! stores op ids with their effect, so delivering the same due time again (a retry, or after a
 //! controller restart) returns the first result instead of prompting twice.
 
@@ -7,10 +8,11 @@ use controlroom_client_core::daemon::CallError;
 use controlroom_protocol::daemon::{PromptResult, SessionPromptParams, methods};
 use controlroom_protocol::ids::OpId;
 use controlroom_protocol::session::{ContentPart, PromptOrigin, SessionState};
-use controlroom_protocol::ui::{Schedule, ScheduleOutcome};
+use controlroom_protocol::ui::ScheduleOutcome;
 use controlroom_protocol::{ErrorData, RpcError, UnixMillis};
 
 use crate::hub::Hub;
+use crate::store::ScheduleRow;
 
 /// How a delivery ended.
 #[derive(Debug, Clone, PartialEq)]
@@ -28,20 +30,27 @@ pub(crate) enum Delivered {
 }
 
 /// The op id of a due time.
-pub(crate) fn op_id(schedule: &Schedule, at: UnixMillis) -> OpId {
+pub(crate) fn op_id(schedule: &ScheduleRow, at: UnixMillis) -> OpId {
     OpId(format!("{}:{}", schedule.id, at.0))
 }
 
 /// Sends the prompt for due time `at`.
-pub(crate) async fn deliver(hub: &Hub, schedule: &Schedule, at: UnixMillis) -> Delivered {
-    let machine = schedule.machine_id;
-    let daemon = match hub.daemon(machine) {
+pub(crate) async fn deliver(hub: &Hub, schedule: &ScheduleRow, at: UnixMillis) -> Delivered {
+    let (daemon, state) = match schedule.machine_id {
+        Some(machine) => (
+            hub.daemon(machine),
+            hub.session(machine, schedule.session_id).map(|s| s.state),
+        ),
+        None => (
+            hub.agentd(),
+            hub.global_session(schedule.session_id).map(|s| s.state),
+        ),
+    };
+    let daemon = match daemon {
         Ok(daemon) => daemon,
         Err(e) => return Delivered::Retry(e),
     };
-    let busy = hub
-        .session(machine, schedule.session_id)
-        .is_some_and(|s| is_busy(s.state));
+    let busy = state.is_some_and(is_busy);
     let params = SessionPromptParams {
         op_id: op_id(schedule, at),
         id: schedule.session_id,
@@ -57,9 +66,10 @@ pub(crate) async fn deliver(hub: &Hub, schedule: &Schedule, at: UnixMillis) -> D
     match daemon.call::<methods::SessionPrompt>(&params).await {
         Ok(result) => answered(result, busy),
         Err(CallError::Rpc(e)) => refused(e),
-        Err(e) => Delivered::Retry(crate::errors::call_error(e, machine, || {
-            hub.connectivity(machine)
-        })),
+        Err(e) => Delivered::Retry(match schedule.machine_id {
+            Some(machine) => crate::errors::call_error(e, machine, || hub.connectivity(machine)),
+            None => crate::rpc::agentd_error(e),
+        }),
     }
 }
 

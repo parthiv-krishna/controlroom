@@ -6,13 +6,17 @@
 //! another owner's row. Task links and contact grants deliberately have no foreign key to
 //! machines or sessions: they survive session purges and machine removal and render as
 //! "missing session".
+//!
+//! Sessions are global (the agent daemon's). Until the old UI API goes away (R2), task links and
+//! schedules may still name a per-machine session of a legacy daemon: their nullable
+//! `machine_id` column says which machine; `NULL` means a global session.
 
 use rusqlite::Connection;
 
 use super::{StoreError, StoreResult};
 
 /// The schema version, kept in `PRAGMA user_version`.
-pub(super) const VERSION: u32 = 3;
+pub(super) const VERSION: u32 = 4;
 
 const SCHEMA: &str = r#"
 CREATE TABLE installation (
@@ -56,6 +60,8 @@ CREATE TABLE machines (
     -- The pinned host key (OpenSSH format); NULL until confirmed.
     host_key         TEXT,
     auto_upgrade     INTEGER NOT NULL DEFAULT 1 CHECK (auto_upgrade IN (0, 1)),
+    -- How long agents' tool calls wait for this machine while it is unreachable (seconds).
+    grace_s          INTEGER NOT NULL DEFAULT 600 CHECK (grace_s >= 0),
     daemon_id        TEXT,
     home             TEXT,
     arch             TEXT,
@@ -78,8 +84,6 @@ CREATE TABLE projects (
     owner_id           TEXT NOT NULL REFERENCES owners(id),
     name               TEXT NOT NULL,
     color              TEXT NOT NULL,
-    -- JSON array of protocol LocationPrefix.
-    location_prefixes  TEXT NOT NULL,
     created_at         INTEGER NOT NULL,
     UNIQUE (id, owner_id)
 ) STRICT;
@@ -124,20 +128,19 @@ CREATE INDEX task_projects_project ON task_projects (owner_id, project_id);
 CREATE TABLE task_links (
     owner_id    TEXT NOT NULL REFERENCES owners(id),
     task_id     TEXT NOT NULL,
-    machine_id  TEXT NOT NULL,
     session_id  TEXT NOT NULL,
+    -- A legacy daemon's machine (old UI API); NULL for a global session.
+    machine_id  TEXT,
     created_at  INTEGER NOT NULL,
-    PRIMARY KEY (task_id, machine_id, session_id),
+    PRIMARY KEY (task_id, session_id),
     FOREIGN KEY (task_id, owner_id) REFERENCES tasks (id, owner_id) ON DELETE CASCADE
 ) STRICT;
-CREATE INDEX task_links_session ON task_links (owner_id, machine_id, session_id);
+CREATE INDEX task_links_session ON task_links (owner_id, session_id);
 
 CREATE TABLE grants (
     id            TEXT PRIMARY KEY NOT NULL,
     owner_id      TEXT NOT NULL REFERENCES owners(id),
-    from_machine  TEXT NOT NULL,
     from_session  TEXT NOT NULL,
-    to_machine    TEXT NOT NULL,
     to_session    TEXT NOT NULL,
     scope         TEXT NOT NULL,
     granted_at    INTEGER NOT NULL,
@@ -190,11 +193,10 @@ CREATE TABLE push_subscriptions (
 CREATE TABLE push_deliveries (
     owner_id    TEXT NOT NULL,
     device_id   TEXT NOT NULL,
-    machine_id  TEXT NOT NULL,
     session_id  TEXT NOT NULL,
     event_key   TEXT NOT NULL,
     sent_at     INTEGER NOT NULL,
-    PRIMARY KEY (owner_id, device_id, machine_id, session_id, event_key),
+    PRIMARY KEY (owner_id, device_id, session_id, event_key),
     FOREIGN KEY (owner_id, device_id) REFERENCES devices (owner_id, device_id) ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX push_deliveries_age ON push_deliveries (sent_at);
@@ -202,7 +204,8 @@ CREATE INDEX push_deliveries_age ON push_deliveries (sent_at);
 CREATE TABLE schedules (
     id           TEXT PRIMARY KEY NOT NULL,
     owner_id     TEXT NOT NULL REFERENCES owners(id),
-    machine_id   TEXT NOT NULL,
+    -- A legacy daemon's machine (old UI API); NULL for a global session.
+    machine_id   TEXT,
     session_id   TEXT NOT NULL,
     name         TEXT NOT NULL,
     spec         TEXT NOT NULL,

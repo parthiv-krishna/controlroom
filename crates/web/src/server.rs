@@ -221,6 +221,7 @@ pub async fn start(settings: Settings, options: StartOptions) -> anyhow::Result<
         auth: policy,
         push,
         key_comment: controlroom_client_core::keys::default_comment(&host),
+        agentd_socket: None,
         tuning: Tuning {
             auth_session_ttl: settings.session_ttl,
             ..Tuning::default()

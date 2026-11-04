@@ -2,18 +2,18 @@
 //!
 //! Each task connects over russh with the pinned host key and the machine's key, bootstraps
 //! the daemon (probe, install when missing), opens `controlroomd connect`, says `hello` as this
-//! controller, subscribes, and keeps reconnecting with backoff. Host-key, authentication and
-//! controller-conflict problems stop it in `action_required` until the user acts; an
-//! incompatible daemon waits for an explicit upgrade. Tasks share nothing that blocks: an
-//! unreachable machine never holds up another.
+//! controller and keeps reconnecting with backoff. A host daemon (host API) then carries the
+//! agent daemon's requests through the host router (`crate::router`); a legacy per-machine
+//! daemon (old UI API, until R2) gets its machine feed and session subscriptions renewed.
+//! Host-key, authentication and controller-conflict problems stop it in `action_required`
+//! until the user acts; an incompatible daemon waits for an explicit upgrade. Tasks share
+//! nothing that blocks: an unreachable machine never holds up another.
 //!
 //! **Automatic upgrades** (spec §2): while connected to an older, compatible daemon with the
-//! machine's `auto_upgrade` on, the task waits until no run is in flight and the machine has
-//! been quiet for a while, then upgrades (verify-run, stop, `hello` check, rollback on
-//! failure). A failed attempt leaves the machine on the old daemon with `last_error` set and
-//! retries after a backoff. Daemons are never downgraded.
-//!
-//! The daemon outbox (mailbox broker) is consumed from P7 on; nothing subscribes to it yet.
+//! machine's `auto_upgrade` on, the task waits until no run (legacy) or host request is in
+//! flight and the machine has been quiet for a while, then upgrades (verify-run, stop, `hello`
+//! check, rollback on failure). A failed attempt leaves the machine on the old daemon with
+//! `last_error` set and retries after a backoff. Daemons are never downgraded.
 
 mod bootstrap;
 pub(crate) mod connect;
@@ -209,7 +209,7 @@ async fn next_activity(bus: &mut broadcast::Receiver<BusEvent>, id: MachineId) {
             }) if machine_id == id && connectivity != Connectivity::Connected => {
                 return std::future::pending().await;
             }
-            Ok(event) if event.machine_id() == id => return,
+            Ok(event) if event.machine_id() == Some(id) => return,
             Ok(_) => {}
             // Missed events may have been ours.
             Err(broadcast::error::RecvError::Lagged(_)) => return,
@@ -338,19 +338,19 @@ async fn session(
             }
         };
 
-        let update_available =
-            installed_older || bundled_is_newer(hub, Some(&hello.daemon_version));
+        let update_available = installed_older || bundled_is_newer(hub, Some(hello.version()));
         hub.connected(
             id,
             Link {
                 daemon: client.clone(),
                 ssh: conn.clone(),
                 auth_key_id: key_id,
+                kind: hello.kind(),
             },
             SeenUpdate {
-                daemon_id: Some(hello.daemon_id),
-                version: Some(hello.daemon_version.clone()),
-                capabilities: Some(hello.capabilities.clone()),
+                daemon_id: Some(hello.daemon_id()),
+                version: Some(hello.version().to_owned()),
+                capabilities: Some(hello.capabilities().to_vec()),
                 home: Some(probe.home.clone()),
                 arch: Some(probe.arch.to_string()),
             },
@@ -359,13 +359,13 @@ async fn session(
         connect::record_auth_key(hub, id, key_id);
         if !update_available {
             if auto.attempting {
-                tracing::info!(machine = %id, version = %hello.daemon_version, "upgraded controlroomd automatically");
+                tracing::info!(machine = %id, version = %hello.version(), "upgraded controlroomd automatically");
             }
             *auto = AutoUpgrade::default();
         } else if auto.attempting {
             let reason = format!(
                 "controlroomd still reports {} after the upgrade",
-                hello.daemon_version
+                hello.version()
             );
             auto.failed(hub, id, &reason);
         }
@@ -373,10 +373,14 @@ async fn session(
             hub.update_live(id, |l| l.last_error = Some(error));
         }
 
-        // The post-connect steps give way to a lost link or a user command.
+        // The post-connect steps give way to a lost link or a user command. A host link has
+        // none of its own: the agent daemon renews its host subscriptions through the router.
+        let legacy = matches!(hello, daemon::Hello::Legacy(_));
         let post_connect = async {
-            daemon::subscribe_machine(hub, id, &client).await?;
-            crate::rpc::resubscribe_sessions(hub, id, &client).await;
+            if legacy {
+                daemon::subscribe_machine(hub, id, &client).await?;
+                crate::rpc::resubscribe_sessions(hub, id, &client).await;
+            }
             Ok::<_, String>(())
         };
         let interrupted = tokio::select! {
@@ -414,7 +418,7 @@ async fn session(
                 }
             },
             () = auto_upgrade_due(hub, id, bus, retry_at) => {
-                tracing::info!(machine = %id, from = %hello.daemon_version, "upgrading controlroomd automatically");
+                tracing::info!(machine = %id, from = %hello.version(), "upgrading controlroomd automatically");
                 *policy = InstallPolicy::IfOlder;
                 auto.attempting = true;
                 None

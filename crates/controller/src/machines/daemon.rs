@@ -1,26 +1,101 @@
 //! Opening the daemon link over an SSH connection: `controlroomd connect` on an exec channel,
 //! the controller `hello`, and the post-connect steps (machine feed, session subscriptions,
 //! doctor).
+//!
+//! **Two daemon generations.** The host daemon (`controlroomd` in the host role, host API)
+//! answers `hello` with an `epoch`; the deprecated per-machine daemon (daemon API, sessions on
+//! the machine) without one. Both share the `hello` params, so one handshake tells them apart:
+//! a host link carries the agent daemon's host requests, a legacy link serves the old UI API
+//! until R2 removes it.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use controlroom_client_core::bootstrap::daemon_command;
 use controlroom_client_core::daemon::{
-    CallOptions, CallTimeout, ClientOptions, DaemonClient, HelloError, hello,
+    CallOptions, CallTimeout, ClientOptions, DaemonClient, HelloError, check_version, hello_value,
 };
 use controlroom_client_core::ssh::SshConnection;
-use controlroom_protocol::NoParams;
-use controlroom_protocol::RpcOutcome;
 use controlroom_protocol::daemon::methods::{DoctorReportMethod, MachineSubscribe};
 use controlroom_protocol::daemon::{HelloResult, MachineSubscribeParams, MachineSubscribeResult};
-use controlroom_protocol::ids::MachineId;
+use controlroom_protocol::host::HostHelloResult;
+use controlroom_protocol::ids::{DaemonId, MachineId};
+use controlroom_protocol::version::Capability;
+use controlroom_protocol::{
+    DAEMON_PROTOCOL_VERSION, ErrorData, HOST_PROTOCOL_VERSION, NoParams, RpcError, RpcOutcome,
+};
+use serde_json::Value;
 
-use crate::hub::Hub;
+use crate::hub::{Hub, LinkKind};
+
+/// What the daemon said in `hello`.
+#[derive(Debug, Clone)]
+pub(crate) enum Hello {
+    /// A host daemon.
+    Host(HostHelloResult),
+    /// A legacy per-machine daemon.
+    Legacy(HelloResult),
+}
+
+impl Hello {
+    /// The daemon's software version.
+    pub(crate) fn version(&self) -> &str {
+        match self {
+            Hello::Host(h) => &h.host_version,
+            Hello::Legacy(h) => &h.daemon_version,
+        }
+    }
+
+    pub(crate) fn daemon_id(&self) -> DaemonId {
+        match self {
+            Hello::Host(h) => h.daemon_id,
+            Hello::Legacy(h) => h.daemon_id,
+        }
+    }
+
+    pub(crate) fn capabilities(&self) -> &[Capability] {
+        match self {
+            Hello::Host(h) => &h.capabilities,
+            Hello::Legacy(h) => &h.capabilities,
+        }
+    }
+
+    pub(crate) fn kind(&self) -> LinkKind {
+        match self {
+            Hello::Host(h) => LinkKind::Host { epoch: h.epoch },
+            Hello::Legacy(_) => LinkKind::Legacy,
+        }
+    }
+
+    /// Tells the generations apart by the result's shape and checks the protocol major.
+    fn parse(value: Value) -> Result<Self, HelloError> {
+        let malformed = |e: serde_json::Error| {
+            HelloError::Call(controlroom_client_core::daemon::CallError::Rpc(
+                RpcError::new(
+                    ErrorData::InvalidResponse,
+                    format!("malformed hello result: {e}"),
+                ),
+            ))
+        };
+        if value.get("epoch").is_some() {
+            let h: HostHelloResult = serde_json::from_value(value).map_err(malformed)?;
+            check_version(HOST_PROTOCOL_VERSION, &h.host_version, h.protocol_version)?;
+            Ok(Hello::Host(h))
+        } else {
+            let h: HelloResult = serde_json::from_value(value).map_err(malformed)?;
+            check_version(
+                DAEMON_PROTOCOL_VERSION,
+                &h.daemon_version,
+                h.protocol_version,
+            )?;
+            Ok(Hello::Legacy(h))
+        }
+    }
+}
 
 /// A handshaken daemon connection.
 pub(crate) struct DaemonLink {
     pub client: DaemonClient,
-    pub hello: HelloResult,
+    pub hello: Hello,
 }
 
 /// Why the daemon link couldn't be opened.
@@ -48,7 +123,7 @@ fn stderr_suffix(stderr: &str) -> String {
 }
 
 /// Runs `controlroomd connect` and says `hello` as this controller. Notifications go to the
-/// hub.
+/// hub, routed by the link's kind once `hello` told it.
 pub(crate) async fn open(
     hub: &Arc<Hub>,
     id: MachineId,
@@ -60,6 +135,8 @@ pub(crate) async fn open(
         .map_err(|e| OpenError::Exec(e.to_string()))?;
     let (reader, writer, exit) = channel.into_parts();
     let weak = Arc::downgrade(hub);
+    let kind: Arc<OnceLock<LinkKind>> = Arc::default();
+    let route = kind.clone();
     let client = DaemonClient::start(
         reader,
         writer,
@@ -68,19 +145,29 @@ pub(crate) async fn open(
             ..ClientOptions::default()
         },
         Box::new(move |n| {
-            if let Some(hub) = weak.upgrade() {
-                hub.on_daemon_notification(id, n);
+            let Some(hub) = weak.upgrade() else { return };
+            match route.get() {
+                Some(LinkKind::Host { .. }) => hub.on_host_notification(id, n),
+                Some(LinkKind::Legacy) => hub.on_daemon_notification(id, n),
+                None => {
+                    tracing::debug!(machine = %id, method = %n.method, "notification before hello")
+                }
             }
         }),
     );
-    match hello(
+    let hello = hello_value(
         &client,
+        HOST_PROTOCOL_VERSION,
         &hub.services.client_name(),
         hub.services.controller_id,
     )
     .await
-    {
-        Ok(hello) => Ok(DaemonLink { client, hello }),
+    .and_then(Hello::parse);
+    match hello {
+        Ok(hello) => {
+            let _ = kind.set(hello.kind());
+            Ok(DaemonLink { client, hello })
+        }
         Err(error) => {
             client.close();
             Err(OpenError::Hello {
@@ -122,7 +209,8 @@ pub(crate) async fn subscribe_machine(
         .map_err(|e| format!("machine.subscribe failed: {e}"))
 }
 
-/// Runs the doctor and stores the report; the caller aborts it when the link ends.
+/// Runs the doctor (the same method on both daemon generations) and stores the report; the
+/// caller aborts it when the link ends.
 pub(crate) fn spawn_doctor(
     hub: &Arc<Hub>,
     id: MachineId,

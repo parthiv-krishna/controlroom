@@ -1,7 +1,7 @@
 //! Web Push subscriptions (one per device) and the per-device delivery dedup log.
 
 use controlroom_protocol::UnixMillis;
-use controlroom_protocol::ids::{DeviceId, MachineId, SessionId};
+use controlroom_protocol::ids::{DeviceId, SessionId};
 use rusqlite::OptionalExtension;
 
 use super::{OwnerId, Store, StoreResult};
@@ -24,8 +24,6 @@ pub struct PushSubscriptionRow {
 pub struct Delivery<'a> {
     /// The device.
     pub device_id: &'a DeviceId,
-    /// The session's machine.
-    pub machine_id: MachineId,
     /// The session.
     pub session_id: SessionId,
     /// The attention event within the session.
@@ -126,13 +124,12 @@ impl<'a> PushSubscriptions<'a> {
     pub fn claim(&self, d: Delivery<'_>) -> StoreResult<bool> {
         let n = self.store.lock().execute(
             "INSERT OR IGNORE INTO push_deliveries
-                 (owner_id, device_id, machine_id, session_id, event_key, sent_at)
-             SELECT owner_id, device_id, ?3, ?4, ?5, ?6 FROM devices
+                 (owner_id, device_id, session_id, event_key, sent_at)
+             SELECT owner_id, device_id, ?3, ?4, ?5 FROM devices
              WHERE owner_id = ?1 AND device_id = ?2",
             rusqlite::params![
                 self.owner.as_str(),
                 d.device_id.as_str(),
-                d.machine_id.to_string(),
                 d.session_id.to_string(),
                 d.event_key,
                 UnixMillis::now().0
@@ -145,11 +142,10 @@ impl<'a> PushSubscriptions<'a> {
     pub fn release(&self, d: Delivery<'_>) -> StoreResult<()> {
         self.store.lock().execute(
             "DELETE FROM push_deliveries WHERE owner_id = ?1 AND device_id = ?2
-             AND machine_id = ?3 AND session_id = ?4 AND event_key = ?5",
+             AND session_id = ?3 AND event_key = ?4",
             rusqlite::params![
                 self.owner.as_str(),
                 d.device_id.as_str(),
-                d.machine_id.to_string(),
                 d.session_id.to_string(),
                 d.event_key
             ],
@@ -158,10 +154,10 @@ impl<'a> PushSubscriptions<'a> {
     }
 
     /// Forgets the deliveries of a deleted session.
-    pub fn forget_session(&self, machine: MachineId, session: SessionId) -> StoreResult<()> {
+    pub fn forget_session(&self, session: SessionId) -> StoreResult<()> {
         self.store.lock().execute(
-            "DELETE FROM push_deliveries WHERE owner_id = ?1 AND machine_id = ?2 AND session_id = ?3",
-            (self.owner.as_str(), machine.to_string(), session.to_string()),
+            "DELETE FROM push_deliveries WHERE owner_id = ?1 AND session_id = ?2",
+            (self.owner.as_str(), session.to_string()),
         )?;
         Ok(())
     }

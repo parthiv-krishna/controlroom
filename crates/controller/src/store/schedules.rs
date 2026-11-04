@@ -1,22 +1,104 @@
 //! Schedules (spec §8.1). The RPC handlers write the user's fields; the scheduler writes the
 //! timing (`next_run`, `pending_run`) and the recent runs. Both write under the hub lock, and
 //! a read-modify-write of the runs happens under one connection lock.
+//!
+//! A schedule wakes a global session (the agent daemon's); until the old UI API goes away
+//! (R2) it may instead wake a legacy daemon's session, recorded with its machine.
 
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::daemon::IfBusy;
 use controlroom_protocol::ids::{MachineId, ScheduleId, SessionId};
 use controlroom_protocol::ui::{
-    MissedPolicy, Schedule, ScheduleRun, ScheduleSpec, SchedulesUpdateParams,
+    self, MissedPolicy, ScheduleRun, ScheduleSpec, SchedulesUpdateParams,
 };
 use rusqlite::{Connection, OptionalExtension};
 
-use super::{OwnerId, Store, StoreResult, enum_col, enum_str, json_col, parsed_col, to_json};
+use super::{
+    OwnerId, Store, StoreResult, enum_col, enum_str, json_col, parsed_col, parsed_col_opt, to_json,
+};
+
+/// A schedule as stored; [`Self::legacy`] and [`Self::next`] are its views in the two UI APIs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleRow {
+    /// The schedule.
+    pub id: ScheduleId,
+    /// A legacy daemon's machine (old UI API); `None` for a global session.
+    pub machine_id: Option<MachineId>,
+    /// The session it wakes.
+    pub session_id: SessionId,
+    /// Display name.
+    pub name: String,
+    /// When it fires.
+    pub spec: ScheduleSpec,
+    /// IANA time zone.
+    pub timezone: String,
+    /// The prompt it sends.
+    pub message: String,
+    /// Whether it fires.
+    pub enabled: bool,
+    /// What to do while the session is busy.
+    pub if_busy: IfBusy,
+    /// What to do with missed runs.
+    pub missed: MissedPolicy,
+    /// The next due time, while enabled.
+    pub next_run: Option<UnixMillis>,
+    /// A due time being delivered.
+    pub pending_run: Option<UnixMillis>,
+    /// Recent due times, newest first.
+    pub recent_runs: Vec<ScheduleRun>,
+    /// When it was created.
+    pub created_at: UnixMillis,
+}
+
+impl ScheduleRow {
+    /// The old UI API's view, for a legacy daemon's session.
+    pub fn legacy(&self) -> Option<ui::Schedule> {
+        Some(ui::Schedule {
+            id: self.id,
+            machine_id: self.machine_id?,
+            session_id: self.session_id,
+            name: self.name.clone(),
+            spec: self.spec.clone(),
+            timezone: self.timezone.clone(),
+            message: self.message.clone(),
+            enabled: self.enabled,
+            if_busy: self.if_busy,
+            missed: self.missed,
+            next_run: self.next_run,
+            pending_run: self.pending_run,
+            recent_runs: self.recent_runs.clone(),
+            created_at: self.created_at,
+        })
+    }
+
+    /// The next UI API's view, for a global session.
+    pub fn next(&self) -> Option<ui::next::Schedule> {
+        if self.machine_id.is_some() {
+            return None;
+        }
+        Some(ui::next::Schedule {
+            id: self.id,
+            session_id: self.session_id,
+            name: self.name.clone(),
+            spec: self.spec.clone(),
+            timezone: self.timezone.clone(),
+            message: self.message.clone(),
+            enabled: self.enabled,
+            if_busy: self.if_busy,
+            missed: self.missed,
+            next_run: self.next_run,
+            pending_run: self.pending_run,
+            recent_runs: self.recent_runs.clone(),
+            created_at: self.created_at,
+        })
+    }
+}
 
 /// The fields of a new schedule.
 #[derive(Debug, Clone)]
 pub struct NewSchedule {
-    /// The session's machine.
-    pub machine_id: MachineId,
+    /// A legacy daemon's machine; `None` for a global session.
+    pub machine_id: Option<MachineId>,
     /// The session.
     pub session_id: SessionId,
     /// Display name.
@@ -56,12 +138,12 @@ pub struct Schedules<'a> {
 const COLUMNS: &str = "id, machine_id, session_id, name, spec, timezone, message, enabled, \
                        if_busy, missed, next_run, pending_run, recent_runs, created_at";
 
-fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Schedule> {
+fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScheduleRow> {
     let millis =
         |idx| -> rusqlite::Result<_> { Ok(row.get::<_, Option<i64>>(idx)?.map(UnixMillis)) };
-    Ok(Schedule {
+    Ok(ScheduleRow {
         id: parsed_col(row, 0)?,
-        machine_id: parsed_col(row, 1)?,
+        machine_id: parsed_col_opt(row, 1)?,
         session_id: parsed_col(row, 2)?,
         name: row.get(3)?,
         spec: json_col(row, 4)?,
@@ -83,7 +165,7 @@ impl<'a> Schedules<'a> {
     }
 
     /// Creates a schedule.
-    pub fn insert(&self, s: NewSchedule) -> StoreResult<Schedule> {
+    pub fn insert(&self, s: NewSchedule) -> StoreResult<ScheduleRow> {
         let id = ScheduleId::generate();
         self.store.lock().execute(
             "INSERT INTO schedules (id, owner_id, machine_id, session_id, name, spec, timezone,
@@ -93,7 +175,7 @@ impl<'a> Schedules<'a> {
             rusqlite::params![
                 id.to_string(),
                 self.owner.as_str(),
-                s.machine_id.to_string(),
+                s.machine_id.map(|m| m.to_string()),
                 s.session_id.to_string(),
                 s.name,
                 to_json(&s.spec)?,
@@ -111,11 +193,11 @@ impl<'a> Schedules<'a> {
     }
 
     /// A schedule by id.
-    pub fn get(&self, id: ScheduleId) -> StoreResult<Option<Schedule>> {
+    pub fn get(&self, id: ScheduleId) -> StoreResult<Option<ScheduleRow>> {
         self.get_in(&self.store.lock(), id)
     }
 
-    fn get_in(&self, conn: &Connection, id: ScheduleId) -> StoreResult<Option<Schedule>> {
+    fn get_in(&self, conn: &Connection, id: ScheduleId) -> StoreResult<Option<ScheduleRow>> {
         Ok(conn
             .query_row(
                 &format!("SELECT {COLUMNS} FROM schedules WHERE owner_id = ?1 AND id = ?2"),
@@ -126,7 +208,7 @@ impl<'a> Schedules<'a> {
     }
 
     /// Every schedule, oldest first.
-    pub fn list(&self) -> StoreResult<Vec<Schedule>> {
+    pub fn list(&self) -> StoreResult<Vec<ScheduleRow>> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM schedules WHERE owner_id = ?1 ORDER BY created_at, id"
@@ -138,25 +220,15 @@ impl<'a> Schedules<'a> {
     }
 
     /// The enabled schedules of one session.
-    pub fn enabled_for_session(
-        &self,
-        machine: MachineId,
-        session: SessionId,
-    ) -> StoreResult<Vec<ScheduleId>> {
+    pub fn enabled_for_session(&self, session: SessionId) -> StoreResult<Vec<ScheduleId>> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(
-            "SELECT id FROM schedules
-             WHERE owner_id = ?1 AND machine_id = ?2 AND session_id = ?3 AND enabled = 1",
+            "SELECT id FROM schedules WHERE owner_id = ?1 AND session_id = ?2 AND enabled = 1",
         )?;
         let rows = stmt
-            .query_map(
-                (
-                    self.owner.as_str(),
-                    machine.to_string(),
-                    session.to_string(),
-                ),
-                |row| parsed_col(row, 0),
-            )?
+            .query_map((self.owner.as_str(), session.to_string()), |row| {
+                parsed_col(row, 0)
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -210,7 +282,7 @@ impl<'a> Schedules<'a> {
         id: ScheduleId,
         runs: &[ScheduleRun],
         timing: Timing,
-    ) -> StoreResult<Option<Schedule>> {
+    ) -> StoreResult<Option<ScheduleRow>> {
         let conn = self.store.lock();
         if !self.push_runs_in(&conn, id, runs)? {
             return Ok(None);
@@ -226,7 +298,7 @@ impl<'a> Schedules<'a> {
         id: ScheduleId,
         run: ScheduleRun,
         resolves: Option<UnixMillis>,
-    ) -> StoreResult<Option<Schedule>> {
+    ) -> StoreResult<Option<ScheduleRow>> {
         let conn = self.store.lock();
         if !self.push_runs_in(&conn, id, &[run])? {
             return Ok(None);
@@ -272,7 +344,7 @@ impl<'a> Schedules<'a> {
     }
 
     /// Disables a schedule (nothing is due or pending anymore); returns it if it exists.
-    pub fn disable(&self, id: ScheduleId) -> StoreResult<Option<Schedule>> {
+    pub fn disable(&self, id: ScheduleId) -> StoreResult<Option<ScheduleRow>> {
         let conn = self.store.lock();
         conn.execute(
             "UPDATE schedules SET enabled = 0, next_run = NULL, pending_run = NULL
