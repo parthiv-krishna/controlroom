@@ -205,8 +205,12 @@ pub fn write_profile(
         .collect::<BTreeMap<_, _>>();
     let mut read_only = env.settings.read_only.clone();
     read_only.push(input.files.view());
-    if !read_only.iter().any(|r| r.contains(&env.exe)) {
-        read_only.push(env.exe.clone());
+    // The fs worker runs this controlroomd inside the sandbox. Its directory, not the file:
+    // nono's sandboxes of mediated commands (git push) take directories only, and refuse to
+    // run the approved command otherwise. Installed, that is `versions/<version>/`.
+    let exe_dir = env.exe.parent().unwrap_or_else(|| env.exe.clone());
+    if !read_only.iter().any(|r| r.contains(&exe_dir)) {
+        read_only.push(exe_dir);
     }
     let ssh = dirs.home().join(".ssh");
     let spec = WorkspaceSandboxSpec {
@@ -355,5 +359,93 @@ mod tests {
             ..spec
         };
         assert!(super::policy(&bad).is_err());
+    }
+
+    /// nono refuses to run an approved command (git push) whose sandbox lists a file among its
+    /// readable or executable directories, such as the daemon's own binary.
+    #[test]
+    fn mediated_command_sandboxes_list_directories_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = AbsPath::from_path(tmp.path()).unwrap();
+        let dirs = Dirs::under_home(home.clone());
+        let make_dir = |p: &AbsPath| std::fs::create_dir_all(p.as_path()).unwrap();
+        let make_file = |p: &AbsPath| {
+            make_dir(&p.parent().unwrap());
+            std::fs::write(p.as_path(), "").unwrap();
+            let mode = std::os::unix::fs::PermissionsExt::from_mode(0o755);
+            std::fs::set_permissions(p.as_path(), mode).unwrap();
+        };
+        let bin = home.join("bin");
+        make_file(&bin.join("git"));
+        let exe = dirs.data().join("versions/1.0.0/controlroomd");
+        make_file(&exe);
+        let root = home.join("work");
+        make_dir(&root);
+        let files = dirs.workspace("01JAW000000000000000000001");
+        make_dir(files.dir());
+        make_dir(&files.view());
+
+        let env = SandboxEnv {
+            settings: sandbox_config::SandboxConfig::default()
+                .resolve(&home)
+                .unwrap(),
+            nono: Some(AbsPath::new("/run/current-system/sw/bin/nono").unwrap()),
+            path_var: bin.to_string(),
+            exe: exe.clone(),
+        };
+        let spec = SandboxSpec {
+            level: WireLevel::Strict,
+            grants: Vec::new(),
+            domains: Vec::new(),
+            mediated: Vec::new(),
+        };
+        let hook = HookUrl {
+            port: 1,
+            session: controlroom_sandbox::SessionId::new("01JAW000000000000000000001").unwrap(),
+            secret: controlroom_sandbox::webhook::HookSecret::generate().unwrap(),
+        };
+        let input = ProfileInput {
+            id: "01JAW000000000000000000001",
+            root: &root,
+            files: &files,
+            policy: policy(&spec).unwrap(),
+            hook: Some(hook),
+        };
+        let profile = write_profile(&env, &dirs, input).unwrap().unwrap();
+        let profile: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(profile.as_path()).unwrap()).unwrap();
+
+        let mut listed = Vec::new();
+        collect_dirs(&profile, &mut listed);
+        assert!(
+            listed.iter().any(|p| *p == exe.parent().unwrap().as_str()),
+            "git's sandbox can read the daemon's directory: {listed:?}"
+        );
+        for path in listed {
+            let path = std::path::Path::new(&path);
+            assert!(
+                !path.exists() || path.is_dir(),
+                "{} is listed as a directory",
+                path.display()
+            );
+        }
+    }
+
+    /// Every entry of the `fs_read`, `fs_write` and `exec_paths` lists in `value`.
+    fn collect_dirs(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, value) in map {
+                    if matches!(key.as_str(), "fs_read" | "fs_write" | "exec_paths") {
+                        let items = value.as_array().into_iter().flatten();
+                        out.extend(items.filter_map(|v| v.as_str().map(str::to_owned)));
+                    } else {
+                        collect_dirs(value, out);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|v| collect_dirs(v, out)),
+            _ => {}
+        }
     }
 }

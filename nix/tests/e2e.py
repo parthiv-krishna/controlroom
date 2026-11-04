@@ -6,9 +6,11 @@
 # Each scenario runs one Playwright spec (web/e2e-vm/<name>.spec.ts) on `server` in the
 # background. When a spec needs something done outside the browser it reaches a *step*: it
 # writes `<gates>/<step>.reached` (a JSON payload) and waits for `<step>.release`. This script
-# serves the steps in order, doing what the user would do on the hosts, and scripts the mock
-# models before each scenario. Nothing waits on a fixed delay except the one negative check
-# (an auto-upgrade must not happen while a run is in flight).
+# serves the steps in order, doing what the user (or the network, or a power button) would do,
+# and scripts the mock model (on the server, where pi runs) before each scenario. The agent's
+# long commands wait for gate files in their workspace, which this script creates. Nothing waits
+# on a fixed delay except the one negative check (an auto-upgrade must not happen while a call
+# is in flight).
 
 import json
 import shlex
@@ -21,6 +23,8 @@ GATES = f"{E2E}/gates"
 BASE_URL = "http://127.0.0.1:8080"
 SPEC_TIMEOUT = timedelta(minutes=15)
 MOCK = "http://127.0.0.1:4000/control"
+API = "/home/alice/work/api"
+WEB = "/home/alice/work/web"
 
 # ------------------------------------------------------------------------------- helpers
 
@@ -39,6 +43,7 @@ class Spec:
         self.name = name
         self.status = f"{E2E}/status/{name}"
         self.log = f"{E2E}/logs/{name}.log"
+        self.started = time.monotonic()
         settings = {
             "E2E_BASE_URL": BASE_URL,
             "E2E_TOKEN_FILE": "/var/lib/controlroom/dev-token",
@@ -71,44 +76,73 @@ class Spec:
         server.wait_until_succeeds(f"test -e {self.status}", timeout=SPEC_TIMEOUT)
         print(server.succeed(f"cat {self.log}"))
         status = server.succeed(f"cat {self.status}").strip()
+        print(f"spec {self.name}: exit {status} after {time.monotonic() - self.started:.1f} s")
         if status != "0":
             raise Exception(f"spec {self.name} failed (exit {status})")
 
 
-def mock(machine: Any, *replies: dict[str, Any]) -> None:
-    """Appends scripted replies to the machine's mock model."""
-    machine.succeed(
+def mock(*replies: dict[str, Any]) -> None:
+    """Appends scripted replies to the mock model."""
+    server.succeed(
         f"curl -sf -X POST -H 'content-type: application/json' --data {shlex.quote(json.dumps(list(replies)))} {MOCK}/replies"
     )
 
 
-def mock_state(machine: Any) -> dict[str, Any]:
-    return json.loads(machine.succeed(f"curl -sf {MOCK}/state"))
+def mock_requests() -> list[dict[str, Any]]:
+    return json.loads(server.succeed(f"curl -sf {MOCK}/requests"))
 
 
-def mock_requests(machine: Any) -> list[dict[str, Any]]:
-    return json.loads(machine.succeed(f"curl -sf {MOCK}/requests"))
-
-
-def mock_wait_gate(machine: Any, gate: str) -> None:
-    machine.wait_until_succeeds(
-        f"curl -sf {MOCK}/state | jq -e '.reached | index(\"{gate}\")'", timeout=timedelta(minutes=5)
-    )
-
-
-def mock_release(machine: Any, gate: str) -> None:
-    machine.succeed(f"curl -sf -X POST {MOCK}/release/{gate}")
-
-
-def mock_done(machine: Any) -> None:
+def mock_done() -> None:
     """Every scripted reply was used."""
-    state = mock_state(machine)
+    state = json.loads(server.succeed(f"curl -sf {MOCK}/state"))
     assert state["remaining"] == 0, state
 
 
-def last_message(request: dict[str, Any]) -> str:
-    """What pi sent last in a model request (a prompt or a tool result), as text."""
-    return json.dumps(request["messages"][-1]["content"])
+def text(message: dict[str, Any]) -> str:
+    content = message.get("content")
+    return content if isinstance(content, str) else json.dumps(content)
+
+
+def tool_result(call_id: str) -> str:
+    """What pi sent the model as the result of tool call `call_id` (in the latest request)."""
+    for message in mock_requests()[-1]["messages"]:
+        if message.get("role") == "tool" and message.get("tool_call_id") == call_id:
+            return text(message)
+    raise Exception(f"no result of {call_id} in the last model request")
+
+
+def conversation() -> list[str]:
+    """The latest model request's messages, as text."""
+    return [text(m) for m in mock_requests()[-1]["messages"]]
+
+
+def tool(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    return {"tool_call": {"id": call_id, "name": name, "args": args}}
+
+
+def bash(call_id: str, label: str, command: str, shell: str | None = None) -> dict[str, Any]:
+    """A bash call whose first line (its title in the timeline) is `# <label>`."""
+    args: dict[str, Any] = {"command": f"# {label}\n{command}"}
+    if shell:
+        args["shell"] = shell
+    return tool(call_id, "bash", args)
+
+
+def say(reply: str) -> dict[str, Any]:
+    return {"text": reply}
+
+
+def wait_for_gate(root: str, name: str) -> str:
+    """A command line that waits until this script opens gate `name` of the workspace."""
+    return f"until [ -e {root}/.gates/{name} ]; do sleep 0.2; done"
+
+
+def open_gate(machine: Any, root: str, name: str) -> None:
+    as_alice(machine, f"touch {root}/.gates/{name}")
+
+
+def lines(machine: Any, path: str) -> int:
+    return int(machine.succeed(f"wc -l < {path}").strip())
 
 
 def host_key(machine: Any) -> str:
@@ -116,7 +150,8 @@ def host_key(machine: Any) -> str:
 
 
 def use_bundle(path: str) -> None:
-    """Restarts the server with another bundled daemons directory."""
+    """Restarts the web server with another bundled daemons directory (the agent daemon and its
+    sessions keep running)."""
     server.succeed(f"ln -sfn {path} /run/controlroom-e2e/daemons", "systemctl restart controlroom")
     server.wait_until_succeeds(f"curl -sf {BASE_URL}/healthz")
 
@@ -125,29 +160,26 @@ def current_daemon(machine: Any) -> str:
     return as_alice(machine, "readlink ~/.local/share/controlroom/current").strip()
 
 
-def agent_pids(machine: Any) -> list[str]:
-    """pi processes of alice's sessions (pi names its process `pi`)."""
-    out = machine.execute("pgrep -u alice -x pi")[1]
-    return out.split()
-
-
 def collect_logs() -> None:
-    """Copies the Playwright results and the server, daemon and mock logs to $out."""
+    """Copies the Playwright results, the server's and agent daemon's journals and state, the
+    mock model's requests and each host's daemon state to $out."""
     server.execute(f"mkdir -p {E2E}")
-    server.execute(f"journalctl -u controlroom --no-pager > {E2E}/server.log")
-    server.execute(f"journalctl -u push-mock --no-pager > {E2E}/push-mock.log")
+    for unit in ("controlroom", "controlroom-agent", "mock-model", "push-mock"):
+        server.execute(f"journalctl -u {unit} --no-pager > {E2E}/{unit}.log")
+    server.execute(f"curl -sf {MOCK}/requests > {E2E}/mock-requests.json")
+    server.execute(
+        f"tar -C /var/lib -czf {E2E}/controlroom-agent-state.tgz --exclude=agent/auth.json controlroom-agent"
+    )
     server.copy_from_machine(E2E, "server")
     for machine in (devbox, buildbox):
-        machine.execute("journalctl -u mock-model --no-pager > /tmp/mock-model.log")
-        machine.execute(f"curl -sf {MOCK}/requests > /tmp/mock-requests.json")
         machine.execute(
             "tar -C /home/alice/.local -czf /tmp/controlroom-state.tgz state/controlroom share/controlroom/current"
         )
-        for path in ("/tmp/mock-model.log", "/tmp/mock-requests.json", "/tmp/controlroom-state.tgz"):
-            machine.copy_from_machine(path, machine.name)
-    print(server.execute(f"tail -n 200 {E2E}/server.log")[1])
+        machine.copy_from_machine("/tmp/controlroom-state.tgz", machine.name)
+    print(server.execute(f"tail -n 150 {E2E}/controlroom.log")[1])
+    print(server.execute(f"tail -n 150 {E2E}/controlroom-agent.log")[1])
     for machine in (devbox, buildbox):
-        print(machine.execute("tail -n 100 /home/alice/.local/state/controlroom/daemon.log")[1])
+        print(machine.execute("tail -n 80 /home/alice/.local/state/controlroom/daemon.log")[1])
 
 
 # ----------------------------------------------------------------------------- scenarios
@@ -155,83 +187,153 @@ def collect_logs() -> None:
 
 def boot() -> None:
     start_all()
+    server.wait_for_unit("controlroom-agent.service")
     server.wait_for_unit("controlroom.service")
+    server.wait_for_unit("mock-model.service")
     server.wait_for_unit("push-mock.service")
     server.wait_until_succeeds(f"curl -sf {BASE_URL}/healthz")
+    server.wait_until_succeeds(f"curl -sf {MOCK}/state")
+    server.wait_until_succeeds("journalctl -u controlroom | grep -q 'connected to the agent daemon'")
+    # The model key is the agent daemon's credential, never pi's or the web server's.
+    server.fail("grep -rq sk-e2e- /var/lib/controlroom-agent/agent")
     for machine in (devbox, buildbox):
         machine.wait_for_unit("sshd.service")
-        machine.wait_for_unit("alice-config.service")
-        machine.wait_for_unit("mock-model.service")
-        machine.wait_until_succeeds(f"curl -sf {MOCK}/state")
+        # Hosts carry no pi.
+        machine.fail("su - alice -c 'command -v pi'")
+    # The workspaces' contents, as alice would have them.
+    as_alice(
+        devbox,
+        f"mkdir -p {API}/src {API}/.gates && echo 'remote notes' > {API}/notes.txt"
+        f" && echo 'Run the tests with make check.' > {API}/AGENTS.md",
+    )
+    as_alice(buildbox, f"mkdir -p {WEB}/.gates && echo \"const version = 'v1';\" > {WEB}/app.js")
 
 
-def add_devbox() -> None:
-    """Add a machine: host key, permission denied → install command → install, doctor."""
-    spec = Spec("add-machine", E2E_HOST="devbox", E2E_HOST_KEY=host_key(devbox), E2E_KEY_FIRST="")
+def add_machine(machine: Any, key_first: bool) -> None:
+    """Add a machine: host key, then the key install command (after "permission denied", or up
+    front), then the server installs the host daemon and shows its doctor."""
+    spec = Spec(
+        "add-machine",
+        E2E_HOST=machine.name,
+        E2E_HOST_KEY=host_key(machine),
+        E2E_KEY_FIRST="1" if key_first else "",
+    )
     command = spec.step("install-key")["command"]
     assert "authorized_keys" in command, command
-    as_alice(devbox, command)
+    as_alice(machine, command)
     spec.release("install-key")
     spec.finish()
-    assert current_daemon(devbox) == f"versions/{VERSION}"
 
 
-def sandboxed_session() -> None:
-    """A strict (nono) pi session streams the mock model's reply, then settles idle and unread."""
-    mock(devbox, {"gated_text": {"before": "Hello from", "gate": "stream", "after": " the mock model."}})
-    spec = Spec("session")
-    spec.step("streaming")
-    mock_wait_gate(devbox, "stream")
-    # pi runs under nono.
-    devbox.succeed("pgrep -u alice -f '^[^ ]*nono run'")
-    mock_release(devbox, "stream")
-    spec.release("streaming")
-    spec.finish()
-    mock_done(devbox)
-    assert "Say hello" in last_message(mock_requests(devbox)[-1])
-
-
-def start_fresh() -> None:
-    """The agent dies mid-turn; start fresh with the previous conversation; the next run works."""
-    mock(devbox, {"gated_text": {"before": "Thinking it over", "gate": "crash", "after": " never sent."}})
-    spec = Spec("start-fresh")
-    spec.step("crash")
-    mock_wait_gate(devbox, "crash")
-    pids = agent_pids(devbox)
-    assert len(pids) == 1, devbox.succeed("ps -eo pid,user,args")
-    devbox.succeed(f"kill -KILL {pids[0]}")
-    spec.release("crash")
-
-    spec.step("fresh")
-    history = as_alice(devbox, "ls ~/.local/state/controlroom/sessions/*/home/history-*.md").split()
-    assert len(history) == 1, history
-    content = as_alice(devbox, f"cat {history[0]}")
-    assert "Say hello" in content and "Hello from the mock model." in content, content
+def auto_upgrade() -> None:
+    """buildbox (added with the old bundled daemon) is upgraded only once its call is done; the
+    call survives a web server restart; the shell survives the upgrade with its state."""
     mock(
-        devbox,
-        {"tool_call": {"id": "call_read_history", "name": "read", "args": {"path": history[0]}}},
-        {"text": "I read the earlier conversation."},
+        bash(
+            "call_build",
+            "make-it",
+            f"echo make-it >> ran.txt; export STAGE=built; {wait_for_gate(WEB, 'build')}; echo built",
+        ),
+        say("Built."),
+        bash("call_stage", "stage", 'echo "stage=$STAGE"'),
+        say("Still here."),
     )
-    spec.release("fresh")
+    spec = Spec("upgrade")
+    spec.step("restart")
+    buildbox.wait_until_succeeds(f"test -s {WEB}/ran.txt")
+    supervisors = buildbox.succeed("pgrep -u alice -f 'controlroomd supervise'").split()
+    use_bundle(CURRENT_BUNDLE)
+    spec.release("restart")
+
+    # The server sees the update but must not upgrade while the call is in flight: a negative
+    # check over several of the controller's quiet periods (5 s).
+    spec.step("update-available")
+    time.sleep(20)
+    assert current_daemon(buildbox) == f"versions/{VERSION}-old"
+    open_gate(buildbox, WEB, "build")
+    spec.release("update-available")
+
+    spec.step("upgraded")
+    assert current_daemon(buildbox) == f"versions/{VERSION}"
+    buildbox.fail(f"pgrep -u alice -f 'versions/{VERSION}-old/controlroomd serve'")
+    assert buildbox.succeed("pgrep -u alice -f 'controlroomd supervise'").split() == supervisors, "the shell kept running"
+    spec.release("upgraded")
     spec.finish()
-    mock_done(devbox)
-    requests = mock_requests(devbox)
-    prompt, tool_result = last_message(requests[-2]), last_message(requests[-1])
-    assert history[0] in prompt and "Earlier conversation" in prompt, prompt
-    assert "Hello from the mock model." in tool_result, f"pi couldn't read the history: {tool_result}"
+    mock_done()
+    assert lines(buildbox, f"{WEB}/ran.txt") == 1, "the command ran once across the web server restart"
+    assert "built" in tool_result("call_build")
+    assert "stage=built" in tool_result("call_stage"), "the shell kept its variables across the upgrade"
 
 
-def schedules() -> None:
-    """A schedule's "Run now" sends its message to pi through the server's scheduler."""
-    mock(devbox, {"text": "Inbox is empty."})
-    Spec("schedules").finish()
-    mock_done(devbox)
-    assert "Check inbox/ and report" in last_message(mock_requests(devbox)[-1])
+def workspaces() -> None:
+    """A session on both machines: files, named shells and sandboxes on each."""
+    mock(
+        tool("call_read", "read", {"path": "devbox:notes.txt"}),
+        tool("call_edit", "edit", {"path": "buildbox:app.js", "edits": [{"oldText": "'v1'", "newText": "'v2'"}]}),
+        bash("call_cd", "cd src", "cd src && export GREETING=hi && pwd"),
+        bash(
+            "call_greet",
+            "greet",
+            'echo "$GREETING from $(pwd)"; (echo x > ~/planted.txt) 2>/dev/null || echo confined',
+        ),
+        bash("call_where", "where", "hostname; cat app.js", shell="buildbox"),
+        say("Both machines work."),
+    )
+    spec = Spec("workspaces")
+    spec.finish()
+    mock_done()
+    # pi ran on the server under nono; the shells ran on the hosts under nono.
+    server.succeed("pgrep -u controlroom-agent -f '^[^ ]*nono run'")
+    for machine in (devbox, buildbox):
+        machine.succeed("pgrep -u alice -f '^[^ ]*nono run'")
+    first = mock_requests()[-6]["messages"]
+    system = text(first[0])
+    assert "devbox:~/work/api/AGENTS.md" in system and "make check" in system, system
+    assert "<workspaces>" in system, system
+    assert "remote notes" in tool_result("call_read")
+    assert "'v2'" in buildbox.succeed(f"cat {WEB}/app.js")
+    assert f"{API}/src" in tool_result("call_cd")
+    greet = tool_result("call_greet")
+    assert f"hi from {API}/src" in greet and "confined" in greet, greet
+    devbox.fail("test -e /home/alice/planted.txt")
+    where = tool_result("call_where")
+    assert "buildbox" in where and "'v2'" in where, where
+
+
+def overlap() -> None:
+    """A second session on devbox:~/work/api is warned about (no model call)."""
+    Spec("overlap").finish()
 
 
 def push_subscribe() -> None:
     """A device (iPhone) turns Web Push on; its subscription points at the mock push service."""
     Spec("push").finish()
+
+
+def approvals() -> None:
+    """git push in devbox's sandbox needs an approval: allowed once in one tab, denied with a
+    reason in the other."""
+    as_alice(
+        devbox,
+        "mkdir -p ~/push && cd ~/push && git init -q --bare remote.git && git init -q repo && cd repo"
+        " && git -c user.email=alice@example.com -c user.name=alice commit -q --allow-empty -m init"
+        " && git remote add origin ../remote.git",
+    )
+
+    def push(branch: str) -> dict[str, Any]:
+        return bash(f"call_push_{branch}", f"push {branch}", f"cd repo && git push origin HEAD:{branch} 2>&1; echo exit=$?")
+
+    mock(push("allowed"), say("Pushed."), push("denied"), say("The push was denied."))
+
+    def remote_has(branch: str) -> bool:
+        return devbox.execute(f"su - alice -c 'git -C ~/push/remote.git rev-parse -q --verify refs/heads/{branch}'")[0] == 0
+
+    Spec("approvals").finish()
+    mock_done()
+    assert remote_has("allowed"), "the allowed push reached the remote"
+    assert not remote_has("denied"), "the denied push must not reach the remote"
+    denied = tool_result("call_push_denied")
+    assert "not this branch" in denied and "exit=0" not in denied, denied
 
 
 def web_push() -> None:
@@ -245,108 +347,152 @@ def web_push() -> None:
     server.succeed("journalctl -u controlroom | grep -q 'push failed'")
 
 
-def approvals() -> None:
-
-    """git push needs an approval: allowed once in one tab, denied with a reason in the other."""
-    as_alice(
-        devbox,
-        "mkdir -p ~/push && cd ~/push && git init -q --bare remote.git && git init -q repo && cd repo"
-        " && git -c user.email=alice@example.com -c user.name=alice commit -q --allow-empty -m init"
-        " && git remote add origin ../remote.git",
-    )
-
-    def push(branch: str) -> dict[str, Any]:
-        command = f"cd repo && git push origin HEAD:{branch} 2>&1; echo exit=$?"
-        return {"tool_call": {"id": f"call_push_{branch}", "name": "bash", "args": {"command": command}}}
-
-    mock(devbox, push("allowed"), {"text": "Pushed."}, push("denied"), {"text": "The push was denied."})
-
-    def remote_has(branch: str) -> bool:
-        return devbox.execute(f"su - alice -c 'git -C ~/push/remote.git rev-parse -q --verify refs/heads/{branch}'")[0] == 0
-
-    spec = Spec("approvals")
-    spec.finish()
-    mock_done(devbox)
-    assert remote_has("allowed"), "the allowed push reached the remote"
-    assert not remote_has("denied"), "the denied push must not reach the remote"
-    denied = last_message(mock_requests(devbox)[-1])
-    assert "not this branch" in denied and "exit=126" in denied, denied
+def terminal_input() -> None:
+    """A command waits for input; the user types it in the shell's terminal tab."""
+    mock(bash("call_ask", "ask", "read -r -p 'Name? ' name && echo \"hello $name\""), say("Greeted."))
+    Spec("terminal-input").finish()
+    mock_done()
+    assert "hello alice" in tool_result("call_ask")
 
 
-def auto_upgrade() -> None:
-    """An older daemon is upgraded only once idle; the session survives."""
-    use_bundle(OLD_BUNDLE)
+def schedules() -> None:
+    """A schedule's "Run now" sends its message to pi through the server's scheduler."""
+    mock(say("Inbox is empty."))
+    Spec("schedules").finish()
+    mock_done()
+    assert "Check inbox/ and report" in conversation()[-1]
+
+
+def blip() -> None:
+    """devbox's network goes away mid-command (within the grace) and comes back."""
     mock(
-        buildbox,
-        {"gated_text": {"before": "Building", "gate": "build", "after": " done."}},
-        {"text": "Still here."},
+        bash(
+            "call_slow",
+            "slow",
+            f"echo slow >> {API}/ran.txt; echo tick 1; {wait_for_gate(API, 'blip')}; echo tick 2",
+        ),
+        say("Slow one done."),
     )
-    spec = Spec("add-machine", E2E_HOST="buildbox", E2E_HOST_KEY=host_key(buildbox), E2E_KEY_FIRST="1")
-    as_alice(buildbox, spec.step("install-key")["command"])
-    spec.release("install-key")
+    spec = Spec("blip")
+    spec.step("cut")
+    devbox.wait_until_succeeds(f"test -s {API}/ran.txt")
+    devbox.block()
+    spec.release("cut")
+    spec.step("restore")
+    # The command finishes while devbox is cut off; its result waits in devbox's journal.
+    open_gate(devbox, API, "blip")
+    devbox.unblock()
+    spec.release("restore")
     spec.finish()
-    assert current_daemon(buildbox) == f"versions/{VERSION}-old"
+    mock_done()
+    assert lines(devbox, f"{API}/ran.txt") == 1, "the command ran once"
+    result = tool_result("call_slow")
+    assert "tick 1" in result and "tick 2" in result, result
+    assert "dropped" in result, f"the agent is told about the link drop: {result}"
 
-    spec = Spec("upgrade")
-    spec.step("restart")
-    mock_wait_gate(buildbox, "build")
-    supervisors = buildbox.succeed("pgrep -u alice -f ' supervise '").split()
-    use_bundle(CURRENT_BUNDLE)
-    spec.release("restart")
 
-    # The server sees the update but must not upgrade while the run is in flight: a negative
-    # check over several of the controller's quiet periods (5 s).
-    spec.step("update-available")
-    time.sleep(20)
-    assert current_daemon(buildbox) == f"versions/{VERSION}-old"
-    mock_release(buildbox, "build")
-    spec.release("update-available")
+def grace() -> None:
+    """An outage past the grace with a job and a command running on devbox."""
+    mock(
+        tool(
+            "call_job",
+            "job",
+            {
+                "action": "run",
+                "name": "build",
+                "at": "devbox:~/work/api",
+                "command": f"echo compiling; {wait_for_gate(API, 'job')}; echo linked",
+            },
+        ),
+        bash("call_late", "late", f"echo late >> {API}/late.txt; {wait_for_gate(API, 'late')}; echo late-done"),
+        say("devbox is away; I'll wait."),
+    )
+    spec = Spec("grace")
+    spec.step("cut")
+    devbox.wait_until_succeeds(f"test -s {API}/late.txt")
+    devbox.block()
+    spec.release("cut")
 
-    spec.step("upgraded")
-    assert current_daemon(buildbox) == f"versions/{VERSION}"
-    buildbox.fail(f"pgrep -u alice -f 'versions/{VERSION}-old/controlroomd serve'")
-    assert buildbox.succeed("pgrep -u alice -f ' supervise '").split() == supervisors, "the agent kept running"
-    spec.release("upgraded")
+    spec.step("restore")
+    mock_done()
+    lost = tool_result("call_late")
+    assert "devbox" in lost and "unreachable" in lost, lost
+    # The job and the command finish while devbox is cut off.
+    open_gate(devbox, API, "job")
+    open_gate(devbox, API, "late")
+    devbox.wait_until_succeeds(f"grep -q linked {API}/.controlroom/jobs/*.log")
+    devbox.unblock()
+    spec.release("restore")
+
+    # After the reconnect the late result and the job's exit wake the agent (in one run or
+    # two; the mock answers "ok" to anything unscripted).
+    spec.step("woken")
+    server.wait_until_succeeds(
+        f"curl -sf {MOCK}/requests | jq -e '.[-1].messages | tostring | (contains(\"late-done\") and contains(\"exited with code 0\"))'",
+        timeout=timedelta(minutes=3),
+    )
+    spec.release("woken")
     spec.finish()
-    mock_done(buildbox)
+    seen = "\n".join(conversation())
+    assert seen.count("late-done") == 1, f"the late result is injected once: {seen}"
+    assert seen.count("exited with code 0") == 1, f"one exit wake: {seen}"
+    assert lines(devbox, f"{API}/late.txt") == 1, "the command ran once"
 
 
-def unreachable() -> None:
-    """A machine without network shows as unreachable with its stale state; the other one keeps
-    working; it reconnects once the network is back."""
-    mock(devbox, {"text": "Devbox still works."})
-    spec = Spec("unreachable")
-    spec.step("unplug")
-    buildbox.block()
-    spec.release("unplug")
-    spec.step("plug")
-    buildbox.unblock()
-    spec.release("plug")
+def reboot() -> None:
+    """buildbox reboots mid-command: the call is lost, the shell is reset."""
+    mock(
+        bash("call_prepare", "prepare", "mkdir -p sub && cd sub && export STAGE=prepared && echo ready", shell="buildbox"),
+        bash("call_wait", "wait", f"echo waiting >> {WEB}/waited.txt; {wait_for_gate(WEB, 'reboot')}", shell="buildbox"),
+        say("buildbox went away mid-command."),
+        bash("call_check", "check", 'echo "stage=${STAGE:-unset}"; pwd', shell="buildbox"),
+        say("The shell was reset."),
+    )
+    spec = Spec("reboot")
+    spec.step("reboot")
+    buildbox.wait_until_succeeds(f"test -s {WEB}/waited.txt")
+    buildbox.shutdown()
+    buildbox.start()
+    buildbox.wait_for_unit("sshd.service")
+    spec.release("reboot")
     spec.finish()
-    mock_done(devbox)
+    mock_done()
+    lost = tool_result("call_wait")
+    assert "lost" in lost or "restarted" in lost, lost
+    check = tool_result("call_check")
+    assert "stage=unset" in check and f"{WEB}/sub" in check, check
+    assert "reset" in check, f"the agent is told the shell was reset: {check}"
+    assert lines(buildbox, f"{WEB}/waited.txt") == 1, "the lost command is never run again"
 
 
 def rollback() -> None:
-    """A daemon that can't serve is rolled back; the machine stays usable."""
-    mock(buildbox, {"text": "Rolled back fine."})
+    """A host daemon that can't serve is rolled back; the machines stay usable."""
+    mock(say("Rolled back fine."))
     use_bundle(BROKEN_BUNDLE)
     Spec("rollback").finish()
     for machine in (devbox, buildbox):
         assert current_daemon(machine) == f"versions/{VERSION}"
-    mock_done(buildbox)
+    mock_done()
 
 
 try:
     boot()
-    add_devbox()
-    sandboxed_session()
-    start_fresh()
-    schedules()
+    add_machine(devbox, key_first=False)
+    assert current_daemon(devbox) == f"versions/{VERSION}"
+    use_bundle(OLD_BUNDLE)
+    add_machine(buildbox, key_first=True)
+    assert current_daemon(buildbox) == f"versions/{VERSION}-old"
+    auto_upgrade()
+    workspaces()
+    overlap()
     push_subscribe()
     approvals()
     web_push()
-    auto_upgrade()
-    unreachable()
+    terminal_input()
+    schedules()
+    blip()
+    grace()
+    reboot()
     rollback()
 except Exception:
     collect_logs()

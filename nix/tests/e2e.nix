@@ -1,12 +1,22 @@
-# The browser end-to-end test (spec §17 P4) in NixOS VMs: `server` runs controlroom-web through
-# the NixOS module (../module.nix; dev-token mode on loopback) next to a mock push service, and
-# drives the UI with headless Chromium (web/e2e-vm); `devbox` and `buildbox` are execution hosts
-# (./execution-host.nix). The test script (./e2e.py) runs one Playwright spec per scenario and
-# does what a user would do on the hosts in between (install the key, block the network, ...).
+# The browser end-to-end test (spec §14, design §8 R2(a)) in NixOS VMs, in the remote-tools
+# topology:
+#
+# - `server` runs everything of controlroom on the server through the NixOS module
+#   (../module.nix): controlroom-web (dev-token mode on loopback) and controlroom-agentd
+#   (services.controlroom.agent) with the controlroom-pi bundle and nono, so every pi runs here,
+#   under nono, against the fixture tool's mock model, whose API key is a systemd credential of
+#   the agent daemon. A mock push service stands in for Web Push. Headless Chromium drives the
+#   UI (web/e2e-vm).
+# - `devbox` and `buildbox` (./execution-host.nix) carry only sshd, bash, git and nono; the
+#   server bootstraps controlroomd over SSH, as users would, and the agent's tools run there.
+#
+# The test script (./e2e.py) runs one Playwright spec per scenario and does what a user (or the
+# network, or a power button) would do in between: install the key, cut a link, reboot a host.
 #
 # `run` always succeeds: its $out holds `status` plus, on failure, the Playwright traces and the
-# server, daemon and mock-model logs. `check` fails unless the run passed, pointing at them. A
-# failed run is cached like any build; re-run it with `nix build --rebuild <run>`.
+# server, agent daemon, host daemon and mock-model logs. `check` fails unless the run passed,
+# pointing at them. A failed run is cached like any build; re-run it with
+# `nix build --rebuild <run>`.
 #
 #   nix build .#checks.x86_64-linux.vm-e2e     # the gate
 #   nix build .#vm-e2e-run --rebuild -L        # run again; see result/
@@ -18,6 +28,8 @@
   rust,
   web,
   nono,
+  # services.controlroom.agent's packages: {package, piBundle, nono}.
+  agent,
 }:
 let
   inherit (pkgs) lib;
@@ -47,6 +59,29 @@ let
 
   # The server's throwaway secrets.
   secrets = "/var/lib/controlroom-e2e";
+
+  # The mock model, on the server's loopback (where pi runs).
+  mockPort = 4000;
+  mockOrigin = "http://127.0.0.1:${toString mockPort}";
+  # Must match `controlroom_sandbox::agent_dir::PLACEHOLDER`: the key the session's models.json
+  # carries instead of the real one.
+  placeholder = "controlroom-placeholder";
+
+  # The agent command. A loopback upstream is reachable from pi's sandbox only through the
+  # credential route's reverse proxy ($CR_MOCK_BASE_URL, authenticated by the phantom token
+  # $CR_MOCK_PHANTOM, which pi resolves from its environment), so the session's models.json is
+  # pointed there first, as in the agent daemon's acceptance test. Real providers are HTTPS and
+  # need none of this.
+  piMock = pkgs.writeShellScriptBin "pi-mock" ''
+    if [ -n "''${CR_MOCK_BASE_URL:-}" ]; then
+      m="$PI_CODING_AGENT_DIR/models.json"
+      ${pkgs.gnused}/bin/sed -e "s#${mockOrigin}#$CR_MOCK_BASE_URL#" \
+        -e 's#"${placeholder}"#"$CR_MOCK_PHANTOM"#' "$m" > "$m.tmp" \
+        && ${pkgs.coreutils}/bin/mv "$m.tmp" "$m" || exit 1
+    fi
+    export PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0
+    exec controlroom-pi -- "$@"
+  '';
 
   pushAddress = "11.0.0.1";
   pushTls = pkgs.runCommand "push-mock-tls" { nativeBuildInputs = [ pkgs.openssl ]; } ''
@@ -86,26 +121,27 @@ let
         print(f"TLS handshake for {server_name}: {outcome}", flush=True)
   '';
 
-  host = import ./execution-host.nix {
-    inherit pkgs nono;
-    fixtureTool = rust.workspace;
-  };
+  host = import ./execution-host.nix { inherit pkgs nono; };
+
+  secretsUnit = [ "controlroom-e2e-secrets.service" ];
 
   test = pkgs.testers.runNixOSTest {
     name = "controlroom-e2e";
 
     nodes = {
-      # controlroom-web through the NixOS module (../module.nix), so its hardening is what runs
-      # SSH to the hosts and Web Push. Dev-token mode on loopback, throwaway secrets.
+      # controlroom-web and controlroom-agentd through the NixOS module (../module.nix), so
+      # their hardening is what runs SSH to the hosts, pi under nono and Web Push. Dev-token
+      # mode on loopback, throwaway secrets.
       server = {
         imports = [ module ];
         virtualisation = {
-          memorySize = 3072;
-          cores = 2;
+          memorySize = 4096;
+          cores = 4;
         };
         environment.systemPackages = [
           web.e2eVm
           pkgs.curl
+          pkgs.jq
         ];
         # The test flips this link to switch the bundled daemons, then restarts the server.
         systemd.tmpfiles.rules = [ "L+ /run/controlroom-e2e/daemons - - - - ${bundles.current}" ];
@@ -119,11 +155,62 @@ let
             subject = "mailto:alice@example.com";
           };
           settings.bundled_daemons_dir = "/run/controlroom-e2e/daemons";
+
+          agent = {
+            inherit (agent) package piBundle nono;
+            extraPackages = [ piMock ];
+            agents.agents.pi.command = "pi-mock";
+            sandbox = {
+              # Tests only: a loopback model route (see `crates/agentd/src/config/sandbox.rs`).
+              allow_loopback_upstreams = true;
+              routes = [
+                {
+                  provider = "mock";
+                  upstream = mockOrigin;
+                  allow = [ "POST /v1/chat/completions" ];
+                }
+              ];
+            };
+            pi = {
+              models.providers.mock = {
+                baseUrl = "${mockOrigin}/v1";
+                api = "openai-completions";
+                # Resolved by `controlroom-agentd credential` (nono's credential helper) only.
+                apiKey = "!cat $CREDENTIALS_DIRECTORY/mock";
+                models = [
+                  {
+                    id = "mock-model";
+                    name = "Mock";
+                    input = [ "text" ];
+                    contextWindow = 128000;
+                    maxTokens = 4096;
+                    cost = {
+                      input = 0;
+                      output = 0;
+                      cacheRead = 0;
+                      cacheWrite = 0;
+                    };
+                  }
+                ];
+              };
+              settings = {
+                defaultProvider = "mock";
+                defaultModel = "mock-model";
+                quietStartup = true;
+              };
+            };
+            credentials.mock = "${secrets}/model-key";
+          };
         };
         systemd.services.controlroom = {
-          requires = [ "controlroom-e2e-secrets.service" ];
-          after = [ "controlroom-e2e-secrets.service" ];
+          requires = secretsUnit;
+          after = secretsUnit;
           environment.RUST_LOG = "info,controlroom_controller=debug";
+        };
+        systemd.services.controlroom-agent = {
+          requires = secretsUnit;
+          after = secretsUnit;
+          environment.CONTROLROOM_AGENTD_LOG = "info,controlroom_runtime=debug";
         };
         # Root-only secrets, made once per VM as a deployer would (kept across restarts: the
         # master key seals the SSH keys in the store).
@@ -139,7 +226,21 @@ let
             [ -s ${secrets}/master-key ] || openssl rand -base64 32 > ${secrets}/master-key
             [ -s ${secrets}/vapid-key ] \
               || openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 > ${secrets}/vapid-key
+            [ -s ${secrets}/model-key ] || echo "sk-e2e-$(openssl rand -hex 16)" > ${secrets}/model-key
           '';
+        };
+
+        # The mock model refuses completions without the model key, so a reply proves the
+        # credential went from LoadCredential through nono's proxy, never through pi.
+        systemd.services.mock-model = {
+          wantedBy = [ "multi-user.target" ];
+          requires = secretsUnit;
+          after = secretsUnit;
+          serviceConfig = {
+            ExecStart = "${rust.workspace}/bin/controlroom-fixture-tool mock-model --listen 127.0.0.1:${toString mockPort} --api-key-file %d/key";
+            LoadCredential = "key:${secrets}/model-key";
+            DynamicUser = true;
+          };
         };
 
         # The mock push service: push.example.com resolves to an address the server's SSRF guard
@@ -172,11 +273,13 @@ let
     buildCommand = ''
       mkdir -p $out
       export LOGFILE=/dev/null
+      start=$(date +%s)
       if ${test.driver}/bin/nixos-test-driver -o $out; then
         echo passed > $out/status
       else
         echo failed > $out/status
       fi
+      echo $(( $(date +%s) - start )) > $out/seconds
     '';
   });
 in

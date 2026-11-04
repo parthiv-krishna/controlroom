@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { closeSettings, env, login, machineCard, openMachines, send, sessionRow, timeline } from './helpers';
+import { closeSettings, env, login, machineCard, openMachines, openSession, send, timeline } from './helpers';
 
 // The server now bundles a "newer" daemon that can't serve. The automatic upgrades fail and are
 // rolled back: the machines stay connected on their daemon, say what went wrong, and still run.
@@ -21,7 +21,7 @@ test('a failed automatic upgrade is rolled back', async ({ page }) => {
   }
   await closeSettings(page);
 
-  await sessionRow(page, 'build').click();
+  await openSession(page, 'build');
   await send(page, 'Still working?');
   await expect(timeline(page).locator('.msg.r-agent').last()).toHaveText('Rolled back fine.');
 });

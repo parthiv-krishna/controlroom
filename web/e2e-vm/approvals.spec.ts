@@ -1,13 +1,14 @@
 import { expect, type Page, test } from '@playwright/test';
 import { header, login, newSession, send, sessionRow, signIn, timeline } from './helpers';
 
-// pi runs `git push` to a bare repo in the session's directory; nono asks for an approval, which
-// shows as a sandbox card in the timeline and the notifications panel of both tabs. One tab
-// allows it once (the push lands); the other denies the next push with a reason (pi sees it;
-// the test script checks the remote and what pi told the model).
+// pi (on the server) runs `git push` in devbox's shell, which runs under the workspace's nono
+// profile there: nono mediates the push and asks the host daemon, which raises an approval
+// through the server. It shows as a sandbox card in the timeline and the notifications panel of
+// both tabs. One tab allows it once (the push lands); the other denies the next push with a
+// reason (pi sees it; the test script checks the remote and what pi told the model).
 test('git push approvals across two tabs', async ({ page, browser }) => {
   await login(page, 'Laptop');
-  await newSession(page, { cwd: '~/push', name: 'push', level: 'Strict', prompt: 'Push the branch' });
+  await newSession(page, { workspaces: [{ machine: 'devbox', path: '~/push' }], name: 'push', level: 'Strict', prompt: 'Push the branch' });
   const { context, page: other } = await signIn(browser, 'Desktop');
   await sessionRow(other, 'push').click();
   await other.locator('body').press(']');
