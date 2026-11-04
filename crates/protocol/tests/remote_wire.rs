@@ -19,6 +19,7 @@ use controlroom_protocol::session::{
     RequestBody, RequestKind, RequestState, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec,
     SessionState, Shell, ShellState, Workspace, WorkspaceSpec,
 };
+use controlroom_protocol::timeline::InjectOrigin;
 use controlroom_protocol::ui::next as ui;
 use controlroom_protocol::ui::{Connectivity, StateCursor};
 use controlroom_protocol::*;
@@ -1097,6 +1098,8 @@ fn unknown_variants_decode_as_unknown() {
     assert_eq!(change.event, ui::StateEvent::Unknown);
     let kind: RequestKind = serde_json::from_value(json!("terminal_input")).unwrap();
     assert_eq!(kind, RequestKind::TerminalInput);
+    let origin: InjectOrigin = serde_json::from_value(json!("tool_late")).unwrap();
+    assert_eq!(origin, InjectOrigin::ToolLate);
     let body: RequestBody = serde_json::from_value(json!({
         "kind": "privileged", "machine": "devbox", "command": "sudo nixos-rebuild switch",
         "reason": "apply the config", "cwd": null

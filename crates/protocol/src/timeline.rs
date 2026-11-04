@@ -69,6 +69,11 @@ pub enum InjectOrigin {
     Todo,
     /// A continuation.
     Continue,
+    /// The late result of a tool call that failed with `connection_lost` (its host came back).
+    ToolLate,
+    /// A notice about a workspace: its host unreachable past the grace period, a workspace
+    /// added or removed, a shell reset.
+    Workspace,
     /// An origin this build doesn't know.
     #[serde(other)]
     Unknown,

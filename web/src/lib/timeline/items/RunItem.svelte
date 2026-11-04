@@ -9,7 +9,7 @@
   let { item }: { item: ItemOf<'run'> } = $props();
   const app = useApp();
   const OUTCOME = { completed: 'done', cancelled: 'stopped', failed: 'failed', max_tokens: 'max tokens', refusal: 'refused', unknown: 'ended' } as const;
-  const INJECT = { user: 'user', job: 'job', child: 'subagent', message: 'message', answer: 'answer', todo: 'todo edit', continue: 'continue', unknown: 'injected' } as const;
+  const INJECT = { user: 'user', job: 'job', child: 'subagent', message: 'message', answer: 'answer', todo: 'todo edit', continue: 'continue', tool_late: 'late tool result', workspace: 'workspace notice', unknown: 'injected' } as const;
 
   /** The device's current label, falling back to the label at the time. */
   const device = (d: DeviceRef | null) => (d ? (app.client.feed.devices.get(d.device_id)?.label ?? d.label) : null);

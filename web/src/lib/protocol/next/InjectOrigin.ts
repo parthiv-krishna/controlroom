@@ -3,4 +3,4 @@
 /**
  * Where an injected item came from.
  */
-export type InjectOrigin = "user" | "job" | "child" | "message" | "answer" | "todo" | "continue" | "unknown";
+export type InjectOrigin = "user" | "job" | "child" | "message" | "answer" | "todo" | "continue" | "tool_late" | "workspace" | "unknown";
