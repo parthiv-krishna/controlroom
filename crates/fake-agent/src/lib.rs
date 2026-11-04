@@ -126,7 +126,7 @@ pub async fn serve(config: Config) -> Result<i32> {
     loop {
         buf.clear();
         tokio::select! {
-            read = stdin.read_until(b'\n', &mut buf) => {
+            read = read_line(&agent, &mut stdin, &mut buf) => {
                 if read.context("reading stdin")? == 0 {
                     return Ok(0);
                 }
@@ -137,6 +137,17 @@ pub async fn serve(config: Config) -> Result<i32> {
             _ = terminate.recv() => return Ok(128 + 15),
         }
     }
+}
+
+/// Reads the next stdin line once the agent listens again (see [`scenario::Step::Deafen`]).
+async fn read_line(
+    agent: &Agent,
+    stdin: &mut BufReader<tokio::io::Stdin>,
+    buf: &mut Vec<u8>,
+) -> std::io::Result<usize> {
+    let read = stdin.read_until(b'\n', buf).await?;
+    agent.listen().await;
+    Ok(read)
 }
 
 /// Strip the LF (and an optional CR) and dispatch one line.

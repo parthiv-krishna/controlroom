@@ -233,6 +233,9 @@ pub enum Step {
     Gate { name: String },
     /// Wait; abort interrupts it.
     Sleep { ms: u64 },
+    /// Stop reading stdin until the test releases gate `until`: lines written meanwhile wait
+    /// unread in the pipe, as with an agent slow to read them. The step itself goes on at once.
+    Deafen { until: String },
     /// A fire-and-forget extension UI request.
     Ui(UiStep),
     /// A dialog that blocks until `extension_ui_response` (or its timeout).

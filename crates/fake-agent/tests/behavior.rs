@@ -33,6 +33,39 @@ async fn gate_holds_the_run_until_the_test_releases_it() {
 }
 
 #[tokio::test]
+async fn deafen_leaves_lines_unread_until_the_test_releases_it() {
+    let sandbox = Sandbox::new();
+    let scenario = r#"{"replies": [
+        {"content": [{"type": "text", "text": "before"}, {"type": "deafen", "until": "listen"},
+                     {"type": "gate", "name": "g1"}, {"type": "text", "text": " after"}]},
+        {"content": [{"type": "text", "text": "late one"}]}]}"#;
+    let mut fake = sandbox.spawn(scenario, &[]);
+    fake.call("1", prompt("go")).await;
+    let gates = sandbox.gates();
+    gates.wait_reached("g1", WAIT).await.unwrap();
+    fake.send(
+        json!({"id": "2", "type": "prompt", "message": "steer", "streamingBehavior": "steer"}),
+    )
+    .await;
+    gates.release("g1").unwrap();
+    fake.next_event("agent_settled").await;
+    assert!(
+        fake.records().iter().all(|r| r["id"] != "2"),
+        "not read yet"
+    );
+    // Read while idle, the steering prompt starts a run (like pi).
+    gates.release("listen").unwrap();
+    let response = fake.next("the response", |r| r["id"] == "2").await;
+    assert_eq!(response["data"]["disposition"], "started");
+    let end = fake.next_event("message_end").await;
+    assert_eq!(end["message"]["role"], "user");
+    let end = fake.next_event("agent_settled").await;
+    assert_eq!(end["aborted"], false);
+    fake.close_stdin();
+    assert_eq!(fake.wait_exit().await, (Some(0), None));
+}
+
+#[tokio::test]
 async fn crash_step_exits_mid_run_with_its_code() {
     let sandbox = Sandbox::new();
     let scenario = r#"{"replies": [{"content": [

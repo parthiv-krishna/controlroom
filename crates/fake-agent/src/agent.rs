@@ -61,6 +61,8 @@ pub struct State {
     pub compacting: bool,
     pub run: Option<RunControl>,
     pub dialogs: HashMap<String, oneshot::Sender<Value>>,
+    /// A `deafen` step's gate: stdin is not read until it is released.
+    pub deaf_until: Option<String>,
 }
 
 /// The agent: configuration plus shared state.
@@ -112,6 +114,7 @@ impl Agent {
             compacting: false,
             run: None,
             dialogs: HashMap::new(),
+            deaf_until: None,
         };
         Arc::new(Self {
             scenario,
@@ -186,16 +189,25 @@ impl Agent {
 
     /// Pass a gate; an abort ends the wait early.
     pub async fn gate(&self, name: &str, abort: &mut watch::Receiver<bool>) -> Waited<()> {
+        abortable(abort, self.pass(name)).await
+    }
+
+    /// Waits out a `deafen` step before the agent reads the next stdin line.
+    pub async fn listen(&self) {
+        let deaf_until = self.state().deaf_until.take();
+        if let Some(gate) = deaf_until {
+            self.pass(&gate).await;
+        }
+    }
+
+    async fn pass(&self, name: &str) {
         let Some(gates) = &self.gates else {
             eprintln!("fake-agent: gate {name} reached but no gate dir is configured");
             std::process::exit(2);
         };
-        abortable(abort, async {
-            if let Err(err) = gates.pass(name).await {
-                eprintln!("fake-agent: gate {name}: {err:#}");
-            }
-        })
-        .await
+        if let Err(err) = gates.pass(name).await {
+            eprintln!("fake-agent: gate {name}: {err:#}");
+        }
     }
 
     /// Run a side step (anything but model content). Returns `Aborted` if
@@ -211,6 +223,7 @@ impl Agent {
                 self.dialog(dialog).await;
             }
             Step::AppendEntry { custom_type, data } => self.append_entry(custom_type, data),
+            Step::Deafen { until } => self.state().deaf_until = Some(until.clone()),
             Step::Crash { code } => std::process::exit(*code),
             Step::Text(_) | Step::Thinking(_) | Step::ToolCall(_) => {
                 eprintln!("fake-agent: ignoring a content step outside a reply");
