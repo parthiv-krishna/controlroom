@@ -10,7 +10,7 @@ use controlroom_client_core::ssh::ConnectOptions;
 use controlroom_controller::test_support::{RemoteHost, UiDriver};
 use controlroom_controller::{
     AuthPolicy, Backoff, Controller, ControllerConfig, Identity, MasterKey, PushConfig,
-    PushOutcome, PushSender, Tuning,
+    PushOutcome, PushSender, Tuning, UiApi,
 };
 use controlroom_protocol::ui::AuthMode;
 use futures::future::BoxFuture;
@@ -72,6 +72,29 @@ pub fn controller(bundled: Option<&Path>, push: Option<PushConfig>) -> Setup {
     let controller =
         Controller::start(config(&dir.path().join("controller.sqlite"), bundled, push)).unwrap();
     Setup { controller, dir }
+}
+
+/// A controller on a fresh store, linked to the agent daemon at `agentd`.
+pub fn controller_with_agentd(bundled: Option<&Path>, agentd: &Path) -> Setup {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = config(&dir.path().join("controller.sqlite"), bundled, None);
+    config.agentd_socket = Some(agentd.to_owned());
+    let controller = Controller::start(config).unwrap();
+    Setup { controller, dir }
+}
+
+/// A next-UI-API connection for the dev user, handshaken as `device`, with the state feed
+/// mirrored.
+pub async fn ui_next(controller: &Controller, device: &str) -> UiDriver {
+    let principal = controller.resolve(&Identity::DevToken).unwrap();
+    let client = controller
+        .open_trusted_client_with(principal, UiApi::Next)
+        .unwrap();
+    let mut ui = UiDriver::new(client);
+    ui.hello(device, &format!("{device} (Firefox on Linux)"))
+        .await;
+    ui.subscribe_state().await;
+    ui
 }
 
 /// A UI connection for the dev user, handshaken as `device`, with the state feed mirrored.

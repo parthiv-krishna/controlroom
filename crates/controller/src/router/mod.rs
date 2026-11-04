@@ -166,13 +166,11 @@ impl Hub {
         }
     }
 
-    /// The link to the agent daemon is gone: nothing is pending until it subscribes again.
+    /// The link to the agent daemon is gone. Requests stay with their hosts (an answer that
+    /// arrives meanwhile is lost with the link and asked for again); the next subscription
+    /// replaces them.
     pub(crate) fn hostops_reset(&self, st: &mut HubState) {
         st.router.subscription = None;
-        let ids: Vec<_> = st.router.index.keys().cloned().collect();
-        for id in ids {
-            st.router.remove(&id);
-        }
     }
 
     /// A machine's host daemon said hello: sends it every request still waiting for it.

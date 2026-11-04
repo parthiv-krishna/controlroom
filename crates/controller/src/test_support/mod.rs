@@ -8,7 +8,10 @@
 //!   fail.
 //! - [`bundled_daemons`] makes a bundled-daemons directory from the freshly built
 //!   `controlroomd` (without its debug info, see [`copy_daemon`]).
-//! - [`UiDriver`] speaks the UI API over a [`UiClient`] and mirrors the state feed.
+//! - [`UiDriver`] speaks the UI API (old or next) over a [`UiClient`] and mirrors the state
+//!   feed.
+//! - [`FakeAgentd`] is an in-process agent daemon on a unix socket; [`FakeHost`] an in-process
+//!   host daemon behind a [`RemoteHost`].
 //!
 //! **Finding the binaries.** Integration tests run from `target/<profile>/deps/`, so
 //! `controlroomd` and `controlroom-fake-agent` are looked up in `target/<profile>/`, where
@@ -20,6 +23,13 @@
 //! failure; agents stop at named gates that tests release.
 
 #![allow(clippy::unwrap_used, clippy::missing_panics_doc)]
+
+mod fake_agentd;
+mod fake_host;
+mod wire;
+
+pub use fake_agentd::{FakeAgentd, session_summary};
+pub use fake_host::FakeHost;
 
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
@@ -352,6 +362,8 @@ pub struct Mirror {
     pub schedules: HashMap<String, Value>,
     /// Grants.
     pub grants: HashMap<String, Value>,
+    /// Overlaps (next UI API).
+    pub overlaps: Value,
     /// How often each machine became `connected`.
     pub connected_count: HashMap<String, u32>,
 }
@@ -388,6 +400,7 @@ impl Mirror {
         self.devices = index(&snapshot["devices"]);
         self.schedules = index(&snapshot["schedules"]);
         self.grants = index(&snapshot["grants"]);
+        self.overlaps = snapshot["overlaps"].clone();
     }
 
     fn apply(&mut self, change: &Value) {
@@ -452,6 +465,7 @@ impl Mirror {
                 self.grants
                     .insert(id(&change["grant"]["id"]), change["grant"].clone());
             }
+            "overlaps_changed" => self.overlaps = change["overlaps"].clone(),
             "grant_removed" => {
                 self.grants.remove(&id(&change["grant_id"]));
             }
