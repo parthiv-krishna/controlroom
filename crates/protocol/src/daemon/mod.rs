@@ -1,5 +1,13 @@
 //! The daemon API: controller ↔ `controlroomd`.
 //!
+//! **Deprecated** (remote-tools model): pi moves to the server, so this per-machine API splits
+//! into the agent daemon API ([`crate::agentd`], sessions) and the host API ([`crate::host`],
+//! tools). Its method table, `machine.subscribe` feed ([`MachineSnapshot`], [`MachineEvent`]),
+//! cwd-based [`SessionCreateParams`] / [`SessionCreateResult`] and the mailbox ([`mailbox`
+//! types](OutboxItem)) are removed once the controller and the daemon have switched. The
+//! session-scoped command types, the `hello` types, [`FsListParams`], [`DoctorReport`] and
+//! [`DaemonSettings`] are reused by the new APIs and move to them then.
+//!
 //! Newline-delimited JSON-RPC over an SSH exec channel running `controlroomd connect`. A daemon
 //! accepts several concurrent clients, and a client going away never triggers anything.
 //!

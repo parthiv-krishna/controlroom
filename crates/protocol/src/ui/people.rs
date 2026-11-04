@@ -1,4 +1,7 @@
 //! Devices, push notifications, focus, and contact grants.
+//!
+//! **Deprecated:** [`ContactGrant`] and [`ClientFocusParams`] (which name sessions with their
+//! machine) are replaced by those of [`crate::ui::next`]; everything else stays.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

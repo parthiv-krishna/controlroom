@@ -1,8 +1,11 @@
 //! Schedules: owned by the controller, each wakes one session with a canned message.
 //!
 //! The scheduler fires `session.prompt` with op id `<schedule id>:<scheduled unix ms>`, so a
-//! restart or retry can never double-fire. The run's trigger shows as "schedule: <name>".
+//! restart or retry can never double-fire. The run's trigger shows as `schedule: <name>`.
 //! Closing the session disables its schedules. Not exposed to agents.
+//!
+//! **Deprecated:** [`Schedule`] and [`SchedulesCreateParams`] (which name the session's machine)
+//! are replaced by those of [`crate::ui::next`]; the spec, policy, outcome and update types stay.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

@@ -691,7 +691,7 @@ fn unknown_enum_values_decode_as_unknown() {
     newer["state"] = json!("hibernating");
     newer["attention"] = json!("celebrate");
     newer["last_outcome"] = json!("context_overflow");
-    newer["requests"][0]["kind"] = json!("privileged");
+    newer["requests"][0]["kind"] = json!("budget_raise");
     newer["requests"][0]["body"] = json!({"kind": "terminal", "term_id": "t1"});
     newer["requests"][0]["options"][0]["style"] = json!("sparkle");
     newer["options"][0] = json!({"id": "x", "label": "X", "kind": "slider", "min": 0});

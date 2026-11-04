@@ -36,6 +36,6 @@ name: string, } | { "kind": "schedule",
  */
 schedule_id: ScheduleId, 
 /**
- * Its name, shown as "schedule: <name>".
+ * Its name, shown as `schedule: <name>`.
  */
 name: string, } | { "kind": "unknown" };

@@ -5,6 +5,9 @@ import type { SessionId } from "./SessionId";
 /**
  * A session on any machine, as the daemon refers to it: by the session's [`DaemonId`]. The UI
  * maps the daemon id to a machine with [`crate::ui::Machine::daemon_id`].
+ *
+ * With the agent daemon every session is local to it, so `daemon_id` is always the agent
+ * daemon's own id; the mailbox rework (R3) is expected to reduce peers to session ids.
  */
 export type PeerRef = { 
 /**

@@ -1,5 +1,9 @@
 //! The aggregated state feed (`state.subscribe`): machines, sessions of every machine, and the
 //! controller's own data, behind one epoch+rev cursor.
+//!
+//! **Deprecated** with the old UI method table: [`crate::ui::next`] has the feed with global
+//! sessions (no [`MachineSession`], no `stale`), project membership and workspace overlaps.
+//! [`StateCursor`] and [`StateSubscribeParams`] stay.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

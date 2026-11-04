@@ -18,6 +18,10 @@ import type { UnixMillis } from "./UnixMillis";
 
 /**
  * What every client knows about a session. Sent whole on every change.
+ *
+ * **Deprecated** with the daemon API (sessions per machine, one `cwd`): the agent daemon's
+ * global sessions use [`crate::agentd::SessionSummary`] (workspaces and shells instead of
+ * `cwd`, no `agent` or `spawned_by`).
  */
 export type SessionSummary = { 
 /**

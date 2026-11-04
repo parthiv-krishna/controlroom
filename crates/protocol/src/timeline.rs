@@ -113,7 +113,7 @@ pub enum RunTrigger {
     Schedule {
         /// The schedule.
         schedule_id: ScheduleId,
-        /// Its name, shown as "schedule: <name>".
+        /// Its name, shown as `schedule: <name>`.
         name: String,
     },
     /// A trigger this build doesn't know.

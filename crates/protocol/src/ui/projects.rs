@@ -1,4 +1,9 @@
 //! Projects and tasks (the kanban board).
+//!
+//! **Deprecated** with the old UI method table: location prefixes and machine-scoped
+//! [`SessionLink`]s go away. [`crate::ui::next`] has projects as task groups and tasks that link
+//! global session ids. [`TaskStatus`], [`Priority`], [`ChecklistItem`] and the checklist and
+//! move params stay.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

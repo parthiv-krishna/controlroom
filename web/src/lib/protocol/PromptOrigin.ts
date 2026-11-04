@@ -15,6 +15,6 @@ device: DeviceRef | null, } | { "kind": "schedule",
  */
 schedule_id: ScheduleId, 
 /**
- * Its name when it fired, shown as "schedule: <name>".
+ * Its name when it fired, shown as `schedule: <name>`.
  */
 name: string, } | { "kind": "unknown" };
