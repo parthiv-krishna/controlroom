@@ -281,7 +281,7 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
               Answer{request, choice}, SetOption{id, value}, Inject{item, origin} }</code></pre>
 <p>Send-now strategy belongs to the driver:</p>
 <ul>
-<li><b>pi:</b> native <code>steer</code>;</li>
+<li><b>pi:</b> native steering, sent as <code>prompt</code> with <code>streamingBehavior:"steer"</code>: if the run settles before pi reads the line it starts the next run (a plain <code>steer</code> would wait in pi's queue for the next prompt). Its run is labelled <code>steer</code>;</li>
 <li><b>a driver without steering</b> (e.g. FakeDriver modes): cancel at a safe point.</li>
 </ul>
 <p>Every written line embeds its <code>op_id</code>/<code>queue_id</code> so exactly-once can be derived from the transcript. The id floor is persisted.</p>
@@ -291,7 +291,7 @@ enum Intent { Start{resume: Option&lt;NativeRef&gt;}, Prompt{content, origin}, S
 <li><b>Remote tools keep pi's names</b> (<code>read write edit bash grep find ls</code>) and argument shapes, so the timeline mapping (titles, kinds, diffs) is unchanged.</li>
 <li><b>Runs:</b> from <code>agent_start</code> to <code>agent_settled{aborted}</code>.</li>
 <li><b>Outcome:</b> taken from the assistant <code>stopReason</code> (error → failed, length → max_tokens, aborted → cancelled) plus <code>auto_retry_end</code>. No <code>end_turn</code> heuristics.</li>
-<li><b>Commands:</b> <code>prompt</code> after the run settles or with <code>streamingBehavior:"followUp"</code>; <code>steer</code>, <code>abort</code>, <code>clear_queue</code>; model and thinking setters; <code>get_state</code>, <code>get_commands</code>, <code>get_session_stats</code>; <code>new_session{parentSession}</code> for start fresh; <code>extension_ui_response</code>.</li>
+<li><b>Commands:</b> <code>prompt</code> after the run settles or with <code>streamingBehavior</code> (<code>"steer"</code> for send-now and waking injections, <code>"followUp"</code>); <code>steer</code> (non-waking injections, which wait for the next run), <code>abort</code>, <code>clear_queue</code>; model and thinking setters; <code>get_state</code>, <code>get_commands</code>, <code>get_session_stats</code>; <code>new_session{parentSession}</code> for start fresh; <code>extension_ui_response</code>.</li>
 <li><b>Events mapped to the timeline:</b> <code>message_*</code>, <code>tool_execution_*</code> (incl. <code>parentToolCallId</code>), <code>queue_update</code>, <code>compaction_*</code>, <code>auto_retry_*</code>, <code>session_info_changed</code>, <code>thinking_level_changed</code>, <code>extension_ui_request</code>, <code>extension_error</code>, <code>entry_appended</code> (controlroom entries).</li>
 <li><b>pi's RPC is unversioned:</b> pin pi, record <code>fixtures/pi-rpc/</code> per pinned version, and tolerate unknown events.</li>
 <li><b>Signals:</b> pi exits on SIGHUP, so never deliver HUP to its group.</li>
