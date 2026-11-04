@@ -172,7 +172,9 @@ async fn real_pi_under_nono_works_on_two_nono_confined_hosts() {
     let id = created["session"]["id"].as_str().unwrap().to_owned();
     assert_eq!(created["session"]["sandbox"]["level"], "strict");
     world
-        .wait_session(&id, "idle", |s| s["state"] == "idle" && s["agent_live"] == true)
+        .wait_session(&id, "idle", |s| {
+            s["state"] == "idle" && s["agent_live"] == true
+        })
         .await;
 
     // 1. Files on both machines and a named shell.
@@ -205,12 +207,18 @@ async fn real_pi_under_nono_works_on_two_nono_confined_hosts() {
     world.prompt(&id, "Read, edit and set up a shell.").await;
     let all = seen(&mock, 0);
     assert!(all.contains("remote notes"), "the read: {all}");
-    assert!(all.contains("Use the builder shell."), "devbox's AGENTS.md: {all}");
+    assert!(
+        all.contains("Use the builder shell."),
+        "devbox's AGENTS.md: {all}"
+    );
     assert_eq!(
         std::fs::read_to_string(web.join("app.js")).unwrap(),
         "const version = 'v2';\n"
     );
-    assert!(all.contains("confined"), "the write outside the workspace: {all}");
+    assert!(
+        all.contains("confined"),
+        "the write outside the workspace: {all}"
+    );
     assert!(!world.devbox.home().join("planted.txt").exists());
     let sub = api.join("sub");
     assert!(
@@ -232,7 +240,9 @@ async fn real_pi_under_nono_works_on_two_nono_confined_hosts() {
         .agentd
         .state()
         .join(format!("sessions/{id}/transcript.jsonl"));
-    let records = controlroom_transcript::read_all(&transcript, 0).unwrap().records;
+    let records = controlroom_transcript::read_all(&transcript, 0)
+        .unwrap()
+        .records;
     let controlroom_transcript::Body::Meta(meta) = &records[0].body else {
         panic!("the transcript starts with its meta record");
     };
@@ -304,7 +314,10 @@ async fn real_pi_under_nono_works_on_two_nono_confined_hosts() {
         .collect();
     assert_eq!(wakes.len(), 1, "{wakes:#?}");
     let after = seen(&mock, from);
-    assert!(after.contains("exited with code 0"), "the model saw the wake");
+    assert!(
+        after.contains("exited with code 0"),
+        "the model saw the wake"
+    );
 
     world
         .ui

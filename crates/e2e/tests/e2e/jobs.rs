@@ -140,3 +140,60 @@ fn job_messages(timeline: &Timeline, needle: &str) -> Vec<String> {
         .filter(|t| t.starts_with("[controlroom] Background job update") && t.contains(needle))
         .collect()
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_job_survives_a_host_daemon_restart_and_wakes_once() {
+    let mut world = World::start().await;
+    let app = world.buildbox.dir("app");
+    let held = Held::new(&app, "lint");
+    let run = |call: &str, command: &str, name: &str| {
+        (
+            "job.run",
+            json!({"call_id": call, "command": command, "machine": "buildbox", "name": name}),
+        )
+    };
+    world.agentd.scenario(&scenario(vec![
+        tool(
+            "c_job",
+            "job",
+            &[run(
+                "c_job",
+                &held.command("echo linting", "echo clean"),
+                "lint",
+            )],
+        ),
+        say("Linting."),
+        say("Lint is clean."),
+        tool("c_quick", "job", &[run("c_quick", "echo quick", "quick")]),
+        say("Started a quick job."),
+    ]));
+    let buildbox = world.buildbox.id.clone();
+    let id = world
+        .create_session(&[(&buildbox, "~/app")], json!({}))
+        .await;
+    world.prompt(&id, "lint").await;
+    held.started().await;
+
+    // The job's supervisor outlives the host daemon; the job exits while no daemon runs, and
+    // the next daemon replays its event log.
+    let mark = world.turn_mark(&id);
+    world.buildbox.kill_daemon();
+    held.release().await;
+    world.wait_turn(&id, mark).await;
+    let mut timeline = world.timeline(&id).await;
+    world
+        .until(&mut timeline, "the exit wake", |t| {
+            !job_messages(t, "`lint` exited with code 0").is_empty()
+        })
+        .await;
+
+    // A later job's exit wake is a barrier: every earlier event has been consumed by then.
+    world.prompt(&id, "one more").await;
+    world
+        .until(&mut timeline, "the quick job's exit wake", |t| {
+            !job_messages(t, "`quick` exited").is_empty()
+        })
+        .await;
+    assert_eq!(job_messages(&timeline, "`lint`").len(), 1, "one wake");
+    assert_eq!(held.runs(), 1);
+}

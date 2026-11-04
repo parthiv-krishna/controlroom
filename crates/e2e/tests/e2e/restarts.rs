@@ -146,3 +146,44 @@ async fn an_agentd_restart_mid_call_delivers_the_answer_once() {
     assert_eq!(timeline.of_kind("tool_call").len(), 1);
     assert!(timeline.injected_runs("tool_late").is_empty());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_controller_restart_mid_call_only_pauses_it() {
+    let mut world = World::start().await;
+    let work = world.devbox.dir("work");
+    let held = Held::new(&work, "lint");
+    world.agentd.scenario(&scenario(vec![
+        bash(
+            "c_bash",
+            "devbox",
+            "devbox",
+            &held.command("echo linting", "echo clean"),
+        ),
+        say("Linted."),
+    ]));
+    let devbox = world.devbox.id.clone();
+    let id = world
+        .create_session(&[(&devbox, "~/work")], json!({}))
+        .await;
+
+    let mark = world.turn_mark(&id);
+    world.send_prompt(&id, "lint").await;
+    held.started().await;
+    world.restart_controller().await;
+    held.release().await;
+    world.wait_turn(&id, mark).await;
+
+    let mut timeline = world.timeline(&id).await;
+    world
+        .until(&mut timeline, "the bash result", |t| t.tool_done("c_bash"))
+        .await;
+    assert!(
+        !timeline.tool_failed("c_bash"),
+        "{:?}",
+        timeline.tool("c_bash")
+    );
+    let result = timeline.tool_json("c_bash");
+    assert_eq!(result["result"]["output"], "linting\nclean", "{result}");
+    assert_eq!(held.runs(), 1);
+    assert_eq!(timeline.of_kind("tool_call").len(), 1);
+}

@@ -119,8 +119,8 @@ pub struct World {
     pub devbox: Host,
     /// The second machine.
     pub buildbox: Host,
-    _store: tempfile::TempDir,
-    _bundled: tempfile::TempDir,
+    store: tempfile::TempDir,
+    bundled: tempfile::TempDir,
 }
 
 /// Fast reconnects and keepalives for tests.
@@ -159,41 +159,37 @@ impl World {
         agentd.start().await;
         let bundled = bundled_daemons();
         let store = tempfile::tempdir().unwrap();
-        let controller = Controller::start(ControllerConfig {
-            store_path: store.path().join("controller.sqlite"),
-            master_key: MasterKey::from_bytes([7; 32]),
-            bundled_daemons_dir: Some(bundled.path().to_owned()),
-            server_version: "0.0.0-e2e".into(),
-            auth: AuthPolicy {
-                mode: AuthMode::DevToken,
-                allowed_subjects: vec![],
-                allowed_groups: vec![],
-            },
-            push: None,
-            key_comment: "controlroom@controlroom.example.com".into(),
-            agentd_socket: Some(agentd.socket()),
-            tuning: tuning(),
-        })
-        .unwrap();
-        let principal = controller.resolve(&Identity::DevToken).unwrap();
-        let client = controller
-            .open_trusted_client_with(principal, UiApi::Next)
-            .unwrap();
-        let mut ui = UiDriver::new(client);
-        ui.hello("laptop", "laptop (Firefox on Linux)").await;
-        ui.subscribe_state().await;
+        let controller = start_controller(store.path(), bundled.path(), &agentd.socket());
+        let ui = open_ui(&controller).await;
         let mut world = Self {
             ui,
             controller,
             agentd,
             devbox,
             buildbox,
-            _store: store,
-            _bundled: bundled,
+            store,
+            bundled,
         };
         world.devbox.id = add_machine(&mut world.ui, &world.devbox).await;
         world.buildbox.id = add_machine(&mut world.ui, &world.buildbox).await;
         world
+    }
+
+    /// Restarts the controller on the same store (a web restart): every connection closes,
+    /// then the new controller reconnects to the agent daemon and the hosts, and the browser
+    /// tab connects again. Returns once both machines are connected.
+    pub async fn restart_controller(&mut self) {
+        self.controller.shutdown().await;
+        let controller = start_controller(
+            self.store.path(),
+            self.bundled.path(),
+            &self.agentd.socket(),
+        );
+        self.ui = open_ui(&controller).await;
+        self.controller = controller;
+        for id in [self.devbox.id.clone(), self.buildbox.id.clone()] {
+            self.wait_connected(&id).await;
+        }
     }
 
     /// Waits until machine `id` is connected.
@@ -287,4 +283,37 @@ pub async fn wait_contains(path: &Path, needle: &str) {
         std::fs::read_to_string(path).is_ok_and(|t| t.contains(needle))
     })
     .await;
+}
+
+/// A controller on the store in `store`, installing the daemons in `bundled`, linked to the
+/// agent daemon at `agentd`.
+fn start_controller(store: &Path, bundled: &Path, agentd: &Path) -> Controller {
+    Controller::start(ControllerConfig {
+        store_path: store.join("controller.sqlite"),
+        master_key: MasterKey::from_bytes([7; 32]),
+        bundled_daemons_dir: Some(bundled.to_owned()),
+        server_version: "0.0.0-e2e".into(),
+        auth: AuthPolicy {
+            mode: AuthMode::DevToken,
+            allowed_subjects: vec![],
+            allowed_groups: vec![],
+        },
+        push: None,
+        key_comment: "controlroom@controlroom.example.com".into(),
+        agentd_socket: Some(agentd.to_owned()),
+        tuning: tuning(),
+    })
+    .unwrap()
+}
+
+/// A browser tab on the next UI API (device `laptop`), with the state feed mirrored.
+async fn open_ui(controller: &Controller) -> UiDriver {
+    let principal = controller.resolve(&Identity::DevToken).unwrap();
+    let client = controller
+        .open_trusted_client_with(principal, UiApi::Next)
+        .unwrap();
+    let mut ui = UiDriver::new(client);
+    ui.hello("laptop", "laptop (Firefox on Linux)").await;
+    ui.subscribe_state().await;
+    ui
 }
