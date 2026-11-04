@@ -93,6 +93,30 @@ pub fn diagnose(dirs: &Dirs) -> Diagnosis {
     }
 }
 
+/// The checks of a host in the host role (`doctor.report` on the host API): persistence, boot
+/// start, nono and Landlock. Agents run on the server, so the agent fields are empty.
+pub fn diagnose_host(dirs: &Dirs) -> DoctorReport {
+    let shell = login_shell();
+    let id = persistence::identity();
+    let persistence = persistence::persistence(&id);
+    let boot = persistence::boot_start(&persistence);
+    let sandbox = sandbox_config::load(dirs);
+    let (landlock_abi, _) = sandbox::landlock();
+    DoctorReport {
+        daemon_version: VERSION.to_owned(),
+        user: id.user,
+        persistence: persistence.summary(),
+        boot_start: boot.method,
+        boot_start_check: boot.summary,
+        nono: sandbox::nono(dirs, &shell, &sandbox.value.nono),
+        landlock_abi,
+        agents_config: None,
+        agents_config_error: None,
+        agents: Vec::new(),
+        checked_at: UnixMillis::now(),
+    }
+}
+
 /// Runs the subcommand.
 pub fn run(args: Args) -> ExitCode {
     let dirs = match Dirs::from_env(args.state_dir.as_deref()) {

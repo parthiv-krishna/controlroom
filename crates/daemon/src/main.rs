@@ -1,9 +1,9 @@
-//! controlroomd: serve, connect, supervise, doctor.
+//! controlroomd: serve, connect, supervise, doctor, and the host role (host, workspace-exec, pty).
 
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use controlroomd::{connect, doctor, serve, supervise};
+use controlroomd::{connect, doctor, host, serve, supervise};
 
 /// The controlroom daemon.
 #[derive(Parser)]
@@ -23,6 +23,12 @@ enum Command {
     Doctor(doctor::Args),
     /// Run one detached supervisor (a process and its transcript).
     Supervise(supervise::Args),
+    /// The host role: serve the host API, or bridge to it.
+    Host(host::Args),
+    /// The per-workspace fs worker (started by the host daemon under the workspace sandbox).
+    WorkspaceExec(host::worker::Args),
+    /// Attach to or resize a shell's terminal.
+    Pty(host::pty::Args),
 }
 
 fn main() -> ExitCode {
@@ -32,6 +38,9 @@ fn main() -> ExitCode {
         Command::Connect(args) => connect::run(args),
         Command::Doctor(args) => doctor::run(args),
         Command::Supervise(args) => supervise::run(args),
+        Command::Host(args) => host::run(args),
+        Command::WorkspaceExec(args) => host::worker::run(args),
+        Command::Pty(args) => host::pty::run(args),
     }
 }
 

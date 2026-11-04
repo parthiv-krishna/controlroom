@@ -6,20 +6,32 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+base64 = "0.22"
 clap.workspace = true
 controlroom-protocol.workspace = true
 controlroom-sandbox.workspace = true
 controlroom-supervisor.workspace = true
 controlroom-transcript.workspace = true
+# The host's search ops embed ripgrep's crates, so hosts need nothing but bash and nono.
+globset = "0.4"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+ignore = "0.4"
+memchr = "2.7"
+regex = "1.12"
+rusqlite.workspace = true
 # setsid() and flock() without unsafe.
 rustix = { version = "1.1", features = ["fs", "process"] }
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.11"
 thiserror.workspace = true
 toml = "0.9"
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+ulid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

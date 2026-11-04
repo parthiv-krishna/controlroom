@@ -14,6 +14,7 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use controlroom_sandbox::AbsPath;
 
 use crate::dirs::Dirs;
 use crate::instance;
@@ -47,12 +48,21 @@ pub fn run(args: Args) -> ExitCode {
 
 /// Connects to the daemon socket, starting a detached daemon if nothing answers.
 pub fn connect_or_start(dirs: &Dirs) -> anyhow::Result<UnixStream> {
-    let socket = dirs.daemon_socket();
+    connect_or_start_with(&dirs.daemon_socket(), || {
+        let exe = instance::serve_binary()?;
+        instance::spawn_detached(&exe, dirs).map(drop)
+    })
+}
+
+/// Connects to `socket`, calling `start` (which starts a detached daemon) if nothing answers.
+pub fn connect_or_start_with(
+    socket: &AbsPath,
+    start: impl FnOnce() -> anyhow::Result<()>,
+) -> anyhow::Result<UnixStream> {
     if let Ok(stream) = UnixStream::connect(socket.as_path()) {
         return Ok(stream);
     }
-    let exe = instance::serve_binary()?;
-    instance::spawn_detached(&exe, dirs)?;
+    start()?;
     let deadline = Instant::now() + CONNECT_RETRY;
     loop {
         match UnixStream::connect(socket.as_path()) {
@@ -65,7 +75,8 @@ pub fn connect_or_start(dirs: &Dirs) -> anyhow::Result<UnixStream> {
     }
 }
 
-fn bridge(stream: UnixStream) -> anyhow::Result<()> {
+/// Copies stdin to `stream` and `stream` to stdout until both sides are done.
+pub fn bridge(stream: UnixStream) -> anyhow::Result<()> {
     let mut to_daemon = stream.try_clone()?;
     let mut from_daemon = stream;
     std::thread::spawn(move || {

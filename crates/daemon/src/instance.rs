@@ -23,6 +23,8 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, bail};
 use rustix::fs::{FlockOperation, flock};
 
+use controlroom_sandbox::AbsPath;
+
 use crate::dirs::{Dirs, create_private_dir};
 use crate::version::version_line;
 
@@ -46,9 +48,14 @@ pub enum Claim {
 
 /// Takes the instance lock and binds the daemon socket.
 pub fn claim(dirs: &Dirs) -> anyhow::Result<Claim> {
+    claim_at(dirs, &dirs.daemon_lock(), &dirs.daemon_socket())
+}
+
+/// Takes `lock_path` and binds `socket` (both under `<state>/run`); the host role's instance
+/// uses its own pair, so it runs alongside the session daemon.
+pub fn claim_at(dirs: &Dirs, lock_path: &AbsPath, socket: &AbsPath) -> anyhow::Result<Claim> {
     let run = dirs.run();
     create_private_dir(&run).with_context(|| format!("creating {run}"))?;
-    let lock_path = dirs.daemon_lock();
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -61,7 +68,6 @@ pub fn claim(dirs: &Dirs) -> anyhow::Result<Claim> {
         Err(rustix::io::Errno::WOULDBLOCK) => return Ok(Claim::AlreadyRunning),
         Err(e) => return Err(e).with_context(|| format!("locking {lock_path}")),
     }
-    let socket = dirs.daemon_socket();
     // We hold the lock, so nobody serves a leftover socket file.
     match std::fs::remove_file(socket.as_path()) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
@@ -130,8 +136,18 @@ pub enum Started {
 
 /// Starts `exe serve` as a detached daemon and waits until its socket is bound.
 pub fn spawn_detached(exe: &Path, dirs: &Dirs) -> anyhow::Result<Started> {
+    spawn_detached_with(exe, dirs, &["serve"], &dirs.daemon_log())
+}
+
+/// Starts `exe <subcommand…> --state-dir <state> --detached-child` with stderr appended to
+/// `log_path`, and waits for its ready line (the host role uses `host serve`).
+pub fn spawn_detached_with(
+    exe: &Path,
+    dirs: &Dirs,
+    subcommand: &[&str],
+    log_path: &AbsPath,
+) -> anyhow::Result<Started> {
     create_private_dir(dirs.state()).with_context(|| format!("creating {}", dirs.state()))?;
-    let log_path = dirs.daemon_log();
     let log = OpenOptions::new()
         .create(true)
         .append(true)
@@ -139,12 +155,8 @@ pub fn spawn_detached(exe: &Path, dirs: &Dirs) -> anyhow::Result<Started> {
         .open(log_path.as_path())
         .with_context(|| format!("opening {log_path}"))?;
     let mut child = Command::new(exe)
-        .args([
-            "serve",
-            "--state-dir",
-            dirs.state().as_str(),
-            DETACHED_CHILD_FLAG,
-        ])
+        .args(subcommand)
+        .args(["--state-dir", dirs.state().as_str(), DETACHED_CHILD_FLAG])
         .current_dir("/")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
