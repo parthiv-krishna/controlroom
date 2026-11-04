@@ -182,6 +182,7 @@ impl Task {
             }
             BusEvent::Connectivity { .. }
             | BusEvent::MachineChanged { .. }
+            | BusEvent::HostCallsDone { .. }
             | BusEvent::Agentd { connected: false } => false,
         }
     }

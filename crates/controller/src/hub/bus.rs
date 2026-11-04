@@ -41,6 +41,8 @@ pub(crate) enum BusEvent {
     },
     /// A global session was deleted.
     GlobalSessionRemoved { session_id: SessionId },
+    /// A machine's last host request in flight was answered (it may be idle now).
+    HostCallsDone { machine_id: MachineId },
     /// The link to the agent daemon came up (`true`) or went down.
     Agentd { connected: bool },
 }
@@ -52,7 +54,8 @@ impl BusEvent {
             BusEvent::Connectivity { machine_id, .. }
             | BusEvent::MachineChanged { machine_id }
             | BusEvent::Session { machine_id, .. }
-            | BusEvent::SessionRemoved { machine_id, .. } => Some(*machine_id),
+            | BusEvent::SessionRemoved { machine_id, .. }
+            | BusEvent::HostCallsDone { machine_id } => Some(*machine_id),
             BusEvent::GlobalSession { .. }
             | BusEvent::GlobalSessionRemoved { .. }
             | BusEvent::Agentd { .. } => None,

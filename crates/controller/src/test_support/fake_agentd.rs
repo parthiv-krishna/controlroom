@@ -18,7 +18,7 @@ use controlroom_protocol::agentd::{
 };
 use controlroom_protocol::daemon::{DaemonSettings, HelloResult, PromptResult, RetentionPolicy};
 use controlroom_protocol::ids::{DaemonId, HostOpId, SessionId, SubscriptionId, WorkspaceId};
-use controlroom_protocol::session::{Availability, Workspace};
+use controlroom_protocol::session::{Availability, SessionState, Workspace};
 use controlroom_protocol::ui::Connectivity;
 use controlroom_protocol::{
     AGENTD_PROTOCOL_VERSION, ErrorData, Rev, RpcError, RpcOutcome, UnixMillis,
@@ -45,6 +45,10 @@ struct State {
     created: HashMap<String, SessionCreateResult>,
     /// The latest `session.subscribe` per session.
     session_subs: HashMap<SessionId, SubscriptionId>,
+    /// `session.prompt` results by op id (a repeat returns the first), in order.
+    prompts: Vec<(String, Value, Value)>,
+    /// Refusing connections.
+    down: bool,
 }
 
 /// The fake agent daemon. Dropping it stops listening and closes its connection.
@@ -78,6 +82,9 @@ impl FakeAgentd {
             let state = state.clone();
             async move {
                 while let Ok((stream, _)) = listener.accept().await {
+                    if state.lock().unwrap().down {
+                        continue;
+                    }
                     let st = state.clone();
                     let peer = serve(stream, move |peer, method, params| {
                         let st = st.clone();
@@ -202,6 +209,24 @@ impl FakeAgentd {
             .filter(|(m, _)| m == method)
             .map(|(_, p)| p.clone())
             .collect()
+    }
+
+    /// Every prompt delivered (once per op id), in order.
+    pub fn prompts(&self) -> Vec<Value> {
+        self.lock()
+            .prompts
+            .iter()
+            .map(|(_, p, _)| p.clone())
+            .collect()
+    }
+
+    /// Takes the agent daemon away (the controller's connection drops and new ones are
+    /// refused) or brings it back.
+    pub fn set_down(&self, down: bool) {
+        self.lock().down = down;
+        if down {
+            self.drop_connection();
+        }
     }
 
     /// Adds or replaces a session and publishes it.
@@ -408,8 +433,41 @@ fn handle(
                        "auto_continue": {"status": "off", "reason": null, "runs_used": 0, "budget": 0}},
             }))
         }
-        "session.prompt" => Ok(json!({"outcome": "sent"})),
+        "session.prompt" => prompt(&mut st, params),
         "doctor.report" | "agents.list" => Err(RpcError::new(ErrorData::Unsupported, "fake")),
         _ => Ok(json!({})),
     }
+}
+
+/// `session.prompt`: once per op id (a repeat returns the first result); a working session
+/// skips or queues by `if_busy`; a closed one refuses; an unknown one is `unknown_session`.
+fn prompt(st: &mut State, params: Value) -> Result<Value, RpcError> {
+    let op = params["op_id"].as_str().unwrap_or_default().to_owned();
+    if let Some((_, _, done)) = st.prompts.iter().find(|(o, _, _)| *o == op) {
+        return Ok(done.clone());
+    }
+    let id: SessionId = serde_json::from_value(params["id"].clone()).unwrap();
+    let Some(session) = st.sessions.iter().find(|s| s.id == id) else {
+        return Err(RpcError::new(
+            ErrorData::UnknownSession { id },
+            "no such session",
+        ));
+    };
+    let result = match session.state {
+        SessionState::Closed => {
+            return Err(RpcError::new(
+                ErrorData::InvalidState {
+                    state: SessionState::Closed,
+                },
+                "closed",
+            ));
+        }
+        SessionState::Working if params["if_busy"] == "skip" => json!({"outcome": "skipped"}),
+        SessionState::Working => {
+            json!({"outcome": "queued", "queue_id": controlroom_protocol::ids::QueueId::generate()})
+        }
+        _ => json!({"outcome": "sent"}),
+    };
+    st.prompts.push((op, params, result.clone()));
+    Ok(result)
 }

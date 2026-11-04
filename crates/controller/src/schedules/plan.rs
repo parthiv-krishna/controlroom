@@ -3,7 +3,7 @@
 //! A schedule's timing is `next_run` (the next due time; while a run is pending, also its
 //! deadline) and `pending_run` (a claimed due time not delivered yet). When `next_run` passes:
 //!
-//! - a pending run is missed (its machine stayed unreachable until the next scheduled time);
+//! - a pending run is missed (its daemon stayed unreachable until the next scheduled time);
 //! - due times that passed without the scheduler claiming them (only possible while the
 //!   controller was down or stalled) are missed, except the latest, which is claimed and
 //!   delivered like any due time;
@@ -18,7 +18,7 @@ use super::recurrence::Recurrence;
 use super::runs;
 
 /// Why a pending run was missed.
-pub(crate) const UNREACHABLE: &str = "the machine was unreachable";
+pub(crate) const UNREACHABLE: &str = "its daemon was unreachable";
 /// Why unclaimed due times were missed.
 pub(crate) const DOWN: &str = "the server was down";
 

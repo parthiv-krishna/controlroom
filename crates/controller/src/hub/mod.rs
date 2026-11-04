@@ -989,6 +989,11 @@ impl HubState {
         self.emit_next(next::StateEvent::GrantRemoved { grant_id });
     }
 
+    /// Tells the auto-upgrade watchers a machine has no host request in flight anymore.
+    pub(crate) fn host_calls_done(&self, machine_id: MachineId) {
+        let _ = self.bus.send(BusEvent::HostCallsDone { machine_id });
+    }
+
     /// Every machine as the agent daemon sees it.
     pub(crate) fn host_machines(&self) -> Vec<HostMachine> {
         self.machines

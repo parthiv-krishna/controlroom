@@ -297,8 +297,12 @@ impl Hub {
             pending.flight = None;
             return None;
         };
+        let machine = pending.request.machine_id;
         st.router.index.remove(id);
         st.router.pending.remove(&seq);
+        if !st.router.in_flight(machine) {
+            st.host_calls_done(machine);
+        }
         Some(HostOpsRespondParams {
             id: id.clone(),
             outcome,

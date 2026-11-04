@@ -1,5 +1,5 @@
-//! Automatic daemon upgrades: they wait until no run is in flight, keep the sessions running,
-//! and roll back a bad binary.
+//! Automatic daemon upgrades: they wait until no host call is in flight and roll back a bad
+//! binary.
 //!
 //! Only one real `controlroomd` build exists, so the "older" daemon is a wrapper script that
 //! reports an older version and runs a copy of the real binary from its own version directory.
@@ -12,11 +12,15 @@ use std::time::Duration;
 
 use controlroom_controller::Controller;
 use controlroom_controller::test_support::{
-    DAEMON_VERSION, RemoteHost, UiDriver, bundled_daemons, bundled_script, copy_daemon, gated, op,
-    text,
+    DAEMON_VERSION, FakeAgentd, FakeHost, RemoteHost, UiDriver, bundled_daemons, bundled_script,
+    copy_daemon,
 };
+use controlroom_protocol::RpcOutcome;
+use controlroom_protocol::agentd::HostOpRequest;
+use controlroom_protocol::host::{HostOp, HostRequest, ToolRunParams};
+use controlroom_protocol::ids::{CallId, HostOpId, MachineId, WorkspaceId};
 use serde_json::json;
-use support::{add_machine, config, create_session, ui};
+use support::{add_machine, config, ui};
 
 const OLD: &str = "0.0.0";
 
@@ -37,8 +41,10 @@ fn old_daemon(host: &RemoteHost) -> tempfile::TempDir {
     )
 }
 
-fn start(store: &Path, bundled: &Path) -> Controller {
-    Controller::start(config(store, Some(bundled), None)).unwrap()
+fn start(store: &Path, bundled: &Path, agentd: Option<&Path>) -> Controller {
+    let mut config = config(store, Some(bundled), None);
+    config.agentd_socket = agentd.map(Path::to_owned);
+    Controller::start(config).unwrap()
 }
 
 async fn machine(ui: &mut UiDriver, id: &str) -> serde_json::Value {
@@ -46,55 +52,48 @@ async fn machine(ui: &mut UiDriver, id: &str) -> serde_json::Value {
     ui.mirror.machine(id)
 }
 
+/// An automatic upgrade waits while a host call is in flight on the machine, then upgrades the
+/// idle machine; the call was answered once and the router works on the new daemon.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "sessions moved to controlroom-agentd; the controller reaches them there after R1c"]
-async fn auto_upgrade_waits_for_the_run_and_keeps_the_session() {
+async fn auto_upgrade_waits_for_host_calls() {
     let dir = tempfile::tempdir().unwrap();
     let store = dir.path().join("controller.sqlite");
-    let mut host = RemoteHost::start().await;
-    host.agent(
-        "fake",
-        json!({"replies": [gated("working ", "hold", "done")]}),
-    );
+    let agentd = FakeAgentd::start().await;
+    let host = RemoteHost::start().await;
+    let fake = FakeHost::start(&host);
 
-    // An older controller installs the older daemon and starts a run that waits at a gate.
+    // An older controller installs the older daemon.
     let old_bundle = old_daemon(&host);
-    let old = start(&store, old_bundle.path());
+    let old = start(&store, old_bundle.path(), Some(agentd.socket()));
     let mut old_ui = ui(&old, "laptop").await;
     let id = add_machine(&mut old_ui, &host, "devbox").await;
     assert_eq!(host.current_daemon().as_deref(), Some("versions/0.0.0"));
-    assert_eq!(machine(&mut old_ui, &id).await["update_available"], false);
-    let session = create_session(
-        &mut old_ui,
-        &id,
-        &host,
-        json!({"prompt": {"content": text("work")}}),
-    )
-    .await;
-    host.wait_gate("hold").await;
     drop(old_ui);
     old.shutdown().await;
 
-    // A newer controller connects to the busy machine and doesn't upgrade it yet.
+    // A host call waits on the machine when a newer controller connects to it: no upgrade yet.
+    let machine_id = id.parse().unwrap();
+    agentd.request(bash(machine_id, "c1", "hold"));
     let bundled = bundled_daemons();
-    let new = start(&store, bundled.path());
+    let new = start(&store, bundled.path(), Some(agentd.socket()));
     let mut ui = ui(&new, "laptop").await;
-    ui.wait("connected to the old daemon, still working", |m| {
+    ui.wait("connected to the old daemon", |m| {
         let machine = m.machine(&id);
-        machine["connectivity"]["state"] == "connected"
-            && machine["update_available"] == true
-            && m.session(&session)["state"] == "working"
+        machine["connectivity"]["state"] == "connected" && machine["update_available"] == true
     })
     .await;
+    fake.wait_started("c1").await;
     // Several quiet periods pass without an upgrade.
     tokio::time::sleep(Duration::from_millis(1000)).await;
     assert_eq!(host.current_daemon().as_deref(), Some("versions/0.0.0"));
     assert_eq!(ui.mirror.connected_count.get(&id), Some(&1), "no reconnect");
-    let supervisors = host.processes(" supervise ");
-    assert_eq!(supervisors.len(), 1, "one supervisor runs the agent");
 
-    // The run ends; the idle machine is upgraded.
-    host.release("hold");
+    // The call is answered; the idle machine is upgraded.
+    fake.release("c1");
+    let RpcOutcome::Result(answer) = agentd.response(&HostOpId::new("c1")).await else {
+        panic!("c1 failed");
+    };
+    assert_eq!(answer["ran"], 1);
     ui.wait("upgraded", |m| {
         let machine = m.machine(&id);
         machine["connectivity"]["state"] == "connected"
@@ -106,29 +105,33 @@ async fn auto_upgrade_waits_for_the_run_and_keeps_the_session() {
         host.current_daemon().as_deref(),
         Some(format!("versions/{DAEMON_VERSION}").as_str())
     );
-    assert!(
-        host.processes("versions/old-real/controlroomd serve")
-            .is_empty(),
-        "the old daemon stopped"
-    );
-    assert_eq!(
-        host.processes(" supervise "),
-        supervisors,
-        "the agent kept running"
-    );
+    assert_eq!(fake.received("tool.run").len(), 1, "c1 was sent once");
 
-    // The session lives on under the new daemon.
-    ui.ok(
-        "session.prompt",
-        json!({"machine_id": id, "op_id": op(), "id": session, "content": text("again")}),
-    )
-    .await;
-    ui.wait("the next run finishes", |m| {
-        let s = m.session(&session);
-        s["state"] == "idle" && s["queue"]["len"] == 0 && s["last_outcome"] == "completed"
-    })
-    .await;
+    // Host calls go through the new daemon.
+    agentd.request(bash(machine_id, "c2", "true"));
+    assert!(matches!(
+        agentd.response(&HostOpId::new("c2")).await,
+        RpcOutcome::Result(_)
+    ));
     new.shutdown().await;
+}
+
+/// A `bash` host call.
+fn bash(machine: MachineId, call: &str, command: &str) -> HostOpRequest {
+    HostOpRequest {
+        id: HostOpId::new(call),
+        machine_id: machine,
+        session_id: None,
+        request: HostRequest::ToolRun(ToolRunParams {
+            call_id: CallId::new(call),
+            workspace_id: WorkspaceId::generate(),
+            op: HostOp::Bash {
+                shell: "devbox".into(),
+                command: command.into(),
+                timeout_s: None,
+            },
+        }),
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -137,7 +140,7 @@ async fn a_bad_upgrade_rolls_back_and_keeps_the_machine_usable() {
     let store = dir.path().join("controller.sqlite");
     let host = RemoteHost::start().await;
     let bundled = bundled_daemons();
-    let first = start(&store, bundled.path());
+    let first = start(&store, bundled.path(), None);
     let mut first_ui = ui(&first, "laptop").await;
     let id = add_machine(&mut first_ui, &host, "devbox").await;
     drop(first_ui);
@@ -149,7 +152,7 @@ async fn a_bad_upgrade_rolls_back_and_keeps_the_machine_usable() {
          echo broken >&2; exit 1\n",
         "99.0.0",
     );
-    let second = start(&store, bad.path());
+    let second = start(&store, bad.path(), None);
     let mut ui = ui(&second, "laptop").await;
     ui.wait("the failed upgrade is reported on the old daemon", |m| {
         let machine = m.machine(&id);
