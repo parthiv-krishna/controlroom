@@ -1,5 +1,6 @@
 <script lang="ts">
-  // A machine's doctor report: persistence, boot start, nono and Landlock, agents.
+  // A machine's doctor report: persistence, boot start, nono and Landlock (and agents, for a report
+  // that lists them; host daemons run none: pi runs on the server).
   import type { CheckStatus, DoctorCheck, DoctorReport } from '../protocol';
 
   let { doctor }: { doctor: DoctorReport } = $props();
@@ -20,7 +21,7 @@
   {#each doctor.agents as a (a.agent)}
     <div class="r {a.status === 'ok' ? 'ok' : 'info'}" title={a.detail}><span>{a.status === 'ok' ? '✓' : '–'}</span><b>{a.agent}</b><span class="muted">{a.status === 'ok' ? (a.path ?? a.command) : a.status === 'missing' ? 'not installed' : "couldn't check"}</span></div>
   {/each}
-  {#if !doctor.agents.some((a) => a.status === 'ok')}<div class="note" role="note">No agents available: install {doctor.agents.map((a) => a.command).join(' or ') || 'pi'}</div>{/if}
+  {#if doctor.agents.length && !doctor.agents.some((a) => a.status === 'ok')}<div class="note" role="note">No agents available: install {doctor.agents.map((a) => a.command).join(' or ')}</div>{/if}
 </div>
 
 <style>
