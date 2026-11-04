@@ -294,6 +294,10 @@ async fn a_create_waits_for_the_agent_daemon_to_see_what_the_ui_saw() {
     let id: MachineId = devbox.parse().unwrap();
 
     relay.down();
+    next.wait("devbox is down in the UI", |m| {
+        m.machine(&devbox)["connectivity"]["state"] != "connected"
+    })
+    .await;
     agentd
         .wait_machines("devbox is reported down", |m| {
             m.iter()
