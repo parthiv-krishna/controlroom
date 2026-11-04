@@ -20,6 +20,7 @@ use controlroom_protocol::agent::{AgentState, SessionInfo};
 use controlroom_protocol::agentd::{
     DaemonSettings, HostOpRequest, SessionSummary, SessionsChange, SessionsEvent,
 };
+use controlroom_protocol::host::HostRequest;
 use controlroom_protocol::ids::{CallId, DaemonId, HostOpId, MachineId, Rev, SessionId};
 use controlroom_protocol::session::{AttentionRollup, SessionDetail};
 use tokio::sync::{broadcast, watch};
@@ -70,6 +71,9 @@ pub(crate) enum HostEffect {
     Withdraw(HostOpId),
     /// Fail an open call's waiters.
     Expire(watch::Sender<Option<RpcError>>, RpcError),
+    /// Fail the pending `workspace.open`s of a machine that dropped (nobody would answer them
+    /// before it is back).
+    FailOpens(MachineId, RpcError),
 }
 
 /// What a transaction does once it has committed.
@@ -453,6 +457,13 @@ impl Core {
                 HostEffect::Expire(expire, error) => {
                     expire.send_replace(Some(error));
                 }
+                HostEffect::FailOpens(machine, error) => self.bridge.fail(
+                    |r| {
+                        r.machine_id == machine
+                            && matches!(r.request, HostRequest::WorkspaceOpen(_))
+                    },
+                    &error,
+                ),
             }
         }
         for (id, update) in fx.updates {

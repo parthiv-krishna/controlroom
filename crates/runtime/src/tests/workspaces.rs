@@ -109,6 +109,46 @@ async fn creates_need_connected_machines_and_existing_directories() {
         .await;
 }
 
+/// The machine looked connected when the create started, but its link was already gone: when
+/// the controller reports the drop, the create fails with `machine_unavailable` (it used to
+/// wait for the workspace to open until the controller's call timed out) and the workspace that
+/// did open is closed again.
+#[tokio::test]
+async fn a_create_fails_when_a_machine_drops_while_its_workspace_opens() {
+    let h = Harness::new(FakeScript::default()).await;
+    let buildbox = h.machines.add("buildbox");
+    h.machines.stall(buildbox);
+    let create = tokio::spawn({
+        let rt = h.rt.clone();
+        let params = h.create_params(&[(h.devbox, "~/a"), (buildbox, "~/b")]);
+        async move { rt.create(params).await }
+    });
+    h.machines
+        .wait("the open waits for buildbox", move |m| {
+            m.waiting(buildbox).contains(&"workspace.open".to_owned())
+        })
+        .await;
+    h.machines.drop_link(buildbox);
+    let err = create.await.unwrap().unwrap_err();
+    match err.data {
+        Some(ErrorData::MachineUnavailable { machine_id, .. }) => assert_eq!(machine_id, buildbox),
+        other => panic!("{other:?}"),
+    }
+    h.machines
+        .wait("the open is withdrawn", move |m| {
+            !m.waiting(buildbox).contains(&"workspace.open".to_owned())
+        })
+        .await;
+    let devbox = h.devbox;
+    h.machines
+        .wait("the close on devbox", move |m| {
+            m.methods(devbox).contains(&"workspace.close".to_owned())
+        })
+        .await;
+    let feed = h.rt.subscribe_sessions(None).unwrap();
+    assert!(feed.snapshot.unwrap().sessions.is_empty());
+}
+
 #[tokio::test]
 async fn workspaces_are_added_and_removed_with_a_notice() {
     let mut h = Harness::new(FakeScript::default()).await;

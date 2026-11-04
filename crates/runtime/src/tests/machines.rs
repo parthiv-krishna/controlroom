@@ -63,6 +63,8 @@ struct Machine {
     id: MachineId,
     name: String,
     connected: bool,
+    /// The link is dying: the runtime still sees it connected, but nothing gets through.
+    stalled: bool,
     since: UnixMillis,
     epoch: Epoch,
     grace_s: u32,
@@ -166,6 +168,7 @@ impl FakeMachines {
                 id,
                 name: name.into(),
                 connected: true,
+                stalled: false,
                 since: now,
                 epoch: Epoch::generate(),
                 grace_s: 600,
@@ -262,7 +265,7 @@ impl FakeMachines {
             let generations: BTreeMap<MachineId, u64> = state
                 .machines
                 .values()
-                .filter(|m| m.connected)
+                .filter(|m| m.connected && !m.stalled)
                 .map(|m| (m.id, m.generation))
                 .collect();
             for (request, running) in state.pending.values_mut() {
@@ -796,6 +799,23 @@ impl FakeMachines {
         self.bump();
     }
 
+    /// The link stops carrying anything before the controller notices: requests wait, and the
+    /// runtime still sees the machine connected until [`Self::drop_link`].
+    pub(crate) fn stall(&self, machine: MachineId) {
+        self.with(machine, |m| m.stalled = true);
+        self.bump();
+    }
+
+    /// The methods of the requests waiting for the machine.
+    pub(crate) fn waiting(&self, machine: MachineId) -> Vec<String> {
+        self.lock()
+            .pending
+            .values()
+            .filter(|(r, _)| r.machine_id == machine)
+            .map(|(r, _)| r.request.method().to_owned())
+            .collect()
+    }
+
     /// The link to the machine drops (the controller marks it unreachable).
     pub(crate) fn drop_link(&self, machine: MachineId) {
         let now = self.clock.now();
@@ -811,6 +831,7 @@ impl FakeMachines {
         let now = self.clock.now();
         self.with(machine, |m| {
             m.connected = true;
+            m.stalled = false;
             m.since = now;
             m.generation += 1;
         });

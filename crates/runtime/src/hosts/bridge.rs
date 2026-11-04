@@ -108,6 +108,29 @@ impl Bridge {
         }
     }
 
+    /// Fails the pending requests that match `which` with `error` (their waiters get it) and
+    /// withdraws them from the controller.
+    pub(crate) fn fail(&self, which: impl Fn(&HostOpRequest) -> bool, error: &RpcError) {
+        let failed: Vec<(HostOpId, Pending)> = {
+            let mut state = self.lock();
+            let ids: Vec<HostOpId> = state
+                .pending
+                .iter()
+                .filter(|(_, p)| which(&p.request))
+                .map(|(id, _)| id.clone())
+                .collect();
+            ids.into_iter()
+                .filter_map(|id| state.pending.remove(&id).map(|p| (id, p)))
+                .collect()
+        };
+        for (id, pending) in failed {
+            let _ = self.events.send(BridgeEvent::Withdraw(id));
+            for waiter in pending.waiters {
+                let _ = waiter.send(Err(error.clone()));
+            }
+        }
+    }
+
     /// The controller's answer; `false` when nothing waited for it.
     pub(crate) fn respond(&self, id: &HostOpId, outcome: RpcOutcome<Value>) -> bool {
         let Some(pending) = self.lock().pending.remove(id) else {

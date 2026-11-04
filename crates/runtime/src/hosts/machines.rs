@@ -10,13 +10,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use controlroom_protocol::RpcError;
 use controlroom_protocol::agentd::HostMachine;
 use controlroom_protocol::ids::{Epoch, MachineId, SessionId, UnixMillis};
 use controlroom_protocol::session::Availability;
 use controlroom_protocol::ui::Connectivity;
+use controlroom_protocol::{ErrorData, RpcError};
 
-use crate::core::{Core, Task};
+use crate::core::{Core, HostEffect, Task};
 use crate::errors::internal;
 
 /// The grace period of a machine the controller hasn't reported.
@@ -49,6 +49,18 @@ impl Machines {
         self.list
             .get(machine)
             .is_some_and(|m| m.availability.is_connected())
+    }
+
+    /// `machine_unavailable` unless host requests to the machine go through now.
+    pub(crate) fn require_connected(&self, machine: &MachineId) -> Result<(), RpcError> {
+        if self.connected(machine) {
+            return Ok(());
+        }
+        Err(unavailable(
+            *machine,
+            self.availability(machine).connectivity,
+            &self.name(machine),
+        ))
     }
 
     /// The display name the agent uses (the id until the controller has named it).
@@ -150,19 +162,26 @@ impl Core {
             }
             if change.dropped {
                 self.link_dropped(*machine)?;
+                self.fail_opens(
+                    *machine,
+                    after.availability.connectivity.clone(),
+                    &after.name,
+                );
             }
             if before.list.get(machine) != Some(after) {
                 changed.push(*machine);
             }
         }
         // Machines the controller no longer has are unreachable now.
-        changed.extend(
-            before
-                .list
-                .keys()
-                .filter(|m| !list.contains_key(m))
-                .copied(),
-        );
+        let removed: Vec<&HostMachine> = before
+            .list
+            .values()
+            .filter(|m| !list.contains_key(&m.machine_id))
+            .collect();
+        for machine in &removed {
+            self.fail_opens(machine.machine_id, Connectivity::Unreachable, &machine.name);
+        }
+        changed.extend(removed.iter().map(|m| m.machine_id));
         let stored: Vec<&HostMachine> = list.values().collect();
         self.store.kv_set(MACHINES_KEY, &stored).map_err(internal)?;
         self.machines = Arc::new(Machines {
@@ -189,6 +208,14 @@ impl Core {
         Ok(())
     }
 
+    /// `machine` is no longer connected: workspaces being opened there (a create or an add
+    /// that started while it looked connected) fail with `machine_unavailable` instead of
+    /// waiting for it.
+    fn fail_opens(&mut self, machine: MachineId, connectivity: Connectivity, name: &str) {
+        let error = unavailable(machine, connectivity, name);
+        self.effect(HostEffect::FailOpens(machine, error));
+    }
+
     /// The link to `machine` dropped: every call open on it counts the drop.
     fn link_dropped(&mut self, machine: MachineId) -> Result<(), RpcError> {
         let ids: Vec<SessionId> = self
@@ -206,6 +233,17 @@ impl Core {
         }
         Ok(())
     }
+}
+
+/// The `machine_unavailable` error.
+fn unavailable(machine: MachineId, connectivity: Connectivity, name: &str) -> RpcError {
+    RpcError::new(
+        ErrorData::MachineUnavailable {
+            machine_id: machine,
+            connectivity: Box::new(connectivity),
+        },
+        format!("{name} is not connected"),
+    )
 }
 
 #[cfg(test)]

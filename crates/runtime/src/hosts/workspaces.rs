@@ -191,16 +191,7 @@ fn new_workspaces(
 ) -> Result<Vec<WorkspaceRecord>, RpcError> {
     let mut records: Vec<WorkspaceRecord> = Vec::new();
     for spec in specs {
-        if !machines.connected(&spec.machine_id) {
-            let connectivity = machines.availability(&spec.machine_id).connectivity;
-            return Err(RpcError::new(
-                ErrorData::MachineUnavailable {
-                    machine_id: spec.machine_id,
-                    connectivity: Box::new(connectivity),
-                },
-                format!("{} is not connected", machines.name(&spec.machine_id)),
-            ));
-        }
+        machines.require_connected(&spec.machine_id)?;
         if existing
             .iter()
             .any(|w| w.machine_id == spec.machine_id && w.path == spec.path)
@@ -300,7 +291,9 @@ async fn open_all(
     Ok(opened)
 }
 
-/// `workspace.open` on the workspace's host, bounded by [`OPEN_TIMEOUT`].
+/// `workspace.open` on the workspace's host, bounded by [`OPEN_TIMEOUT`]; fails with
+/// `machine_unavailable` as soon as the machine is no longer connected (see
+/// `Core::fail_opens`).
 pub(crate) async fn open_workspace(
     inner: &Arc<Inner>,
     id: SessionId,
@@ -319,6 +312,11 @@ pub(crate) async fn open_workspace(
             sandbox,
         }),
     });
+    // A drop reported before the request was queued didn't fail it: check again.
+    if let Err(e) = inner.with_core(|core| core.machines.require_connected(&workspace.machine_id)) {
+        inner.bridge.withdraw(&key);
+        return Err(e);
+    }
     match tokio::time::timeout(OPEN_TIMEOUT, response).await {
         Ok(Ok(outcome)) => parse(outcome?),
         Ok(Err(_)) => Err(RpcError::new(ErrorData::Busy, "the open was withdrawn")),
