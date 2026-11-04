@@ -75,6 +75,7 @@ macro_rules! rpc_methods {
             }
 
             /// Method table for TypeScript generation.
+            #[allow(dead_code, reason = "APIs without a TypeScript set (host, agent daemon) don't export")]
             pub(crate) fn specs() -> Vec<$crate::typescript::MethodSpec> {
                 vec![$(
                     $crate::typescript::MethodSpec::request::<$Marker>(&[$($doc),*]),
@@ -147,6 +148,7 @@ macro_rules! rpc_notifications {
             }
 
             /// Notification table for TypeScript generation.
+            #[allow(dead_code, reason = "APIs without a TypeScript set (host, agent daemon) don't export")]
             pub(crate) fn specs() -> Vec<$crate::typescript::MethodSpec> {
                 vec![$(
                     $crate::typescript::MethodSpec::notification::<$Marker>(&[$($doc),*]),

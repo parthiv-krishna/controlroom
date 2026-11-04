@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{JobId, RemotePath, TodoId, UnixMillis};
+use crate::ids::{JobId, MachineId, RemotePath, TodoId, UnixMillis, WorkspaceId};
 use crate::session::Author;
 
 /// The status of a todo entry.
@@ -90,6 +90,8 @@ pub enum JobStatus {
     TimedOut,
     /// Killed by the agent or the user.
     Killed,
+    /// Its supervisor died with its host (a reboot) before it exited: the outcome is unknown.
+    Lost,
     /// A status this build doesn't know.
     #[serde(other)]
     Unknown,
@@ -117,8 +119,16 @@ pub struct Job {
     pub name: String,
     /// The command line.
     pub command: String,
-    /// The working directory.
+    /// The working directory (on the job's machine).
     pub cwd: RemotePath,
+    /// The machine it runs on; `null` from a host daemon (which doesn't know its machine id)
+    /// and from the old per-machine daemon. The agent daemon always fills it.
+    #[serde(default)]
+    pub machine_id: Option<MachineId>,
+    /// The workspace it runs in (under that workspace's sandbox); `null` from the old
+    /// per-machine daemon.
+    #[serde(default)]
+    pub workspace_id: Option<WorkspaceId>,
     /// Its status.
     pub status: JobStatus,
     /// The exit code, once exited normally.
@@ -131,7 +141,8 @@ pub struct Job {
     pub ended_at: Option<UnixMillis>,
     /// Its timeout, if any.
     pub timeout_s: Option<u32>,
-    /// The plain-text log: `<cwd>/.controlroom/jobs/<id>.log`.
+    /// The plain-text log, on the job's machine: `<workspace root>/.controlroom/jobs/<id>.log`
+    /// (the old daemon: `<session cwd>/.controlroom/jobs/<id>.log`).
     pub log_path: RemotePath,
     /// Lines in the log so far.
     pub lines: u64,

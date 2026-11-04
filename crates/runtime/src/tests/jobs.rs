@@ -20,6 +20,7 @@ pub(super) fn run(command: &str) -> JobRunParams {
     JobRunParams {
         call_id: OpId::generate().to_string(),
         command: command.into(),
+        machine: None,
         cwd: None,
         timeout_s: None,
         name: None,

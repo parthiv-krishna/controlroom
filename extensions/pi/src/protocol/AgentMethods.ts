@@ -5,10 +5,15 @@ import type { AgentHelloResult } from "./AgentHelloResult";
 import type { AgentJobFollowParams } from "./AgentJobFollowParams";
 import type { AgentJobParams } from "./AgentJobParams";
 import type { AgentJobs } from "./AgentJobs";
+import type { AgentShell } from "./AgentShell";
+import type { AgentShells } from "./AgentShells";
 import type { AgentState } from "./AgentState";
 import type { AgentTodoAddParams } from "./AgentTodoAddParams";
 import type { AgentTodoUpdateParams } from "./AgentTodoUpdateParams";
 import type { AgentTodos } from "./AgentTodos";
+import type { HostCallParams } from "./HostCallParams";
+import type { HostCallResult } from "./HostCallResult";
+import type { HostCancelParams } from "./HostCancelParams";
 import type { Job } from "./Job";
 import type { JobRunParams } from "./JobRunParams";
 import type { JobRunResult } from "./JobRunResult";
@@ -19,6 +24,11 @@ import type { QuestionAskParams } from "./QuestionAskParams";
 import type { QuestionAskResult } from "./QuestionAskResult";
 import type { QuestionWithdrawParams } from "./QuestionWithdrawParams";
 import type { QuestionWithdrawResult } from "./QuestionWithdrawResult";
+import type { SessionInfo } from "./SessionInfo";
+import type { ShellEndParams } from "./ShellEndParams";
+import type { ShellNewParams } from "./ShellNewParams";
+import type { ToolOutputParams } from "./ToolOutputParams";
+import type { ToolWaitingInputParams } from "./ToolWaitingInputParams";
 
 /**
  * Every Agent API request method by name, with its params and result types.
@@ -72,6 +82,30 @@ export type AgentMethods = {
    * Kill a job; no exit wake follows (`job kill`).
    */
   "job.kill": { params: AgentJobParams, result: Job },
+  /**
+   * The session's workspaces, shells, instruction files and skills (`remote_tools`).
+   */
+  "session.info": { params: NoParams, result: SessionInfo },
+  /**
+   * Run one host operation of a tool on a workspace's machine (`remote_tools`).
+   */
+  "host.call": { params: HostCallParams, result: HostCallResult },
+  /**
+   * Interrupt a running host call (`remote_tools`).
+   */
+  "host.cancel": { params: HostCancelParams, result: Ack },
+  /**
+   * Open a named shell in a workspace (`shell_new`, `remote_tools`).
+   */
+  "shell.open": { params: ShellNewParams, result: AgentShell },
+  /**
+   * The session's shells (`shell_list`, `remote_tools`).
+   */
+  "shell.list": { params: NoParams, result: AgentShells },
+  /**
+   * Close a named shell (`remote_tools`).
+   */
+  "shell.close": { params: ShellEndParams, result: Ack },
 };
 
 /**
@@ -88,6 +122,20 @@ export type AgentNotifications = {
    * on every change.
    */
   "state": AgentState,
+  /**
+   * Where the session's tools run, sent after `hello` and on every change
+   * (`remote_tools`).
+   */
+  "session.info": SessionInfo,
+  /**
+   * New output of a running `bash` host call.
+   */
+  "host.output": ToolOutputParams,
+  /**
+   * A `bash` host call started or stopped waiting for terminal input (the user types it
+   * in the terminal; the agent can't).
+   */
+  "host.waiting_input": ToolWaitingInputParams,
 };
 
 /**

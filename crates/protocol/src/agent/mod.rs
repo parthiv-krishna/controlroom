@@ -1,4 +1,5 @@
-//! The agent API: `@controlroom/pi` (the extension inside the agent) ↔ `controlroomd`.
+//! The agent API: `@controlroom/pi` (the extension inside the agent) ↔ the agent daemon
+//! (`controlroom-agentd` on the server; the old per-machine `controlroomd` until it is removed).
 //!
 //! Newline-delimited JSON-RPC 2.0 over a **per-session unix socket**, `<state>/run/<id>.agent.sock`.
 //! The daemon serves one socket per session, and the session's sandbox profile grants only that
@@ -15,6 +16,11 @@
 //!    the latest one; it never needs to poll.
 //! 3. Mutating calls carry the pi tool call's id as `call_id`, an idempotency key: a call
 //!    retried after a reconnect returns the original result instead of applying twice.
+//! 4. With the `remote_tools` capability (see [`remote`](self::SessionInfo)) the daemon also
+//!    sends a `session.info` notification after `hello` and on every change of the session's
+//!    workspaces or shells, and the extension serves pi's file and shell tools through
+//!    `host.call` and `shell.*`. While a `bash` call runs, `host.output` and
+//!    `host.waiting_input` notifications stream its progress.
 //!
 //! Tools only cover what the agent initiates (spec §9). Answers to questions, user edits of the
 //! todo list and auto-continue reach the agent as injected prompts through the agent's own RPC,
@@ -27,12 +33,15 @@
 //! the current state again.
 
 mod jobs;
+mod remote;
 mod types;
 
 pub use jobs::*;
+pub use remote::*;
 pub use types::*;
 
-use crate::jsonrpc::Ack;
+use crate::host::{ToolOutputParams, ToolWaitingInputParams};
+use crate::jsonrpc::{Ack, NoParams};
 
 /// Marker types for every agent API method; see [`crate::jsonrpc::Method`].
 pub mod methods {
@@ -49,7 +58,7 @@ pub mod methods {
         /// Withdraw an open question.
         QuestionWithdraw = "question.withdraw" (QuestionWithdrawParams) -> QuestionWithdrawResult;
         /// The todo list.
-        TodoList = "todo.list" (crate::jsonrpc::NoParams) -> AgentTodos;
+        TodoList = "todo.list" (NoParams) -> AgentTodos;
         /// Add todo entries.
         TodoAdd = "todo.add" (AgentTodoAddParams) -> AgentTodos;
         /// Change a todo entry (complete, block, rename, ...).
@@ -66,6 +75,18 @@ pub mod methods {
         JobStatus = "job.status" (JobStatusParams) -> AgentJobs;
         /// Kill a job; no exit wake follows (`job kill`).
         JobKill = "job.kill" (AgentJobParams) -> crate::session::Job;
+        /// The session's workspaces, shells, instruction files and skills (`remote_tools`).
+        SessionInfoMethod = "session.info" (NoParams) -> SessionInfo;
+        /// Run one host operation of a tool on a workspace's machine (`remote_tools`).
+        HostCall = "host.call" (HostCallParams) -> HostCallResult;
+        /// Interrupt a running host call (`remote_tools`).
+        HostCancel = "host.cancel" (HostCancelParams) -> Ack;
+        /// Open a named shell in a workspace (`shell_new`, `remote_tools`).
+        ShellOpen = "shell.open" (ShellNewParams) -> AgentShell;
+        /// The session's shells (`shell_list`, `remote_tools`).
+        ShellList = "shell.list" (NoParams) -> AgentShells;
+        /// Close a named shell (`remote_tools`).
+        ShellClose = "shell.close" (ShellEndParams) -> Ack;
     }
 }
 
@@ -80,6 +101,14 @@ pub mod notifications {
         /// The session's todo list, open questions and auto-continue, sent after `hello` and
         /// on every change.
         State = "state" (AgentState);
+        /// Where the session's tools run, sent after `hello` and on every change
+        /// (`remote_tools`).
+        SessionInfoChanged = "session.info" (SessionInfo);
+        /// New output of a running `bash` host call.
+        HostOutput = "host.output" (ToolOutputParams);
+        /// A `bash` host call started or stopped waiting for terminal input (the user types it
+        /// in the terminal; the agent can't).
+        HostWaitingInput = "host.waiting_input" (ToolWaitingInputParams);
     }
 }
 

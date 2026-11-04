@@ -3,4 +3,4 @@
 /**
  * The status of a background job.
  */
-export type JobStatus = "running" | "succeeded" | "failed" | "timed_out" | "killed" | "unknown";
+export type JobStatus = "running" | "succeeded" | "failed" | "timed_out" | "killed" | "lost" | "unknown";

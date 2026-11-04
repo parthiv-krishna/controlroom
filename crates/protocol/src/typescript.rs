@@ -1,12 +1,17 @@
-//! TypeScript generation, in two sets (both read-only for their users):
+//! TypeScript generation, in three sets (all read-only for their users):
 //!
 //! - [`generate`]: the daemon and UI APIs, for `web/src/lib/protocol/`;
+//! - [`generate_next`]: the next UI API (global sessions), for `web/src/lib/protocol/next/`. A
+//!   separate set because its types reuse the old names with new shapes (`SessionSummary`,
+//!   `Project`, `Task`, ...); it replaces the first set once the UI has switched;
 //! - [`generate_agent`]: the agent API, for `extensions/pi/src/protocol/`.
+//!
+//! The host and agent daemon APIs have no TypeScript consumer, so no set.
 //!
 //! Output of each set, all deterministic:
 //! - one file per exported type, produced by ts-rs (`SessionSummary.ts`, ...);
-//! - `DaemonMethods.ts` and `UiMethods.ts` (`AgentMethods.ts`): maps from method name to `{params, result}` and from
-//!   notification name to params, for typed `call` / `on` helpers;
+//! - `DaemonMethods.ts` and `UiMethods.ts` (`AgentMethods.ts`): maps from method name to
+//!   `{params, result}` and from notification name to params, for typed `call` / `on` helpers;
 //! - `versions.ts`: the protocol version constants (the only runtime values);
 //! - `index.ts`: re-exports everything.
 //!
@@ -25,7 +30,7 @@ use crate::agent::{AgentNotification, AgentRequest};
 use crate::daemon::{DaemonNotification, DaemonRequest};
 use crate::error::RpcError;
 use crate::jsonrpc::{Method, NotificationMethod, RpcNotification, RpcRequest, RpcResponse};
-use crate::ui::{UiNotification, UiRequest};
+use crate::ui::{UiNotification, UiRequest, next};
 use crate::version::{
     AGENT_PROTOCOL_VERSION, DAEMON_PROTOCOL_VERSION, ProtocolVersion, UI_PROTOCOL_VERSION,
 };
@@ -36,6 +41,8 @@ pub const REGENERATE_COMMAND: &str =
 
 /// Where each set is checked in, relative to the repository root.
 pub const WEB_DIR: &str = "web/src/lib/protocol";
+/// See [`WEB_DIR`]. Inside it: the first set's files are only those directly in [`WEB_DIR`].
+pub const WEB_NEXT_DIR: &str = "web/src/lib/protocol/next";
 /// See [`WEB_DIR`].
 pub const AGENT_DIR: &str = "extensions/pi/src/protocol";
 
@@ -376,6 +383,22 @@ pub fn generate() -> Result<BTreeMap<PathBuf, String>, TsExportError> {
                 UI_PROTOCOL_VERSION,
             ),
         ],
+    )
+}
+
+/// Generates the next UI API set ([`WEB_NEXT_DIR`]), keyed by path relative to it.
+pub fn generate_next() -> Result<BTreeMap<PathBuf, String>, TsExportError> {
+    generate_set(
+        &[Api {
+            name: "Ui",
+            methods: next::UiRequest::specs(),
+            notifications: next::UiNotification::specs(),
+        }],
+        &[(
+            "UI_PROTOCOL_VERSION",
+            "The UI API version, sent in the UI `hello`.",
+            UI_PROTOCOL_VERSION,
+        )],
     )
 }
 

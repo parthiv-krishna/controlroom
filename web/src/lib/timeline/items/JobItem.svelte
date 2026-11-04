@@ -10,7 +10,7 @@
   const app = useApp();
   const ctx = useTimeline();
   const j = $derived(item.job);
-  const STATUS = { running: 'running', succeeded: 'finished', failed: 'failed', timed_out: 'timed out', killed: 'killed', unknown: 'ended' } as const;
+  const STATUS = { running: 'running', succeeded: 'finished', failed: 'failed', timed_out: 'timed out', killed: 'killed', lost: 'lost', unknown: 'ended' } as const;
 </script>
 
 <div class="job j-{j.status}">

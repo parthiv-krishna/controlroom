@@ -47,7 +47,7 @@
   });
   const toggle = (id: string) => (app.view.jobOpen[key] = openId === id ? null : id);
 
-  const STATUS: Record<Job['status'], string> = { running: 'running', succeeded: 'succeeded', failed: 'failed', timed_out: 'timed out', killed: 'killed', unknown: '?' };
+  const STATUS: Record<Job['status'], string> = { running: 'running', succeeded: 'succeeded', failed: 'failed', timed_out: 'timed out', killed: 'killed', lost: 'lost', unknown: '?' };
   const kind = (j: Job) => (j.status === 'running' ? 'working' : j.status === 'succeeded' ? 'complete' : j.status === 'timed_out' ? 'idle' : 'stopped');
   const took = (j: Job) => duration((j.ended_at ?? now) - j.started_at);
   const wakeIn = (j: Job) => (j.follow?.next_wake_at != null ? Math.max(0, Math.ceil((j.follow.next_wake_at - now) / 1000)) : null);

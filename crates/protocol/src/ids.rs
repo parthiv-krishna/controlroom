@@ -1,4 +1,4 @@
-//! Identifier, cursor, timestamp and remote-path newtypes shared by both APIs.
+//! Identifier, cursor, timestamp and remote-path newtypes shared by every API.
 //!
 //! All of these serialize as plain JSON strings or numbers, so the wire stays simple and the
 //! generated TypeScript gets one named alias per concept (`export type SessionId = string;`).
@@ -7,8 +7,9 @@
 //! - **ULID ids** are assigned by a store (the daemon's or the controller's) and validated on
 //!   decode: a malformed one is a decode error.
 //! - **Opaque string ids** are chosen by someone who can't or shouldn't mint ULIDs: clients
-//!   ([`OpId`], [`DeviceId`]) or the daemon's deterministic transcript fold ([`ItemId`],
-//!   [`RequestId`], which must come out the same on every re-fold).
+//!   ([`OpId`], [`DeviceId`]), the daemon's deterministic transcript fold ([`ItemId`],
+//!   [`RequestId`], which must come out the same on every re-fold), or the agent ([`CallId`],
+//!   pi's tool call ids).
 
 use std::fmt;
 use std::str::FromStr;
@@ -102,10 +103,21 @@ ulid_id! {
     SessionId
 }
 ulid_id! {
-    /// One daemon installation (one Unix user on one host), generated on its first start and
-    /// reported by the daemon `hello`. Daemon-side references to sessions on *other* machines
-    /// use it (see [`crate::session::PeerRef`]); the controller maps it to its [`MachineId`].
+    /// One daemon installation (one Unix user on one host, or the server's agent daemon),
+    /// generated on its first start and reported by `hello`. Daemon-side references to sessions
+    /// on *other* machines use it (see [`crate::session::PeerRef`]); the controller maps a host
+    /// daemon's id to its [`MachineId`].
     DaemonId
+}
+ulid_id! {
+    /// One workspace of a session (a `machine:path`), assigned by the agent daemon when the
+    /// session is created or the workspace added. The host daemon keys the workspace's sandbox
+    /// profile, shells and jobs by it.
+    WorkspaceId
+}
+ulid_id! {
+    /// A sandbox approval raised by a host daemon's webhook (`approval.request`).
+    ApprovalId
 }
 ulid_id! {
     /// One queued prompt in a session's queue.
@@ -172,8 +184,10 @@ ulid_id! {
     ScheduleId
 }
 ulid_id! {
-    /// The lifetime of one controller state feed. A new epoch invalidates every [`Rev`] of the
-    /// previous one (see [`crate::ui::StateCursor`]).
+    /// The lifetime of one process: a controller state feed (a new epoch invalidates every
+    /// [`Rev`] of the previous one, see [`crate::ui::StateCursor`]), or a host daemon (a new
+    /// epoch in the host `hello` means it restarted, so calls without a journaled result may
+    /// be `lost`).
     Epoch
 }
 
@@ -214,6 +228,31 @@ string_id! {
     /// deterministically from the transcript; never the agent's raw JSON-RPC id.
     RequestId
 }
+string_id! {
+    /// A tool call on a host: pi's tool call id, or `<id>/<n>` for the steps of one tool (e.g.
+    /// an edit's read and write). The idempotency key of the whole path extension → agent
+    /// daemon → controller → host: a call resent with the same id never runs twice.
+    CallId
+}
+string_id! {
+    /// A shell on a host daemon: `<session id>/<shell name>` (see [`ShellId::of`]). Shell names
+    /// are unique within a session, so the id is unique on the host. Terminals attach with it
+    /// (`controlroomd pty attach <shell id>`).
+    ShellId
+}
+
+impl ShellId {
+    /// The id of `session`'s shell called `name`.
+    pub fn of(session: SessionId, name: &str) -> Self {
+        Self(format!("{session}/{name}"))
+    }
+}
+
+string_id! {
+    /// A host request the agent daemon asks the controller to forward (`hostops.request`).
+    /// Unique per agent daemon; for `tool.run` it is the call's [`CallId`].
+    HostOpId
+}
 
 // ---------------------------------------------------------------------------------------------
 // Positions and time
@@ -226,8 +265,9 @@ string_id! {
 )]
 pub struct Seq(pub u64);
 
-/// A position in a revisioned feed: the daemon's machine feed and outbox, or the controller's
-/// state feed. Revisions start at 1, so `Rev(0)` means "before the first change".
+/// A position in a revisioned feed: a daemon's machine or sessions feed and outbox, a host
+/// daemon's job event log, or the controller's state feed. Revisions start at 1, so `Rev(0)`
+/// means "before the first change".
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS,
 )]

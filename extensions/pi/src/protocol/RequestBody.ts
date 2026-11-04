@@ -83,4 +83,32 @@ cwd: RemotePath,
 /**
  * The child's title.
  */
-title: string, } | { "kind": "unknown" };
+title: string, } | { "kind": "terminal_input", 
+/**
+ * The machine's display name.
+ */
+machine: string, 
+/**
+ * The shell's name.
+ */
+shell: string, 
+/**
+ * The agent's command.
+ */
+command: string, } | { "kind": "privileged", 
+/**
+ * The machine's display name.
+ */
+machine: string, 
+/**
+ * The exact command line.
+ */
+command: string, 
+/**
+ * The agent's stated reason.
+ */
+reason: string, 
+/**
+ * Where it runs, when given.
+ */
+cwd: RemotePath | null, } | { "kind": "unknown" };

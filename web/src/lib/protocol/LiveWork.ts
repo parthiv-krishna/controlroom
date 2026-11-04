@@ -15,4 +15,9 @@ children: number,
 /**
  * Outstanding mailbox asks awaiting a reply.
  */
-asks: number, };
+asks: number, 
+/**
+ * Tool calls waiting for an unreachable host, or past the grace period with their late
+ * result still to come. Always `0` from the old per-machine daemon.
+ */
+host_calls: number, };

@@ -256,4 +256,5 @@ export type * from "./UnixMillis";
 export type * from "./UnsubscribeParams";
 export type * from "./UsageScope";
 export type * from "./UserInfo";
+export type * from "./WorkspaceId";
 export * from "./versions";

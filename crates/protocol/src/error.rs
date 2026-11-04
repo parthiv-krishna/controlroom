@@ -109,13 +109,20 @@ pub enum Resource {
     Device,
     /// A schedule (UI API).
     Schedule,
+    /// A session's workspace (agent daemon and host APIs), or a machine that isn't one of the
+    /// session's workspaces (agent API).
+    Workspace,
+    /// A tool call no host journal knows (`tool.attach`).
+    Call,
+    /// A host sandbox approval.
+    Approval,
     /// A resource kind this build doesn't know.
     #[serde(other)]
     Unknown,
 }
 
 /// The typed error kinds, serialized with a `kind` tag. Kinds marked "UI API" are only produced
-/// by the controller.
+/// by the controller; kinds marked "Host API" by host daemons (and passed through to the agent).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ErrorData {
@@ -214,7 +221,8 @@ pub enum ErrorData {
     /// the `hello` token is wrong.
     Unauthenticated,
     /// UI API: the machine's daemon can't be reached, so a pass-through command was not
-    /// delivered.
+    /// delivered. Agent daemon API: a workspace's host can't be reached, so a session can't be
+    /// created on it (or the workspace added).
     MachineUnavailable {
         /// The machine.
         machine_id: MachineId,
@@ -242,6 +250,33 @@ pub enum ErrorData {
     InvalidKey {
         /// What went wrong, e.g. "wrong passphrase".
         detail: String,
+    },
+    /// Host API: a write's `expect_sha256` didn't match because the file changed since it was
+    /// read. Nothing was written; read the file again and retry.
+    Conflict {
+        /// The file, resolved on the host.
+        path: RemotePath,
+    },
+    /// Host API: the host daemon restarted while the call ran and its result is gone. Never
+    /// rerun automatically.
+    Lost {
+        /// The call may have (partly) run, e.g. a command whose shell died with the daemon.
+        /// `false` when it surely had no effect (a write whose file doesn't hold the new
+        /// content), so retrying is safe.
+        may_have_run: bool,
+    },
+    /// Host API: the shell doesn't exist (never opened, or closed).
+    ShellGone {
+        /// The shell's name.
+        shell: String,
+    },
+    /// Agent API: the call's host stayed unreachable past the grace period. The call may still
+    /// be running there; its result is injected into the session when the host is back.
+    ConnectionLost {
+        /// The unreachable machine.
+        machine_id: MachineId,
+        /// Since when it has been unreachable.
+        since: UnixMillis,
     },
     /// An error kind this build doesn't know, or a known kind with malformed fields. The
     /// error's `code` and `message` are still available.
@@ -282,6 +317,10 @@ impl ErrorData {
             ErrorData::UnsupportedPlatform { .. } => -32103,
             ErrorData::KeyInUse { .. } => -32104,
             ErrorData::InvalidKey { .. } => -32105,
+            ErrorData::Conflict { .. } => -32020,
+            ErrorData::Lost { .. } => -32021,
+            ErrorData::ShellGone { .. } => -32022,
+            ErrorData::ConnectionLost { .. } => -32023,
         }
     }
 }

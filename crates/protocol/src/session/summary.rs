@@ -106,6 +106,10 @@ pub struct LiveWork {
     pub children: u32,
     /// Outstanding mailbox asks awaiting a reply.
     pub asks: u32,
+    /// Tool calls waiting for an unreachable host, or past the grace period with their late
+    /// result still to come. Always `0` from the old per-machine daemon.
+    #[serde(default)]
+    pub host_calls: u32,
 }
 
 /// Context window usage, from the agent's usage reports.

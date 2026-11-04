@@ -12,7 +12,7 @@ import type { UnixMillis } from "./UnixMillis";
 
 /**
  * The typed error kinds, serialized with a `kind` tag. Kinds marked "UI API" are only produced
- * by the controller.
+ * by the controller; kinds marked "Host API" by host daemons (and passed through to the agent).
  */
 export type ErrorData = { "kind": "parse_error" } | { "kind": "invalid_request" } | { "kind": "method_not_found" } | { "kind": "invalid_params" } | { "kind": "internal_error" } | { "kind": "incompatible_version", 
 /**
@@ -102,4 +102,26 @@ machine_ids: Array<MachineId>, } | { "kind": "invalid_key",
 /**
  * What went wrong, e.g. "wrong passphrase".
  */
-detail: string, } | { "kind": "unknown" };
+detail: string, } | { "kind": "conflict", 
+/**
+ * The file, resolved on the host.
+ */
+path: RemotePath, } | { "kind": "lost", 
+/**
+ * The call may have (partly) run, e.g. a command whose shell died with the daemon.
+ * `false` when it surely had no effect (a write whose file doesn't hold the new
+ * content), so retrying is safe.
+ */
+may_have_run: boolean, } | { "kind": "shell_gone", 
+/**
+ * The shell's name.
+ */
+shell: string, } | { "kind": "connection_lost", 
+/**
+ * The unreachable machine.
+ */
+machine_id: MachineId, 
+/**
+ * Since when it has been unreachable.
+ */
+since: UnixMillis, } | { "kind": "unknown" };

@@ -1,5 +1,11 @@
 //! The UI API: browser ↔ controller, JSON-RPC over one WebSocket per tab.
 //!
+//! **Deprecated method table:** this module's [`UiRequest`] (sessions per machine) is replaced
+//! by [`next::UiRequest`] (global sessions on workspaces, projects as task groups). The types
+//! both share (machines, keys, devices, push, sandbox defaults, checklists) stay here; the ones
+//! that name a session's machine ([`MachineSession`], [`SessionLink`], [`Project`] with location
+//! prefixes, [`Task`], [`Schedule`], [`ContactGrant`], the state feed) go with the old table.
+//!
 //! The API mirrors the daemon's session commands with a `machine_id` added ([`OnMachine`]),
 //! aggregates every machine into one state feed (`state.subscribe`), and adds the controller's
 //! own data: machines, keys, projects, tasks, contact grants, devices, schedules, sandbox
@@ -14,6 +20,7 @@
 mod hello;
 mod keys;
 mod machines;
+pub mod next;
 mod people;
 mod projects;
 mod sandbox;

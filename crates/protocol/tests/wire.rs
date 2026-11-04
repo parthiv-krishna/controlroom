@@ -116,6 +116,7 @@ fn summary() -> SessionSummary {
             jobs: 1,
             children: 0,
             asks: 0,
+            host_calls: 0,
         },
         options: vec![SessionOption {
             id: "thinking".into(),
@@ -181,7 +182,7 @@ fn summary_json() -> Value {
             "created_at": 2000
         }],
         "todo": {"done": 2, "total": 5, "auto_continue": "on"},
-        "live_work": {"jobs": 1, "children": 0, "asks": 0},
+        "live_work": {"jobs": 1, "children": 0, "asks": 0, "host_calls": 0},
         "options": [{
             "id": "thinking",
             "label": "Thinking",
@@ -916,6 +917,8 @@ fn request_and_job_items_round_trip() {
         name: "build".into(),
         command: "make".into(),
         cwd: RemotePath::new("~/src/app"),
+        machine_id: None,
+        workspace_id: None,
         status: JobStatus::Running,
         exit: None,
         signal: None,

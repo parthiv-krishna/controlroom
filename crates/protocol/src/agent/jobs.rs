@@ -8,14 +8,20 @@ use crate::daemon::FollowFrom;
 use crate::ids::{JobId, RemotePath};
 use crate::session::Job;
 
-/// Params of `job.run`: start a background job under the session's sandbox.
+/// Params of `job.run`: start a background job under the session's sandbox (with remote tools:
+/// on a workspace's host, under that workspace's sandbox).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct JobRunParams {
     /// Idempotency key: the pi tool call id.
     pub call_id: String,
     /// The command line, run by the login shell.
     pub command: String,
-    /// The working directory: absolute or relative to the session's, and inside it.
+    /// With remote tools: the machine's display name (one of the session's workspaces);
+    /// default the primary workspace's. The old daemon ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
+    /// The working directory: absolute or relative to the (machine's primary) workspace root,
+    /// and inside it (the old daemon: relative to the session's cwd).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<RemotePath>,
     /// Stop the job after this many seconds (it ends `timed_out`).

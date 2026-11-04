@@ -1,5 +1,5 @@
-//! Drift check for the generated TypeScript: `web/src/lib/protocol/` (daemon and UI APIs) and
-//! `extensions/pi/src/protocol/` (agent API).
+//! Drift check for the generated TypeScript: `web/src/lib/protocol/` (daemon and UI APIs),
+//! `web/src/lib/protocol/next/` (the next UI API) and `extensions/pi/src/protocol/` (agent API).
 //!
 //! - `cargo test -p controlroom-protocol --test typescript` regenerates into memory and fails
 //!   when the checked-in files differ.
@@ -11,7 +11,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use controlroom_protocol::typescript::{self, AGENT_DIR, REGENERATE_COMMAND, WEB_DIR};
+use controlroom_protocol::typescript::{
+    self, AGENT_DIR, REGENERATE_COMMAND, WEB_DIR, WEB_NEXT_DIR,
+};
 
 fn checked_in_dir(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -78,6 +80,11 @@ fn typescript_bindings_are_up_to_date() {
 }
 
 #[test]
+fn next_typescript_bindings_are_up_to_date() {
+    check_drift(WEB_NEXT_DIR, typescript::generate_next().expect("generate"));
+}
+
+#[test]
 fn agent_typescript_bindings_are_up_to_date() {
     check_drift(AGENT_DIR, typescript::generate_agent().expect("generate"));
 }
@@ -89,53 +96,101 @@ fn generation_is_deterministic() {
         typescript::generate().unwrap()
     );
     assert_eq!(
+        typescript::generate_next().unwrap(),
+        typescript::generate_next().unwrap()
+    );
+    assert_eq!(
         typescript::generate_agent().unwrap(),
         typescript::generate_agent().unwrap()
     );
 }
 
+fn assert_generated(files: &BTreeMap<PathBuf, String>, names: &[&str]) {
+    for name in names {
+        assert!(files.contains_key(Path::new(name)), "{name} not generated");
+    }
+}
+
 #[test]
 fn generated_files_cover_the_api() {
     let files = typescript::generate().unwrap();
-    for name in [
-        "index.ts",
-        "DaemonMethods.ts",
-        "UiMethods.ts",
-        "versions.ts",
-        "SessionSummary.ts",
-        "SessionDetail.ts",
-        "TimelineItem.ts",
-        "TimelineOp.ts",
-        "Request.ts",
-        "MachineSession.ts",
-        "Machine.ts",
-        "Connectivity.ts",
-        "Task.ts",
-        "Schedule.ts",
-        "ErrorData.ts",
-        "RpcError.ts",
-        "RpcRequest.ts",
-        "RpcResponse.ts",
-        "RpcNotification.ts",
-        "RemotePath.ts",
-    ] {
-        assert!(files.contains_key(Path::new(name)), "{name} not generated");
+    assert_generated(
+        &files,
+        &[
+            "index.ts",
+            "DaemonMethods.ts",
+            "UiMethods.ts",
+            "versions.ts",
+            "SessionSummary.ts",
+            "SessionDetail.ts",
+            "TimelineItem.ts",
+            "TimelineOp.ts",
+            "Request.ts",
+            "MachineSession.ts",
+            "Machine.ts",
+            "Connectivity.ts",
+            "Task.ts",
+            "Schedule.ts",
+            "ErrorData.ts",
+            "RpcError.ts",
+            "RpcRequest.ts",
+            "RpcResponse.ts",
+            "RpcNotification.ts",
+            "RemotePath.ts",
+        ],
+    );
+    let next = typescript::generate_next().unwrap();
+    assert_generated(
+        &next,
+        &[
+            "index.ts",
+            "UiMethods.ts",
+            "versions.ts",
+            "SessionSummary.ts",
+            "FeedSession.ts",
+            "Workspace.ts",
+            "Shell.ts",
+            "ShellState.ts",
+            "Availability.ts",
+            "Overlap.ts",
+            "Project.ts",
+            "Task.ts",
+            "Schedule.ts",
+            "SessionDetail.ts",
+            "TimelineOp.ts",
+        ],
+    );
+    // The next set is the UI API alone: no daemon map, no per-machine session wrapper.
+    for name in ["DaemonMethods.ts", "MachineSession.ts", "SessionLink.ts"] {
+        assert!(!next.contains_key(Path::new(name)), "{name} in the next set");
     }
     let agent = typescript::generate_agent().unwrap();
-    for name in [
-        "index.ts",
-        "AgentMethods.ts",
-        "versions.ts",
-        "AgentState.ts",
-        "QuestionAskParams.ts",
-        "Todo.ts",
-    ] {
-        assert!(agent.contains_key(Path::new(name)), "{name} not generated");
-    }
+    assert_generated(
+        &agent,
+        &[
+            "index.ts",
+            "AgentMethods.ts",
+            "versions.ts",
+            "AgentState.ts",
+            "QuestionAskParams.ts",
+            "Todo.ts",
+            "SessionInfo.ts",
+            "HostCallParams.ts",
+            "HostOp.ts",
+            "HostResult.ts",
+        ],
+    );
     assert!(!agent.contains_key(Path::new("DaemonMethods.ts")));
-    // Ids, cursors and timestamps are plain TS types, never bigint or JsonValue.
-    for (path, source) in files.iter().chain(&agent) {
+    // Ids, cursors and timestamps are plain TS types, never bigint or JsonValue; doc comments
+    // never close early (a `*/` inside a Rust doc, e.g. a `**/*` glob, would end the comment).
+    for (path, source) in files.iter().chain(&next).chain(&agent) {
         assert!(!source.contains("bigint"), "{} uses bigint", path.display());
+        assert_eq!(
+            source.matches("/**").count(),
+            source.matches("*/").count(),
+            "{} has a doc comment that closes early",
+            path.display()
+        );
         assert!(
             !source.contains("JsonValue"),
             "{} uses JsonValue",

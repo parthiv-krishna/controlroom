@@ -234,6 +234,8 @@ fn session_ops() -> Vec<TimelineOp> {
                     name: "build".into(),
                     command: "make".into(),
                     cwd: "/home/alice/project".into(),
+                    machine_id: None,
+                    workspace_id: None,
                     status: JobStatus::Failed,
                     exit: Some(2),
                     signal: None,

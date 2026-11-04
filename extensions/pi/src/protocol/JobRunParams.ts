@@ -2,7 +2,8 @@
 import type { RemotePath } from "./RemotePath";
 
 /**
- * Params of `job.run`: start a background job under the session's sandbox.
+ * Params of `job.run`: start a background job under the session's sandbox (with remote tools:
+ * on a workspace's host, under that workspace's sandbox).
  */
 export type JobRunParams = { 
 /**
@@ -14,7 +15,13 @@ call_id: string,
  */
 command: string, 
 /**
- * The working directory: absolute or relative to the session's, and inside it.
+ * With remote tools: the machine's display name (one of the session's workspaces);
+ * default the primary workspace's. The old daemon ignores it.
+ */
+machine?: string | null, 
+/**
+ * The working directory: absolute or relative to the (machine's primary) workspace root,
+ * and inside it (the old daemon: relative to the session's cwd).
  */
 cwd?: RemotePath | null, 
 /**

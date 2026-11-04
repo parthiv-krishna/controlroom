@@ -41,14 +41,24 @@ impl fmt::Display for ProtocolVersion {
 }
 
 /// The daemon API version (controller ↔ `controlroomd`), sent in the daemon `hello`.
+///
+/// Deprecated with the daemon API: replaced by [`AGENTD_PROTOCOL_VERSION`] and
+/// [`HOST_PROTOCOL_VERSION`].
 pub const DAEMON_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
+
+/// The agent daemon API version (controller ↔ `controlroom-agentd`), sent in its `hello`.
+pub const AGENTD_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
+
+/// The host API version (controller ↔ `controlroomd` in the host role), sent in the host
+/// `hello`. Versioned separately from the agent daemon API: host daemons upgrade on their own.
+pub const HOST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
 
 /// The UI API version (browser ↔ controller), sent in the UI `hello`. Versioned separately from
 /// the daemon API: the UI ships with its controller, while daemons upgrade independently.
 pub const UI_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
 
-/// The agent API version (`@controlroom/pi` ↔ `controlroomd`), sent in the agent `hello`.
-/// Versioned separately from the daemon API: the extension ships in the agent bundle.
+/// The agent API version (`@controlroom/pi` ↔ the agent daemon), sent in the agent `hello`.
+/// Versioned separately from the daemon APIs: the extension ships in the agent bundle.
 pub const AGENT_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
 
 /// An optional feature a peer advertises in `hello.capabilities`.
@@ -75,6 +85,14 @@ impl Capability {
     pub const SANDBOX_APPROVALS: Capability = Capability(Cow::Borrowed("sandbox_approvals"));
     /// Schedules: `schedules.*` (controller).
     pub const SCHEDULES: Capability = Capability(Cow::Borrowed("schedules"));
+    /// Named PTY shells: `shell.*` and `bash` tool calls (host).
+    pub const SHELLS: Capability = Capability(Cow::Borrowed("shells"));
+    /// Terminals attach to shells over `controlroomd pty attach <shell id>` (host).
+    pub const PTY: Capability = Capability(Cow::Borrowed("pty"));
+    /// Remote tools: `session.info`, `host.*` and `shell.*`, so the extension registers
+    /// `read write edit bash grep find ls shell_new shell_list` with `machine:path` paths (agent
+    /// API). Without it the extension leaves pi's built-in tools alone.
+    pub const REMOTE_TOOLS: Capability = Capability(Cow::Borrowed("remote_tools"));
 
     /// Wraps any capability string.
     pub fn new(name: impl Into<String>) -> Self {

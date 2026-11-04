@@ -160,6 +160,16 @@ async fn handle(
         AgentRequest::JobUnfollow(p) => json(runtime.agent_job_unfollow(id, p).await),
         AgentRequest::JobStatus(p) => json(runtime.agent_job_status(id, p).await),
         AgentRequest::JobKill(p) => json(runtime.agent_job_kill(id, p).await),
+        // Remote tools belong to the agent daemon; this daemon doesn't advertise them.
+        AgentRequest::SessionInfoMethod(_)
+        | AgentRequest::HostCall(_)
+        | AgentRequest::HostCancel(_)
+        | AgentRequest::ShellOpen(_)
+        | AgentRequest::ShellList(_)
+        | AgentRequest::ShellClose(_) => Err(RpcError::new(
+            ErrorData::Unsupported,
+            "remote tools need the agent daemon",
+        )),
     }
 }
 

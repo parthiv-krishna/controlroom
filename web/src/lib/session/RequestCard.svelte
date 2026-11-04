@@ -18,7 +18,7 @@
   let { req, s, compact = false }: { req: Request; s: MachineSession; compact?: boolean } = $props();
   const app = useApp();
 
-  const KIND: Record<Request['kind'], string> = { permission: 'Permission', question: 'Question', dialog: 'Dialog', sandbox: 'Sandbox', contact: 'Contact', spawn: 'Spawn', unknown: 'Request' };
+  const KIND: Record<Request['kind'], string> = { permission: 'Permission', question: 'Question', dialog: 'Dialog', sandbox: 'Sandbox', contact: 'Contact', spawn: 'Spawn', terminal_input: 'Input', privileged: 'Privileged', unknown: 'Request' };
   // A rolled-up request is answered on the child session (same machine).
   const targetId = $derived(req.origin_child ?? s.id);
   const child = $derived(req.origin_child ? app.client.feed.sessions.get(sessionKey(s.machine_id, req.origin_child)) : undefined);

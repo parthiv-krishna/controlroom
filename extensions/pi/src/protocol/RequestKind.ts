@@ -3,4 +3,4 @@
 /**
  * What a request asks for.
  */
-export type RequestKind = "permission" | "question" | "dialog" | "sandbox" | "contact" | "spawn" | "unknown";
+export type RequestKind = "permission" | "question" | "dialog" | "sandbox" | "contact" | "spawn" | "terminal_input" | "privileged" | "unknown";

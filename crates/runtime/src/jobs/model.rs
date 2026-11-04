@@ -100,6 +100,8 @@ impl JobRecord {
             name: self.name.clone(),
             command: self.command.clone(),
             cwd: self.cwd.clone(),
+            machine_id: None,
+            workspace_id: None,
             status: end.map_or(JobStatus::Running, |e| e.status),
             exit: end.and_then(|e| e.exit),
             signal: end.and_then(|e| e.signal.clone()),

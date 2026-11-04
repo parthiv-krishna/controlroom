@@ -26,6 +26,11 @@ pub enum RequestKind {
     Contact,
     /// Spawning a subagent on another machine (blocking; raised by the controller).
     Spawn,
+    /// An agent command in a shell waits for terminal input: the user types it in the
+    /// terminal (blocking; the agent can't type). Withdrawn when the command moves on.
+    TerminalInput,
+    /// `bash_privileged`: run a command unsandboxed on a host (blocking, every time).
+    Privileged,
     /// A request kind this build doesn't know.
     #[serde(other)]
     Unknown,
@@ -178,6 +183,26 @@ pub enum RequestBody {
         cwd: RemotePath,
         /// The child's title.
         title: String,
+    },
+    /// A command waiting for terminal input.
+    TerminalInput {
+        /// The machine's display name.
+        machine: String,
+        /// The shell's name.
+        shell: String,
+        /// The agent's command.
+        command: String,
+    },
+    /// A command to run unsandboxed (`bash_privileged`).
+    Privileged {
+        /// The machine's display name.
+        machine: String,
+        /// The exact command line.
+        command: String,
+        /// The agent's stated reason.
+        reason: String,
+        /// Where it runs, when given.
+        cwd: Option<RemotePath>,
     },
     /// A body kind this build doesn't know; use the request's title and detail.
     #[serde(other)]

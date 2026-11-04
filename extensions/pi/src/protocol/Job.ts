@@ -2,8 +2,10 @@
 import type { JobFollow } from "./JobFollow";
 import type { JobId } from "./JobId";
 import type { JobStatus } from "./JobStatus";
+import type { MachineId } from "./MachineId";
 import type { RemotePath } from "./RemotePath";
 import type { UnixMillis } from "./UnixMillis";
+import type { WorkspaceId } from "./WorkspaceId";
 
 /**
  * A background job: a supervised, sandboxed process whose output goes to a log file the agent
@@ -23,9 +25,19 @@ name: string,
  */
 command: string, 
 /**
- * The working directory.
+ * The working directory (on the job's machine).
  */
 cwd: RemotePath, 
+/**
+ * The machine it runs on; `null` from a host daemon (which doesn't know its machine id)
+ * and from the old per-machine daemon. The agent daemon always fills it.
+ */
+machine_id: MachineId | null, 
+/**
+ * The workspace it runs in (under that workspace's sandbox); `null` from the old
+ * per-machine daemon.
+ */
+workspace_id: WorkspaceId | null, 
 /**
  * Its status.
  */
@@ -51,7 +63,8 @@ ended_at: UnixMillis | null,
  */
 timeout_s: number | null, 
 /**
- * The plain-text log: `<cwd>/.controlroom/jobs/<id>.log`.
+ * The plain-text log, on the job's machine: `<workspace root>/.controlroom/jobs/<id>.log`
+ * (the old daemon: `<session cwd>/.controlroom/jobs/<id>.log`).
  */
 log_path: RemotePath, 
 /**
