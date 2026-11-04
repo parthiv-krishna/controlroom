@@ -456,8 +456,9 @@ async fn execute(
             match started {
                 Ok(run) => Ok(shells::run::drive(host, run, cancel).await),
                 Err(e) => {
-                    // Without a journal row the error is journaled by `finish` only if the
-                    // row exists; make sure it does, so a resend sees the same error.
+                    // `finish` journals the error in the call's row. If it failed before its
+                    // row was written, write one now (nothing ran), so a resend gets the same
+                    // error instead of a second attempt.
                     let _ = insert(host, call_id, ws, &op, None, None).await;
                     Err(e)
                 }
