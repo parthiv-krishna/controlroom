@@ -21,8 +21,9 @@ use crate::host::shells::proc;
 
 /// How often the foreground program is checked while the terminal is active.
 const FOREGROUND_POLL: Duration = Duration::from_millis(250);
-/// The largest output chunk per frame (supervisor records are smaller).
-const OUTPUT_CHUNK: usize = 64 * 1024;
+/// How far behind a resume may start; further behind, recent output is replayed instead (a
+/// flood the client missed is not worth sending whole).
+const RESUME_RECORDS: u64 = 20_000;
 
 /// Continue a stream after a link drop.
 pub(super) struct Resume {
@@ -58,10 +59,8 @@ pub(super) async fn attach(shell: &ShellTarget, resume: Option<Resume>) -> anyho
                     record = stream.next() => {
                         let Some(record) = record else { return anyhow::Ok(()) };
                         let Some(chunk) = PtyChunk::from_record(&record) else { continue };
-                        for data in chunk.0.chunks(OUTPUT_CHUNK) {
-                            let frame = FromHost::Output { seq: record.seq, data: data.to_vec() };
-                            send(&mut out, frame).await?;
-                        }
+                        // One frame per record: a PTY record holds at most 64 KiB.
+                        send(&mut out, FromHost::Output { seq: record.seq, data: chunk.0 }).await?;
                         active.store(true, Ordering::Relaxed);
                     }
                     _ = poll.tick() => {
@@ -100,14 +99,19 @@ pub(super) async fn attach(shell: &ShellTarget, resume: Option<Resume>) -> anyho
     }
 }
 
-/// Where the replay starts: the resume position while it is still valid, else recent output.
+/// Where the replay starts: the resume position while it is still valid (the same instance, at
+/// most [`RESUME_RECORDS`] behind), else recent output.
 fn start(instance: &str, last_seq: u64, resume: Option<Resume>) -> u64 {
     let recent = recent_start(last_seq);
     match resume {
         Some(Resume {
             seq,
             instance: Some(at),
-        }) if at == instance && (recent..=last_seq + 1).contains(&seq) => seq,
+        }) if at == instance
+            && (last_seq.saturating_sub(RESUME_RECORDS)..=last_seq + 1).contains(&seq) =>
+        {
+            seq
+        }
         _ => recent,
     }
 }
@@ -155,7 +159,16 @@ mod tests {
         assert_eq!(start("a", 5000, resume(4500, "a")), 4500);
         assert_eq!(start("a", 5000, resume(5001, "a")), 5001, "nothing missed");
         assert_eq!(start("a", 5000, resume(4500, "b")), 4000, "reopened shell");
-        assert_eq!(start("a", 5000, resume(10, "a")), 4000, "too far behind");
+        assert_eq!(
+            start("a", 5000, resume(10, "a")),
+            10,
+            "within the resume window"
+        );
+        assert_eq!(
+            start("a", 50_000, resume(10, "a")),
+            49_000,
+            "too far behind"
+        );
         assert_eq!(
             start("a", 5000, resume(6000, "a")),
             4000,

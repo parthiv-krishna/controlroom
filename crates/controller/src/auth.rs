@@ -12,6 +12,7 @@ use controlroom_protocol::ui::{AuthMode, UserInfo};
 use data_encoding::{BASE64URL_NOPAD, HEXLOWER};
 use sha2::{Digest, Sha256};
 
+use crate::config::Services;
 use crate::store::{AuthSessionRow, OwnerId, StoreError};
 
 /// The subject of dev-token logins.
@@ -157,6 +158,29 @@ impl AuthPolicy {
         }
         Ok(())
     }
+}
+
+/// Re-checks an open connection: its login session (when it has one; `principal` otherwise) is
+/// still live, and the allow-list still admits it.
+pub(crate) fn reauthorize(
+    services: &Services,
+    token_hash: Option<&str>,
+    principal: &Principal,
+) -> Result<(), AuthError> {
+    let current;
+    let principal = match token_hash {
+        Some(hash) => {
+            let row = services
+                .store
+                .auth_sessions()
+                .get(hash, UnixMillis::now())?
+                .ok_or(AuthError::NoSession)?;
+            current = Principal::from_session(&row);
+            &current
+        }
+        None => principal,
+    };
+    services.auth.check(principal)
 }
 
 /// A new login session's secrets, for the cookie and CSRF header.

@@ -40,7 +40,9 @@ use tokio::sync::{broadcast, mpsc};
 
 pub(crate) use bus::BusEvent;
 pub use clients::CloseReason;
-pub(crate) use clients::{ClientEntry, ClientId, ClientSink, Focus};
+pub(crate) use clients::{
+    ClientEntry, ClientId, ClientSink, Credentials, Focus, TerminalEntry, close_once,
+};
 pub(crate) use global::GlobalSessions;
 pub(crate) use machines::{Link, MachineEntry, MachineLive, UpgradeCheck, host_key_info};
 pub(crate) use timeline::{Delivery, Fanout, JoinPlan, TimelineKey};
@@ -70,6 +72,8 @@ pub(crate) struct HubState {
     /// The last machine report sent to the agent daemon.
     reported_machines: Vec<HostMachine>,
     pub clients: HashMap<ClientId, ClientEntry>,
+    /// Attached terminal streams.
+    pub terminals: HashMap<ClientId, TerminalEntry>,
     pub timelines: HashMap<TimelineKey, Fanout>,
     bus: broadcast::Sender<BusEvent>,
 }
@@ -117,6 +121,7 @@ impl Hub {
                 router: Router::default(),
                 reported_machines: Vec::new(),
                 clients: HashMap::new(),
+                terminals: HashMap::new(),
                 timelines: HashMap::new(),
                 bus,
             }),
@@ -237,6 +242,9 @@ impl Hub {
             let mut st = self.lock();
             for client in st.clients.values() {
                 client.sink.close(CloseReason::Shutdown);
+            }
+            for terminal in st.terminals.values() {
+                close_once(&terminal.close, CloseReason::Shutdown);
             }
             if let Some(agentd) = st.agentd.take() {
                 agentd.close();
@@ -376,6 +384,14 @@ impl Hub {
         let st = self.lock();
         let link = st.machines.get(&id)?.link.as_ref()?;
         Some((link.ssh.clone(), link.auth_key_id))
+    }
+
+    /// The SSH connection of a connected machine (terminals open channels on it).
+    pub(crate) fn host_ssh(&self, id: MachineId) -> Option<Arc<SshConnection>> {
+        let st = self.lock();
+        let entry = st.machines.get(&id)?;
+        let link = entry.link.as_ref()?;
+        (entry.live.connectivity == Connectivity::Connected).then(|| link.ssh.clone())
     }
 
     // --- Connection lifecycle (the machine task) --------------------------------------------
@@ -541,11 +557,25 @@ impl Hub {
                 sink,
                 state_subs: HashMap::new(),
                 focus: None,
-                device: None,
-                auth_token_hash,
+                credentials: Credentials {
+                    device: None,
+                    auth_token_hash,
+                },
             },
         );
         id
+    }
+
+    /// Registers a terminal stream, so revocation and shutdown close it.
+    pub(crate) fn add_terminal(&self, entry: TerminalEntry) -> ClientId {
+        let id = ClientId(self.next_client.fetch_add(1, Ordering::Relaxed));
+        self.lock().terminals.insert(id, entry);
+        id
+    }
+
+    /// Forgets a terminal stream.
+    pub(crate) fn remove_terminal(&self, id: ClientId) {
+        self.lock().terminals.remove(&id);
     }
 
     /// Drops a client's subscriptions and focus; ends session subscriptions nobody needs
@@ -584,10 +614,14 @@ impl Hub {
         }
     }
 
-    /// Closes every client matching `pred`.
-    pub(crate) fn close_clients(&self, reason: CloseReason, pred: impl Fn(&ClientEntry) -> bool) {
-        for client in self.lock().clients.values().filter(|c| pred(c)) {
+    /// Closes every UI client and terminal stream whose credentials match `pred`.
+    pub(crate) fn close_clients(&self, reason: CloseReason, pred: impl Fn(&Credentials) -> bool) {
+        let st = self.lock();
+        for client in st.clients.values().filter(|c| pred(&c.credentials)) {
             client.sink.close(reason);
+        }
+        for terminal in st.terminals.values().filter(|t| pred(&t.credentials)) {
+            close_once(&terminal.close, reason);
         }
     }
 

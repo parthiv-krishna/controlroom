@@ -61,14 +61,7 @@ impl ClientSink {
 
     /// Closes the connection (the first reason wins).
     pub(crate) fn close(&self, reason: CloseReason) {
-        self.close.send_if_modified(|current| {
-            if current.is_none() {
-                *current = Some(reason);
-                true
-            } else {
-                false
-            }
-        });
+        close_once(&self.close, reason);
     }
 }
 
@@ -90,8 +83,34 @@ pub(crate) struct ClientEntry {
     pub state_subs: HashMap<SubscriptionId, Option<Vec<StateChange>>>,
     /// What it shows, for push deduplication.
     pub focus: Option<Focus>,
-    /// Its device, from `hello` or `devices.register`.
+    /// Who it signed in as (its device from `hello` or `devices.register`).
+    pub credentials: Credentials,
+}
+
+/// Who a connection signed in as, for closing it on revocation.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Credentials {
+    /// Its device, once known.
     pub device: Option<DeviceId>,
     /// The login session it authenticated with, if any.
     pub auth_token_hash: Option<String>,
+}
+
+/// An attached terminal stream (see `crate::terminals`): revocation closes it like a UI
+/// client.
+pub(crate) struct TerminalEntry {
+    pub close: watch::Sender<Option<CloseReason>>,
+    pub credentials: Credentials,
+}
+
+/// Sets a connection's close reason; the first one wins.
+pub(crate) fn close_once(close: &watch::Sender<Option<CloseReason>>, reason: CloseReason) {
+    close.send_if_modified(|current| {
+        if current.is_none() {
+            *current = Some(reason);
+            true
+        } else {
+            false
+        }
+    });
 }

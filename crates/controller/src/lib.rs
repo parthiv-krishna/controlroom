@@ -33,6 +33,14 @@
 //! focus. Every request re-checks the login session and allow-list, and frames are one
 //! JSON-RPC message each (no batches, no newlines).
 //!
+//! **Terminal streams.** For each `/api/stream/terminal/…` WebSocket,
+//! [`Controller::open_terminal`] returns a [`TerminalStream`] attached to a session shell (spec
+//! §22): pass the browser's input bytes to [`TerminalInput::send`] and its resizes to
+//! [`TerminalInput::resize`], and write every [`TerminalFrame`] from [`TerminalOutput::recv`]
+//! (output as binary frames, events as text). `recv` returning `None` means the stream ended
+//! (after an `ended` event; close normally) or was closed ([`TerminalOutput::close_reason`],
+//! as for UI connections).
+//!
 //! **Push.** The browser subscribes through the UI API (`notifications.subscribe`);
 //! [`Controller::subscribe_push`] does the same for an HTTP endpoint if the shell prefers one.
 //! [`Controller::vapid_public_key`] is the browser's `applicationServerKey`.
@@ -49,6 +57,7 @@
 //! - `rpc`: the UI API (connection handling, ordering contract, handlers by namespace,
 //!   table-driven pass-through);
 //! - `attention` and `notify`: server-owned attention and Web Push delivery;
+//! - `terminals`: terminal streams over exec channels on the machines' SSH connections;
 //! - `schedules`: the scheduler that wakes sessions on cron or interval specs ([`Clock`] in
 //!   [`Tuning`] is its time source).
 
@@ -67,6 +76,7 @@ mod router;
 mod rpc;
 mod schedules;
 pub mod store;
+mod terminals;
 #[cfg(all(unix, feature = "test-support"))]
 pub mod test_support;
 
@@ -81,3 +91,6 @@ pub use notify::{PushConfig, PushOutcome, PushSender, VapidKey, VapidKeyError, W
 pub use rpc::{Closed, UiClient, UiReceiver, UiSender};
 pub use schedules::{Clock, ManualClock};
 pub use store::OwnerId;
+pub use terminals::{
+    Closed as TerminalClosed, TerminalFrame, TerminalInput, TerminalOutput, TerminalStream,
+};

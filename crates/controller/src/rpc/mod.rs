@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 
 use controlroom_protocol::ids::DeviceId;
 use controlroom_protocol::session::DeviceRef;
-use controlroom_protocol::{ErrorData, Message, RpcError, RpcRequest, RpcResponse, UnixMillis};
+use controlroom_protocol::{ErrorData, Message, RpcError, RpcRequest, RpcResponse};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::{Semaphore, mpsc, watch};
@@ -36,7 +36,7 @@ use tokio::sync::{Semaphore, mpsc, watch};
 pub(crate) use passthrough::agentd_error;
 pub(crate) use subscriptions::resubscribe;
 
-use crate::auth::{AuthError, Principal};
+use crate::auth::{AuthError, Principal, reauthorize};
 use crate::errors::internal;
 use crate::hub::{ClientId, ClientSink, CloseReason, Hub};
 
@@ -156,19 +156,11 @@ pub(crate) struct Conn {
 impl Conn {
     /// Re-checks the login session and the allow-list.
     fn authorize(&self) -> Result<(), AuthError> {
-        let services = &self.hub.services;
-        let principal = match &self.token_hash {
-            Some(hash) => {
-                let row = services
-                    .store
-                    .auth_sessions()
-                    .get(hash, UnixMillis::now())?
-                    .ok_or(AuthError::NoSession)?;
-                Principal::from_session(&row)
-            }
-            None => self.principal.clone(),
-        };
-        services.auth.check(&principal)
+        reauthorize(
+            &self.hub.services,
+            self.token_hash.as_deref(),
+            &self.principal,
+        )
     }
 
     /// The connection's device with its current label, for attribution.
@@ -188,7 +180,7 @@ impl Conn {
     /// Sets the connection's device.
     pub(crate) fn set_device(&self, device: DeviceId) {
         if let Some(client) = self.hub.lock().clients.get_mut(&self.client) {
-            client.device = Some(device.clone());
+            client.credentials.device = Some(device.clone());
         }
         *self.device.lock().unwrap_or_else(|p| p.into_inner()) = Some(device);
     }

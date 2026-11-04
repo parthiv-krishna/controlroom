@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use controlroom_client_core::bootstrap::DirBinaries;
-use controlroom_protocol::ids::DeviceId;
+use controlroom_protocol::ids::{DeviceId, SessionId};
 use controlroom_protocol::ui::AuthMode;
 use controlroom_protocol::{RpcError, UnixMillis};
 
@@ -17,6 +17,7 @@ use crate::hub::{CloseReason, Hub};
 use crate::notify::parse_subscription;
 use crate::rpc::{self, UiClient};
 use crate::store::{NewAuthSession, OwnerId, Store, StoreError};
+use crate::terminals::{self, Opener, TerminalStream};
 
 /// Why the controller couldn't start.
 #[derive(Debug, thiserror::Error)]
@@ -233,6 +234,24 @@ impl Controller {
     pub fn open_trusted_client(&self, principal: Principal) -> Result<UiClient, RpcError> {
         let hub = self.hub(&principal.owner)?;
         Ok(rpc::open(hub, principal, None))
+    }
+
+    /// Opens a terminal stream to `shell` of `session` for an authenticated login session
+    /// (spec §22): `unknown_session` or `shell_gone` when there is no such shell. Revoking the
+    /// login closes it; see [`TerminalStream`].
+    pub fn open_terminal(
+        &self,
+        auth: &Authenticated,
+        session: SessionId,
+        shell: &str,
+    ) -> Result<TerminalStream, RpcError> {
+        let hub = self.hub(&auth.principal.owner)?;
+        let opener = Opener {
+            principal: auth.principal.clone(),
+            token_hash: Some(auth.token_hash.clone()),
+            device: auth.device_id.clone(),
+        };
+        terminals::open(hub, opener, session, shell)
     }
 
     /// Attaches a browser's `PushSubscription.toJSON()` to a registered device (the same as

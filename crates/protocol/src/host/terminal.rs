@@ -12,9 +12,9 @@
 //! - `attached` (`0x81`, JSON [`Attached`]): first frame. Which run of the shell's process this
 //!   is (`instance`, a new one after the shell was reopened) and the transcript position the
 //!   replay starts at;
-//! - `output` (`0x82`): the transcript position (`u64`, big-endian) of a chunk of terminal
-//!   output, then its bytes. Positions increase; a chunk may split escape sequences and UTF-8
-//!   characters;
+//! - `output` (`0x82`): one transcript record of terminal output: its position (`u64`,
+//!   big-endian), then its bytes. Positions increase strictly; a chunk may split escape
+//!   sequences and UTF-8 characters;
 //! - `foreground` (`0x83`): the name of the terminal's foreground program (UTF-8), empty at the
 //!   shell's prompt; sent when it changes.
 //!
