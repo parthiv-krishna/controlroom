@@ -462,7 +462,7 @@ def reboot() -> None:
     assert "lost" in lost or "restarted" in lost, lost
     check = tool_result("call_check")
     assert "stage=unset" in check and f"{WEB}/sub" in check, check
-    assert "reset" in check, f"the agent is told the shell was reset: {check}"
+    assert "was reopened before this command (the host restarted" in check, f"the agent is told the shell was reset: {check}"
     assert lines(buildbox, f"{WEB}/waited.txt") == 1, "the lost command is never run again"
 
 
