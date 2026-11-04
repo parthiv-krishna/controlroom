@@ -205,19 +205,19 @@ export const edit: Tool<EditParams, EditDetails> = {
     const info = await call.client.sessionInfo();
     const target = fileTarget(info, params.path, 'edit');
     let drops = 0;
-    let read: { path: string; sha256: string } | null = null;
+    let base: { path: string; sha256: string } | null = null;
     const operations = {
       access: async () => {},
       readFile: async () => {
         const { result, linkDrops } = await hostCall(call, info, target.machine, { op: 'read_bytes', path: target.path }, { id: `${call.id}/read` });
         drops += linkDrops;
         if (result.sha256 === null) throw new Error(`${target.display} is too large to edit (${result.size} bytes); use write or bash.`);
-        read = { path: result.path, sha256: result.sha256 };
+        base = { path: result.path, sha256: result.sha256 };
         return Buffer.from(result.data, 'base64');
       },
       writeFile: async (_path: string, content: string) => {
-        if (!read) throw new Error(`${target.display} was not read before writing.`);
-        const step = { op: 'write' as const, path: read.path, content, expect_sha256: read.sha256 };
+        if (!base) throw new Error(`${target.display} was not read before writing.`);
+        const step = { op: 'write' as const, path: base.path, content, expect_sha256: base.sha256 };
         drops += (await hostCall(call, info, target.machine, step, { id: `${call.id}/write` })).linkDrops;
       },
     };
