@@ -37,6 +37,12 @@
       nonoFor = pkgs: import ./nix/nono.nix { inherit pkgs; };
       piFor = pkgs: import ./nix/pi.nix { inherit pkgs; };
       extensionFor = pkgs: import ./nix/extension.nix { inherit pkgs; };
+      # services.controlroom.agent's packages.
+      agentFor = pkgs: {
+        package = (rustFor pkgs).controlroomAgentd;
+        piBundle = (piFor pkgs).bundle;
+        nono = nonoFor pkgs;
+      };
       e2eFor =
         pkgs:
         import ./nix/tests/e2e.nix {
@@ -45,6 +51,7 @@
           rust = rustFor pkgs;
           web = webFor pkgs;
           nono = nonoFor pkgs;
+          agent = agentFor pkgs;
         };
       rustFor =
         pkgs:
@@ -54,14 +61,23 @@
         };
     in
     {
-      # services.controlroom, with the package defaulting to this flake's controlroom-web.
+      # services.controlroom (with services.controlroom.agent), the packages defaulting to this
+      # flake's own.
       nixosModules.default =
         { lib, pkgs, ... }:
+        let
+          packages = self.packages.${pkgs.stdenv.hostPlatform.system};
+        in
         {
           imports = [ ./nix/module.nix ];
-          services.controlroom.package =
-            lib.mkDefault
-              self.packages.${pkgs.stdenv.hostPlatform.system}.controlroom-web;
+          services.controlroom = {
+            package = lib.mkDefault packages.controlroom-web;
+            agent = {
+              package = lib.mkDefault packages.controlroom-agentd;
+              piBundle = lib.mkDefault packages.controlroom-pi;
+              nono = lib.mkDefault packages.nono;
+            };
+          };
         };
 
       packages = forAllSystems (
@@ -75,6 +91,7 @@
           inherit (rust) workspace;
           web-dist = web.dist;
           controlroom-web = rust.controlroomWeb;
+          controlroom-agentd = rust.controlroomAgentd;
           # Static musl daemon binaries, deployed to execution machines over SSH.
           controlroomd-x86_64-linux = rust.controlroomdStatic.x86_64;
           controlroomd-aarch64-linux = rust.controlroomdStatic.aarch64;
@@ -129,6 +146,7 @@
             inherit pkgs;
             module = ./nix/module.nix;
             package = rust.controlroomWeb;
+            agent = agentFor pkgs;
           };
         }
       );

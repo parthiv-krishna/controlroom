@@ -1,6 +1,7 @@
 # The NixOS module `services.controlroom` (spec §14): controlroom-web as a hardened systemd
-# service. The flake exports it as `nixosModules.default`, with `package` defaulting to the
-# flake's own `controlroom-web`.
+# service, next to the agent daemon that runs the pi sessions (`services.controlroom.agent`,
+# ./agent-module.nix). The flake exports it as `nixosModules.default`, with the packages
+# defaulting to the flake's own.
 #
 # Secrets never enter the Nix store: they are absolute paths to files (e.g. sops-nix or agenix
 # outputs, readable by root only), handed to the service with `LoadCredential=`, which systemd
@@ -39,6 +40,8 @@ let
   configFile = settingsFormat.generate "controlroom-web.toml" cfg.settings;
 in
 {
+  imports = [ ./agent-module.nix ];
+
   options.services.controlroom = {
     enable = lib.mkEnableOption "controlroom, the web server supervising pi coding agents over SSH";
 
@@ -210,6 +213,7 @@ in
         master_key_file = "master-key";
         auth.mode = cfg.auth.mode;
       }
+      (lib.mkIf cfg.agent.enable { agentd_socket = cfg.agent.socket; })
       (lib.mkIf (cfg.publicUrl != null) { public_url = cfg.publicUrl; })
       (lib.mkIf (cfg.auth.mode == "oidc") {
         auth.oidc = {
@@ -237,7 +241,11 @@ in
       description = "controlroom web server";
       wantedBy = [ "multi-user.target" ];
       wants = [ "network-online.target" ];
-      after = [ "network-online.target" ];
+      after = [
+        "network-online.target"
+      ]
+      # The agent daemon's socket exists before the controller connects (it retries anyway).
+      ++ lib.optional cfg.agent.enable "controlroom-agent.service";
       # Keep restarting (e.g. while a credential is still missing) instead of giving up.
       startLimitIntervalSec = 0;
 
@@ -252,6 +260,8 @@ in
         StateDirectoryMode = "0700";
         UMask = "0077";
         LoadCredential = lib.mapAttrsToList (name: file: "${name}:${toString file}") loadedCredentials;
+        # The agent daemon's socket (group controlroom-agent, mode 0660).
+        SupplementaryGroups = lib.optional cfg.agent.enable "controlroom-agent";
 
         # Hardening. The server only serves HTTP, talks SSH to the machines and HTTPS to the
         # identity provider and push services; it starts no processes.

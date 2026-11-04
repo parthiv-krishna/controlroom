@@ -132,3 +132,28 @@ with subtest("systemd-analyze security"):
     print(report)
     exposure = float(find(r"Overall exposure level for controlroom\.service: (\d+\.\d+)", report))
     assert exposure <= MAX_EXPOSURE, f"exposure {exposure} > {MAX_EXPOSURE}"
+
+with subtest("the agent daemon runs as its own user and serves the web server"):
+    server.wait_for_unit("controlroom-agent.service")
+    socket = "/run/controlroom-agent/agentd.sock"
+    server.wait_until_succeeds(f"test -S {socket}")
+    owner = server.succeed(f"stat -c '%U %G %a' {socket} /run/controlroom-agent").split("\n")
+    assert owner[0] == "controlroom-agent controlroom-agent 660", owner
+    assert owner[1] == "controlroom-agent controlroom-agent 750", owner
+    # The web server (a dynamic user in the group) connects; nobody else may.
+    server.wait_until_succeeds("journalctl -u controlroom | grep -q 'connected to the agent daemon'")
+    server.fail(f"su -s /bin/sh nobody -c 'test -w {socket}'")
+    pid = server.succeed("systemctl show -p MainPID --value controlroom-agent").strip()
+    assert server.succeed(f"stat -c %U /proc/{pid}").strip() == "controlroom-agent"
+    proc = server.succeed(f"cat /proc/{pid}/status")
+    assert re.search(r"(?m)^CapEff:\s+0+$", proc), "no capabilities"
+    assert re.search(r"(?m)^NoNewPrivs:\s+1$", proc), "no new privileges"
+    for setting in ("KillMode=process", "MemoryDenyWriteExecute=no", "ProtectSystem=strict", "ProtectHome=yes"):
+        server.succeed(f"systemctl show controlroom-agent | grep -qx {setting}")
+    # The bundle and nono are on the agent user's login PATH; its doctor finds them.
+    print(server.succeed("su -l -s /bin/sh controlroom-agent -c 'command -v controlroom-pi nono'"))
+    server.succeed("test -d /var/lib/controlroom-agent -a -d /var/tmp/controlroom-agent")
+    # A restart of the agent daemon: the web server reconnects.
+    server.succeed("systemctl restart controlroom-agent")
+    server.wait_until_succeeds("journalctl -u controlroom | grep -q 'agent daemon connection lost'")
+    server.wait_until_succeeds("test $(journalctl -u controlroom | grep -c 'connected to the agent daemon') -ge 2")

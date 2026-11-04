@@ -21,6 +21,11 @@ let
             enable = true;
             # Never built: only the module's own logic is evaluated.
             package = pkgs.emptyDirectory;
+            agent = {
+              package = pkgs.emptyDirectory;
+              piBundle = pkgs.emptyDirectory;
+              nono = pkgs.emptyDirectory;
+            };
           };
         }
         { inherit services; }
@@ -105,6 +110,7 @@ let
     oidcRendered = {
       settings = {
         listen = "127.0.0.1:8080";
+        agentd_socket = "/run/controlroom-agent/agentd.sock";
         public_url = "https://controlroom.example.com";
         master_key_file = "master-key";
         auth = {
@@ -133,6 +139,7 @@ let
     devTokenRendered = {
       settings = {
         listen = "127.0.0.1:9000";
+        agentd_socket = "/run/controlroom-agent/agentd.sock";
         master_key_file = "master-key";
         auth.mode = "dev-token";
         session_ttl_days = 7;

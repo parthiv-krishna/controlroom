@@ -139,6 +139,23 @@ let
     versionOverride = "${commonArgs.version}-old";
   };
 
+  # The agent daemon for the controlroom server (services.controlroom.agent): runs every pi
+  # session; its supervisors are started from this binary's own path.
+  controlroomAgentd = craneLib.buildPackage (
+    commonArgs
+    // {
+      pname = "controlroom-agentd";
+      inherit cargoArtifacts;
+      cargoExtraArgs = "--locked -p controlroom-agentd";
+      doCheck = false;
+      doInstallCheck = true;
+      installCheckPhase = ''
+        [ "$($out/bin/controlroom-agentd --version)" = "controlroom-agentd ${commonArgs.version}" ]
+      '';
+      meta.mainProgram = "controlroom-agentd";
+    }
+  );
+
   # The web server with the UI embedded (copied to web/dist, where rust-embed
   # reads it) and both static daemons bundled for deployment. The bundled
   # directory is compiled in as the default for `bundled_daemons_dir`.
@@ -178,6 +195,7 @@ in
     craneLib
     workspace
     controlroomWeb
+    controlroomAgentd
     controlroomdStatic
     controlroomdStaticOld
     protocolTsDrift

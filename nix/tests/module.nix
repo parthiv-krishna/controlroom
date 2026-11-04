@@ -4,13 +4,17 @@
 # a usable master key, that the OIDC configuration renders into a working sign-in redirect
 # (client id from a credential, the callback URI, PKCE, the groups scope), the request
 # hardening, the systemd sandbox of the running process, and the `systemd-analyze security`
-# exposure. SSH to execution hosts and Web Push under the same module run in ./e2e.nix.
+# exposure; and that the agent daemon (services.controlroom.agent) runs as its own user under
+# its own hardening and shares its socket with the web server only.
+# SSH to execution hosts, sessions and Web Push under the same module run in ./e2e.nix.
 #
 #   nix build -L .#checks.x86_64-linux.vm-module
 {
   pkgs,
   module,
   package,
+  # services.controlroom.agent's packages: {package, piBundle, nono}.
+  agent,
 }:
 let
   idpPort = 8000;
@@ -80,6 +84,9 @@ pkgs.testers.runNixOSTest {
           allowedGroups = [ "admin" ];
         };
         push.vapidPrivateKeyFile = "/run/keys/controlroom/vapid-key";
+        agent = {
+          inherit (agent) package piBundle nono;
+        };
       };
     };
   };
