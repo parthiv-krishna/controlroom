@@ -10,9 +10,8 @@
 //!    sandbox and adds a todo;
 //! 3. the agent starts a background job with the `job` tool: the agent daemon runs `job_run`
 //!    on the workspace's host through the host bridge and the tool result names the job;
-//! 4. when the extension registers the remote file tools (R1d), the agent reads
-//!    `devbox:<work>/notes.txt` and gets the host's file; otherwise this step is skipped (and
-//!    said so).
+//! 4. with the extension's remote file tools, the agent reads
+//!    `devbox:<work>/notes.txt` and gets the host's file.
 //!
 //! Needs nono 0.80.0, Landlock and pi, so it is `#[ignore]`d; run it with
 //! `crates/agentd/scripts/acceptance-pi-nono.sh`. Every process it starts is killed at the end,
@@ -215,8 +214,9 @@ async fn real_pi_runs_on_the_server_and_works_on_the_hosts() {
     let offered = tools(&requests, 0);
     assert!(offered.iter().any(|t| t == "job"), "{offered:?}");
 
-    // With the extension's remote tools, a read goes to devbox.
-    if offered.iter().any(|t| t == "read") {
+    // The extension's remote tools: a read goes to devbox.
+    assert!(offered.iter().any(|t| t == "read"), "{offered:?}");
+    {
         mock.push([
             Reply::tool_call(
                 "call_read",
@@ -231,8 +231,6 @@ async fn real_pi_runs_on_the_server_and_works_on_the_hosts() {
         let requests = mock.requests();
         let last = requests[requests.len() - 1]["messages"].to_string();
         assert!(last.contains("remote notes"), "{last}");
-    } else {
-        eprintln!("the extension has no remote file tools yet (R1d): read step skipped");
     }
 
     client.call("session.close", json!({"op_id": op(), "id": id}));
