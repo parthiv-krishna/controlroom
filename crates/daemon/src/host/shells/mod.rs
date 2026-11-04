@@ -279,7 +279,11 @@ impl Shell {
     fn on_exit(&self, host: &Arc<Host>, generation: u64, exit: Option<ExitInfo>) {
         {
             let mut inner = self.lock();
-            if inner.proc.as_ref().is_none_or(|p| p.generation != generation) {
+            if inner
+                .proc
+                .as_ref()
+                .is_none_or(|p| p.generation != generation)
+            {
                 return;
             }
             inner.proc = None;
@@ -380,7 +384,11 @@ async fn spawn(
         id: supervisor.clone(),
         paths: Paths {
             dir: dir.as_path().to_owned(),
-            socket: host.paths.supervisor_socket(&supervisor).as_path().to_owned(),
+            socket: host
+                .paths
+                .supervisor_socket(&supervisor)
+                .as_path()
+                .to_owned(),
         },
         spec: SpawnSpec {
             kind: ProcessKind::Pty,
@@ -398,7 +406,14 @@ async fn spawn(
         .await
         .map_err(|e| internal(format!("starting shell {}: {e}", shell.name)))?;
     let (control, reader, stream) = connect(&info.socket, 1).await?;
-    Ok((control, Reading { _reader: reader, stream }, info.child_pid))
+    Ok((
+        control,
+        Reading {
+            _reader: reader,
+            stream,
+        },
+        info.child_pid,
+    ))
 }
 
 /// A control connection (the writer: it may terminate), and a reader connection with its
@@ -562,7 +577,8 @@ impl Shells {
             let mut gone = shell.describe();
             gone.shell.state = ShellState::Gone;
             if let Some(controller) = host.conns.controller() {
-                controller.notify::<notifications::ShellChanged>(ShellChangedParams { shell: gone });
+                controller
+                    .notify::<notifications::ShellChanged>(ShellChangedParams { shell: gone });
             }
         }
         Ok(())
@@ -630,14 +646,7 @@ impl Shells {
                 continue;
             };
             let id = ShellId::new(id);
-            let shell = Arc::new(Shell::new(
-                id.clone(),
-                name,
-                session,
-                workspace,
-                cwd,
-                reset,
-            ));
+            let shell = Arc::new(Shell::new(id.clone(), name, session, workspace, cwd, reset));
             self.lock().insert(id.clone(), shell.clone());
             let resume = resumes.remove(&id);
             let attached = match &supervisor {

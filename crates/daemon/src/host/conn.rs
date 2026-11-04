@@ -16,8 +16,7 @@ use controlroom_protocol::daemon::{ClientRole, HelloParams};
 use controlroom_protocol::host::{HostHelloResult, methods};
 use controlroom_protocol::jsonrpc::{Method, encode_line, parse_params};
 use controlroom_protocol::{
-    Capability, ErrorData, HOST_PROTOCOL_VERSION, Message, RpcError, RpcId, RpcRequest,
-    RpcResponse,
+    Capability, ErrorData, HOST_PROTOCOL_VERSION, Message, RpcError, RpcId, RpcRequest, RpcResponse,
 };
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};

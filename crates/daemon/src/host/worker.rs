@@ -99,7 +99,10 @@ pub fn run(args: Args) -> ExitCode {
                 let mut out = out.lock().unwrap_or_else(PoisonError::into_inner);
                 let _ = out.write_all(text.as_bytes()).and_then(|()| out.flush());
             }
-            let _ = slots_rx.lock().unwrap_or_else(PoisonError::into_inner).recv();
+            let _ = slots_rx
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .recv();
         });
     }
     ExitCode::SUCCESS

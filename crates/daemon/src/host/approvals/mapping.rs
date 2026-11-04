@@ -161,7 +161,9 @@ pub enum Outcome {
 /// The webhook reply for an outcome.
 pub fn reply(outcome: &Outcome) -> ApprovalReply {
     match outcome {
-        Outcome::Chosen { option_id, .. } if option_id == ALLOW_ONCE || option_id == ALLOW_SESSION => {
+        Outcome::Chosen { option_id, .. }
+            if option_id == ALLOW_ONCE || option_id == ALLOW_SESSION =>
+        {
             ApprovalReply::granted()
         }
         Outcome::Chosen {
@@ -170,7 +172,9 @@ pub fn reply(outcome: &Outcome) -> ApprovalReply {
         } if !reason.trim().is_empty() => ApprovalReply::denied(reason.trim()),
         Outcome::Chosen { .. } => ApprovalReply::denied("denied by the user"),
         Outcome::Expired => ApprovalReply::denied("nobody answered the approval in time"),
-        Outcome::Withdrawn => ApprovalReply::denied("the approval was withdrawn (workspace closed)"),
+        Outcome::Withdrawn => {
+            ApprovalReply::denied("the approval was withdrawn (workspace closed)")
+        }
     }
 }
 

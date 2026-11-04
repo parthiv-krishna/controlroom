@@ -71,7 +71,11 @@ impl Conns {
     pub fn remove(&self, id: u64) {
         let mut inner = self.lock();
         inner.conns.remove(&id);
-        if inner.controller.as_ref().is_some_and(|c| c.connection == id) {
+        if inner
+            .controller
+            .as_ref()
+            .is_some_and(|c| c.connection == id)
+        {
             inner.controller = None;
         }
     }

@@ -58,7 +58,7 @@ impl LineIndex {
             };
             for i in memchr::memchr_iter(b'\n', &buf[..n]) {
                 newlines += 1;
-                if newlines % STRIDE == 0 {
+                if newlines.is_multiple_of(STRIDE) {
                     checkpoints.push(offset + i as u64 + 1);
                 }
             }
@@ -134,7 +134,10 @@ mod tests {
         f.read_exact(&mut start).unwrap();
         assert_eq!(&start, b"line 2049\n");
         assert!(Arc::ptr_eq(&index, &cache.get("f", &mut f).unwrap()));
-        assert_eq!(LineIndex::build(&mut File::open(&path).unwrap()).unwrap(), *index);
+        assert_eq!(
+            LineIndex::build(&mut File::open(&path).unwrap()).unwrap(),
+            *index
+        );
     }
 
     #[test]

@@ -125,9 +125,12 @@ impl Jobs {
         prepare: impl FnOnce(&mut State) -> Option<Change>,
     ) -> Result<Option<JobEvent>, RpcError> {
         let _log = self.log.lock().await;
-        let (change, record, offset, scanned) = {
+        let (change, record, offset, scanned, killed) = {
             let mut inner = self.lock();
-            let state = inner.jobs.get_mut(job_id).ok_or_else(|| job_not_found(job_id))?;
+            let state = inner
+                .jobs
+                .get_mut(job_id)
+                .ok_or_else(|| job_not_found(job_id))?;
             let Some(change) = prepare(state) else {
                 return Ok(None);
             };
@@ -139,6 +142,7 @@ impl Jobs {
                 serde_json::to_string(&state.job).map_err(internal)?,
                 state.offset,
                 state.scanned_seq,
+                state.killed,
             )
         };
         let at = UnixMillis::now();
@@ -160,7 +164,7 @@ impl Jobs {
                     params![rev_i, at.0, id, kind_json],
                 )?;
                 tx.execute(
-                    "UPDATE jobs SET record = ?2, scanned_seq = ?3, offset = ?4,
+                    "UPDATE jobs SET record = ?2, scanned_seq = ?3, offset = ?4, killed = ?7,
                      exit_rev = CASE WHEN ?5 THEN ?6 ELSE exit_rev END
                      WHERE id = ?1",
                     params![
@@ -169,7 +173,8 @@ impl Jobs {
                         i64::try_from(scanned).unwrap_or(i64::MAX),
                         i64::try_from(offset).unwrap_or(i64::MAX),
                         exit,
-                        rev_i
+                        rev_i,
+                        killed
                     ],
                 )?;
                 tx.commit()?;
@@ -187,8 +192,12 @@ impl Jobs {
     }
 
     fn broadcast(&self, host: &Host, events: &[JobEvent]) {
-        let subscribers: Vec<(u64, SubscriptionId)> =
-            self.lock().subscribers.iter().map(|(c, s)| (*c, *s)).collect();
+        let subscribers: Vec<(u64, SubscriptionId)> = self
+            .lock()
+            .subscribers
+            .iter()
+            .map(|(c, s)| (*c, *s))
+            .collect();
         for (conn, subscription_id) in subscribers {
             match host.conns.get(conn) {
                 Some(handle) => handle.notify::<notifications::JobsEvent>(JobsEventParams {
@@ -302,7 +311,9 @@ impl Jobs {
                 follow,
             } => {
                 let job = self
-                    .start(host, call_id, workspace, command, cwd, name, timeout_s, follow)
+                    .start(
+                        host, call_id, workspace, command, cwd, name, timeout_s, follow,
+                    )
                     .await?;
                 Ok(HostResult::JobRun { job: Box::new(job) })
             }
@@ -355,7 +366,7 @@ impl Jobs {
                 {
                     return Err(job_not_found(&id));
                 }
-                jobs.sort_by(|a, b| b.id.cmp(&a.id));
+                jobs.sort_by_key(|j| std::cmp::Reverse(j.id));
                 Ok(HostResult::JobStatus { jobs })
             }
             _ => Err(invalid("not a job op")),
@@ -478,14 +489,22 @@ impl Jobs {
                 self.job(&id)
             }
             Err(e) => {
-                self.end(host, &id, None, Some(format!("it could not start: {}", e.message)))
-                    .await?;
+                self.end(
+                    host,
+                    &id,
+                    None,
+                    Some(format!("it could not start: {}", e.message)),
+                )
+                .await?;
                 Err(e)
             }
         }
     }
 
-    #[allow(clippy::too_many_arguments, reason = "everything a job supervisor needs")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "everything a job supervisor needs"
+    )]
     async fn spawn(
         &self,
         host: &Arc<Host>,
@@ -550,10 +569,7 @@ impl Jobs {
     ) -> Result<Job, RpcError> {
         let regex = pattern.as_deref().map(compile).transpose()?;
         let buffer_seconds = buffer_seconds.unwrap_or(DEFAULT_BUFFER_SECONDS).max(1);
-        let transcript = host
-            .paths
-            .job_dir(&id.to_string())
-            .join("transcript.jsonl");
+        let transcript = host.paths.job_dir(&id.to_string()).join("transcript.jsonl");
         let lines = {
             let inner = self.lock();
             let state = inner.jobs.get(id).ok_or_else(|| job_not_found(id))?;
@@ -565,11 +581,9 @@ impl Jobs {
         // Matches among the lines logged so far; later lines are matched by the scanner.
         let matches = if from == FollowFrom::Unseen {
             let regex = regex.clone();
-            tokio::task::spawn_blocking(move || {
-                rescan(transcript.as_path(), lines, regex.as_ref())
-            })
-            .await
-            .map_err(internal)?
+            tokio::task::spawn_blocking(move || rescan(transcript.as_path(), lines, regex.as_ref()))
+                .await
+                .map_err(internal)?
         } else {
             Vec::new()
         };
@@ -627,7 +641,9 @@ impl Jobs {
             .lock()
             .jobs
             .values()
-            .filter(|s| s.job.workspace_id == Some(*workspace) && s.job.status == JobStatus::Running)
+            .filter(|s| {
+                s.job.workspace_id == Some(*workspace) && s.job.status == JobStatus::Running
+            })
             .map(|s| s.job.id)
             .collect();
         for id in ids {
@@ -726,7 +742,10 @@ impl Jobs {
                 .optional()
             })
             .await?;
-        match job_id.and_then(|id| id.parse().ok()).map(|id| self.job(&id)) {
+        match job_id
+            .and_then(|id| id.parse().ok())
+            .map(|id| self.job(&id))
+        {
             Some(Ok(job)) => Ok(HostResult::JobRun { job: Box::new(job) }),
             _ => Err(RpcError::new(
                 ErrorData::Lost {
@@ -739,16 +758,17 @@ impl Jobs {
 
     /// Loads the jobs and resumes following the running ones.
     pub async fn restore(&self, host: &Arc<Host>) -> Result<(), RpcError> {
-        let rows: Vec<(String, i64, i64)> = host
+        let rows: Vec<(String, i64, i64, bool)> = host
             .store
             .run(|c| {
-                let mut stmt = c.prepare("SELECT record, scanned_seq, offset FROM jobs")?;
-                let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+                let mut stmt = c.prepare("SELECT record, scanned_seq, offset, killed FROM jobs")?;
+                let rows =
+                    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
                 rows.collect()
             })
             .await?;
         let mut running = Vec::new();
-        for (record, scanned, offset) in rows {
+        for (record, scanned, offset, killed) in rows {
             let Ok(job) = serde_json::from_str::<Job>(&record) else {
                 continue;
             };
@@ -767,13 +787,18 @@ impl Jobs {
                     follow,
                     scanned_seq: u64::try_from(scanned).unwrap_or(0),
                     offset: u64::try_from(offset).unwrap_or(0),
-                    killed: false,
+                    killed,
                 },
             );
         }
         for (id, scanned) in running {
             let socket = host.paths.supervisor_socket(&id.to_string());
-            tokio::spawn(follow_job(host.clone(), id, socket.as_path().to_owned(), scanned + 1));
+            tokio::spawn(follow_job(
+                host.clone(),
+                id,
+                socket.as_path().to_owned(),
+                scanned + 1,
+            ));
         }
         Ok(())
     }
@@ -862,7 +887,12 @@ async fn follow_job(host: Arc<Host>, id: JobId, socket: std::path::PathBuf, from
 }
 
 /// Follows a live supervisor; `Err` if the stream ended without an exit record.
-async fn follow_live(host: &Arc<Host>, id: &JobId, client: &Client, from_seq: u64) -> Result<(), ()> {
+async fn follow_live(
+    host: &Arc<Host>,
+    id: &JobId,
+    client: &Client,
+    from_seq: u64,
+) -> Result<(), ()> {
     let mut stream = client.read(from_seq).await.map_err(drop)?;
     let jobs = &host.jobs;
     let mut batch = Vec::new();

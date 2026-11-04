@@ -46,8 +46,7 @@ pub fn skills(root: &Path) -> Vec<Skill> {
                 continue;
             };
             let (name, description) = front_matter(&text);
-            let name =
-                name.unwrap_or_else(|| entry.file_name().to_string_lossy().into_owned());
+            let name = name.unwrap_or_else(|| entry.file_name().to_string_lossy().into_owned());
             if found.iter().any(|s| s.name == name) {
                 continue;
             }

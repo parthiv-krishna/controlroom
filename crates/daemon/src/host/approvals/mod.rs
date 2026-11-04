@@ -184,7 +184,7 @@ impl Approvals {
                 continue;
             };
             match notice(subscription) {
-                Notice::Request(p) => handle.notify::<notifications::ApprovalRequest>(p),
+                Notice::Request(p) => handle.notify::<notifications::ApprovalRequest>(*p),
                 Notice::Closed(p) => handle.notify::<notifications::ApprovalClosed>(p),
             }
         }
@@ -192,7 +192,7 @@ impl Approvals {
 }
 
 enum Notice {
-    Request(ApprovalRequestParams),
+    Request(Box<ApprovalRequestParams>),
     Closed(ApprovalClosedParams),
 }
 
@@ -246,8 +246,7 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, host: &Arc<Host>) {
     if !peer.ip().is_loopback() {
         return;
     }
-    let request = match tokio::time::timeout(READ_TIMEOUT, http::read_request(&mut stream)).await
-    {
+    let request = match tokio::time::timeout(READ_TIMEOUT, http::read_request(&mut stream)).await {
         Ok(Ok(request)) => request,
         Ok(Err(e)) => {
             if let Some(status) = e.status() {
@@ -277,7 +276,13 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, host: &Arc<Host>) {
 fn route(
     request: &http::Request,
     host: &Host,
-) -> Result<(ApprovalRequest, (WorkspaceId, controlroom_protocol::ids::SessionId)), u16> {
+) -> Result<
+    (
+        ApprovalRequest,
+        (WorkspaceId, controlroom_protocol::ids::SessionId),
+    ),
+    u16,
+> {
     if request.method != "POST" {
         return Err(405);
     }
@@ -337,12 +342,15 @@ async fn decide(
             answer,
         },
     );
-    tracing::info!("workspace {workspace_id}: approval {id}: {}", approval.title);
+    tracing::info!(
+        "workspace {workspace_id}: approval {id}: {}",
+        approval.title
+    );
     approvals.notify(&host.conns, |subscription_id| {
-        Notice::Request(ApprovalRequestParams {
+        Notice::Request(Box::new(ApprovalRequestParams {
             subscription_id,
             approval: approval.clone(),
-        })
+        }))
     });
     let outcome = tokio::select! {
         outcome = answered => outcome.unwrap_or(Outcome::Expired),

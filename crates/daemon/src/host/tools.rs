@@ -34,9 +34,9 @@ use tokio::sync::{Notify, watch};
 use super::Host;
 use super::conns::Conns;
 use super::fsops::{Context, sha256_hex};
-use super::worker::WorkerClient;
 use super::shells::{self, Resume};
 use super::store::internal;
+use super::worker::WorkerClient;
 
 /// Default `bash` timeout.
 const DEFAULT_TIMEOUT_S: u32 = 600;
@@ -274,7 +274,10 @@ async fn row(host: &Host, call_id: &CallId) -> Result<Option<Row>, RpcError> {
 }
 
 fn journaled(row: Row) -> Result<HostResult, RpcError> {
-    match row.outcome.and_then(|o| serde_json::from_str::<Outcome>(&o).ok()) {
+    match row
+        .outcome
+        .and_then(|o| serde_json::from_str::<Outcome>(&o).ok())
+    {
         Some(outcome) => outcome.into_result(),
         None => Err(lost(
             true,
@@ -324,7 +327,11 @@ async fn insert(
 }
 
 /// `tool.run`.
-pub async fn run(host: &Arc<Host>, conn: u64, params: ToolRunParams) -> Result<HostResult, RpcError> {
+pub async fn run(
+    host: &Arc<Host>,
+    conn: u64,
+    params: ToolRunParams,
+) -> Result<HostResult, RpcError> {
     let ToolRunParams {
         call_id,
         workspace_id,
@@ -375,9 +382,13 @@ pub async fn run(host: &Arc<Host>, conn: u64, params: ToolRunParams) -> Result<H
 
 /// The outcome of a call that ended between two checks.
 async fn run_again(host: &Arc<Host>, conn: u64, call_id: &CallId) -> Result<HostResult, RpcError> {
-    attach(host, conn, ToolCallRef {
-        call_id: call_id.clone(),
-    })
+    attach(
+        host,
+        conn,
+        ToolCallRef {
+            call_id: call_id.clone(),
+        },
+    )
     .await
 }
 
@@ -562,7 +573,15 @@ fn remove_older_than(dir: &std::path::Path, age: Duration) {
 /// Resolves the calls a previous daemon left running (see the module docs). Runs before the
 /// daemon serves.
 pub async fn recover(host: &Arc<Host>) -> Result<(), RpcError> {
-    type Pending = (String, String, String, Option<String>, Option<i64>, Option<String>, i64);
+    type Pending = (
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+        i64,
+    );
     let rows: Vec<Pending> = host
         .store
         .run(|c| {
@@ -590,11 +609,15 @@ pub async fn recover(host: &Arc<Host>) -> Result<(), RpcError> {
         let call_id = CallId::new(call_id);
         let intent = intent.and_then(|i| serde_json::from_str::<Intent>(&i).ok());
         match (op.as_str(), intent) {
-            ("bash", Some(Intent::Bash {
-                timeout_s,
-                shell_reset,
-            })) if shell_id.is_some() && start_seq.is_some() => {
-                let shell_id = controlroom_protocol::ids::ShellId::new(shell_id.unwrap_or_default());
+            (
+                "bash",
+                Some(Intent::Bash {
+                    timeout_s,
+                    shell_reset,
+                }),
+            ) if shell_id.is_some() && start_seq.is_some() => {
+                let shell_id =
+                    controlroom_protocol::ids::ShellId::new(shell_id.unwrap_or_default());
                 resumes.insert(
                     shell_id,
                     Resume {
@@ -606,11 +629,14 @@ pub async fn recover(host: &Arc<Host>) -> Result<(), RpcError> {
                     },
                 );
             }
-            ("write", Some(Intent::Write {
-                path,
-                sha256,
-                bytes,
-            })) => {
+            (
+                "write",
+                Some(Intent::Write {
+                    path,
+                    sha256,
+                    bytes,
+                }),
+            ) => {
                 let outcome = recover_write(host, &workspace, &path, &sha256, bytes).await;
                 outcomes.push((call_id, outcome));
             }

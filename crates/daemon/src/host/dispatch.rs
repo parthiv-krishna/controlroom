@@ -62,12 +62,11 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         HostRequest::JournalAck(p) => ack(tools::ack(host, p).await),
         HostRequest::JobsSubscribe(p) => json(host.jobs.subscribe(host, conn.id, p).await),
         HostRequest::JobsAck(p) => ack(host.jobs.ack(host, p).await),
-        HostRequest::ApprovalsSubscribe(_) => {
-            controller_only(conn, "approvals.subscribe")
-                .and_then(|()| json(Ok(host.approvals.subscribe(conn.id))))
+        HostRequest::ApprovalsSubscribe(_) => controller_only(conn, "approvals.subscribe")
+            .and_then(|()| json(Ok(host.approvals.subscribe(conn.id)))),
+        HostRequest::ApprovalRespond(p) => {
+            controller_only(conn, "approval.respond").and_then(|()| ack(host.approvals.respond(p)))
         }
-        HostRequest::ApprovalRespond(p) => controller_only(conn, "approval.respond")
-            .and_then(|()| ack(host.approvals.respond(p))),
         HostRequest::Unsubscribe(p) => {
             let id = p.subscription_id;
             if host.jobs.unsubscribe(conn.id, &id) || host.approvals.unsubscribe(conn.id, &id) {

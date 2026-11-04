@@ -145,7 +145,9 @@ pub fn policy(spec: &SandboxSpec) -> Result<EffectivePolicy, RpcError> {
         let command = words
             .next()
             .and_then(|c| Name::new(c).ok())
-            .ok_or_else(|| unavailable(format!("invalid mediated command {:?}", mediated.command)))?;
+            .ok_or_else(|| {
+                unavailable(format!("invalid mediated command {:?}", mediated.command))
+            })?;
         defaults.commands.push(CommandRule {
             command,
             args: words.map(str::to_owned).collect(),

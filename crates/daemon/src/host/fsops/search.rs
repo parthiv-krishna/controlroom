@@ -112,7 +112,9 @@ pub fn grep(path: &str, query: &GrepQuery) -> Result<HostResult, RpcError> {
         .size_limit(REGEX_SIZE_LIMIT)
         .build(&query.pattern)
         .map_err(|e| invalid(format!("bad pattern: {e}")))?;
-    let context = usize::try_from(query.context).unwrap_or(usize::MAX).min(100);
+    let context = usize::try_from(query.context)
+        .unwrap_or(usize::MAX)
+        .min(100);
     let mut searcher = SearcherBuilder::new()
         .line_number(true)
         .before_context(context)

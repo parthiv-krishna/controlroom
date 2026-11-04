@@ -236,15 +236,25 @@ mod tests {
         let cache = LineIndexCache::default();
 
         let (lines, start, total, cut, _) = text(read(path, &cache, None, None).unwrap());
-        assert_eq!((start, total, lines.len(), cut), (1, 5001, 2000, Some(ReadCut::Lines)));
+        assert_eq!(
+            (start, total, lines.len(), cut),
+            (1, 5001, 2000, Some(ReadCut::Lines))
+        );
         let (lines, start, _, cut, _) = text(read(path, &cache, Some(4999), None).unwrap());
         assert_eq!(lines, ["line 4999", "line 5000", ""]);
         assert_eq!((start, cut), (4999, None));
         let (lines, _, _, cut, _) = text(read(path, &cache, Some(2500), Some(2)).unwrap());
-        assert_eq!((lines, cut), (vec!["line 2500".into(), "line 2501".into()], None));
+        assert_eq!(
+            (lines, cut),
+            (vec!["line 2500".into(), "line 2501".into()], None)
+        );
         assert!(read(path, &cache, Some(5002), None).is_err());
 
-        std::fs::write(dir.path().join("long"), format!("{}\nx\n", "a".repeat(60_000))).unwrap();
+        std::fs::write(
+            dir.path().join("long"),
+            format!("{}\nx\n", "a".repeat(60_000)),
+        )
+        .unwrap();
         let long = dir.path().join("long");
         let (lines, _, _, cut, too_long) =
             text(read(long.to_str().unwrap(), &cache, None, None).unwrap());

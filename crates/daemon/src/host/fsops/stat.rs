@@ -113,7 +113,10 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!((exists, kind, size), (true, Some(FsEntryKind::File), Some(2)));
+        assert_eq!(
+            (exists, kind, size),
+            (true, Some(FsEntryKind::File), Some(2))
+        );
         let HostResult::Stat { exists, .. } = stat(&format!("{root}/nope")) else {
             panic!()
         };

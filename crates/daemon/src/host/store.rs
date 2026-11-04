@@ -54,6 +54,7 @@ const MIGRATIONS: &[&str] = &[r"
         record TEXT NOT NULL,
         scanned_seq INTEGER NOT NULL DEFAULT 0,
         offset INTEGER NOT NULL DEFAULT 0,
+        killed INTEGER NOT NULL DEFAULT 0,
         exit_rev INTEGER
     );
     CREATE TABLE job_events (

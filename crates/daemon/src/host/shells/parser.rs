@@ -52,7 +52,7 @@ impl Parser {
                     i = data.len();
                     break;
                 }
-                Osc::NotOsc => {
+                Osc::Plain => {
                     output.push(0x1b);
                     i = esc + 1;
                 }
@@ -88,8 +88,8 @@ impl Parser {
 }
 
 enum Osc<'a> {
-    /// Not an OSC sequence (or too long to be one of ours).
-    NotOsc,
+    /// Not an OSC sequence (or too long to be one of ours): plain output.
+    Plain,
     /// Possibly an OSC sequence, not terminated yet.
     Incomplete,
     /// `ESC ] body (BEL | ESC \)`, `len` bytes in all.
@@ -100,7 +100,7 @@ fn osc_at(data: &[u8]) -> Osc<'_> {
     match data.get(1) {
         None => return Osc::Incomplete,
         Some(b']') => {}
-        Some(_) => return Osc::NotOsc,
+        Some(_) => return Osc::Plain,
     }
     let rest = &data[2..];
     for (j, &b) in rest.iter().enumerate().take(MAX_OSC) {
@@ -117,7 +117,7 @@ fn osc_at(data: &[u8]) -> Osc<'_> {
                         body: &rest[..j],
                         len: j + 4,
                     },
-                    Some(_) => Osc::NotOsc,
+                    Some(_) => Osc::Plain,
                     None => Osc::Incomplete,
                 };
             }
@@ -127,7 +127,7 @@ fn osc_at(data: &[u8]) -> Osc<'_> {
     if rest.len() < MAX_OSC {
         Osc::Incomplete
     } else {
-        Osc::NotOsc
+        Osc::Plain
     }
 }
 
