@@ -47,6 +47,8 @@ pub use listen::Listen;
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8080";
 /// The default sliding login lifetime.
 pub const DEFAULT_SESSION_TTL_DAYS: u32 = 30;
+/// The agent daemon's socket when none is configured (protocol §5).
+pub const DEFAULT_AGENTD_SOCKET: &str = "/run/controlroom-agent/agentd.sock";
 /// The master key's credential name when no file is configured.
 pub const MASTER_KEY_CREDENTIAL: &str = "master-key";
 
@@ -109,6 +111,8 @@ pub struct Settings {
     pub master_key_file: PathBuf,
     /// The bundled daemons; `None`: machines can only use an installed daemon.
     pub bundled_daemons_dir: Option<PathBuf>,
+    /// The agent daemon's socket.
+    pub agentd_socket: PathBuf,
     /// How long a login lasts without use.
     pub session_ttl: Duration,
     /// Authentication.
@@ -296,6 +300,9 @@ impl Config {
             bundled_daemons_dir: self
                 .bundled_daemons_dir
                 .or_else(|| BUNDLED_DAEMONS_DIR.map(PathBuf::from)),
+            agentd_socket: self
+                .agentd_socket
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_AGENTD_SOCKET)),
             session_ttl: Duration::from_secs(u64::from(ttl_days) * 24 * 60 * 60),
             auth,
             push,
@@ -508,6 +515,27 @@ mod tests {
             .unwrap();
         assert_eq!(s.listen, Listen::Tcp("127.0.0.1:9000".parse().unwrap()));
         assert!(matches!(s.auth, AuthSettings::DevToken));
+    }
+
+    #[test]
+    fn the_agentd_socket_defaults_and_can_be_set() {
+        let s = resolve(OIDC).unwrap();
+        assert_eq!(s.agentd_socket, PathBuf::from(DEFAULT_AGENTD_SOCKET));
+        let file = format!("agentd_socket = \"/run/agentd/a.sock\"\n{OIDC}");
+        assert_eq!(
+            resolve(&file).unwrap().agentd_socket,
+            PathBuf::from("/run/agentd/a.sock")
+        );
+        let cli = Cli {
+            agentd_socket: Some("/tmp/agentd.sock".into()),
+            ..Cli::default()
+        };
+        let s = Config::from_toml(&file)
+            .unwrap()
+            .with_cli(&cli)
+            .resolve(&Env::default())
+            .unwrap();
+        assert_eq!(s.agentd_socket, PathBuf::from("/tmp/agentd.sock"));
     }
 
     #[test]

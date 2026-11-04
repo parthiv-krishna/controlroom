@@ -22,6 +22,8 @@ pub struct Config {
     pub master_key_file: Option<PathBuf>,
     /// The bundled `controlroomd-<arch>-linux` binaries (default: the package's own).
     pub bundled_daemons_dir: Option<PathBuf>,
+    /// The agent daemon's socket (default `/run/controlroom-agent/agentd.sock`).
+    pub agentd_socket: Option<PathBuf>,
     /// How long a login lasts without use, in days (default 30, sliding).
     pub session_ttl_days: Option<u32>,
     /// Authentication.
@@ -118,6 +120,9 @@ pub struct Cli {
     /// The bundled daemons directory.
     #[arg(long, env = "CONTROLROOM_WEB_BUNDLED_DAEMONS_DIR")]
     pub bundled_daemons_dir: Option<PathBuf>,
+    /// The agent daemon's socket.
+    #[arg(long, env = "CONTROLROOM_WEB_AGENTD_SOCKET")]
+    pub agentd_socket: Option<PathBuf>,
 }
 
 impl Config {
@@ -138,6 +143,7 @@ impl Config {
         set(&mut self.state_dir, &cli.state_dir);
         set(&mut self.master_key_file, &cli.master_key_file);
         set(&mut self.bundled_daemons_dir, &cli.bundled_daemons_dir);
+        set(&mut self.agentd_socket, &cli.agentd_socket);
         if cli.auth_mode.is_some() {
             self.auth.mode = cli.auth_mode;
         }
