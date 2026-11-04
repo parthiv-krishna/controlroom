@@ -1,6 +1,7 @@
 <script lang="ts">
   // The session pane: banners, the jobs strip, the timeline slot, the todo panel, schedules, the
-  // queue and the composer. The header is in the top bar on desktop and inline on the phone.
+  // queue, the composer and the terminal dock. The header is in the top bar on desktop and inline
+  // on the phone.
   import { useApp } from '../app/app.svelte';
   import type { FeedSession } from '../protocol';
   import Timeline from '../timeline/Timeline.svelte';
@@ -11,6 +12,7 @@
   import SchedulesPanel from './SchedulesPanel.svelte';
   import SessionHeader from './SessionHeader.svelte';
   import TodoPanel from './TodoPanel.svelte';
+  import TerminalDock from '../term/TerminalDock.svelte';
 
   let { s, header = false }: { s: FeedSession; header?: boolean } = $props();
   const app = useApp();
@@ -20,6 +22,7 @@
   // Auto-continue is on by default: the panel shows once there are todos, or while it is paused.
   const PAUSED = new Set(['paused', 'stalled', 'budget']);
   const showSchedules = $derived(app.view.panels['schedules:' + key] ?? hasSchedules);
+  const machineName = (id: string) => app.client.feed.machines.get(id)?.name ?? id;
 </script>
 
 <div class="pane">
@@ -31,6 +34,7 @@
   {#if showSchedules}<SchedulesPanel {s} />{/if}
   {#if detail?.queue.length || s.queue.paused}<QueuePanel {s} items={detail?.queue ?? []} />{/if}
   <Composer {s} />
+  <TerminalDock session={s} {machineName} />
 </div>
 
 <style>

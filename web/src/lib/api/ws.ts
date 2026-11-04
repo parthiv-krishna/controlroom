@@ -11,19 +11,18 @@
 // - Reconnects with exponential backoff.
 import type { MachineId, RemotePath, UiMethod, UiNotificationName, UiNotifications } from '../protocol';
 import { ConnectionError, RpcError } from './errors';
+import type { TerminalHandlers, TerminalLink, TerminalTarget } from '../term/link';
+import { openTerminalSocket } from '../term/socket';
 import { timeoutFor } from './timeouts';
 import {
   Listeners,
   NotificationHub,
   fileUrl,
-  streamsNotSupported,
   type AuthState,
   type CallOptions,
   type ConnState,
-  type DuplexStream,
   type Params,
   type Result,
-  type StreamKind,
   type Transport,
 } from './transport';
 
@@ -137,8 +136,8 @@ export class WebSocketTransport implements Transport {
     void this.connect();
   }
 
-  openStream(_kind: StreamKind, _params: Record<string, unknown>): Promise<DuplexStream> {
-    return streamsNotSupported();
+  openTerminal(target: TerminalTarget, handlers: TerminalHandlers): TerminalLink {
+    return openTerminalSocket(this.options.base, target, handlers, { WebSocketImpl: this.WebSocketImpl });
   }
   resourceUrl(machineId: MachineId, path: RemotePath): string {
     return fileUrl(this.options.base, machineId, path);

@@ -41,7 +41,7 @@ class FakeTransport implements Transport {
     this.states.emit(state);
   }
   async logout() {}
-  async openStream(): Promise<never> {
+  openTerminal(): never {
     throw new Error('unsupported');
   }
   resourceUrl() {

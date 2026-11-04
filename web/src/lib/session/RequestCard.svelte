@@ -124,7 +124,7 @@
     <div class="from">from subagent <button class="linkish" onclick={() => app.open({ id: targetId })}>{child ? displayName(child) : 'subagent'}</button></div>
   {/if}
   {#if req.detail && !compact}<div class="detail"><Markdown text={req.detail} /></div>{/if}
-  {#if req.body}<RequestBody body={req.body} {compact} />{/if}
+  {#if req.body}<RequestBody body={req.body} {compact} session={targetId} open={() => app.open({ id: targetId })} />{/if}
 
   {#if pending}
     {#if questions.length}

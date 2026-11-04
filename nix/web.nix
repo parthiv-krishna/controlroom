@@ -33,7 +33,7 @@ let
     pname = "controlroom-web";
     inherit version src pnpm;
     fetcherVersion = 4;
-    hash = "sha256-ZiM7WbUNL02kt+uXZEhP761XSMQLxjV5gdpjrTHxiFo=";
+    hash = "sha256-7PUzr5x2/YiSK4tDKeuRYojYS2k/QJ6JZcEl6Eevfjc=";
   };
 
   mkWeb =

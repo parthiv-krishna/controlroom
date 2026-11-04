@@ -2,10 +2,23 @@
   // The structured subject of a request: command, path, endpoint, diff, git push, contact, spawn,
   // a command waiting for terminal input (the user types in that shell's terminal; the agent
   // can't), and a privileged command (it runs unsandboxed on the host).
-  import type { RequestBody } from '../protocol';
+  import type { RequestBody, SessionId } from '../protocol';
+  import OpenTerminal from '../term/OpenTerminal.svelte';
   import Diff from '../ui/Diff.svelte';
 
-  let { body, compact = false }: { body: RequestBody; compact?: boolean } = $props();
+  let {
+    body,
+    compact = false,
+    session,
+    open,
+  }: {
+    body: RequestBody;
+    compact?: boolean;
+    /** The request's session: a waiting shell links to its terminal there. */
+    session?: SessionId;
+    /** Shows the session (before its terminal opens). */
+    open?: () => void;
+  } = $props();
 </script>
 
 {#if body.kind === 'command'}
@@ -32,7 +45,7 @@
   {#if !compact}<div class="small muted">in <code>{body.cwd}</code></div>{/if}
 {:else if body.kind === 'terminal_input'}
   <pre class="code">$ {body.command}</pre>
-  <div class="line" data-shell={body.shell}>waits for input in the shell <b class="shell">{body.shell}</b> on <b>{body.machine}</b>: type in its terminal</div>
+  <div class="line" data-shell={body.shell}>waits for input in the shell {#if session}<OpenTerminal {session} shell={body.shell} {open} />{:else}<b class="shell">{body.shell}</b>{/if} on <b>{body.machine}</b>: type in its terminal</div>
 {:else if body.kind === 'privileged'}
   <pre class="code">$ {body.command}</pre>
   <div class="line"><span class="acc">unsandboxed</span> on <b>{body.machine}</b>{#if body.cwd && !compact} · in <code>{body.cwd}</code>{/if}</div>

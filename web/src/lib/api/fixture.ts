@@ -20,15 +20,15 @@ import {
   Listeners,
   NotificationHub,
   fileUrl,
-  streamsNotSupported,
   type AuthState,
   type ConnState,
-  type DuplexStream,
   type Params,
   type Result,
   type Transport,
 } from './transport';
 import { TimelineReplay, type FixtureTimeline } from './fixture-timelines';
+import { FixtureTerminals } from '../term/fixture';
+import type { TerminalHandlers, TerminalLink, TerminalTarget } from '../term/link';
 
 /** One scripted feed event; the transport fills in the subscription id it handed out. */
 export type FixtureStep =
@@ -79,6 +79,8 @@ export class FixtureTransport implements Transport {
   auth: AuthState = { status: 'ok' };
   /** Every call, in order (inspected by tests). */
   readonly calls: RecordedCall[] = [];
+  /** Terminal streams (inspected by tests). */
+  readonly terminals = new FixtureTerminals();
 
   private readonly hub = new NotificationHub();
   private readonly stateListeners = new Listeners<ConnState>();
@@ -116,8 +118,8 @@ export class FixtureTransport implements Transport {
     return () => {};
   }
   async logout(): Promise<void> {}
-  openStream(): Promise<DuplexStream> {
-    return streamsNotSupported();
+  openTerminal(target: TerminalTarget, handlers: TerminalHandlers): TerminalLink {
+    return this.terminals.open(target, handlers);
   }
   resourceUrl(machineId: string, path: string): string {
     return fileUrl('./', machineId, path);

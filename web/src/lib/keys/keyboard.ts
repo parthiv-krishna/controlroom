@@ -5,6 +5,7 @@ import type { App } from '../app/app.svelte';
 import { displayName } from '../model/filters';
 import { primaryWorkspace, wsLabel } from '../model/workspaces';
 import { moveFocus } from './navigator';
+import { terminalTakesKeys } from '../term/keys';
 
 const inField = (t: EventTarget | null): t is HTMLElement =>
   t instanceof HTMLElement && (['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName) || t.isContentEditable);
@@ -21,6 +22,8 @@ export function onCaptureKey(app: App, e: KeyboardEvent): void {
   }
   if (!app.prefs.keyboard.navigator || !e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || !'hjkl'.includes(k) || k.length !== 1) return;
   if (app.view.palette !== null || app.view.modal || app.view.settings) return;
+  // A terminal running a pass-through program (or after Ctrl-\) takes the keys itself.
+  if (terminalTakesKeys(document.activeElement)) return;
   e.preventDefault();
   e.stopPropagation();
   moveFocus(k as 'h' | 'j' | 'k' | 'l');

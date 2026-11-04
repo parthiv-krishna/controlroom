@@ -1,6 +1,7 @@
 // All backend traffic goes through a Transport; nothing else in the app touches WebSocket or fetch.
 // Implementations: WebSocketTransport (the web server) and FixtureTransport (development and tests).
 import type { MachineId, RemotePath, UiMethod, UiMethods, UiNotificationName, UiNotifications } from '../protocol';
+import type { TerminalHandlers, TerminalLink, TerminalTarget } from '../term/link';
 
 /** Params and result of a UI API method. */
 export type Params<M extends UiMethod> = UiMethods[M]['params'];
@@ -17,14 +18,6 @@ export interface CallOptions {
   timeoutMs?: number;
 }
 
-/** Reserved (spec §14/§19): duplex byte streams such as terminals. Not implemented yet. */
-export type StreamKind = 'pty';
-export interface DuplexStream {
-  write(data: Uint8Array): void;
-  onData(handler: (data: Uint8Array) => void): () => void;
-  close(): void;
-}
-
 export interface Transport {
   readonly state: ConnState;
   readonly auth: AuthState;
@@ -36,15 +29,12 @@ export interface Transport {
   onAuth(handler: (auth: AuthState) => void): () => void;
   /** Ends the login session. */
   logout(): Promise<void>;
-  /** Reserved: a duplex stream (terminals, P5b). */
-  openStream(kind: StreamKind, params: Record<string, unknown>): Promise<DuplexStream>;
+  /** A session shell's terminal stream (spec §22); it connects at once. */
+  openTerminal(target: TerminalTarget, handlers: TerminalHandlers): TerminalLink;
   /** Reserved: an authenticated URL for a remote file (viewers, P7b). */
   resourceUrl(machineId: MachineId, path: RemotePath): string;
   close(): void;
 }
-
-/** Shared default for the reserved stream channel. */
-export const streamsNotSupported = (): Promise<DuplexStream> => Promise.reject(new Error('streams are not supported yet'));
 
 /** A remote file under `api/files/<machine>/<path>`; each POSIX segment is encoded, `~` is kept. */
 export function fileUrl(base: string, machineId: MachineId, path: RemotePath): string {
