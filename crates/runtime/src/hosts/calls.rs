@@ -389,11 +389,12 @@ impl Core {
                 continue;
             };
             tracing::info!("session {id}: {key} failed after the grace period");
-            self.effect(HostEffect::Withdraw(key));
+            // The waiters learn why before their request disappears.
             self.effect(HostEffect::Expire(
                 call.expire,
                 connection_lost(call.machine, since),
             ));
+            self.effect(HostEffect::Withdraw(key));
             if let Some(tool) = call.tool {
                 let late = LateCall {
                     call_id: tool.call_id,
