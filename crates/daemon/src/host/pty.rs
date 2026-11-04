@@ -5,6 +5,12 @@
 //! last [`REPLAY_RECORDS`] records, or from `--since-seq`), then streams the terminal's bytes
 //! to stdout and types stdin into it, until the shell exits or stdin closes. Several attaches
 //! (and the agent) share the terminal. `resize` sets the terminal size.
+//!
+//! Raw bytes suit a human at a terminal; the controller uses `--framed`
+//! ([`controlroom_protocol::host::terminal`], implemented in [`framed`]): resize in-band,
+//! transcript positions for resuming after a link drop, and the foreground program.
+
+mod framed;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -40,6 +46,13 @@ enum Command {
         /// Replay output from this transcript position instead of the recent records.
         #[arg(long)]
         since_seq: Option<u64>,
+        /// Speak the framed protocol (for the controller) instead of raw bytes.
+        #[arg(long)]
+        framed: bool,
+        /// With `--framed`: `--since-seq` applies only while the shell still runs as this
+        /// instance (from the `attached` frame); otherwise recent output is replayed.
+        #[arg(long, requires_all = ["since_seq", "framed"])]
+        instance: Option<String>,
     },
     /// Set a shell's terminal size.
     Resize {
@@ -58,7 +71,12 @@ pub fn run(args: Args) -> ExitCode {
         .enable_all()
         .build()
         .map_err(anyhow::Error::from)
-        .and_then(|rt| rt.block_on(run_async(args)));
+        .and_then(|rt| {
+            let result = rt.block_on(run_async(args));
+            // A stdin read may still block a thread after the shell ended; don't wait for it.
+            rt.shutdown_background();
+            result
+        });
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -71,47 +89,91 @@ pub fn run(args: Args) -> ExitCode {
 async fn run_async(args: Args) -> anyhow::Result<()> {
     let dirs = Dirs::from_env(args.state_dir.as_deref())?;
     match args.command {
-        Command::Attach { shell, since_seq } => {
-            let client = connect(&dirs, &shell).await?;
-            attach(&client, &connect(&dirs, &shell).await?, since_seq).await
+        Command::Attach {
+            shell,
+            since_seq,
+            framed: true,
+            instance,
+        } => {
+            let shell = ShellTarget::find(&dirs, &shell)?;
+            let resume = since_seq.map(|seq| framed::Resume { seq, instance });
+            framed::attach(&shell, resume).await
+        }
+        Command::Attach {
+            shell, since_seq, ..
+        } => {
+            let shell = ShellTarget::find(&dirs, &shell)?;
+            attach(&shell.connect().await?, &shell.connect().await?, since_seq).await
         }
         Command::Resize { shell, cols, rows } => {
-            let client = connect(&dirs, &shell).await?;
+            let client = ShellTarget::find(&dirs, &shell)?.connect().await?;
             client.resize(cols, rows).await.context("resizing")
         }
     }
 }
 
-/// Connects to the running supervisor of `shell`.
-async fn connect(dirs: &Dirs, shell: &str) -> anyhow::Result<Client> {
-    let store = Store::open(dirs.database().as_path())?;
-    let id = shell.to_owned();
-    let supervisor: Option<Option<String>> = store
-        .run_blocking(|c| {
-            c.query_row("SELECT supervisor FROM shells WHERE id = ?1", [id], |r| {
-                r.get(0)
+/// A running shell, as `host.sqlite` knows it.
+struct ShellTarget {
+    id: String,
+    store: Store,
+    socket: PathBuf,
+}
+
+impl ShellTarget {
+    /// Finds the running shell `id`.
+    fn find(dirs: &Dirs, id: &str) -> anyhow::Result<Self> {
+        let store = Store::open(dirs.database().as_path())?;
+        let key = id.to_owned();
+        let supervisor: Option<Option<String>> = store
+            .run_blocking(|c| {
+                c.query_row("SELECT supervisor FROM shells WHERE id = ?1", [key], |r| {
+                    r.get(0)
+                })
+                .optional()
             })
-            .optional()
+            .map_err(|e| anyhow::anyhow!(e.message))?;
+        let Some(Some(supervisor)) = supervisor else {
+            bail!("no running shell {id:?} on this host");
+        };
+        Ok(Self {
+            id: id.to_owned(),
+            socket: dirs.supervisor_socket(&supervisor).as_path().to_owned(),
+            store,
         })
-        .map_err(|e| anyhow::anyhow!(e.message))?;
-    let Some(Some(supervisor)) = supervisor else {
-        bail!("no running shell {shell:?} on this host");
-    };
-    let socket = dirs.supervisor_socket(&supervisor);
-    Client::connect(socket.as_path(), false)
-        .await
-        .with_context(|| format!("shell {shell:?} is not running"))
+    }
+
+    /// Connects to the shell's supervisor.
+    async fn connect(&self) -> anyhow::Result<Client> {
+        Client::connect(&self.socket, false)
+            .await
+            .with_context(|| format!("shell {:?} is not running", self.id))
+    }
+
+    /// The shell's own pid, once its prompt reported it.
+    fn shell_pid(&self) -> Option<u32> {
+        let key = self.id.clone();
+        self.store
+            .run_blocking(|c| {
+                c.query_row("SELECT shell_pid FROM shells WHERE id = ?1", [key], |r| {
+                    r.get::<_, Option<u32>>(0)
+                })
+                .optional()
+            })
+            .ok()
+            .flatten()
+            .flatten()
+    }
+}
+
+/// Where a replay starts by default: the last [`REPLAY_RECORDS`] records.
+fn recent_start(last_seq: u64) -> u64 {
+    last_seq.saturating_sub(REPLAY_RECORDS).max(1)
 }
 
 async fn attach(reader: &Client, typist: &Client, since_seq: Option<u64>) -> anyhow::Result<()> {
     let from = match since_seq {
         Some(seq) => seq,
-        None => reader
-            .status()
-            .await?
-            .last_seq
-            .saturating_sub(REPLAY_RECORDS)
-            .max(1),
+        None => recent_start(reader.status().await?.last_seq),
     };
     let mut stream = reader.read(from).await?;
     let output = async {

@@ -9,3 +9,4 @@ mod jobs;
 mod journal;
 mod nono;
 mod shells;
+mod terminal;

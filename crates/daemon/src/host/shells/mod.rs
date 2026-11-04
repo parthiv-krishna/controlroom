@@ -18,7 +18,7 @@
 pub mod integration;
 mod output;
 mod parser;
-mod proc;
+pub(crate) mod proc;
 pub mod run;
 
 use std::collections::{BTreeMap, HashMap};
