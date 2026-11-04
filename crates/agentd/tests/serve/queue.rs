@@ -1,4 +1,5 @@
-//! The queue: auto-advance, pause on failure, send-now (pi steers), cancel.
+//! The queue: auto-advance, pause on failure, send-now (pi steers, or starts the next run when
+//! the steer reaches it after its run), cancel.
 
 use controlroom_transcript::Body;
 use serde_json::{Value, json};
@@ -78,6 +79,15 @@ fn wait_preview(client: &Client, id: &str, preview: &str) {
     });
 }
 
+/// The lines that steered a send-now in: `prompt` with `streamingBehavior: "steer"`, which
+/// starts the next run if the agent reads it after its run ended.
+fn steers(env: &Env, id: &str) -> Vec<Value> {
+    env.lines_in(id)
+        .into_iter()
+        .filter(|l| l["type"] == "prompt" && l["streamingBehavior"] == "steer")
+        .collect()
+}
+
 fn send_now(client: &Client, id: &str, queue_id: &str) -> Value {
     client.call(
         "queue.send_now",
@@ -95,14 +105,54 @@ fn send_now_during_text_steers() {
     assert_eq!(send_now(&client, &id, &queue_id)["outcome"], "steered");
     env.release("hold");
     client.wait_turn(&id, 0);
-    let steers: Vec<Value> = env
-        .lines_in(&id)
-        .into_iter()
-        .filter(|l| l["type"] == "steer")
-        .collect();
+    let steers = steers(&env, &id);
     assert_eq!(steers.len(), 1);
     assert_eq!(steers[0]["message"], "second");
     assert_eq!(env.prompts_sent(&id), ["first", "second"]);
+}
+
+/// A send-now steered into a run that ends before the agent reads the line starts the next run
+/// without another message from the user (pi would hold a plain `steer` until then).
+#[test]
+fn send_now_racing_the_end_of_the_run_starts_the_next_run() {
+    let env = Env::with(json!({"replies": [
+        {"content": [
+            {"type": "text", "text": "Writing"},
+            {"type": "deafen", "until": "listen"},
+            {"type": "gate", "name": "hold"},
+            {"type": "text", "text": " more."},
+        ]},
+        {"content": [{"type": "text", "text": "Changed course."}]},
+    ]}));
+    let client = env.client();
+    client.watch_sessions();
+    let (id, queue_id) = busy_with_queue(&env, &client);
+    wait_preview(&client, &id, "Writing");
+    assert_eq!(send_now(&client, &id, &queue_id)["outcome"], "steered");
+    // Logged by the supervisor, but the agent doesn't read it before its run has ended.
+    wait_until("the steer line", || !steers(&env, &id).is_empty());
+    env.release("hold");
+    wait_until("the run's end", || {
+        env.records(&id)
+            .iter()
+            .any(|r| matches!(&r.body, Body::Out(l) if l.raw.contains(r#""type":"agent_settled""#)))
+    });
+    env.release("listen");
+    client.wait_session(&id, "the steered run", |s| {
+        s["state"] == "idle" && s["queue"]["len"] == 0 && s["preview"] == "Changed course."
+    });
+    assert_eq!(env.prompts_sent(&id), ["first", "second"]);
+    let (_, ops) = client.session_ops(&id, 0);
+    let triggers: Vec<&Value> = ops
+        .iter()
+        .filter(|op| op["item"]["kind"] == "run")
+        .map(|op| &op["item"]["trigger"]["kind"])
+        .collect();
+    assert_eq!(
+        triggers.last().copied(),
+        Some(&json!("steer")),
+        "{triggers:?}"
+    );
 }
 
 #[test]
@@ -118,16 +168,16 @@ fn send_now_during_a_tool_steers_after_the_tool() {
     // The running tool's title.
     wait_preview(&client, &id, "make");
     assert_eq!(send_now(&client, &id, &queue_id)["outcome"], "steered");
-    wait_until("the steer line", || {
-        env.lines_in(&id).iter().any(|l| l["type"] == "steer")
-    });
+    wait_until("the steer line", || !steers(&env, &id).is_empty());
     env.release("hold");
     client.wait_turn(&id, 0);
     // The steer went in while the tool ran, and the tool still completed.
     let records = env.records(&id);
     let steer_seq = records
         .iter()
-        .find(|r| matches!(&r.body, Body::In(l) if l.raw.contains("\"steer\"")))
+        .find(
+            |r| matches!(&r.body, Body::In(l) if l.raw.contains(r#""streamingBehavior":"steer""#)),
+        )
         .map(|r| r.seq)
         .expect("a steer line");
     let tool_end_seq = records
