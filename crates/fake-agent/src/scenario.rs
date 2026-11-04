@@ -298,10 +298,13 @@ pub struct ToolCallStep {
     /// Tools this tool runs through `ctx.executeTool` (`parentToolCallId`).
     #[serde(default)]
     pub nested: Vec<NestedCall>,
-    /// Call the controlroom agent API like `@controlroom/pi` would; its JSON result (or
-    /// error) becomes the tool result. `call_id` defaults to the tool call id.
-    #[serde(default)]
-    pub agent: Option<AgentCall>,
+    /// Calls on the controlroom agent API, in order, like `@controlroom/pi` would (one call,
+    /// or a list for a tool of several steps, e.g. edit's read and write). The last call's JSON
+    /// result becomes the tool result; the first error (the JSON-RPC error object) ends the
+    /// tool as an error. `call_id` defaults to the tool call id for one call and to
+    /// `<id>/<n>` (from 1) for the steps of a list.
+    #[serde(default, deserialize_with = "one_or_many")]
+    pub agent: Vec<AgentCall>,
 }
 
 /// One thing a running tool does.
@@ -341,6 +344,24 @@ pub struct AgentCall {
     pub method: String,
     #[serde(default)]
     pub params: Value,
+}
+
+/// One value or a list of them.
+fn one_or_many<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany<T> {
+        One(T),
+        Many(Vec<T>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(one) => vec![one],
+        OneOrMany::Many(many) => many,
+    })
 }
 
 /// A nested tool call.
@@ -448,6 +469,24 @@ mod tests {
         let scenario = Scenario::from_json(&json).unwrap();
         assert_eq!(scenario.replies.len(), 3);
         assert!(matches!(scenario.replies[0].content[1], Step::ToolCall(_)));
+    }
+
+    #[test]
+    fn agent_calls_are_one_or_a_list() {
+        let steps = |agent: &str| {
+            let json = format!(
+                r#"{{"replies": [{{"content": [{{"type": "tool_call", "id": "c", "name": "edit", "agent": {agent}}}]}}]}}"#
+            );
+            match &Scenario::from_json(&json).unwrap().replies[0].content[0] {
+                Step::ToolCall(tool) => tool.agent.len(),
+                other => panic!("{other:?}"),
+            }
+        };
+        assert_eq!(steps(r#"{"method": "session.info"}"#), 1);
+        assert_eq!(
+            steps(r#"[{"method": "host.call"}, {"method": "host.call"}]"#),
+            2
+        );
     }
 
     #[test]

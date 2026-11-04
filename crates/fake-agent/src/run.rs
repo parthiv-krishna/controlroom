@@ -524,16 +524,8 @@ async fn execute(
             }
         }
     }
-    if let Some(call) = &tool.agent {
-        let mut params = call.params.clone();
-        if let Some(map) = params.as_object_mut() {
-            map.entry("call_id")
-                .or_insert_with(|| tool.id.clone().into());
-        }
-        let (text, is_error) = match crate::controlroom::call(&call.method, &params).await {
-            Ok(result) => (result, false),
-            Err(e) => (format!("{e:#}"), true),
-        };
+    if !tool.agent.is_empty() {
+        let (text, is_error) = agent_calls(tool).await;
         return ToolOutcome {
             text,
             is_error,
@@ -545,6 +537,30 @@ async fn execute(
         is_error: tool.is_error,
         duration_ms: Some(elapsed()),
     }
+}
+
+/// Runs a tool's agent API calls in order (see [`ToolCallStep::agent`]): the last result, or
+/// the first error, as the tool's text.
+async fn agent_calls(tool: &ToolCallStep) -> (String, bool) {
+    use crate::controlroom::{Answer, call};
+    let mut last = Value::Null;
+    for (n, step) in tool.agent.iter().enumerate() {
+        let mut params = step.params.clone();
+        if let Some(map) = params.as_object_mut() {
+            let id = if tool.agent.len() == 1 {
+                tool.id.clone()
+            } else {
+                format!("{}/{}", tool.id, n + 1)
+            };
+            map.entry("call_id").or_insert_with(|| id.into());
+        }
+        match call(&step.method, &params).await {
+            Ok(Answer::Result(result)) => last = result,
+            Ok(Answer::Error(error)) => return (error.to_string(), true),
+            Err(e) => return (format!("{e:#}"), true),
+        }
+    }
+    (last.to_string(), false)
 }
 
 #[cfg(test)]
