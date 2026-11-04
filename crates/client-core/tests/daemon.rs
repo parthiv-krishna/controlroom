@@ -398,3 +398,66 @@ async fn hello_sends_the_controller_role_and_maps_refusals() {
         );
     }
 }
+
+#[tokio::test]
+async fn host_hello_reads_the_epoch_and_checks_the_major() {
+    use controlroom_client_core::daemon::{CallTimeout, HelloError, host_hello};
+    use controlroom_protocol::ids::{ControllerId, DaemonId, Epoch};
+
+    let (client, mut daemon, _notes) = pair(ClientOptions::default());
+    let (daemon_id, epoch) = (DaemonId::generate(), Epoch::generate());
+    let answers = [
+        json!({"result": {"host_version": "0.2.0", "protocol_version": {"major": 1, "minor": 4},
+            "daemon_id": daemon_id, "epoch": epoch, "capabilities": ["shells", "pty"]}}),
+        json!({"result": {"host_version": "9.0.0", "protocol_version": {"major": 2, "minor": 0},
+            "daemon_id": daemon_id, "epoch": epoch, "capabilities": []}}),
+        // A per-machine daemon's answer has no epoch: not a host.
+        json!({"result": {"daemon_version": "0.1.0", "protocol_version": {"major": 1, "minor": 0},
+            "daemon_id": daemon_id, "capabilities": []}}),
+    ];
+    let task = tokio::spawn({
+        let client = client.clone();
+        async move {
+            let mut out = Vec::new();
+            for _ in 0..3 {
+                out.push(host_hello(&client, "controlroom-test", ControllerId::generate()).await);
+            }
+            out
+        }
+    });
+    for answer in answers {
+        let req = daemon.next_request().await;
+        assert_eq!(
+            req["params"]["protocol_version"],
+            json!({"major": 1, "minor": 0})
+        );
+        let mut reply = answer;
+        reply["jsonrpc"] = json!("2.0");
+        reply["id"] = req["id"].clone();
+        daemon.send(reply).await;
+    }
+    let out = task.await.unwrap();
+    let ok = out[0].as_ref().unwrap();
+    assert_eq!((ok.epoch, ok.capabilities.len()), (epoch, 2));
+    assert!(
+        matches!(&out[1], Err(HelloError::Incompatible { daemon_version, .. }) if daemon_version == "9.0.0")
+    );
+    assert!(
+        matches!(&out[2], Err(HelloError::Call(e)) if e.rpc().is_some()),
+        "{:?}",
+        out[2]
+    );
+
+    // A call without a timeout still fails when the connection closes.
+    let options = CallOptions {
+        timeout: CallTimeout::Never,
+        ..CallOptions::default()
+    };
+    let call = tokio::spawn({
+        let client = client.clone();
+        async move { client.call_raw_with("tool.run", json!({}), options).await }
+    });
+    daemon.next_request().await;
+    client.close();
+    assert!(matches!(call.await.unwrap(), Err(CallError::Closed(_))));
+}
