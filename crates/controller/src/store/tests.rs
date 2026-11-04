@@ -473,3 +473,35 @@ fn sandbox_profiles_and_grants() {
     assert!(repo.grants().delete(grant.id).unwrap());
     assert!(!repo.grants().delete(grant.id).unwrap());
 }
+
+/// Lists in creation order must not depend on id order: ids made in the same millisecond
+/// aren't ordered, and the feed's project membership follows this order (a flaky e2e test).
+#[test]
+fn projects_created_in_the_same_millisecond_keep_their_insertion_order() {
+    let (store, owner) = store();
+    // Same created_at, ids deliberately descending.
+    let ids = [
+        "01J00000000000000000000009",
+        "01J00000000000000000000008",
+        "01J00000000000000000000007",
+    ];
+    for (i, id) in ids.iter().enumerate() {
+        store
+            .lock()
+            .execute(
+                "INSERT INTO projects (id, owner_id, name, color, created_at)
+                 VALUES (?1, ?2, ?3, '#000000', 1)",
+                rusqlite::params![id, owner.as_str(), format!("p{i}")],
+            )
+            .unwrap();
+    }
+    let names: Vec<String> = store
+        .owner(&owner)
+        .projects()
+        .list()
+        .unwrap()
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
+    assert_eq!(names, ["p0", "p1", "p2"]);
+}

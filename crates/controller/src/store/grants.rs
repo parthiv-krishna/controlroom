@@ -75,7 +75,7 @@ impl<'a> Grants<'a> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(
             "SELECT id, from_session, to_session, scope, granted_at, by_device, by_label
-             FROM grants WHERE owner_id = ?1 ORDER BY granted_at, id",
+             FROM grants WHERE owner_id = ?1 ORDER BY granted_at, rowid",
         )?;
         let rows = stmt
             .query_map([self.owner.as_str()], map)?

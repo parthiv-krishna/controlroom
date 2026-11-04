@@ -63,7 +63,7 @@ impl<'a> Devices<'a> {
     pub fn list(&self) -> StoreResult<Vec<Device>> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(&format!(
-            "{SELECT} WHERE d.owner_id = ?1 ORDER BY d.created_at, d.device_id"
+            "{SELECT} WHERE d.owner_id = ?1 ORDER BY d.created_at, d.rowid"
         ))?;
         let rows = stmt
             .query_map([self.owner.as_str()], map)?

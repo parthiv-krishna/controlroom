@@ -211,7 +211,7 @@ impl<'a> Schedules<'a> {
     pub fn list(&self) -> StoreResult<Vec<ScheduleRow>> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM schedules WHERE owner_id = ?1 ORDER BY created_at, id"
+            "SELECT {COLUMNS} FROM schedules WHERE owner_id = ?1 ORDER BY created_at, rowid"
         ))?;
         let rows = stmt
             .query_map([self.owner.as_str()], map)?

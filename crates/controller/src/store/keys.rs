@@ -177,7 +177,7 @@ impl<'a> Keys<'a> {
     pub fn list(&self) -> StoreResult<Vec<KeyRow>> {
         let conn = self.store.lock();
         let mut stmt = conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM keys WHERE owner_id = ?1 ORDER BY created_at, id"
+            "SELECT {COLUMNS} FROM keys WHERE owner_id = ?1 ORDER BY created_at, rowid"
         ))?;
         let rows = stmt
             .query_map([self.owner.as_str()], raw)?
@@ -193,7 +193,7 @@ impl<'a> Keys<'a> {
             .query_row(
                 &format!(
                     "SELECT {COLUMNS} FROM keys WHERE owner_id = ?1 AND kind = 'controlroom'
-                     AND retired_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1"
+                     AND retired_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 1"
                 ),
                 [self.owner.as_str()],
                 raw,
