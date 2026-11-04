@@ -2,9 +2,9 @@
 
 use controlroom_drivers::fake::wire::Command;
 use controlroom_drivers::fake::{FakeScript, FakeStep};
-use controlroom_protocol::daemon::{
-    IfBusy, InitialPrompt, MachineEvent, OptionValue, PromptResult, SessionCreateParams,
-    SessionMarkReadParams, SessionOpParams, SessionPromptParams, SessionSetOptionParams,
+use controlroom_protocol::agentd::{
+    IfBusy, InitialPrompt, OptionValue, PromptResult, SessionCreateParams, SessionMarkReadParams,
+    SessionOpParams, SessionPromptParams, SessionSetOptionParams, SessionsEvent,
 };
 use controlroom_protocol::ids::{OpId, RemotePath, Rev, Seq, SessionId};
 use controlroom_protocol::session::{
@@ -26,17 +26,11 @@ async fn create_with_a_first_prompt_is_one_command() {
     let mut h = Harness::new(script).await;
     let create = SessionCreateParams {
         op_id: OpId::new("create-with-prompt"),
-        agent: "fake".into(),
-        cwd: RemotePath::new("~/src/app"),
-        name: None,
-        parent_id: None,
-        spawned_by: None,
-        sandbox_level: None,
-        sandbox: None,
         prompt: Some(InitialPrompt {
             content: text("fix the flaky test"),
             origin: PromptOrigin::default(),
         }),
+        ..h.create_params(&[(h.devbox, "~/src/app")])
     };
     let created = h.rt.create(create.clone()).await.unwrap();
     let id = created.session.id;
@@ -70,8 +64,8 @@ async fn create_with_a_first_prompt_is_one_command() {
         })
         .collect();
     assert_eq!(triggers, [RunTrigger::User { device: None }]);
-    let machine = h.rt.subscribe_machine(None).unwrap();
-    assert_eq!(machine.snapshot.unwrap().sessions.len(), 1);
+    let feed = h.rt.subscribe_sessions(None).unwrap();
+    assert_eq!(feed.snapshot.unwrap().sessions.len(), 1);
 
     // After a restart the replay still finds the stored result; the prompt isn't resent.
     let mut h = h.restart().await;
@@ -87,27 +81,13 @@ async fn create_with_a_first_prompt_is_one_command() {
                 content: Vec::new(),
                 origin: PromptOrigin::default(),
             }),
-            ..plain_create()
+            ..h.create_params(&[(h.devbox, "~/src/app")])
         })
         .await
         .unwrap_err();
     assert_eq!(kind(&err), &ErrorData::InvalidParams);
-    let machine = h.rt.subscribe_machine(None).unwrap();
-    assert_eq!(machine.snapshot.unwrap().sessions.len(), 1);
-}
-
-fn plain_create() -> SessionCreateParams {
-    SessionCreateParams {
-        op_id: OpId::generate(),
-        agent: "fake".into(),
-        cwd: RemotePath::new("~/src/app"),
-        name: None,
-        parent_id: None,
-        spawned_by: None,
-        sandbox_level: None,
-        sandbox: None,
-        prompt: None,
-    }
+    let feed = h.rt.subscribe_sessions(None).unwrap();
+    assert_eq!(feed.snapshot.unwrap().sessions.len(), 1);
 }
 
 #[tokio::test]
@@ -142,7 +122,10 @@ async fn create_prompt_reply_idle() {
     let s = h.summary(id);
     assert!(s.resumable);
     assert!(s.queue.auto_send);
-    assert_eq!(s.cwd.as_str(), "/home/alice/src/app");
+    assert_eq!(
+        s.workspaces[0].root.as_ref().map(RemotePath::as_str),
+        Some("/home/alice/src/app")
+    );
 
     assert_eq!(h.prompt(id, "hi").await, PromptResult::Sent);
     let s = h
@@ -204,23 +187,16 @@ async fn create_prompt_reply_idle() {
 }
 
 #[tokio::test]
-async fn unknown_agents_and_sessions() {
+async fn unknown_parents_and_sessions() {
     let h = Harness::new(FakeScript::default()).await;
     let err =
         h.rt.create(SessionCreateParams {
-            op_id: OpId::generate(),
-            agent: "nope".into(),
-            cwd: RemotePath::new("~/src"),
-            name: None,
-            parent_id: None,
-            spawned_by: None,
-            sandbox_level: None,
-            sandbox: None,
-            prompt: None,
+            parent_id: Some(SessionId::generate()),
+            ..h.create_params(&[(h.devbox, "~/src")])
         })
         .await
         .unwrap_err();
-    assert!(matches!(kind(&err), ErrorData::NotFound { .. }));
+    assert!(matches!(kind(&err), ErrorData::UnknownSession { .. }));
     let err = h.rt.cancel(h.op(SessionId::generate())).await.unwrap_err();
     assert!(matches!(kind(&err), ErrorData::UnknownSession { .. }));
 }
@@ -230,20 +206,14 @@ async fn op_id_replay_applies_once() {
     let mut h = Harness::new(FakeScript::default()).await;
     let create = SessionCreateParams {
         op_id: OpId::new("create-1"),
-        agent: "fake".into(),
-        cwd: RemotePath::new("~/src/app"),
         name: Some("app".into()),
-        parent_id: None,
-        spawned_by: None,
-        sandbox_level: None,
-        sandbox: None,
-        prompt: None,
+        ..h.create_params(&[(h.devbox, "~/src/app")])
     };
     let first = h.rt.create(create.clone()).await.unwrap();
     let again = h.rt.create(create).await.unwrap();
     assert_eq!(first, again);
     let id = first.session.id;
-    assert_eq!(first.session.cwd.as_str(), "/home/alice/src/app");
+    assert_eq!(first.session.workspaces.len(), 1);
     h.wait_state(id, SessionState::Idle).await;
 
     let prompt = SessionPromptParams {
@@ -320,7 +290,7 @@ fn set(id: SessionId, option: &str, value: OptionValue) -> SessionSetOptionParam
     }
 }
 
-fn model(s: &controlroom_protocol::session::SessionSummary) -> String {
+fn model(s: &controlroom_protocol::agentd::SessionSummary) -> String {
     match &s.options[0].control {
         OptionControl::Select { value, .. } => value.clone(),
         _ => unreachable!(),
@@ -441,7 +411,7 @@ async fn subscriptions_resume_from_since_seq_and_since_rev() {
         FakeScript::default().default_turn(["a", "b", "c"].map(|t| FakeStep::Text(t.into()))),
     )
     .await;
-    let rev0 = h.rt.subscribe_machine(None).unwrap().rev;
+    let rev0 = h.rt.subscribe_sessions(None).unwrap().rev;
     let id = h.create().await;
     h.prompt(id, "go").await;
     h.wait(id, "turn end", |s| {
@@ -450,7 +420,7 @@ async fn subscriptions_resume_from_since_seq_and_since_rev() {
     .await;
 
     // Resubscribing from an old rev catches up without a snapshot, in rev order.
-    let resumed = h.rt.subscribe_machine(Some(rev0)).unwrap();
+    let resumed = h.rt.subscribe_sessions(Some(rev0)).unwrap();
     assert!(resumed.snapshot.is_none());
     let revs: Vec<u64> = resumed.backlog.iter().map(|c| c.rev.0).collect();
     assert_eq!(revs.first(), Some(&(rev0.0 + 1)));
@@ -458,17 +428,17 @@ async fn subscriptions_resume_from_since_seq_and_since_rev() {
     assert_eq!(*revs.last().unwrap(), resumed.rev.0);
     assert!(matches!(
         &resumed.backlog[0].event,
-        MachineEvent::SessionUpserted { session } if session.id == id
+        SessionsEvent::SessionUpserted { session } if session.id == id
     ));
     // A rev from the future (another daemon's) or none gets a snapshot.
     let future =
-        h.rt.subscribe_machine(Some(Rev(resumed.rev.0 + 1000)))
+        h.rt.subscribe_sessions(Some(Rev(resumed.rev.0 + 1000)))
             .unwrap();
     assert_eq!(future.snapshot.unwrap().sessions.len(), 1);
     // The rev survives a restart.
     let rev = resumed.rev;
     let h = h.restart().await;
-    let after = h.rt.subscribe_machine(Some(rev)).unwrap();
+    let after = h.rt.subscribe_sessions(Some(rev)).unwrap();
     assert!(after.snapshot.is_none());
     assert!(after.rev >= rev);
 

@@ -1,10 +1,11 @@
-//! The IO the runtime needs, as traits the daemon implements (in-memory fakes in the tests).
+//! The local IO the runtime needs, as traits the agent daemon implements (in-memory fakes in the
+//! tests). Hosts are not a port: the runtime produces their requests itself and the controller
+//! carries them (see `hosts`).
 //!
-//! - [`Host`]: supervisors and session files on this machine;
+//! - [`Host`]: the agents' supervisors and session files on the server;
 //! - [`SupervisorConn`] and [`RecordStream`]: one writer connection to a running supervisor;
-//! - [`Agents`]: the configured agents, their drivers and the spawn spec of a launch (sandbox
-//!   profile preparation happens behind it);
-//! - [`JobHost`]: background jobs' supervisors;
+//! - [`Agents`]: the server's agent, its driver and the spawn spec of a launch (sandbox profile
+//!   preparation happens behind it);
 //! - [`Clock`]: the time.
 
 use std::sync::Arc;
@@ -12,7 +13,7 @@ use std::time::Duration;
 
 use controlroom_drivers::{Driver, StartMode};
 use controlroom_protocol::RpcError;
-use controlroom_protocol::ids::{JobId, RemotePath, Seq, SessionId, UnixMillis};
+use controlroom_protocol::ids::{RemotePath, Seq, SessionId, UnixMillis};
 use controlroom_protocol::session::{DriverKind, SandboxLevel, SandboxSpec};
 use controlroom_supervisor::SpawnSpec;
 use controlroom_transcript::Record;
@@ -23,11 +24,8 @@ use futures::future::BoxFuture;
 #[error("{0}")]
 pub struct HostError(pub String);
 
-/// Supervisors, transcripts and session files on this machine.
+/// The agents' supervisors, transcripts and session files on the server.
 pub trait Host: Send + Sync + 'static {
-    /// Expands `~` in a working directory and checks it is a directory (`fs_error` if not).
-    fn resolve_cwd(&self, cwd: &RemotePath) -> BoxFuture<'_, Result<RemotePath, RpcError>>;
-
     /// Starts a detached supervisor for the session's agent and returns once it is ready.
     fn launch(&self, session: SessionId, spec: SpawnSpec) -> BoxFuture<'_, Result<(), HostError>>;
 
@@ -82,15 +80,13 @@ pub trait RecordStream: Send {
     fn next(&mut self) -> BoxFuture<'_, Option<Record>>;
 }
 
-/// Everything a launch needs to become a spawn spec.
+/// Everything a launch needs to become a spawn spec. The agent runs on the server with no
+/// project files: its working directory is an empty per-session scratch directory the
+/// [`Agents`] implementation provides.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentLaunch {
     /// The session (also the supervised process id).
     pub session: SessionId,
-    /// The agent key.
-    pub agent: String,
-    /// The working directory.
-    pub cwd: RemotePath,
     /// New or resumed native session.
     pub mode: StartMode,
     /// The driver's arguments for this start, appended to the agent command.
@@ -101,11 +97,11 @@ pub struct AgentLaunch {
     pub sandbox: SandboxSpec,
 }
 
-/// The machine's configured agents.
+/// The server's agent.
 pub trait Agents: Send + Sync + 'static {
-    /// The driver kind of an agent key: `not_found` (agent) for an unknown key,
-    /// `agent_unavailable` when its dependency check fails.
-    fn resolve(&self, agent: &str) -> Result<DriverKind, RpcError>;
+    /// The driver kind of the agent new sessions run (`agent_unavailable` when its dependency
+    /// check fails).
+    fn kind(&self) -> Result<DriverKind, RpcError>;
 
     /// A fresh driver of this kind (sessions remember their kind, so old transcripts are
     /// folded by the driver that wrote them).
@@ -114,59 +110,6 @@ pub trait Agents: Send + Sync + 'static {
     /// Prepares the sandbox and returns what the supervisor runs; `sandbox_unavailable` when
     /// the sandbox can't be set up. May block on file IO.
     fn spawn_spec(&self, launch: &AgentLaunch) -> Result<SpawnSpec, RpcError>;
-}
-
-/// One job of one session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JobRef {
-    /// The session that started it.
-    pub session: SessionId,
-    /// The job (also the supervised process id).
-    pub job: JobId,
-}
-
-/// Everything a job start needs to become a spawn spec.
-#[derive(Debug, Clone, PartialEq)]
-pub struct JobLaunch {
-    /// The job.
-    pub job: JobRef,
-    /// The command line, run by the login shell.
-    pub command: String,
-    /// Its working directory (inside the session's).
-    pub cwd: RemotePath,
-    /// The session's working directory (the sandbox profile is the session's).
-    pub session_cwd: RemotePath,
-    /// Where the plain-text log goes: `<session cwd>/.controlroom/jobs/<id>.log`.
-    pub log_path: RemotePath,
-    /// Stop it after this long.
-    pub timeout_ms: Option<u64>,
-    /// The level the session's agent runs at; the job runs under the same sandbox.
-    pub sandbox_level: SandboxLevel,
-}
-
-/// Background jobs' supervisors on this machine.
-pub trait JobHost: Send + Sync + 'static {
-    /// Prepares the job's start (the log directory with its `.gitignore`, the sandbox) and
-    /// returns what its supervisor runs; `sandbox_unavailable` or `fs_error` when it can't.
-    /// May block on file IO.
-    fn spawn_spec(&self, launch: &JobLaunch) -> Result<SpawnSpec, RpcError>;
-
-    /// Starts the job's detached supervisor and returns once it is ready.
-    fn launch(&self, job: JobRef, spec: SpawnSpec) -> BoxFuture<'_, Result<(), HostError>>;
-
-    /// Connects to the job's running supervisor (writer role, for `terminate`); `None` when it
-    /// no longer runs.
-    fn connect(
-        &self,
-        job: JobRef,
-    ) -> BoxFuture<'_, Result<Option<Arc<dyn SupervisorConn>>, HostError>>;
-
-    /// Reads the job's transcript from `from` to its current end.
-    fn read_transcript(
-        &self,
-        job: JobRef,
-        from: Seq,
-    ) -> BoxFuture<'_, Result<Box<dyn RecordStream>, HostError>>;
 }
 
 /// The time.

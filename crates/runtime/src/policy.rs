@@ -1,6 +1,6 @@
 //! Periodic policy, run by the daemon's tick (about once a second): throttled previews,
-//! timeline checkpoints, idle-stop, retention, job wakes and line counts, and pruning of the op
-//! and rev logs.
+//! timeline checkpoints, idle-stop, retention, job wakes and outage notices, the grace period of
+//! host calls, journal and job acks, and pruning of the op and rev logs.
 
 use std::time::Duration;
 
@@ -13,7 +13,8 @@ use crate::errors::internal;
 
 /// Op ids are remembered this long (clients retry within seconds, schedules within minutes).
 const OP_RETENTION_MS: i64 = 7 * 24 * 3600 * 1000;
-/// Machine-feed changes kept for `machine.subscribe {since_rev}`; older clients get a snapshot.
+/// Sessions-feed changes kept for `sessions.subscribe {since_rev}`; older clients get a
+/// snapshot.
 pub(crate) const REVLOG_KEEP: u64 = 1000;
 /// How long an idle-stopped agent gets before SIGKILL.
 const IDLE_STOP_GRACE: Duration = Duration::from_secs(5);
@@ -48,6 +49,9 @@ impl Core {
             }
         }
         self.jobs_tick()?;
+        self.expire_calls()?;
+        self.send_acks();
+        self.send_job_acks()?;
         self.store
             .prune_ops(UnixMillis(now.0 - OP_RETENTION_MS))
             .map_err(internal)?;

@@ -47,8 +47,6 @@ impl Core {
         };
         Ok(Some(AgentLaunch {
             session: id,
-            agent: data.agent.clone(),
-            cwd: data.cwd.clone(),
             args: session.driver().launch_args(&mode),
             mode,
             sandbox_level: data.sandbox_level(),
@@ -166,6 +164,7 @@ impl Core {
 
     fn after_process(&mut self, id: SessionId) -> Result<(), RpcError> {
         self.agent_gone(id)?;
+        self.release_done_calls(id);
         self.settle_handed(id, false);
         let session = self.session_mut(id)?;
         if std::mem::take(&mut session.live.relaunch) && !session.data.closed() {
@@ -188,10 +187,14 @@ impl Core {
         let updates = old.updates.clone();
         let agent = old.agent.clone();
         let emitted = old.emitted.clone();
+        let old_info = old.info.clone();
+        let old_events = old.events.clone();
         let driver = self.agents.driver(data.driver);
-        let mut session = Session::new(data, driver);
+        let mut session = Session::new(data, driver, self.machines.clone());
         session.updates = updates;
         session.agent = agent;
+        session.info = old_info;
+        session.events = old_events;
         session.emitted = emitted;
         session.live.loading = true;
         self.sessions.insert(id, session);

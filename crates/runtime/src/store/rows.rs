@@ -1,9 +1,10 @@
-//! Sessions, agent sessions, queue, decisions, raised requests, jobs and timeline items.
+//! Sessions, agent sessions, queue, decisions, raised requests, jobs, job cursors and timeline
+//! items.
 
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
-use controlroom_protocol::ids::{ItemId, RemotePath, Seq, SessionId, UnixMillis};
+use controlroom_protocol::ids::{ItemId, MachineId, RemotePath, Rev, Seq, SessionId, UnixMillis};
 use controlroom_protocol::session::AgentSession;
 use controlroom_protocol::timeline::TimelineItem;
 use rusqlite::{OptionalExtension, Row, params};
@@ -15,10 +16,10 @@ use super::{int, int_usize, uint};
 use crate::jobs::JobRecord;
 use crate::model::{AgentSessionRow, Decision, Raised, SessionData};
 
-const SESSION_COLUMNS: &str = "id, agent, driver, cwd, name, created_at, closed_at, parent_id,
-    spawned_by, sandbox_level, sandbox, read_seq, last_turn_end_seq, last_outcome, last_error,
-    queue_paused, auto_send, pending_start, history_note, resume_failed, applied_seq,
-    timeline_seq, auto_continue, run_triggers";
+const SESSION_COLUMNS: &str = "id, driver, name, created_at, closed_at, parent_id,
+    sandbox_level, sandbox, read_seq, last_turn_end_seq, last_outcome, last_error, queue_paused,
+    auto_send, pending_start, history_note, resume_failed, applied_seq, timeline_seq,
+    auto_continue, run_triggers, workspaces, shells, late_calls, outages";
 
 fn decode<T: DeserializeOwned>(raw: &str) -> rusqlite::Result<T> {
     serde_json::from_str(raw).map_err(|e| {
@@ -38,35 +39,37 @@ fn session_id(raw: &str) -> rusqlite::Result<SessionId> {
 
 fn session_row(row: &Row<'_>) -> rusqlite::Result<SessionData> {
     let millis = |i: usize| row.get::<_, Option<i64>>(i).map(|v| v.map(UnixMillis));
+    let text = |i: usize| row.get::<_, String>(i);
     Ok(SessionData {
-        id: session_id(&row.get::<_, String>(0)?)?,
-        agent: row.get(1)?,
-        driver: decode(&row.get::<_, String>(2)?)?,
-        cwd: RemotePath::new(row.get::<_, String>(3)?),
-        name: row.get(4)?,
-        created_at: UnixMillis(row.get(5)?),
-        closed_at: millis(6)?,
+        id: session_id(&text(0)?)?,
+        driver: decode(&text(1)?)?,
+        name: row.get(2)?,
+        created_at: UnixMillis(row.get(3)?),
+        closed_at: millis(4)?,
         parent_id: row
-            .get::<_, Option<String>>(7)?
+            .get::<_, Option<String>>(5)?
             .as_deref()
             .map(session_id)
             .transpose()?,
-        spawned_by: decode_opt(row.get(8)?)?,
-        sandbox_level: decode_opt(row.get(9)?)?,
-        sandbox: decode(&row.get::<_, String>(10)?)?,
-        read_seq: Seq(uint(row.get(11)?)),
-        last_turn_end_seq: Seq(uint(row.get(12)?)),
-        last_outcome: decode_opt(row.get(13)?)?,
-        last_error: row.get(14)?,
-        queue_paused: row.get(15)?,
-        auto_send: row.get(16)?,
-        pending_start: decode_opt(row.get(17)?)?,
-        history_note: row.get::<_, Option<String>>(18)?.map(RemotePath::new),
-        resume_failed: row.get(19)?,
-        applied_seq: Seq(uint(row.get(20)?)),
-        timeline_seq: Seq(uint(row.get(21)?)),
-        auto: decode_opt(row.get(22)?)?.unwrap_or_default(),
-        triggers: decode_opt(row.get(23)?)?.unwrap_or_default(),
+        sandbox_level: decode_opt(row.get(6)?)?,
+        sandbox: decode(&text(7)?)?,
+        read_seq: Seq(uint(row.get(8)?)),
+        last_turn_end_seq: Seq(uint(row.get(9)?)),
+        last_outcome: decode_opt(row.get(10)?)?,
+        last_error: row.get(11)?,
+        queue_paused: row.get(12)?,
+        auto_send: row.get(13)?,
+        pending_start: decode_opt(row.get(14)?)?,
+        history_note: row.get::<_, Option<String>>(15)?.map(RemotePath::new),
+        resume_failed: row.get(16)?,
+        applied_seq: Seq(uint(row.get(17)?)),
+        timeline_seq: Seq(uint(row.get(18)?)),
+        auto: decode(&text(19)?)?,
+        triggers: decode(&text(20)?)?,
+        workspaces: decode(&text(21)?)?,
+        shells: decode(&text(22)?)?,
+        late: decode(&text(23)?)?,
+        outages: decode(&text(24)?)?,
         agent_sessions: Vec::new(),
         queue: Vec::new(),
         decisions: BTreeMap::new(),
@@ -251,18 +254,15 @@ impl Store {
             &format!(
                 "INSERT OR REPLACE INTO sessions ({SESSION_COLUMNS}) VALUES
                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                  ?18, ?19, ?20, ?21, ?22, ?23, ?24)"
+                  ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)"
             ),
             params![
                 d.id.to_string(),
-                d.agent,
                 json(&d.driver),
-                d.cwd.as_str(),
                 d.name,
                 d.created_at.0,
                 d.closed_at.map(|t| t.0),
                 d.parent_id.map(|p| p.to_string()),
-                d.spawned_by.as_ref().map(json),
                 d.sandbox_level.as_ref().map(json),
                 json(&d.sandbox),
                 int(d.read_seq.0),
@@ -278,6 +278,10 @@ impl Store {
                 int(d.timeline_seq.0),
                 json(&d.auto),
                 json(&d.triggers),
+                json(&d.workspaces),
+                json(&d.shells),
+                json(&d.late),
+                json(&d.outages),
             ],
         )?;
         Ok(())
@@ -344,6 +348,32 @@ impl Store {
             self.conn
                 .execute(&format!("DELETE FROM {table} WHERE {column} = ?1"), [&id])?;
         }
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Job cursors
+    // ---------------------------------------------------------------------------------------
+
+    /// The last job event revision consumed from `machine`'s log.
+    pub(crate) fn cursor(&self, machine: MachineId) -> rusqlite::Result<Option<Rev>> {
+        let rev: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT rev FROM host_cursors WHERE machine_id = ?1",
+                [machine.to_string()],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(rev.map(|r| Rev(uint(r))))
+    }
+
+    pub(crate) fn set_cursor(&self, machine: MachineId, rev: Rev) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO host_cursors (machine_id, rev) VALUES (?1, ?2)
+             ON CONFLICT (machine_id) DO UPDATE SET rev = excluded.rev",
+            params![machine.to_string(), int(rev.0)],
+        )?;
         Ok(())
     }
 

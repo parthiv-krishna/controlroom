@@ -1,15 +1,17 @@
 //! Versioned schema migrations, tracked in SQLite's `user_version`.
 //!
-//! Daemons upgrade themselves in the field, so the schema only ever moves forward: each entry
-//! of [`MIGRATIONS`] upgrades version `i` to `i + 1` and runs in its own transaction. Never edit
-//! a released migration; append a new one. Later features (children, outbox) add their
-//! tables as new migrations.
+//! The schema only ever moves forward: each entry of [`MIGRATIONS`] upgrades version `i` to
+//! `i + 1` and runs in its own transaction. Never edit a released migration; append a new one.
+//! Later features (children, the mailbox) add their tables as new migrations. (`agent.sqlite`
+//! is new with the agent daemon, so its history starts here.)
 
 use rusqlite::Connection;
 
 /// Schema version `i + 1` is `MIGRATIONS[..=i]`.
 const MIGRATIONS: &[&str] = &[
-    // 1: sessions, queue, op dedup, decisions, the materialized timeline, the rev log.
+    // 1: sessions with their workspaces and shells, queue, op dedup, decisions, raised
+    // requests, todos, injections, jobs, the materialized timeline, the rev log, and the
+    // hosts' job cursors.
     r#"
     CREATE TABLE kv (
         key TEXT PRIMARY KEY,
@@ -17,14 +19,11 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
-        agent TEXT NOT NULL,
         driver TEXT NOT NULL,
-        cwd TEXT NOT NULL,
         name TEXT,
         created_at INTEGER NOT NULL,
         closed_at INTEGER,
         parent_id TEXT,
-        spawned_by TEXT,
         sandbox_level TEXT,
         sandbox TEXT NOT NULL,
         read_seq INTEGER NOT NULL,
@@ -37,7 +36,13 @@ const MIGRATIONS: &[&str] = &[
         history_note TEXT,
         resume_failed INTEGER NOT NULL,
         applied_seq INTEGER NOT NULL,
-        timeline_seq INTEGER NOT NULL
+        timeline_seq INTEGER NOT NULL,
+        auto_continue TEXT NOT NULL,
+        run_triggers TEXT NOT NULL,
+        workspaces TEXT NOT NULL,
+        shells TEXT NOT NULL,
+        late_calls TEXT NOT NULL,
+        outages TEXT NOT NULL
     );
     CREATE TABLE agent_sessions (
         session_id TEXT NOT NULL,
@@ -71,6 +76,30 @@ const MIGRATIONS: &[&str] = &[
         decision TEXT NOT NULL,
         PRIMARY KEY (session_id, request_id)
     );
+    CREATE TABLE raised_requests (
+        session_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        raised TEXT NOT NULL,
+        PRIMARY KEY (session_id, request_id)
+    );
+    CREATE TABLE todos (
+        session_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        todo TEXT NOT NULL,
+        PRIMARY KEY (session_id, position)
+    );
+    CREATE TABLE injections (
+        session_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        injection TEXT NOT NULL,
+        PRIMARY KEY (session_id, position)
+    );
+    CREATE TABLE jobs (
+        session_id TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        job TEXT NOT NULL,
+        PRIMARY KEY (session_id, job_id)
+    );
     CREATE TABLE timeline_items (
         session_id TEXT NOT NULL,
         item_id TEXT NOT NULL,
@@ -88,40 +117,9 @@ const MIGRATIONS: &[&str] = &[
         session_id TEXT PRIMARY KEY,
         purged_at INTEGER NOT NULL
     );
-    "#,
-    // 2: requests the daemon raised itself (sandbox approvals).
-    r#"
-    CREATE TABLE raised_requests (
-        session_id TEXT NOT NULL,
-        request_id TEXT NOT NULL,
-        raised TEXT NOT NULL,
-        PRIMARY KEY (session_id, request_id)
-    );
-    "#,
-    // 3: the todo list, injections, auto-continue and run triggers.
-    r#"
-    CREATE TABLE todos (
-        session_id TEXT NOT NULL,
-        position INTEGER NOT NULL,
-        todo TEXT NOT NULL,
-        PRIMARY KEY (session_id, position)
-    );
-    CREATE TABLE injections (
-        session_id TEXT NOT NULL,
-        position INTEGER NOT NULL,
-        injection TEXT NOT NULL,
-        PRIMARY KEY (session_id, position)
-    );
-    ALTER TABLE sessions ADD COLUMN auto_continue TEXT;
-    ALTER TABLE sessions ADD COLUMN run_triggers TEXT;
-    "#,
-    // 4: background jobs.
-    r#"
-    CREATE TABLE jobs (
-        session_id TEXT NOT NULL,
-        job_id TEXT NOT NULL,
-        job TEXT NOT NULL,
-        PRIMARY KEY (session_id, job_id)
+    CREATE TABLE host_cursors (
+        machine_id TEXT PRIMARY KEY,
+        rev INTEGER NOT NULL
     );
     "#,
 ];

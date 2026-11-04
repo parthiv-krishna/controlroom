@@ -3,21 +3,22 @@
 use std::time::Duration;
 
 use controlroom_drivers::{Intent, LineTag};
-use controlroom_protocol::daemon::{
-    IfBusy, MachineEvent, OptionValue, PromptResult, ReadCursor, SessionCreateParams,
+use controlroom_protocol::agentd::{
+    IfBusy, OptionValue, PromptResult, ReadCursor, SessionCreateParams, SessionCreateResult,
     SessionMarkReadParams, SessionOpParams, SessionPromptParams, SessionSetOptionParams,
-    SessionUpdateParams,
+    SessionUpdateParams, SessionsEvent,
 };
 use controlroom_protocol::ids::{QueueId, RemotePath, Seq, SessionId};
 use controlroom_protocol::session::{
-    DriverKind, OptionControl, RequestState, SandboxLevel, SandboxSpec, SessionState, StartedBy,
+    DriverKind, OptionControl, RequestState, SandboxSpec, SessionState, StartedBy,
 };
 use controlroom_protocol::{ErrorData, Resource, RpcError};
 use std::collections::BTreeMap;
 
 use super::validate_content;
-use crate::core::{Core, Task};
+use crate::core::{Core, HostEffect, Task};
 use crate::errors::{busy, internal, invalid_params, invalid_state, not_found, unsupported};
+use crate::hosts::{ShellRecord, WorkspaceRecord, default_sandbox};
 use crate::model::{Delivery, QueueEntry, SessionData, Via};
 use crate::session::Session;
 
@@ -25,39 +26,42 @@ use crate::session::Session;
 const STOP_GRACE: Duration = Duration::from_secs(5);
 
 impl Core {
-    /// `session.create`, with the agent's driver and the expanded cwd resolved by the caller.
-    /// A first prompt is queued in the same transaction, tagged with the create's op id, so
-    /// it reaches the agent exactly once, as a user prompt.
+    /// `session.create` with its workspaces already opened on their hosts (by the caller),
+    /// each with its default shell. A first prompt is queued in the same transaction, tagged
+    /// with the create's op id, so it reaches the agent exactly once, as a user prompt.
     pub(crate) fn create(
         &mut self,
         params: &SessionCreateParams,
         driver: DriverKind,
-        cwd: RemotePath,
-    ) -> Result<controlroom_protocol::daemon::SessionCreateResult, RpcError> {
+        id: SessionId,
+        workspaces: Vec<WorkspaceRecord>,
+    ) -> Result<SessionCreateResult, RpcError> {
         if let Some(parent) = params.parent_id {
             self.session(parent)?;
         }
         if let Some(prompt) = &params.prompt {
             validate_content(&prompt.content)?;
         }
-        let id = SessionId::generate();
+        let shells = workspaces
+            .iter()
+            .map(|w| {
+                let cwd = w.root.clone().unwrap_or_else(|| w.path.clone());
+                ShellRecord::new(w.shell.clone(), w.id, cwd)
+            })
+            .collect();
         let data = SessionData {
             id,
-            agent: params.agent.clone(),
             driver,
-            cwd,
             name: params.name.clone().filter(|n| !n.is_empty()),
             created_at: self.clock.now(),
             closed_at: None,
             parent_id: params.parent_id,
-            spawned_by: params.spawned_by.clone(),
+            workspaces,
+            shells,
+            late: Vec::new(),
+            outages: BTreeMap::new(),
             sandbox_level: params.sandbox_level,
-            sandbox: params.sandbox.clone().unwrap_or(SandboxSpec {
-                level: SandboxLevel::Strict,
-                grants: Vec::new(),
-                domains: Vec::new(),
-                mediated: Vec::new(),
-            }),
+            sandbox: params.sandbox.clone().unwrap_or_else(default_sandbox),
             read_seq: Seq(0),
             last_turn_end_seq: Seq(0),
             last_outcome: None,
@@ -80,7 +84,8 @@ impl Core {
             triggers: Vec::new(),
         };
         let driver = self.agents.driver(driver);
-        self.insert_session(Session::new(data, driver));
+        self.insert_session(Session::new(data, driver, self.machines.clone()));
+        self.task(Task::OpenShells(id));
         let prompt = match &params.prompt {
             Some(prompt) => {
                 let entry = QueueEntry {
@@ -102,7 +107,7 @@ impl Core {
             None => None,
         };
         self.request_start(id, StartedBy::New)?;
-        Ok(controlroom_protocol::daemon::SessionCreateResult {
+        Ok(SessionCreateResult {
             session: self.summary(id),
             prompt,
         })
@@ -193,6 +198,7 @@ impl Core {
             return Ok(());
         }
         session.live.cancel_requested = Some(params.op_id.clone());
+        self.cancel_calls(params.id, None);
         self.auto_continue_cancelled(params.id)?;
         self.reconcile(params.id);
         Ok(())
@@ -212,24 +218,43 @@ impl Core {
             self.task(Task::Terminate(conn, STOP_GRACE));
         }
         self.kill_session_jobs(params.id)?;
+        self.cancel_calls(params.id, None);
+        self.close_shells(params.id)?;
         self.end_pending_raised(params.id, RequestState::Withdrawn, true)
     }
 
-    /// `session.reopen`: a closed session becomes dormant.
+    /// `session.reopen`: a closed session becomes dormant (its shells reopen with it).
     pub(crate) fn reopen(&mut self, params: &SessionOpParams) -> Result<(), RpcError> {
-        self.session_mut(params.id)?.data.closed_at = None;
+        let session = self.session_mut(params.id)?;
+        if session.data.closed_at.take().is_some() {
+            self.task(Task::OpenShells(params.id));
+        }
         Ok(())
     }
 
-    /// `session.delete`: stop the agent and forget the session and its files.
+    /// `session.delete`: stop the agent, close the workspaces on their hosts (their shells and
+    /// jobs stop) and forget the session and its files.
     pub(crate) fn delete(&mut self, id: SessionId) -> Result<(), RpcError> {
         let session = self.session(id)?;
         let conn = session.live.attachment.as_ref().map(|a| a.conn.clone());
-        self.kill_session_jobs(id)?;
-        self.jobs.retain(|_, job| job.session != id);
+        let workspaces: Vec<_> = session
+            .data
+            .workspaces
+            .iter()
+            .map(|w| (w.machine_id, w.id))
+            .collect();
+        let calls: Vec<_> = session.live.calls.keys().cloned().collect();
+        for key in calls {
+            self.effect(HostEffect::Withdraw(key));
+        }
+        for (machine, workspace) in workspaces {
+            self.effect(HostEffect::Send(crate::hosts::close_request(
+                id, machine, workspace,
+            )));
+        }
         self.remove_session(id);
         self.store.delete_session(id).map_err(internal)?;
-        self.emit(MachineEvent::SessionRemoved { id })
+        self.emit(SessionsEvent::SessionRemoved { id })
             .map_err(internal)?;
         self.task(Task::Remove(id, conn));
         Ok(())
@@ -246,10 +271,7 @@ impl Core {
             return Err(invalid_state(session.state(), "session.resume"));
         }
         let by = start_mode_of(session)?;
-        let session = self.session_mut(id)?;
-        if let Some(spec) = sandbox {
-            session.data.sandbox = spec.clone();
-        }
+        self.set_sandbox(id, sandbox)?;
         self.request_start(id, by)
     }
 
@@ -275,10 +297,8 @@ impl Core {
             && session.view().ready
             && session.view().capabilities.new_session;
         let parent = session.view().native.as_ref().map(|n| n.id.clone());
+        self.set_sandbox(id, sandbox)?;
         let session = self.session_mut(id)?;
-        if let Some(spec) = sandbox {
-            session.data.sandbox = spec.clone();
-        }
         session.data.history_note = history;
         session.data.pending_start = Some(StartedBy::Fresh);
         session.data.resume_failed = false;
@@ -306,6 +326,19 @@ impl Core {
             return Ok(());
         }
         self.request_start(id, StartedBy::Fresh)
+    }
+
+    /// New sandbox defaults for the next start; the workspaces' profiles are rewritten.
+    fn set_sandbox(
+        &mut self,
+        id: SessionId,
+        sandbox: Option<&SandboxSpec>,
+    ) -> Result<(), RpcError> {
+        if let Some(spec) = sandbox {
+            self.session_mut(id)?.data.sandbox = spec.clone();
+            self.task(Task::Refresh(id));
+        }
+        Ok(())
     }
 
     /// `session.update`.

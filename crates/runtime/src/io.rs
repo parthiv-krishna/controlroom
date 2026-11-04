@@ -1,5 +1,6 @@
-//! The async half of the runtime: tasks that talk to the host (launches, supervisor
-//! attachments, barriers, recovery) and feed what they learn back into the core.
+//! The async half of the runtime: tasks that talk to the local supervisors (launches,
+//! attachments, barriers, recovery) or wait on hosts (`hosts`), and feed what they learn back
+//! into the core.
 //!
 //! Each attachment runs three tasks: a **writer** that writes staged lines in order, a
 //! **barrier** that ends the attach-time doubt, and a **reader** that folds the supervisor's
@@ -49,6 +50,10 @@ pub(crate) fn spawn_tasks(inner: &Arc<Inner>, tasks: Vec<Task>) {
                 generation,
                 conn,
             } => inner.spawn(barrier(inner2, id, generation, conn)),
+            Task::Sync(machine) => inner.spawn(crate::hosts::connected(inner2, machine)),
+            Task::Attach(id, late) => inner.spawn(crate::hosts::attach(inner2, id, late)),
+            Task::OpenShells(id) => inner.spawn(crate::hosts::open_shells(inner2, id)),
+            Task::Refresh(id) => inner.spawn(crate::hosts::refresh_session(inner2, id)),
         };
     }
 }

@@ -1,241 +1,525 @@
-//! Job commands under the runtime's lock: start, kill, follow, unfollow.
+//! Job commands. Starting, following, unfollowing and killing a job go to its host as `tool.run`
+//! ops, at most once by call id (the agent's tool call id, or `op:<op id>` for the user's
+//! commands); the outcome then also shows in the job event log. Status and lists come from the
+//! jobs as the event log last described them (a job on an unreachable host keeps its last known
+//! state), and `job.logs` reads the log on its host.
 
-use std::time::Duration;
-
-use controlroom_protocol::daemon::{FollowFrom, JobFollowParams};
-use controlroom_protocol::ids::{JobId, RemotePath, SessionId};
+use controlroom_protocol::agent::{
+    AgentJobFollowParams, AgentJobParams, AgentJobs, JobRunParams, JobRunResult, JobStatusParams,
+};
+use controlroom_protocol::agentd::{
+    FollowFrom, JobFollowParams, JobListParams, JobListResult, JobLogs, JobLogsParams, JobOpParams,
+};
+use controlroom_protocol::host::{
+    HostOp, HostRequest, HostResult, KilledBy, ReadContent, ToolRunParams,
+};
+use controlroom_protocol::ids::{CallId, HostOpId, JobId, MachineId, OpId, SessionId, WorkspaceId};
 use controlroom_protocol::session::{Job, SessionState};
-use controlroom_protocol::{Resource, RpcError};
-use regex::{Regex, RegexBuilder};
+use controlroom_protocol::{ErrorData, Resource, RpcError};
+use regex::RegexBuilder;
+use serde::Serialize;
 
-use super::JobLive;
-use super::model::{FollowSpec, JobEnd, JobRecord, KilledBy};
-use super::progress::Matcher;
-use crate::core::{Core, Task};
+use super::model::{FollowSpec, JobRecord, Pending};
+use crate::agent::op_id;
+use crate::commands::params_hash;
+use crate::core::Core;
 use crate::errors::{invalid_params, invalid_state, not_found};
-use crate::ports::{JobLaunch, JobRef};
-use controlroom_protocol::agent::{JobRunParams, JobRunResult};
+use crate::hosts::{parse, session_request};
+use crate::runtime::Runtime;
 
-/// SIGTERM to SIGKILL for a killed job.
-const KILL_GRACE: Duration = Duration::from_secs(5);
 /// The follow batching window when none is given.
 const DEFAULT_BUFFER_SECONDS: u32 = 15;
 /// The longest batching window.
 const MAX_BUFFER_SECONDS: u32 = 3600;
-/// The longest follow pattern, and the compiled size limit.
+/// The longest follow pattern, and its compiled size limit.
 const MAX_PATTERN_LEN: usize = 1000;
 const PATTERN_SIZE_LIMIT: usize = 1 << 20;
-/// Display names are cut to this many characters.
-const NAME_CHARS: usize = 40;
+/// Lines `job.logs` returns when the caller doesn't say, and at most.
+const DEFAULT_LOG_LINES: u32 = 200;
+const MAX_LOG_LINES: u32 = 2000;
 
-/// Lines a rescan must match against a new follow pattern: the ones folded before it.
-pub(crate) struct Rescan {
-    pub job: JobRef,
-    pub generation: u64,
-    pub from_line: u64,
-    pub to_line: u64,
-    pub pattern: Regex,
+/// A follow, unfollow or kill of one job.
+struct JobOp<'a, P> {
+    method: &'a str,
+    op_id: OpId,
+    params: &'a P,
+    session: SessionId,
+    job: JobId,
+    call_id: CallId,
+    op: HostOp,
+}
+
+impl Runtime {
+    /// The agent's `job.run`: starts a background job on a workspace's host and returns once
+    /// the host has it. A replayed call returns the first result without starting anything.
+    pub async fn agent_job_run(
+        &self,
+        id: SessionId,
+        params: JobRunParams,
+    ) -> Result<JobRunResult, RpcError> {
+        const METHOD: &str = "agent.job.run";
+        self.recovered().await;
+        let op = op_id(id, &params.call_id);
+        let inner = self.inner();
+        if let Some(started) =
+            inner.with_core(|core| core.stored_op(METHOD, &op, &params_hash(&params)))?
+        {
+            return Ok(started);
+        }
+        if params.command.trim().is_empty() {
+            return Err(invalid_params("the command is empty"));
+        }
+        if params.timeout_s == Some(0) {
+            return Err(invalid_params("timeout_s must be positive"));
+        }
+        let (machine, workspace) = inner.with_core(|core| core.job_place(id, &params))?;
+        let request = HostRequest::ToolRun(ToolRunParams {
+            call_id: CallId::new(params.call_id.as_str()),
+            workspace_id: workspace,
+            op: HostOp::JobRun {
+                command: params.command.clone(),
+                cwd: params.cwd.clone(),
+                name: params.name.clone(),
+                timeout_s: params.timeout_s,
+                follow: None,
+            },
+        });
+        let key = HostOpId::new(params.call_id.as_str());
+        let (value, _) = session_request(inner, id, machine, key, request, None).await?;
+        let HostResult::JobRun { job } = parse(value)? else {
+            return Err(unexpected());
+        };
+        self.command(METHOD, &op, &params, |core| {
+            core.job_started(id, machine, workspace, &job)?;
+            Ok(JobRunResult {
+                job_id: job.id,
+                log_path: job.log_path.clone(),
+            })
+        })
+        .await
+    }
+
+    /// The agent's `job.follow`.
+    pub async fn agent_job_follow(
+        &self,
+        id: SessionId,
+        params: AgentJobFollowParams,
+    ) -> Result<Job, RpcError> {
+        let op = follow_op(
+            &params.pattern,
+            params.buffer_seconds,
+            params.from,
+            params.job_id,
+        )?;
+        self.job_op(JobOp {
+            method: "agent.job.follow",
+            op_id: op_id(id, &params.call_id),
+            params: &params,
+            session: id,
+            job: params.job_id,
+            call_id: CallId::new(params.call_id.as_str()),
+            op,
+        })
+        .await
+    }
+
+    /// The agent's `job.unfollow`.
+    pub async fn agent_job_unfollow(
+        &self,
+        id: SessionId,
+        params: AgentJobParams,
+    ) -> Result<Job, RpcError> {
+        self.job_op(JobOp {
+            method: "agent.job.unfollow",
+            op_id: op_id(id, &params.call_id),
+            params: &params,
+            session: id,
+            job: params.job_id,
+            call_id: CallId::new(params.call_id.as_str()),
+            op: HostOp::JobUnfollow {
+                job_id: params.job_id,
+            },
+        })
+        .await
+    }
+
+    /// The agent's `job.kill`: the agent knows, so no exit wake follows.
+    pub async fn agent_job_kill(
+        &self,
+        id: SessionId,
+        params: AgentJobParams,
+    ) -> Result<Job, RpcError> {
+        self.inner()
+            .transact(|core| core.job_kill_requested(id, &params.job_id, KilledBy::Agent))?;
+        self.job_op(JobOp {
+            method: "agent.job.kill",
+            op_id: op_id(id, &params.call_id),
+            params: &params,
+            session: id,
+            job: params.job_id,
+            call_id: CallId::new(params.call_id.as_str()),
+            op: HostOp::JobKill {
+                job_id: params.job_id,
+                by: KilledBy::Agent,
+            },
+        })
+        .await
+    }
+
+    /// The agent's `job.status`: one job, or all of them, newest first, as last known.
+    pub async fn agent_job_status(
+        &self,
+        id: SessionId,
+        params: JobStatusParams,
+    ) -> Result<AgentJobs, RpcError> {
+        self.recovered().await;
+        self.inner().with_core(|core| {
+            let jobs = match params.job_id {
+                Some(job) => vec![core.job_view(id, &job)?],
+                None => core.job_views(id)?,
+            };
+            Ok(AgentJobs { jobs })
+        })
+    }
+
+    /// `job.list`: every job of the session, newest first.
+    pub async fn job_list(&self, params: JobListParams) -> Result<JobListResult, RpcError> {
+        self.recovered().await;
+        self.inner().with_core(|core| {
+            Ok(JobListResult {
+                jobs: core.job_views(params.id)?,
+            })
+        })
+    }
+
+    /// `job.logs`: a range of the job's log, read on its host.
+    pub async fn job_logs(&self, params: JobLogsParams) -> Result<JobLogs, RpcError> {
+        self.recovered().await;
+        let inner = self.inner();
+        let record = inner.with_core(|core| core.job_record(params.id, &params.job_id))?;
+        let total = record.end.as_ref().map_or(record.lines, |e| e.lines);
+        let max = u64::from(
+            params
+                .max_lines
+                .unwrap_or(DEFAULT_LOG_LINES)
+                .clamp(1, MAX_LOG_LINES),
+        );
+        let from_line = params
+            .from_line
+            .unwrap_or_else(|| total.saturating_sub(max) + 1)
+            .max(1);
+        let call_id = CallId::new(format!("logs:{}", ulid::Ulid::generate()));
+        let request = HostRequest::ToolRun(ToolRunParams {
+            call_id: call_id.clone(),
+            workspace_id: record.workspace_id,
+            op: HostOp::Read {
+                path: record.log_path.clone(),
+                offset: Some(from_line),
+                limit: Some(max),
+            },
+        });
+        let key = HostOpId::new(call_id.as_str());
+        let (value, _) =
+            session_request(inner, params.id, record.machine_id, key, request, None).await?;
+        inner.with_core(|core| {
+            core.acks
+                .entry(record.machine_id)
+                .or_default()
+                .push(call_id)
+        });
+        let HostResult::Read { content, .. } = parse(value)? else {
+            return Err(unexpected());
+        };
+        let (lines, start_line) = match content {
+            ReadContent::Text {
+                lines, start_line, ..
+            } => (lines, start_line),
+            _ => (Vec::new(), from_line),
+        };
+        Ok(JobLogs {
+            from_line: start_line,
+            lines,
+            total_lines: total,
+        })
+    }
+
+    /// The user's `job.kill`: the exit wakes the agent.
+    pub async fn job_kill(&self, params: JobOpParams) -> Result<Job, RpcError> {
+        self.inner()
+            .transact(|core| core.job_kill_requested(params.id, &params.job_id, KilledBy::User))?;
+        self.job_op(JobOp {
+            method: "job.kill",
+            op_id: params.op_id.clone(),
+            params: &params,
+            session: params.id,
+            job: params.job_id,
+            call_id: user_call(&params.op_id),
+            op: HostOp::JobKill {
+                job_id: params.job_id,
+                by: KilledBy::User,
+            },
+        })
+        .await
+    }
+
+    /// The user's `job.follow`: wake the agent on the job's new or matching lines.
+    pub async fn job_follow(&self, params: JobFollowParams) -> Result<Job, RpcError> {
+        let op = follow_op(
+            &params.pattern,
+            params.buffer_seconds,
+            params.from,
+            params.job_id,
+        )?;
+        self.job_op(JobOp {
+            method: "job.follow",
+            op_id: params.op_id.clone(),
+            params: &params,
+            session: params.id,
+            job: params.job_id,
+            call_id: user_call(&params.op_id),
+            op,
+        })
+        .await
+    }
+
+    /// The user's `job.unfollow`: only the exit wake stays.
+    pub async fn job_unfollow(&self, params: JobOpParams) -> Result<Job, RpcError> {
+        self.job_op(JobOp {
+            method: "job.unfollow",
+            op_id: params.op_id.clone(),
+            params: &params,
+            session: params.id,
+            job: params.job_id,
+            call_id: user_call(&params.op_id),
+            op: HostOp::JobUnfollow {
+                job_id: params.job_id,
+            },
+        })
+        .await
+    }
+
+    /// Runs a job op on the job's host once per op id and returns the job after it.
+    async fn job_op<P: Serialize>(&self, op: JobOp<'_, P>) -> Result<Job, RpcError> {
+        self.recovered().await;
+        let inner = self.inner();
+        let hash = params_hash(op.params);
+        if let Some(job) = inner.with_core(|core| core.stored_op(op.method, &op.op_id, &hash))? {
+            return Ok(job);
+        }
+        let record = inner.with_core(|core| core.job_record(op.session, &op.job))?;
+        let request = HostRequest::ToolRun(ToolRunParams {
+            call_id: op.call_id.clone(),
+            workspace_id: record.workspace_id,
+            op: op.op,
+        });
+        let key = HostOpId::new(op.call_id.as_str());
+        let (value, _) =
+            session_request(inner, op.session, record.machine_id, key, request, None).await?;
+        let job = match parse(value)? {
+            HostResult::JobFollow { job }
+            | HostResult::JobUnfollow { job }
+            | HostResult::JobKill { job } => job,
+            _ => return Err(unexpected()),
+        };
+        self.command(op.method, &op.op_id, op.params, |core| {
+            core.job_updated(op.session, &job)?;
+            core.job_view(op.session, &job.id)
+        })
+        .await
+    }
+}
+
+/// The host op of a follow, validated.
+fn follow_op(
+    pattern: &Option<String>,
+    buffer_seconds: Option<u32>,
+    from: FollowFrom,
+    job_id: JobId,
+) -> Result<HostOp, RpcError> {
+    let pattern = pattern.clone().filter(|p| !p.is_empty());
+    if let Some(pattern) = &pattern {
+        check_pattern(pattern)?;
+    }
+    Ok(HostOp::JobFollow {
+        job_id,
+        pattern,
+        buffer_seconds: Some(
+            buffer_seconds
+                .unwrap_or(DEFAULT_BUFFER_SECONDS)
+                .min(MAX_BUFFER_SECONDS),
+        ),
+        from,
+    })
+}
+
+fn check_pattern(pattern: &str) -> Result<(), RpcError> {
+    if pattern.len() > MAX_PATTERN_LEN {
+        return Err(invalid_params("the follow pattern is too long"));
+    }
+    RegexBuilder::new(pattern)
+        .size_limit(PATTERN_SIZE_LIMIT)
+        .build()
+        .map(|_| ())
+        .map_err(|e| invalid_params(format!("invalid follow pattern: {e}")))
+}
+
+/// The call id of a user's job command.
+fn user_call(op_id: &OpId) -> CallId {
+    CallId::new(format!("op:{op_id}"))
+}
+
+fn unexpected() -> RpcError {
+    RpcError::new(
+        ErrorData::InvalidResponse,
+        "the host answered with an unexpected result",
+    )
 }
 
 impl Core {
-    /// Records a new running job and its timeline item; returns what to launch.
-    pub(crate) fn job_start(
-        &mut self,
+    /// Where the agent's job runs: the named machine's (or the primary) workspace, the one
+    /// holding an absolute `cwd` if several are there.
+    fn job_place(
+        &self,
         id: SessionId,
-        run: &JobRunParams,
-        cwd: RemotePath,
-    ) -> Result<(JobRunResult, JobLaunch), RpcError> {
-        if run.command.trim().is_empty() {
-            return Err(invalid_params("the command is empty"));
-        }
-        if run.timeout_s == Some(0) {
-            return Err(invalid_params("timeout_s must be positive"));
-        }
-        let now = self.clock.now();
-        let head = self.head(id);
-        let session = self.session_mut(id)?;
-        if session.data.closed() {
+        params: &JobRunParams,
+    ) -> Result<(MachineId, WorkspaceId), RpcError> {
+        let data = &self.session(id)?.data;
+        if data.closed() {
             return Err(invalid_state(SessionState::Closed, "job run"));
         }
-        let job = JobId::generate();
-        let log_path = log_path(&session.data.cwd, &job);
-        let record = JobRecord {
-            id: job,
-            name: display_name(run.name.as_deref().unwrap_or(&run.command)),
-            command: run.command.clone(),
-            cwd: cwd.clone(),
-            log_path: log_path.clone(),
-            timeout_s: run.timeout_s,
-            started_at: now,
-            seq: head,
-            follow: None,
-            notified_line: 0,
-            kill: None,
-            end: None,
-            exit_woken: false,
+        let machine = match &params.machine {
+            Some(name) => self
+                .machines
+                .by_name(name)
+                .filter(|m| data.workspaces.iter().any(|w| w.machine_id == *m))
+                .ok_or_else(|| not_found(Resource::Workspace, name))?,
+            None => data
+                .workspaces
+                .first()
+                .map(|w| w.machine_id)
+                .ok_or_else(|| not_found(Resource::Workspace, "primary"))?,
         };
-        session.data.jobs.insert(job, record);
-        let launch = JobLaunch {
-            job: JobRef { session: id, job },
-            command: run.command.clone(),
-            cwd,
-            session_cwd: session.data.cwd.clone(),
-            log_path: log_path.clone(),
-            timeout_ms: run.timeout_s.map(|s| u64::from(s) * 1000),
-            sandbox_level: session.data.sandbox_level(),
-        };
-        self.publish_job(id, &job)?;
-        Ok((
-            JobRunResult {
-                job_id: job,
-                log_path,
+        let on_machine = || data.workspaces.iter().filter(|w| w.machine_id == machine);
+        let workspace = params
+            .cwd
+            .as_ref()
+            .and_then(|cwd| on_machine().find(|w| w.contains(cwd.as_str())))
+            .or_else(|| on_machine().next())
+            .map(|w| w.id)
+            .ok_or_else(|| not_found(Resource::Workspace, machine))?;
+        Ok((machine, workspace))
+    }
+
+    /// Records a job the host started (unless its `started` event did already).
+    fn job_started(
+        &mut self,
+        id: SessionId,
+        machine: MachineId,
+        workspace: WorkspaceId,
+        job: &Job,
+    ) -> Result<(), RpcError> {
+        let head = self.head(id);
+        let session = self.session_mut(id)?;
+        if session.data.jobs.contains_key(&job.id) {
+            return Ok(());
+        }
+        session.data.jobs.insert(
+            job.id,
+            JobRecord {
+                id: job.id,
+                machine_id: machine,
+                workspace_id: workspace,
+                name: job.name.clone(),
+                command: job.command.clone(),
+                cwd: job.cwd.clone(),
+                log_path: job.log_path.clone(),
+                timeout_s: job.timeout_s,
+                started_at: job.started_at,
+                seq: head,
+                lines: job.lines,
+                follow: None,
+                notified_line: 0,
+                pending: Pending::default(),
+                first_match_at: None,
+                kill: None,
+                end: None,
+                exit_woken: false,
+                wakes: Vec::new(),
             },
-            launch,
-        ))
+        );
+        self.publish_job(id, &job.id)
     }
 
-    /// The job's supervisor didn't start: it ends as failed, without a wake (the caller of
-    /// `job run` got the error).
-    pub(crate) fn job_launch_failed(&mut self, job: JobRef, error: &str) -> Result<(), RpcError> {
-        let now = self.clock.now();
-        let Ok(session) = self.session_mut(job.session) else {
-            return Ok(());
-        };
-        let Some(record) = session.data.jobs.get_mut(&job.job) else {
-            return Ok(());
-        };
-        record.end = Some(JobEnd {
-            status: controlroom_protocol::session::JobStatus::Failed,
-            exit: None,
-            signal: None,
-            ended_at: now,
-            lines: 0,
-            error: Some(error.to_owned()),
-        });
-        record.exit_woken = true;
-        self.jobs.remove(&job.job);
-        self.publish_job(job.session, &job.job)
+    /// Takes the host's view of a job after a command: its follow subscription and line count.
+    fn job_updated(&mut self, id: SessionId, job: &Job) -> Result<(), RpcError> {
+        let record = self.job_record_mut(id, &job.id)?;
+        if record.running() {
+            record.follow = job.follow.as_ref().map(|f| FollowSpec {
+                buffer_seconds: f.buffer_seconds,
+                pattern: f.pattern.clone(),
+            });
+            if record.follow.is_none() {
+                record.pending = Pending::default();
+                record.first_match_at = None;
+            }
+        }
+        record.lines = record.lines.max(job.lines);
+        self.publish_job(id, &job.id)
     }
 
-    /// `job.kill`: SIGTERM, then SIGKILL after a grace period. The exit record says the rest.
-    pub(crate) fn job_kill(
+    /// Records who asked to kill a job, before the kill reaches its host (so its exit is
+    /// judged right whichever arrives first).
+    fn job_kill_requested(
         &mut self,
         id: SessionId,
         job: &JobId,
         by: KilledBy,
-    ) -> Result<Job, RpcError> {
+    ) -> Result<(), RpcError> {
         let record = self.job_record_mut(id, job)?;
-        if record.running() && record.kill.is_none() {
-            record.kill = Some(by);
-            let conn = self.jobs.get(job).and_then(|j| j.conn.clone());
-            if let Some(conn) = conn {
-                self.task(Task::Terminate(conn, KILL_GRACE));
-            }
+        if record.running() {
+            record.kill.get_or_insert(by);
         }
-        self.job_view(id, job)
+        Ok(())
     }
 
-    /// Kills every running job of a session that is closing or being deleted.
+    /// Kills every running job of a session that is closing.
     pub(crate) fn kill_session_jobs(&mut self, id: SessionId) -> Result<(), RpcError> {
-        let running: Vec<JobId> = self
+        let running: Vec<(JobId, MachineId, WorkspaceId)> = self
             .session(id)?
             .data
             .jobs
             .values()
             .filter(|j| j.running())
-            .map(|j| j.id)
+            .map(|j| (j.id, j.machine_id, j.workspace_id))
             .collect();
-        for job in running {
-            self.job_kill(id, &job, KilledBy::User)?;
+        for (job, machine, workspace) in running {
+            self.job_kill_requested(id, &job, KilledBy::User)?;
+            let call_id = CallId::new(format!("kill:{job}"));
+            self.host_send(
+                machine,
+                Some(id),
+                HostOpId::new(call_id.as_str()),
+                HostRequest::ToolRun(ToolRunParams {
+                    call_id,
+                    workspace_id: workspace,
+                    op: HostOp::JobKill {
+                        job_id: job,
+                        by: KilledBy::User,
+                    },
+                }),
+            );
         }
         Ok(())
     }
 
-    /// `job.follow`: starts or updates the follow subscription. Returns a rescan when lines
-    /// folded before it must be matched against the new pattern.
-    pub(crate) fn job_follow(
-        &mut self,
-        params: &JobFollowParams,
-    ) -> Result<(Job, Option<Rescan>), RpcError> {
-        let buffer_seconds = params
-            .buffer_seconds
-            .unwrap_or(DEFAULT_BUFFER_SECONDS)
-            .min(MAX_BUFFER_SECONDS);
-        let pattern = params
-            .pattern
-            .as_deref()
-            .filter(|p| !p.is_empty())
-            .map(compile)
-            .transpose()?;
-        let (id, job) = (params.id, params.job_id);
-        let lines = self.jobs.get(&job).map_or(0, |j| j.progress.lines);
-        let record = self.job_record_mut(id, &job)?;
-        if !record.running() {
-            return Ok((self.job_view(id, &job)?, None));
-        }
-        let since_line = match params.from {
-            FollowFrom::Now => lines,
-            FollowFrom::Unseen => record.notified_line,
-        };
-        record.follow = Some(FollowSpec {
-            buffer_seconds,
-            pattern: params.pattern.clone().filter(|p| !p.is_empty()),
-            since_line,
-        });
-        let baseline = record.follow_baseline();
-        let live = self.jobs.entry(job).or_insert_with(|| JobLive::new(id));
-        live.follow_generation += 1;
-        let generation = live.follow_generation;
-        let rescan = match pattern {
-            Some(pattern) => {
-                live.progress.follow(Matcher::Pattern(pattern.clone()));
-                (lines > baseline).then(|| Rescan {
-                    job: JobRef { session: id, job },
-                    generation,
-                    from_line: baseline + 1,
-                    to_line: lines,
-                    pattern,
-                })
-            }
-            None => {
-                live.progress.follow(Matcher::Any);
-                None
-            }
-        };
-        self.schedule_follow_wake(id, &job);
-        self.publish_job(id, &job)?;
-        Ok((self.job_view(id, &job)?, rescan))
-    }
-
-    /// `job.unfollow`: no more follow wakes; the exit wake stays on.
-    pub(crate) fn job_unfollow(&mut self, id: SessionId, job: &JobId) -> Result<Job, RpcError> {
-        let record = self.job_record_mut(id, job)?;
-        if record.follow.take().is_some() {
-            if let Some(live) = self.jobs.get_mut(job) {
-                live.follow_generation += 1;
-                live.progress.unfollow();
-            }
-            self.publish_job(id, job)?;
-        }
-        self.job_view(id, job)
-    }
-
-    /// Matches a rescan found among lines folded before the follow started.
-    pub(crate) fn job_rescanned(
-        &mut self,
-        job: JobRef,
-        generation: u64,
-        matches: &[u64],
-    ) -> Result<(), RpcError> {
-        let Some(live) = self.jobs.get_mut(&job.job) else {
-            return Ok(());
-        };
-        if live.follow_generation != generation {
-            return Ok(());
-        }
-        live.progress.add_matches(matches);
-        self.schedule_follow_wake(job.session, &job.job);
-        Ok(())
+    /// A copy of the job's record (`not_found` if the session has no such job).
+    fn job_record(&self, id: SessionId, job: &JobId) -> Result<JobRecord, RpcError> {
+        self.session(id)?
+            .data
+            .jobs
+            .get(job)
+            .cloned()
+            .ok_or_else(|| not_found(Resource::Job, job))
     }
 
     /// The job's record, for a change (`not_found` if the session has no such job).
@@ -253,79 +537,20 @@ impl Core {
 
     /// The job as the wire shows it.
     pub(crate) fn job_view(&self, id: SessionId, job: &JobId) -> Result<Job, RpcError> {
-        let record = self
+        Ok(self.job_record(id, job)?.to_job())
+    }
+
+    /// The session's jobs, newest first.
+    fn job_views(&self, id: SessionId) -> Result<Vec<Job>, RpcError> {
+        Ok(self
             .session(id)?
             .data
             .jobs
-            .get(job)
-            .ok_or_else(|| not_found(Resource::Job, job))?;
-        Ok(record.to_job(self.jobs.get(job).map(|j| &j.progress)))
+            .values()
+            .rev()
+            .map(JobRecord::to_job)
+            .collect())
     }
-}
-
-/// `<session cwd>/.controlroom/jobs/<id>.log`.
-pub(crate) fn log_path(session_cwd: &RemotePath, job: &JobId) -> RemotePath {
-    let cwd = session_cwd.as_str().trim_end_matches('/');
-    RemotePath::new(format!("{cwd}/.controlroom/jobs/{job}.log"))
-}
-
-/// The job's working directory: `cwd` (absolute, or relative to the session's) normalized, and
-/// inside the session's working directory.
-pub(crate) fn job_cwd(
-    session_cwd: &RemotePath,
-    cwd: Option<&RemotePath>,
-) -> Result<RemotePath, RpcError> {
-    let base = session_cwd.as_str();
-    let joined = match cwd.map(RemotePath::as_str) {
-        None | Some("") => return Ok(session_cwd.clone()),
-        Some(path) if path.starts_with('/') => path.to_owned(),
-        Some(path) => format!("{base}/{path}"),
-    };
-    let mut parts: Vec<&str> = Vec::new();
-    for part in joined.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop();
-            }
-            part => parts.push(part),
-        }
-    }
-    let normalized = format!("/{}", parts.join("/"));
-    let root = base.trim_end_matches('/');
-    let inside =
-        normalized == root || normalized.starts_with(&format!("{root}/")) || root.is_empty();
-    if !inside {
-        return Err(invalid_params(format!(
-            "the job's cwd {normalized} is outside the session's working directory {base}"
-        )));
-    }
-    Ok(RemotePath::new(normalized))
-}
-
-fn compile(pattern: &str) -> Result<Regex, RpcError> {
-    if pattern.len() > MAX_PATTERN_LEN {
-        return Err(invalid_params("the follow pattern is too long"));
-    }
-    RegexBuilder::new(pattern)
-        .size_limit(PATTERN_SIZE_LIMIT)
-        .build()
-        .map_err(|e| invalid_params(format!("invalid follow pattern: {e}")))
-}
-
-/// A one-line display name of at most [`NAME_CHARS`] characters.
-fn display_name(text: &str) -> String {
-    let line = text
-        .lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .unwrap_or("job");
-    if line.chars().count() <= NAME_CHARS {
-        return line.to_owned();
-    }
-    let mut name: String = line.chars().take(NAME_CHARS - 1).collect();
-    name.push('…');
-    name
 }
 
 #[cfg(test)]
@@ -333,32 +558,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn job_cwds_stay_inside_the_session() {
-        let session = RemotePath::new("/home/alice/app");
-        let cwd = |p: &str| job_cwd(&session, Some(&RemotePath::new(p)));
-        assert_eq!(job_cwd(&session, None).unwrap(), session);
-        assert_eq!(cwd("web/./src/..").unwrap().as_str(), "/home/alice/app/web");
-        assert_eq!(
-            cwd("/home/alice/app/x").unwrap().as_str(),
-            "/home/alice/app/x"
-        );
-        assert!(cwd("..").is_err());
-        assert!(cwd("/home/alice/application").is_err());
-        assert!(cwd("/etc").is_err());
-    }
-
-    #[test]
-    fn names_and_log_paths() {
-        assert_eq!(display_name("  \n cargo test --all \n"), "cargo test --all");
-        let long = display_name(&"x".repeat(100));
-        assert_eq!(long.chars().count(), NAME_CHARS);
-        assert!(long.ends_with('…'));
+    fn follows_are_validated() {
         let job: JobId = "01J00000000000000000000000".parse().unwrap();
-        assert_eq!(
-            log_path(&RemotePath::new("/srv/app/"), &job).as_str(),
-            "/srv/app/.controlroom/jobs/01J00000000000000000000000.log"
-        );
-        assert!(compile("(").is_err());
-        assert!(compile("FAIL|panicked").is_ok());
+        assert!(follow_op(&Some("(".into()), None, FollowFrom::Unseen, job).is_err());
+        let HostOp::JobFollow {
+            pattern,
+            buffer_seconds,
+            ..
+        } = follow_op(&Some(String::new()), Some(99_999), FollowFrom::Now, job).unwrap()
+        else {
+            panic!("a follow op");
+        };
+        assert_eq!((pattern, buffer_seconds), (None, Some(MAX_BUFFER_SECONDS)));
+        assert!(check_pattern("FAIL|panicked").is_ok());
     }
 }

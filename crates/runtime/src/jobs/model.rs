@@ -1,142 +1,152 @@
-//! A job as persisted with its session (table `jobs`).
+//! A job as persisted with its session (table `jobs`), built from its host's job events.
 
-use controlroom_protocol::ids::{JobId, RemotePath, Seq, UnixMillis};
+use controlroom_protocol::host::KilledBy;
+use controlroom_protocol::ids::{JobId, MachineId, RemotePath, Seq, UnixMillis, WorkspaceId};
 use controlroom_protocol::session::{Job, JobFollow, JobStatus};
-use controlroom_transcript::{ExitInfo, StopCause};
 use serde::{Deserialize, Serialize};
 
-use super::progress::Progress;
+/// Line ranges kept per job before new lines extend the last range.
+const MAX_RANGES: usize = 1000;
+/// Wake ids remembered per job.
+const WAKES_KEPT: usize = 16;
 
-/// Who asked to kill a job.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum KilledBy {
-    /// The agent (`job kill`): it knows, so no exit wake.
-    Agent,
-    /// The user (`job.kill` from the UI): the exit wake tells the agent.
-    User,
-}
-
-/// The agent's follow subscription.
+/// The agent's follow subscription, as the host logged it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FollowSpec {
     pub buffer_seconds: u32,
     pub pattern: Option<String>,
-    /// Lines up to here are not reported (`from: now` at follow time).
-    pub since_line: u64,
 }
 
-/// How a job ended.
+/// Followed lines no wake has reported yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Pending {
+    /// How many lines.
+    pub count: u64,
+    /// Their ranges, ascending and merged.
+    pub ranges: Vec<(u64, u64)>,
+}
+
+impl Pending {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// Adds a line number (in ascending order; older or repeated lines are ignored).
+    pub(crate) fn add(&mut self, line: u64) {
+        let full = self.ranges.len() >= MAX_RANGES;
+        match self.ranges.last_mut() {
+            Some((_, end)) if line <= *end => return,
+            Some((_, end)) if line == *end + 1 || full => *end = line,
+            _ => self.ranges.push((line, line)),
+        }
+        self.count += 1;
+    }
+
+    pub(crate) fn first(&self) -> Option<u64> {
+        self.ranges.first().map(|r| r.0)
+    }
+
+    pub(crate) fn last(&self) -> Option<u64> {
+        self.ranges.last().map(|r| r.1)
+    }
+}
+
+/// How a job ended (its `exit` event).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct JobEnd {
     pub status: JobStatus,
     pub exit: Option<i32>,
     pub signal: Option<String>,
+    /// Host time.
     pub ended_at: UnixMillis,
-    /// Output lines in total.
     pub lines: u64,
-    /// Why it ended without an exit status (it never started, or its supervisor vanished).
-    pub error: Option<String>,
-}
-
-impl JobEnd {
-    /// The end an exit record describes.
-    pub(crate) fn from_exit(info: &ExitInfo, at: UnixMillis, lines: u64) -> JobEnd {
-        let status = match (info.cause, info.code) {
-            (Some(StopCause::Timeout), _) => JobStatus::TimedOut,
-            (Some(StopCause::Terminate), _) => JobStatus::Killed,
-            (_, Some(0)) => JobStatus::Succeeded,
-            _ => JobStatus::Failed,
-        };
-        JobEnd {
-            status,
-            exit: info.code,
-            signal: info.signal.map(signal_name),
-            ended_at: at,
-            lines,
-            error: None,
-        }
-    }
+    pub duration_ms: u64,
+    /// Why the outcome is unknown (e.g. "host rebooted").
+    pub lost: Option<String>,
 }
 
 /// A job of a session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct JobRecord {
     pub id: JobId,
+    pub machine_id: MachineId,
+    pub workspace_id: WorkspaceId,
     pub name: String,
     pub command: String,
     pub cwd: RemotePath,
     pub log_path: RemotePath,
     pub timeout_s: Option<u32>,
     pub started_at: UnixMillis,
-    /// The session's transcript head when it started: its timeline item sits there.
+    /// The session's transcript head when it appeared: its timeline item sits there.
     pub seq: Seq,
+    /// Output lines so far.
+    pub lines: u64,
     pub follow: Option<FollowSpec>,
-    /// Output lines a wake has covered: a follow with `from: unseen` starts after them.
+    /// The last line a wake reported: follow wakes report later lines only.
     pub notified_line: u64,
+    pub pending: Pending,
+    /// The host time of the first pending line: its follow wake is due `buffer_seconds` later.
+    pub first_match_at: Option<UnixMillis>,
     pub kill: Option<KilledBy>,
     /// `None` while running.
     pub end: Option<JobEnd>,
-    /// The exit wake was delivered (or isn't needed).
+    /// The exit wake was delivered (or isn't needed: the agent killed the job).
     pub exit_woken: bool,
+    /// Ids of the wakes delivered (`exit:<machine>/<job>`, `follow:<machine>/<job>:<a>-<b>`),
+    /// so a replayed event can never wake twice.
+    pub wakes: Vec<String>,
 }
 
 impl JobRecord {
+    pub(crate) fn status(&self) -> JobStatus {
+        self.end.as_ref().map_or(JobStatus::Running, |e| e.status)
+    }
+
     pub(crate) fn running(&self) -> bool {
         self.end.is_none()
     }
 
-    /// The first line a follow wake may report is after this one.
-    pub(crate) fn follow_baseline(&self) -> u64 {
-        let since = self.follow.as_ref().map_or(0, |f| f.since_line);
-        self.notified_line.max(since)
+    /// When the buffered follow wake is due, if lines wait.
+    pub(crate) fn follow_due_at(&self) -> Option<UnixMillis> {
+        let follow = self.follow.as_ref()?;
+        let first = self.first_match_at?;
+        Some(UnixMillis(
+            first.0 + i64::from(follow.buffer_seconds) * 1000,
+        ))
     }
 
-    /// The wire view; `progress` is the live progress of a running job.
-    pub(crate) fn to_job(&self, progress: Option<&Progress>) -> Job {
+    /// Records a delivered wake.
+    pub(crate) fn woke(&mut self, wake: String) {
+        self.wakes.push(wake);
+        let excess = self.wakes.len().saturating_sub(WAKES_KEPT);
+        self.wakes.drain(..excess);
+    }
+
+    /// The wire view.
+    pub(crate) fn to_job(&self) -> Job {
         let end = self.end.as_ref();
         Job {
             id: self.id,
             name: self.name.clone(),
             command: self.command.clone(),
             cwd: self.cwd.clone(),
-            machine_id: None,
-            workspace_id: None,
-            status: end.map_or(JobStatus::Running, |e| e.status),
+            machine_id: Some(self.machine_id),
+            workspace_id: Some(self.workspace_id),
+            status: self.status(),
             exit: end.and_then(|e| e.exit),
             signal: end.and_then(|e| e.signal.clone()),
             started_at: self.started_at,
             ended_at: end.map(|e| e.ended_at),
             timeout_s: self.timeout_s,
             log_path: self.log_path.clone(),
-            lines: end.map_or_else(|| progress.map_or(0, |p| p.shown_lines), |e| e.lines),
+            lines: end.map_or(self.lines, |e| e.lines),
             follow: self.follow.as_ref().map(|f| JobFollow {
                 buffer_seconds: f.buffer_seconds,
                 pattern: f.pattern.clone(),
-                next_wake_at: progress.and_then(|p| p.due_at),
+                next_wake_at: self.follow_due_at(),
             }),
         }
     }
-}
-
-/// `SIGKILL` for 9, and so on; `signal N` for the rest.
-pub(crate) fn signal_name(signal: i32) -> String {
-    let name = match signal {
-        1 => "SIGHUP",
-        2 => "SIGINT",
-        3 => "SIGQUIT",
-        4 => "SIGILL",
-        6 => "SIGABRT",
-        7 => "SIGBUS",
-        8 => "SIGFPE",
-        9 => "SIGKILL",
-        11 => "SIGSEGV",
-        13 => "SIGPIPE",
-        14 => "SIGALRM",
-        15 => "SIGTERM",
-        _ => return format!("signal {signal}"),
-    };
-    name.to_owned()
 }
 
 #[cfg(test)]
@@ -144,28 +154,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exit_records_map_to_statuses() {
-        let end = |code, signal, cause| {
-            JobEnd::from_exit(
-                &ExitInfo {
-                    code,
-                    signal,
-                    cause,
-                },
-                UnixMillis(1),
-                3,
-            )
-        };
-        assert_eq!(end(Some(0), None, None).status, JobStatus::Succeeded);
-        assert_eq!(end(Some(2), None, None).status, JobStatus::Failed);
-        let killed = end(None, Some(15), Some(StopCause::Terminate));
-        assert_eq!(
-            (killed.status, killed.signal.as_deref()),
-            (JobStatus::Killed, Some("SIGTERM"))
-        );
-        let timed_out = end(None, Some(9), Some(StopCause::Timeout));
-        assert_eq!(timed_out.status, JobStatus::TimedOut);
-        assert_eq!(end(None, Some(11), None).status, JobStatus::Failed);
-        assert_eq!(signal_name(64), "signal 64");
+    fn pending_lines_merge_into_ranges() {
+        let mut pending = Pending::default();
+        for line in [3, 4, 5, 5, 2, 9, 10] {
+            pending.add(line);
+        }
+        assert_eq!(pending.ranges, [(3, 5), (9, 10)]);
+        assert_eq!(pending.count, 5);
+        assert_eq!((pending.first(), pending.last()), (Some(3), Some(10)));
     }
 }

@@ -4,8 +4,8 @@ use controlroom_drivers::Capabilities;
 use controlroom_drivers::fake::wire::{Command, Output};
 use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::ErrorData;
-use controlroom_protocol::daemon::{PromptResult, RequestRespondParams, SessionCreateParams};
-use controlroom_protocol::ids::{DeviceId, OpId, RemotePath, RequestId, SessionId};
+use controlroom_protocol::agentd::{PromptResult, RequestRespondParams, SessionCreateParams};
+use controlroom_protocol::ids::{DeviceId, OpId, RequestId, SessionId};
 use controlroom_protocol::session::{
     Attention, DeviceRef, RequestKind, RequestState, Response, RunOutcome, SessionState,
 };
@@ -247,15 +247,9 @@ async fn child_attention_rolls_up_to_the_parent() {
     let parent = h.create().await;
     let child =
         h.rt.create(SessionCreateParams {
-            op_id: OpId::generate(),
-            agent: "fake".into(),
-            cwd: RemotePath::new("/home/alice/src/app/sub"),
             name: Some("child".into()),
             parent_id: Some(parent),
-            spawned_by: None,
-            sandbox_level: None,
-            sandbox: None,
-            prompt: None,
+            ..h.create_params(&[(h.devbox, "~/src/app/sub")])
         })
         .await
         .unwrap()

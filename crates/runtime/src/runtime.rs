@@ -1,45 +1,44 @@
-//! [`Runtime`]: the public handle the daemon serves the daemon API with.
+//! [`Runtime`]: the public handle the agent daemon serves its APIs with.
 
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use controlroom_protocol::RpcError;
-use controlroom_protocol::daemon::{
-    DaemonSettings, MachineChange, MachineSnapshot, PromptResult, QueueEditParams,
-    QueueRemoveParams, QueueReorderParams, QueueSendNowParams, ReadCursor, RequestRespondParams,
-    RequestRespondResult, RetentionPolicy, SendNowResult, SessionCreateParams, SessionCreateResult,
-    SessionMarkReadParams, SessionOpParams, SessionPromptParams, SessionResumeParams,
-    SessionSetOptionParams, SessionStartFreshParams, SessionUpdateParams, SettingsSetParams,
-    StartFreshResult,
+use controlroom_protocol::agentd::{
+    DaemonSettings, HostMachine, HostOpRequest, PromptResult, QueueEditParams, QueueRemoveParams,
+    QueueReorderParams, QueueSendNowParams, ReadCursor, RequestRespondParams, RequestRespondResult,
+    RetentionPolicy, SendNowResult, SessionMarkReadParams, SessionOpParams, SessionPromptParams,
+    SessionResumeParams, SessionSetOptionParams, SessionStartFreshParams, SessionSummary,
+    SessionUpdateParams, SessionsChange, SessionsSnapshot, SettingsSetParams, StartFreshResult,
 };
-use controlroom_protocol::ids::{DaemonId, Rev, Seq, SessionId};
-use controlroom_protocol::session::{RequestState, SessionDetail, SessionSummary};
+use controlroom_protocol::ids::{DaemonId, HostOpId, Rev, Seq, SessionId, SubscriptionId};
+use controlroom_protocol::jsonrpc::RpcOutcome;
+use controlroom_protocol::session::SessionDetail;
 use controlroom_protocol::timeline::{RawFrame, TimelineItem};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use tokio::sync::{broadcast, watch};
 use tokio::task::{AbortHandle, JoinSet};
 
 use crate::commands::params_hash;
-use crate::core::Core;
+use crate::core::{Core, Task};
 use crate::errors::{busy, internal};
+use crate::hosts::{Bridge, BridgeEvent};
 use crate::io;
-use crate::ports::{Agents, Clock, Host, JobHost};
-use crate::raised::{RaiseRequest, RaisedRequest};
-use crate::session::{Session, SessionUpdate, raw_frame};
+use crate::ports::{Agents, Clock, Host};
+use crate::session::{AgentEvent, Session, SessionUpdate, raw_frame};
 use crate::store::{MigrateError, Store};
 
 /// What the runtime needs to open.
 pub struct RuntimeConfig {
-    /// `daemon.sqlite`.
+    /// `agent.sqlite`.
     pub db_path: PathBuf,
-    /// Supervisors and session files.
+    /// The agents' supervisors and session files.
     pub host: Arc<dyn Host>,
-    /// The configured agents.
+    /// The server's agent.
     pub agents: Arc<dyn Agents>,
-    /// Background jobs' supervisors.
-    pub job_host: Arc<dyn JobHost>,
     /// The time.
     pub clock: Arc<dyn Clock>,
 }
@@ -55,16 +54,28 @@ pub enum OpenError {
     Sqlite(#[from] rusqlite::Error),
 }
 
-/// `machine.subscribe`: either a snapshot or the changes the client missed, then live changes.
-pub struct MachineSubscription {
+/// `sessions.subscribe`: either a snapshot or the changes the client missed, then live
+/// changes.
+pub struct SessionsSubscription {
     /// The rev the snapshot or backlog reaches.
     pub rev: Rev,
     /// The full state, when the client can't catch up incrementally.
-    pub snapshot: Option<MachineSnapshot>,
+    pub snapshot: Option<SessionsSnapshot>,
     /// The changes after the client's `since_rev` (without a snapshot).
-    pub backlog: Vec<MachineChange>,
+    pub backlog: Vec<SessionsChange>,
     /// Live changes after `rev`. A lagging receiver must resubscribe from its last rev.
-    pub changes: broadcast::Receiver<MachineChange>,
+    pub changes: broadcast::Receiver<SessionsChange>,
+}
+
+/// `hostops.subscribe`: every pending host request, then new ones and withdrawals. A lagging
+/// receiver must resubscribe (the new result replaces everything).
+pub struct HostOpsSubscription {
+    /// Identifies the subscription.
+    pub subscription_id: SubscriptionId,
+    /// Every pending request, oldest first.
+    pub requests: Vec<HostOpRequest>,
+    /// What follows.
+    pub events: broadcast::Receiver<BridgeEvent>,
 }
 
 /// `session.subscribe`: the items changed after `since_seq`, then live updates.
@@ -87,7 +98,7 @@ pub(crate) struct Inner {
     core: Mutex<Core>,
     pub host: Arc<dyn Host>,
     pub agents: Arc<dyn Agents>,
-    pub job_host: Arc<dyn JobHost>,
+    pub bridge: Arc<Bridge>,
     tasks: Mutex<JoinSet<()>>,
     recovered: watch::Sender<bool>,
 }
@@ -147,6 +158,8 @@ impl Runtime {
         });
         let rev = store.last_rev()?;
         let sessions = store.load_sessions()?;
+        let bridge = Arc::new(Bridge::default());
+        let now = config.clock.now();
         let mut core = Core::new(
             store,
             settings,
@@ -154,10 +167,13 @@ impl Runtime {
             rev,
             config.clock,
             config.agents.clone(),
+            bridge.clone(),
         );
+        core.load_machines(now)
+            .map_err(|e| OpenError::Database(e.message))?;
         for data in sessions {
             let driver = config.agents.driver(data.driver);
-            let mut session = Session::new(data, driver);
+            let mut session = Session::new(data, driver, core.machines.clone());
             session.live.loading = true;
             core.sessions.insert(session.data.id, session);
         }
@@ -166,7 +182,7 @@ impl Runtime {
                 core: Mutex::new(core),
                 host: config.host,
                 agents: config.agents,
-                job_host: config.job_host,
+                bridge,
                 tasks: Mutex::new(JoinSet::new()),
                 recovered: watch::channel(false).0,
             }),
@@ -175,8 +191,9 @@ impl Runtime {
 
     /// Startup recovery (spec §6.6): re-folds every transcript and reattaches live
     /// supervisors, concurrently. Sessions whose supervisor is gone become `interrupted` or
-    /// `dormant`; a start that never finished is retried. Requests the previous daemon raised
-    /// and nobody answered expire: whoever waited for them is gone.
+    /// `dormant`; a start that never finished is retried. Late calls are fetched again once
+    /// their hosts are back. Raised host requests stay: their hosts list them again after the
+    /// next connection.
     pub async fn recover(&self) {
         let ids: Vec<SessionId> = self
             .inner
@@ -185,11 +202,12 @@ impl Runtime {
             .into_iter()
             .map(|id| io::recover_session(self.inner.clone(), id));
         futures::future::join_all(recoveries).await;
-        crate::jobs::recover_jobs(&self.inner).await;
         let finished = self.inner.transact(|core| {
             let ids: Vec<SessionId> = core.sessions.keys().copied().collect();
             for id in ids {
-                core.end_pending_raised(id, RequestState::Expired, false)?;
+                for late in core.session(id)?.data.late.clone() {
+                    core.task(Task::Attach(id, late));
+                }
                 core.touch(id);
             }
             Ok(())
@@ -214,9 +232,6 @@ impl Runtime {
             for session in core.sessions.values_mut() {
                 session.abort_tasks();
                 session.live.attachment = None;
-            }
-            for job in core.jobs.values_mut() {
-                job.conn = None;
             }
         });
         tasks.shutdown().await;
@@ -264,10 +279,10 @@ impl Runtime {
         })
     }
 
-    /// `machine.subscribe`.
-    pub fn subscribe_machine(&self, since: Option<Rev>) -> Result<MachineSubscription, RpcError> {
+    /// `sessions.subscribe`.
+    pub fn subscribe_sessions(&self, since: Option<Rev>) -> Result<SessionsSubscription, RpcError> {
         self.inner.with_core(|core| {
-            let changes = core.machine_tx.subscribe();
+            let changes = core.sessions_tx.subscribe();
             let rev = core.rev;
             let first = core.store.first_rev().map_err(internal)?;
             let reachable = since.is_some_and(|since| {
@@ -275,7 +290,7 @@ impl Runtime {
             });
             if let (true, Some(since)) = (reachable, since) {
                 let backlog = core.store.revs_after(since).map_err(internal)?;
-                return Ok(MachineSubscription {
+                return Ok(SessionsSubscription {
                     rev,
                     snapshot: None,
                     backlog,
@@ -283,9 +298,9 @@ impl Runtime {
                 });
             }
             let sessions = core.sessions.keys().map(|id| core.summary(*id)).collect();
-            Ok(MachineSubscription {
+            Ok(SessionsSubscription {
                 rev,
-                snapshot: Some(MachineSnapshot {
+                snapshot: Some(SessionsSnapshot {
                     sessions,
                     settings: core.settings.clone(),
                 }),
@@ -355,42 +370,60 @@ impl Runtime {
         self.inner.with_core(|core| core.settings.clone())
     }
 
-    /// Raises a blocking request on the session for the daemon itself (e.g. a sandbox
-    /// approval) and returns its handle; see [`RaisedRequest`].
-    pub async fn raise(
+    /// The session's agent-facing host events (`host.output`, `host.waiting_input`).
+    pub async fn agent_events(
         &self,
         id: SessionId,
-        request: RaiseRequest,
-    ) -> Result<RaisedRequest, RpcError> {
+    ) -> Result<broadcast::Receiver<AgentEvent>, RpcError> {
         self.recovered().await;
-        crate::raised::raise(&self.inner, id, request)
+        self.inner
+            .with_core(|core| Ok(core.session(id)?.events.subscribe()))
+    }
+
+    /// The session's `session.info` now, and its changes.
+    pub async fn info_watch(
+        &self,
+        id: SessionId,
+    ) -> Result<watch::Receiver<Option<controlroom_protocol::agent::SessionInfo>>, RpcError> {
+        self.recovered().await;
+        self.inner.with_core(|core| {
+            let session = core.session(id)?;
+            let rx = session.info.subscribe();
+            if rx.borrow().is_none() {
+                session.info.send_replace(Some(session.info()));
+            }
+            Ok(rx)
+        })
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The host bridge (the controller's side)
+    // -----------------------------------------------------------------------------------------
+
+    /// `hostops.subscribe`: every pending host request, then new ones and withdrawals.
+    pub fn hostops_subscribe(&self) -> HostOpsSubscription {
+        let (subscription_id, requests, events) = self.inner.bridge.subscribe();
+        HostOpsSubscription {
+            subscription_id,
+            requests,
+            events,
+        }
+    }
+
+    /// `hostops.respond`: a host's answer; duplicates and answers to withdrawn requests are
+    /// ignored.
+    pub fn hostops_respond(&self, id: &HostOpId, outcome: RpcOutcome<Value>) {
+        self.inner.bridge.respond(id, outcome);
+    }
+
+    /// `hostops.machines`: the controller's machines, replacing the previous report.
+    pub fn hostops_machines(&self, machines: Vec<HostMachine>) -> Result<(), RpcError> {
+        self.inner.transact(|core| core.set_machines(machines))
     }
 
     // -----------------------------------------------------------------------------------------
     // Commands
     // -----------------------------------------------------------------------------------------
-
-    /// `session.create`: resolves the agent and the cwd, then creates and starts the session.
-    pub async fn create(
-        &self,
-        params: SessionCreateParams,
-    ) -> Result<SessionCreateResult, RpcError> {
-        const METHOD: &str = "session.create";
-        self.recovered().await;
-        let hash = params_hash(&params);
-        let stored = self
-            .inner
-            .with_core(|core| core.stored_op(METHOD, &params.op_id, &hash))?;
-        if let Some(result) = stored {
-            return Ok(result);
-        }
-        let driver = self.inner.agents.resolve(&params.agent)?;
-        let cwd = self.inner.host.resolve_cwd(&params.cwd).await?;
-        self.command(METHOD, &params.op_id, &params, |core| {
-            core.create(&params, driver, cwd)
-        })
-        .await
-    }
 
     /// `session.prompt`.
     pub async fn prompt(&self, params: SessionPromptParams) -> Result<PromptResult, RpcError> {

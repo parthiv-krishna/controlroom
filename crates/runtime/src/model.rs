@@ -4,16 +4,17 @@ use std::collections::BTreeMap;
 
 use controlroom_drivers::{LineTag, NativeRef};
 use controlroom_protocol::ids::{
-    JobId, OpId, QueueId, RemotePath, RequestId, Seq, SessionId, UnixMillis,
+    ApprovalId, CallId, JobId, MachineId, OpId, QueueId, RemotePath, RequestId, Seq, SessionId,
+    UnixMillis,
 };
 use controlroom_protocol::session::{
-    AgentSession, AutoContinueStatus, ContentPart, DriverKind, PeerRef, PromptOrigin, QueueItem,
-    Request, RequestKind, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec, StartedBy, Todo,
-    TodoStatus,
+    AgentSession, AutoContinueStatus, ContentPart, DriverKind, PromptOrigin, QueueItem, Request,
+    RequestKind, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec, StartedBy, Todo, TodoStatus,
 };
 use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
 use serde::{Deserialize, Serialize};
 
+use crate::hosts::{LateCall, ShellRecord, WorkspaceRecord};
 use crate::jobs::JobRecord;
 
 /// How a queue item was handed to the agent.
@@ -119,19 +120,37 @@ impl Decision {
     }
 }
 
-/// A request the daemon raised for the session itself (e.g. a sandbox approval), outside the
-/// agent's transcript. Its resolution goes back to whoever raised it, never to the agent.
+/// A request the daemon raised for the session itself, outside the agent's transcript: the
+/// agent's questions, and requests from its workspaces' hosts (sandbox approvals, commands
+/// waiting for terminal input). The answer to a host request goes back to the host, never to
+/// the agent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Raised {
     /// The request with its current state and answer.
     pub request: Request,
     /// The transcript head when it was raised; its timeline item sits there.
     pub seq: Seq,
+    /// The host request it shows, if any.
+    #[serde(default)]
+    pub host: Option<HostRequestRef>,
+}
+
+/// What a raised host request refers to on its host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum HostRequestRef {
+    /// A sandbox approval; the answer goes back with `approval.respond`.
+    Approval {
+        machine_id: MachineId,
+        approval_id: ApprovalId,
+    },
+    /// A `bash` call waiting for terminal input (the user types it in the terminal).
+    Input { call_id: CallId },
 }
 
 impl Raised {
     /// A question the agent asked (`ask_user`): non-blocking, nobody waits for it, and its
-    /// answer is injected into the agent's next turn. Everything else is an approval.
+    /// answer is injected into the agent's next turn. Everything else is a host request.
     pub(crate) fn is_question(&self) -> bool {
         self.request.kind == RequestKind::Question
     }
@@ -158,14 +177,20 @@ impl AgentSessionRow {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SessionData {
     pub id: SessionId,
-    pub agent: String,
     pub driver: DriverKind,
-    pub cwd: RemotePath,
     pub name: Option<String>,
     pub created_at: UnixMillis,
     pub closed_at: Option<UnixMillis>,
     pub parent_id: Option<SessionId>,
-    pub spawned_by: Option<PeerRef>,
+    /// The workspaces, the primary one first.
+    pub workspaces: Vec<WorkspaceRecord>,
+    /// The named shells, in creation order.
+    pub shells: Vec<ShellRecord>,
+    /// Tool calls that failed with `connection_lost` and whose late result is still awaited.
+    pub late: Vec<LateCall>,
+    /// Per machine: the outage (its `since`) the agent was last told about (once per outage,
+    /// when running jobs wait on an unreachable host).
+    pub outages: BTreeMap<MachineId, UnixMillis>,
     /// The explicit level, if the user chose one.
     pub sandbox_level: Option<SandboxLevel>,
     /// The defaults from the controller.

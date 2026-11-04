@@ -4,7 +4,7 @@ use controlroom_drivers::Capabilities;
 use controlroom_drivers::fake::wire::Command;
 use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::ErrorData;
-use controlroom_protocol::daemon::{
+use controlroom_protocol::agentd::{
     PromptResult, QueueEditParams, QueueRemoveParams, QueueReorderParams, QueueSendNowParams,
     RequestRespondParams, SendNowResult, SessionUpdateParams,
 };

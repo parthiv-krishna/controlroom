@@ -70,6 +70,7 @@ impl Core {
         let raised = Raised {
             request: request.clone(),
             seq,
+            host: None,
         };
         session
             .data

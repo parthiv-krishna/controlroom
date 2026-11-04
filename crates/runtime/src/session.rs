@@ -9,17 +9,20 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use controlroom_drivers::{AgentView, Driver, FoldOut, LineTag};
-use controlroom_protocol::agent::AgentState;
-use controlroom_protocol::ids::{ItemId, OpId, RequestId, Seq, UnixMillis};
+use controlroom_protocol::agent::{AgentState, SessionInfo};
+use controlroom_protocol::agentd::SessionSummary;
+use controlroom_protocol::host::{ToolOutputParams, ToolWaitingInputParams};
+use controlroom_protocol::ids::{HostOpId, ItemId, OpId, RequestId, Seq, UnixMillis};
 use controlroom_protocol::session::{
     AgentSession, Attention, AutoContinueStatus, ContextUsage, LiveWork, Request, RequestKind,
-    RequestState, SessionDetail, SessionState, SessionSummary,
+    RequestState, SessionDetail, SessionState,
 };
 use controlroom_protocol::timeline::{RawFrame, RawStream, RunTrigger, TimelineOp};
 use controlroom_transcript::{Body, Record};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::AbortHandle;
 
+use crate::hosts::{DoneCall, Machines, OpenCall};
 use crate::model::SessionData;
 use crate::ports::SupervisorConn;
 use crate::preview::{PreviewSource, one_line};
@@ -27,6 +30,17 @@ use crate::timeline::TimelineCache;
 
 /// Live updates buffered per session feed before a slow subscriber lags.
 const UPDATES_CAPACITY: usize = 1024;
+/// Host events buffered per session before a slow extension connection lags.
+const EVENTS_CAPACITY: usize = 256;
+
+/// Progress of a running host call, for the agent's extension.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AgentEvent {
+    /// New output of a `bash` call (`host.output`).
+    Output(ToolOutputParams),
+    /// A `bash` call started or stopped waiting for terminal input (`host.waiting_input`).
+    WaitingInput(ToolWaitingInputParams),
+}
 
 /// A change to one session's feed (`session.events`): timeline ops of one record, its raw
 /// frame, and the detail when it changed.
@@ -87,6 +101,10 @@ pub(crate) struct Live {
     pub handed: HashSet<LineTag>,
     /// Answer, cancel and refresh lines seen in the transcript of the current process.
     pub written: HashSet<LineTag>,
+    /// Host requests the session waits for, by request id.
+    pub calls: BTreeMap<HostOpId, OpenCall>,
+    /// Finished tool calls whose results pi hasn't logged yet (then they are acknowledged).
+    pub done: Vec<DoneCall>,
 }
 
 impl Live {
@@ -152,13 +170,19 @@ pub(crate) struct Session {
     pub updates: broadcast::Sender<SessionUpdate>,
     /// What the agent's extension sees; changed only after a commit.
     pub agent: watch::Sender<Option<AgentState>>,
+    /// Where the session's tools run, for the extension; changed only after a commit.
+    pub info: watch::Sender<Option<SessionInfo>>,
+    /// Progress of the session's running host calls, for the extension.
+    pub events: broadcast::Sender<AgentEvent>,
+    /// The machines as last reported (names and availability of the workspaces).
+    pub machines: Arc<Machines>,
     pub emitted: Emitted,
     /// The attachment's tasks (reader, writer, barrier).
     pub tasks: Vec<AbortHandle>,
 }
 
 impl Session {
-    pub(crate) fn new(data: SessionData, driver: Box<dyn Driver>) -> Self {
+    pub(crate) fn new(data: SessionData, driver: Box<dyn Driver>, machines: Arc<Machines>) -> Self {
         Session {
             data,
             live: Live::default(),
@@ -168,6 +192,9 @@ impl Session {
             timeline: TimelineCache::default(),
             updates: broadcast::channel(UPDATES_CAPACITY).0,
             agent: watch::channel(None).0,
+            info: watch::channel(None).0,
+            events: broadcast::channel(EVENTS_CAPACITY).0,
+            machines,
             emitted: Emitted::default(),
             tasks: Vec::new(),
         }
@@ -339,20 +366,34 @@ impl Session {
     }
 
     /// Work that continues without the agent running and will wake it (jobs, children,
-    /// mailbox asks). The hook for those features: each adds its count here, and
-    /// auto-continue waits while any is non-zero ("not continuing: waiting on job").
+    /// mailbox asks, host calls waiting for an unreachable host or a late result). Each feature
+    /// adds its count here, and auto-continue waits while any is non-zero ("not continuing:
+    /// waiting on job").
     pub(crate) fn live_work(&self) -> LiveWork {
+        let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
         let jobs = self.data.jobs.values().filter(|j| j.running()).count();
+        let waiting = self
+            .live
+            .calls
+            .values()
+            .filter(|c| !self.machines.connected(&c.machine))
+            .count();
         LiveWork {
-            jobs: u32::try_from(jobs).unwrap_or(u32::MAX),
+            jobs: count(jobs),
+            host_calls: count(waiting + self.data.late.len()),
             ..LiveWork::default()
         }
     }
 
-    /// The first running job's name, for "waiting on job <name>".
-    pub(crate) fn running_job_name(&self) -> Option<&str> {
-        let mut running = self.data.jobs.values().filter(|j| j.running());
-        running.next().map(|j| j.name.as_str())
+    /// The first running job, for "waiting on job <name>" (with "(devbox unreachable)" when
+    /// its host is away).
+    pub(crate) fn running_job(&self) -> Option<String> {
+        let job = self.data.jobs.values().find(|j| j.running())?;
+        if self.machines.connected(&job.machine_id) {
+            return Some(job.name.clone());
+        }
+        let machine = self.machines.name(&job.machine_id);
+        Some(format!("{} ({machine} unreachable)", job.name))
     }
 
     /// What the agent's extension sees (the `state` notification).

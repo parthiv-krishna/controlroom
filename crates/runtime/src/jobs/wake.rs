@@ -4,8 +4,7 @@
 use controlroom_protocol::ids::{JobId, RemotePath};
 use controlroom_protocol::session::JobStatus;
 
-use super::model::JobEnd;
-use super::progress::Pending;
+use super::model::{JobEnd, Pending};
 
 /// Line ranges listed per job before the rest is summarized.
 const MAX_RANGES: usize = 8;
@@ -16,6 +15,8 @@ pub(crate) struct WakeEntry {
     pub job: JobId,
     pub name: String,
     pub log_path: RemotePath,
+    /// The machine's display name (the log is `machine:path` for the agent).
+    pub machine: String,
     /// Output lines so far.
     pub lines: u64,
     pub kind: WakeKind,
@@ -27,7 +28,7 @@ pub(crate) enum WakeKind {
     /// It ended; `pending` are followed lines no follow wake reported yet.
     Exit {
         end: JobEnd,
-        duration_ms: i64,
+        duration_ms: u64,
         pending: Option<Pending>,
     },
     /// Followed lines appeared while it runs.
@@ -66,10 +67,11 @@ pub(crate) fn compose(entries: &[WakeEntry]) -> Wake {
         text.push_str(&describe(entry));
         text.push('\n');
     }
-    let example = &entries[0].log_path;
+    let (machine, path) = (&entries[0].machine, &entries[0].log_path);
     text.push_str(&format!(
-        "Logs are not in your context: read only what you need, e.g. `tail -n 50 {example}`, \
-         `grep -n PATTERN {example}` or `sed -n 'a,bp' {example}`."
+        "Logs are not in your context: read only what you need, e.g. `read` {machine}:{path} \
+         with an offset, `grep` in it, or `tail -n 50 {path}` / `sed -n 'a,bp' {path}` in a \
+         shell on {machine}."
     ));
     Wake { label, text }
 }
@@ -77,6 +79,7 @@ pub(crate) fn compose(entries: &[WakeEntry]) -> Wake {
 fn short_outcome(kind: &WakeKind) -> String {
     match kind {
         WakeKind::Exit { end, .. } => match (end.status, end.exit, &end.signal) {
+            (JobStatus::Lost, _, _) => "lost".into(),
             (JobStatus::TimedOut, _, _) => "timed out".into(),
             (JobStatus::Killed, _, _) => "killed".into(),
             (_, Some(code), _) => format!("exit {code}"),
@@ -89,19 +92,22 @@ fn short_outcome(kind: &WakeKind) -> String {
 
 fn describe(entry: &WakeEntry) -> String {
     let job = format!("job {} `{}`", entry.job, entry.name);
-    let log = &entry.log_path;
+    let log = format!("{}:{}", entry.machine, entry.log_path);
     match &entry.kind {
         WakeKind::Exit {
             end,
             duration_ms,
             pending,
         } => {
-            let how = match (end.status, end.exit, &end.signal, &end.error) {
+            let how = match (end.status, end.exit, &end.signal, &end.lost) {
+                (JobStatus::Lost, .., lost) => format!(
+                    "was lost ({}); its outcome is unknown",
+                    lost.as_deref().unwrap_or("its supervisor is gone")
+                ),
                 (JobStatus::TimedOut, ..) => "timed out and was stopped".to_owned(),
                 (JobStatus::Killed, ..) => "was killed by the user".to_owned(),
                 (_, Some(code), ..) => format!("exited with code {code}"),
                 (_, None, Some(signal), _) => format!("was killed by {signal}"),
-                (_, None, None, Some(error)) => format!("failed: {error}"),
                 _ => "ended".to_owned(),
             };
             let mut text = format!(
@@ -164,8 +170,8 @@ fn plural(n: u64, word: &str) -> String {
 }
 
 /// `45s`, `3m 05s`, `2h 01m`.
-fn duration(ms: i64) -> String {
-    let secs = ms.max(0) / 1000;
+fn duration(ms: u64) -> String {
+    let secs = ms / 1000;
     match secs {
         0..60 => format!("{secs}s"),
         60..3600 => format!("{}m {:02}s", secs / 60, secs % 60),
@@ -186,7 +192,8 @@ mod tests {
             signal: None,
             ended_at: UnixMillis(0),
             lines: 0,
-            error: None,
+            duration_ms: 0,
+            lost: None,
         }
     }
 
@@ -195,6 +202,7 @@ mod tests {
             job: "01J00000000000000000000000".parse().unwrap(),
             name: name.into(),
             log_path: RemotePath::new(format!("/home/alice/app/.controlroom/jobs/{name}.log")),
+            machine: "devbox".into(),
             lines: 1234,
             kind,
         }
@@ -214,7 +222,7 @@ mod tests {
         assert!(
             wake.text.contains(
                 "job 01J00000000000000000000000 `build` exited with code 0 after 3m 05s; \
-                 1234 lines in /home/alice/app/.controlroom/jobs/build.log."
+                 1234 lines in devbox:/home/alice/app/.controlroom/jobs/build.log."
             ),
             "{}",
             wake.text

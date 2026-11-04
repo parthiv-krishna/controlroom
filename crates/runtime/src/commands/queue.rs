@@ -1,6 +1,6 @@
 //! Queue commands: send now, edit, remove, reorder, resume.
 
-use controlroom_protocol::daemon::{
+use controlroom_protocol::agentd::{
     QueueEditParams, QueueRemoveParams, QueueReorderParams, QueueSendNowParams, SendNowResult,
 };
 use controlroom_protocol::ids::{QueueId, SessionId};

@@ -3,11 +3,11 @@
 use controlroom_drivers::Capabilities;
 use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::ErrorData;
-use controlroom_protocol::daemon::{
+use controlroom_protocol::agentd::{
     RetentionPolicy, SessionCreateParams, SessionResumeParams, SessionStartFreshParams,
     SessionUpdateParams, SettingsSetParams,
 };
-use controlroom_protocol::ids::{OpId, RemotePath, Seq, SessionId};
+use controlroom_protocol::ids::{OpId, Seq, SessionId};
 use controlroom_protocol::session::{
     RunOutcome, SandboxLevel, SandboxSpec, SessionState, StartedBy,
 };
@@ -15,20 +15,6 @@ use controlroom_protocol::session::{
 use super::{Harness, caps};
 
 const HOUR_MS: i64 = 3600 * 1000;
-
-fn create_params() -> SessionCreateParams {
-    SessionCreateParams {
-        op_id: OpId::generate(),
-        agent: "fake".into(),
-        cwd: RemotePath::new("/home/alice/src/app"),
-        name: None,
-        parent_id: None,
-        spawned_by: None,
-        sandbox_level: None,
-        sandbox: None,
-        prompt: None,
-    }
-}
 
 fn fresh(id: SessionId, include_history: bool) -> SessionStartFreshParams {
     SessionStartFreshParams {
@@ -210,7 +196,7 @@ async fn close_reopen_delete() {
     let err = h.rt.cancel(h.op(id)).await.unwrap_err();
     assert!(matches!(err.data, Some(ErrorData::UnknownSession { .. })));
     assert!(
-        h.rt.subscribe_machine(None)
+        h.rt.subscribe_sessions(None)
             .unwrap()
             .snapshot
             .unwrap()
@@ -222,9 +208,19 @@ async fn close_reopen_delete() {
 #[tokio::test]
 async fn closing_or_deleting_while_starting_leaves_no_agent() {
     let h = Harness::new(FakeScript::default()).await;
-    let closed = h.rt.create(create_params()).await.unwrap().session.id;
+    let closed =
+        h.rt.create(h.create_params(&[(h.devbox, "~/src/app")]))
+            .await
+            .unwrap()
+            .session
+            .id;
     h.rt.close(h.op(closed)).await.unwrap();
-    let deleted = h.rt.create(create_params()).await.unwrap().session.id;
+    let deleted =
+        h.rt.create(h.create_params(&[(h.devbox, "~/src/app")]))
+            .await
+            .unwrap()
+            .session
+            .id;
     h.rt.delete(h.op(deleted)).await.unwrap();
     h.host
         .wait("no agents left", |host| {
@@ -361,7 +357,7 @@ async fn explicit_sandbox_levels_win_in_either_direction() {
         h.rt.create(SessionCreateParams {
             sandbox_level: Some(SandboxLevel::Off),
             sandbox: Some(spec.clone()),
-            ..create_params()
+            ..h.create_params(&[(h.devbox, "~/src/app")])
         })
         .await
         .unwrap()
@@ -372,14 +368,18 @@ async fn explicit_sandbox_levels_win_in_either_direction() {
         h.rt.create(SessionCreateParams {
             sandbox_level: Some(SandboxLevel::Strict),
             sandbox: Some(spec),
-            ..create_params()
+            ..h.create_params(&[(h.devbox, "~/src/app")])
         })
         .await
         .unwrap()
         .session;
     assert_eq!(stricter.sandbox.level, SandboxLevel::Strict);
     assert!(!stricter.sandbox.looser_than_default);
-    let default = h.rt.create(create_params()).await.unwrap().session;
+    let default =
+        h.rt.create(h.create_params(&[(h.devbox, "~/src/app")]))
+            .await
+            .unwrap()
+            .session;
     assert_eq!(default.sandbox.level, SandboxLevel::Strict);
     assert!(!default.sandbox.explicit);
     h.wait_state(looser.id, SessionState::Idle).await;

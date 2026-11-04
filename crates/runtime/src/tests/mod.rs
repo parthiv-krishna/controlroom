@@ -1,19 +1,22 @@
 //! Runtime-level scenario tests: the prototype's daemon e2e scenarios, rewritten against the
-//! runtime with the fake driver and an in-memory host. Ordered by gates and feed events; there
-//! are no sleeps (timeouts only turn a hang into a failure).
+//! runtime with the fake driver, an in-memory supervisor host and fake machines (the controller
+//! and host daemons behind the host bridge). Ordered by gates and feed events; there are no
+//! sleeps (timeouts only turn a hang into a failure).
 
 mod agent;
 mod auto_continue;
 mod host;
-mod job_host;
+mod host_calls;
 mod job_wakes;
 mod jobs;
 mod lifecycle;
+mod machines;
 mod queue;
 mod raised;
 mod recovery;
 mod requests;
 mod sessions;
+mod workspaces;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,31 +25,33 @@ use std::time::Duration;
 use controlroom_drivers::Capabilities;
 use controlroom_drivers::fake::FakeScript;
 use controlroom_protocol::RpcError;
-use controlroom_protocol::daemon::{
-    IfBusy, MachineChange, MachineEvent, PromptResult, SessionCreateParams, SessionOpParams,
-    SessionPromptParams,
+use controlroom_protocol::agentd::{
+    IfBusy, PromptResult, SessionCreateParams, SessionOpParams, SessionPromptParams,
+    SessionSummary, SessionsChange, SessionsEvent,
 };
-use controlroom_protocol::ids::{OpId, RemotePath, SessionId};
-use controlroom_protocol::session::{ContentPart, PromptOrigin, SessionState, SessionSummary};
+use controlroom_protocol::ids::{MachineId, OpId, RemotePath, SessionId};
+use controlroom_protocol::session::{ContentPart, PromptOrigin, SessionState, WorkspaceSpec};
 use tempfile::TempDir;
 use tokio::sync::broadcast;
 
 pub(crate) use host::{FakeAgents, FakeHost, ManualClock};
-pub(crate) use job_host::FakeJobHost;
+pub(crate) use machines::FakeMachines;
 
 use crate::{Runtime, RuntimeConfig, SessionUpdate};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A runtime on a temp store with the in-memory host.
+/// A runtime on a temp store with the in-memory host and one fake machine, `devbox`.
 pub(crate) struct Harness {
     pub rt: Runtime,
     pub host: FakeHost,
-    pub jobs: FakeJobHost,
+    pub machines: FakeMachines,
+    /// `devbox`, where sessions get their workspace.
+    pub devbox: MachineId,
     pub clock: Arc<ManualClock>,
     capabilities: Capabilities,
     dir: TempDir,
-    machine: broadcast::Receiver<MachineChange>,
+    feed: broadcast::Receiver<SessionsChange>,
     sessions: HashMap<SessionId, broadcast::Receiver<SessionUpdate>>,
     /// Every summary the machine feed carried, in order.
     pub emitted: Vec<SessionSummary>,
@@ -68,36 +73,39 @@ impl Harness {
     pub(crate) async fn with(script: FakeScript, capabilities: Capabilities) -> Harness {
         let clock = Arc::new(ManualClock::default());
         let host = FakeHost::new(script, clock.clone());
-        let jobs = FakeJobHost::new(clock.clone());
+        let machines = FakeMachines::new(clock.clone());
+        let devbox = machines.add("devbox");
         let dir = tempfile::tempdir().unwrap();
-        Harness::open(dir, host, jobs, clock, capabilities).await
+        Harness::open(dir, host, machines, devbox, clock, capabilities).await
     }
 
     async fn open(
         dir: TempDir,
         host: FakeHost,
-        jobs: FakeJobHost,
+        machines: FakeMachines,
+        devbox: MachineId,
         clock: Arc<ManualClock>,
         capabilities: Capabilities,
     ) -> Harness {
         let rt = Runtime::open(RuntimeConfig {
-            db_path: dir.path().join("daemon.sqlite"),
+            db_path: dir.path().join("agent.sqlite"),
             host: Arc::new(host.clone()),
             agents: Arc::new(FakeAgents { capabilities }),
-            job_host: Arc::new(jobs.clone()),
             clock: clock.clone(),
         })
         .unwrap();
-        let machine = rt.subscribe_machine(None).unwrap().changes;
+        let feed = rt.subscribe_sessions(None).unwrap().changes;
         rt.recover().await;
+        machines.attach(rt.clone());
         Harness {
             rt,
             host,
-            jobs,
+            machines,
+            devbox,
             clock,
             capabilities,
             dir,
-            machine,
+            feed,
             sessions: HashMap::new(),
             emitted: Vec::new(),
         }
@@ -111,38 +119,49 @@ impl Harness {
 
     /// Like [`Harness::restart`], doing `meanwhile` while no runtime runs.
     pub(crate) async fn restart_after(self, meanwhile: impl FnOnce(&FakeHost)) -> Harness {
+        self.machines.detach();
         self.rt.shutdown().await;
         meanwhile(&self.host);
         Harness::open(
             self.dir,
             self.host,
-            self.jobs,
+            self.machines,
+            self.devbox,
             self.clock,
             self.capabilities,
         )
         .await
     }
 
-    /// Creates a session and waits until its agent is idle.
+    /// Creates a session on `devbox:~/src/app` and waits until its agent is idle.
     pub(crate) async fn create(&mut self) -> SessionId {
         let created = self
             .rt
-            .create(SessionCreateParams {
-                op_id: OpId::generate(),
-                agent: "fake".into(),
-                cwd: RemotePath::new("/home/alice/src/app"),
-                name: None,
-                parent_id: None,
-                spawned_by: None,
-                sandbox_level: None,
-                sandbox: None,
-                prompt: None,
-            })
+            .create(self.create_params(&[(self.devbox, "~/src/app")]))
             .await
             .unwrap();
         let id = created.session.id;
         self.wait_state(id, SessionState::Idle).await;
         id
+    }
+
+    /// `session.create` params for these workspaces.
+    pub(crate) fn create_params(&self, workspaces: &[(MachineId, &str)]) -> SessionCreateParams {
+        SessionCreateParams {
+            op_id: OpId::generate(),
+            workspaces: workspaces
+                .iter()
+                .map(|(machine, path)| WorkspaceSpec {
+                    machine_id: *machine,
+                    path: RemotePath::new(*path),
+                })
+                .collect(),
+            name: None,
+            parent_id: None,
+            sandbox_level: None,
+            sandbox: None,
+            prompt: None,
+        }
     }
 
     pub(crate) async fn prompt(&self, id: SessionId, text: &str) -> PromptResult {
@@ -186,14 +205,14 @@ impl Harness {
         }
         let result = tokio::time::timeout(TIMEOUT, async {
             loop {
-                self.drain_machine();
+                self.drain_feed();
                 let summary = self.summary(id);
                 if pred(&summary) {
                     return summary;
                 }
                 let updates = self.sessions.get_mut(&id).unwrap();
                 tokio::select! {
-                    change = self.machine.recv() => {
+                    change = self.feed.recv() => {
                         if let Ok(change) = change {
                             self.record(change);
                         }
@@ -218,14 +237,14 @@ impl Harness {
             .await
     }
 
-    fn drain_machine(&mut self) {
-        while let Ok(change) = self.machine.try_recv() {
+    fn drain_feed(&mut self) {
+        while let Ok(change) = self.feed.try_recv() {
             self.record(change);
         }
     }
 
-    fn record(&mut self, change: MachineChange) {
-        if let MachineEvent::SessionUpserted { session } = change.event {
+    fn record(&mut self, change: SessionsChange) {
+        if let SessionsEvent::SessionUpserted { session } = change.event {
             self.emitted.push(*session);
         }
     }

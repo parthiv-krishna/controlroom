@@ -1,6 +1,8 @@
-//! The session runtime (spec §6.5, §6.6): the session registry, queue, requests, reconcile
-//! loop, recovery and the materialized timeline, behind a [`Runtime`] handle the daemon serves
-//! the daemon API with. Library only: no sockets; all IO goes through the [`ports`] traits.
+//! The session runtime (spec §6.5, §6.6), the core of the agent daemon: the session registry,
+//! queue, requests, reconcile loop, recovery and the materialized timeline, plus the sessions'
+//! workspaces and tool calls on hosts, behind a [`Runtime`] handle the agent daemon serves its
+//! APIs with. Library only: no sockets; local IO goes through the [`ports`] traits, and host
+//! requests wait on the `hostops` bridge for the controller to carry them.
 //!
 //! **Invariants** (spec §3):
 //!
@@ -22,8 +24,9 @@
 //! `commands`, `lifecycle` and `io` (agent processes and supervisor attachments),
 //! `policy` (the tick: idle-stop, retention, pruning), `timeline` (materialization), `store`
 //! (SQLite with versioned migrations), `preview`, `history` (start-fresh export), `raised`
-//! (requests the daemon raises itself, such as sandbox approvals), `jobs` (background jobs:
-//! supervised processes with log files and wakes).
+//! (requests the daemon raises itself: questions and host requests), `hosts` (workspaces,
+//! shells, host calls with grace and late results, the host bridge, approvals), `jobs`
+//! (background jobs on hosts: the job event log and wakes).
 //!
 //! Agent runtime primitives (spec §8): `inject` (the single delivery path into the agent's
 //! next turn), `questions` (non-blocking `ask_user`), `todos` (the shared list), `auto`
@@ -31,7 +34,7 @@
 //! (daemon-made timeline items) and `agent` (the agent API the daemon's agent socket serves).
 //!
 //! **Not yet here** (later phases add them as new modules and migrations): children, the
-//! mailbox and contact policy.
+//! mailbox and contact policy, `bash_privileged` and `terminal_read`.
 
 mod agent;
 mod auto;
@@ -39,6 +42,7 @@ mod commands;
 mod core;
 mod errors;
 mod history;
+mod hosts;
 mod ingest;
 mod inject;
 mod io;
@@ -62,6 +66,9 @@ mod triggers;
 #[cfg(test)]
 mod tests;
 
-pub use raised::{RaiseRequest, RaisedRequest};
-pub use runtime::{MachineSubscription, OpenError, Runtime, RuntimeConfig, SessionSubscription};
-pub use session::SessionUpdate;
+pub use hosts::BridgeEvent;
+pub use runtime::{
+    HostOpsSubscription, OpenError, Runtime, RuntimeConfig, SessionSubscription,
+    SessionsSubscription,
+};
+pub use session::{AgentEvent, SessionUpdate};

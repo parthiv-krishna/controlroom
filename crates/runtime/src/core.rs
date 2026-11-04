@@ -7,7 +7,8 @@
 //! lines to the supervisors and broadcasts. On failure (the command's error or a failed commit)
 //! it rolls back, restores the snapshots and discards the staged lines and broadcasts; a session
 //! whose driver already folded or encoded something is rebuilt from the store and its
-//! transcript ([`Task::Reload`]).
+//! transcript ([`Task::Reload`]). Host requests a transaction sends or withdraws are staged
+//! the same way ([`HostEffect`]).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
@@ -15,21 +16,23 @@ use std::time::Duration;
 
 use controlroom_protocol::RpcError;
 use controlroom_protocol::Seq;
-use controlroom_protocol::agent::AgentState;
-use controlroom_protocol::daemon::{DaemonSettings, MachineChange, MachineEvent};
-use controlroom_protocol::ids::{DaemonId, JobId, RequestId, Rev, SessionId};
-use controlroom_protocol::session::{AttentionRollup, Request, SessionDetail, SessionSummary};
-use tokio::sync::{broadcast, oneshot};
+use controlroom_protocol::agent::{AgentState, SessionInfo};
+use controlroom_protocol::agentd::{
+    DaemonSettings, HostOpRequest, SessionSummary, SessionsChange, SessionsEvent,
+};
+use controlroom_protocol::ids::{CallId, DaemonId, HostOpId, MachineId, Rev, SessionId};
+use controlroom_protocol::session::{AttentionRollup, SessionDetail};
+use tokio::sync::{broadcast, watch};
 
 use crate::errors::{internal, unknown_session};
-use crate::jobs::JobLive;
+use crate::hosts::{Bridge, HostSync, LateCall, Machines};
 use crate::model::SessionData;
 use crate::ports::{Agents, Clock, SupervisorConn};
 use crate::session::{Live, Session, SessionUpdate};
 use crate::store::Store;
 
-/// Machine-feed changes buffered before a slow subscriber lags.
-const MACHINE_CAPACITY: usize = 4096;
+/// Sessions-feed changes buffered before a slow subscriber lags.
+const SESSIONS_CAPACITY: usize = 4096;
 /// Preview-only summary changes are sent at most this often.
 pub(crate) const PREVIEW_THROTTLE_MS: i64 = 1000;
 
@@ -49,20 +52,38 @@ pub(crate) enum Task {
         generation: u64,
         conn: Arc<dyn SupervisorConn>,
     },
+    /// Renew a host's subscriptions after a new connection.
+    Sync(MachineId),
+    /// Fetch a late call's result once its host is back.
+    Attach(SessionId, LateCall),
+    /// Open the session's shells its hosts don't have yet.
+    OpenShells(SessionId),
+    /// Reopen the session's workspaces (its sandbox changed) and shells.
+    Refresh(SessionId),
+}
+
+/// A host request change a transaction asks for, applied after the commit.
+pub(crate) enum HostEffect {
+    /// Queue a request nobody waits for.
+    Send(HostOpRequest),
+    /// Drop a pending request.
+    Withdraw(HostOpId),
+    /// Fail an open call's waiters.
+    Expire(watch::Sender<Option<RpcError>>, RpcError),
 }
 
 /// What a transaction does once it has committed.
 #[derive(Default)]
 struct Effects {
     lines: Vec<(SessionId, String)>,
-    machine: Vec<MachineChange>,
+    feed: Vec<SessionsChange>,
     updates: Vec<(SessionId, SessionUpdate)>,
     /// What the feeds will have seen: (session, new summary, new detail).
     emitted: Vec<(SessionId, Option<SessionSummary>, Option<SessionDetail>)>,
-    /// New agent states, for the agents' extensions.
+    /// New agent states and session infos, for the agents' extensions.
     agent: Vec<(SessionId, AgentState)>,
-    /// Raised requests resolved in this transaction, for their waiters.
-    resolved: Vec<(SessionId, Request)>,
+    info: Vec<(SessionId, SessionInfo)>,
+    host: Vec<HostEffect>,
     tasks: Vec<Task>,
 }
 
@@ -78,13 +99,8 @@ struct TxState {
     touched: BTreeSet<SessionId>,
     /// Write the timeline cache of these sessions.
     checkpoint: BTreeSet<SessionId>,
-    /// Waiters registered in this transaction (forgotten on rollback).
-    waiters: Vec<WaiterKey>,
     fx: Effects,
 }
-
-/// A raised request's waiter: (session, request).
-pub(crate) type WaiterKey = (SessionId, RequestId);
 
 /// The runtime's state.
 pub(crate) struct Core {
@@ -93,13 +109,17 @@ pub(crate) struct Core {
     pub settings: DaemonSettings,
     pub daemon_id: DaemonId,
     pub rev: Rev,
-    pub machine_tx: broadcast::Sender<MachineChange>,
+    pub sessions_tx: broadcast::Sender<SessionsChange>,
     pub clock: Arc<dyn Clock>,
     pub agents: Arc<dyn Agents>,
-    /// Running jobs being followed (their records live with their sessions).
-    pub jobs: BTreeMap<JobId, JobLive>,
-    /// Whoever raised a pending request learns its resolution here (after the commit).
-    waiters: HashMap<WaiterKey, oneshot::Sender<Request>>,
+    /// The controller's machines, as last reported.
+    pub machines: Arc<Machines>,
+    /// Pending host requests (outside the lock; staged by transactions).
+    pub bridge: Arc<Bridge>,
+    /// Per host: results to release with `journal.ack`.
+    pub acks: BTreeMap<MachineId, Vec<CallId>>,
+    /// Per host: the subscriptions of the current connection.
+    pub sync: BTreeMap<MachineId, HostSync>,
     next_generation: u64,
     tx: TxState,
 }
@@ -112,6 +132,7 @@ impl Core {
         rev: Rev,
         clock: Arc<dyn Clock>,
         agents: Arc<dyn Agents>,
+        bridge: Arc<Bridge>,
     ) -> Self {
         Core {
             store,
@@ -119,11 +140,13 @@ impl Core {
             settings,
             daemon_id,
             rev,
-            machine_tx: broadcast::channel(MACHINE_CAPACITY).0,
+            sessions_tx: broadcast::channel(SESSIONS_CAPACITY).0,
             clock,
             agents,
-            jobs: BTreeMap::new(),
-            waiters: HashMap::new(),
+            machines: Arc::new(Machines::default()),
+            bridge,
+            acks: BTreeMap::new(),
+            sync: BTreeMap::new(),
             next_generation: 1,
             tx: TxState::default(),
         }
@@ -227,15 +250,9 @@ impl Core {
         self.tx.fx.tasks.push(task);
     }
 
-    /// Registers the waiter of a request raised in this transaction.
-    pub(crate) fn add_waiter(&mut self, key: WaiterKey, waiter: oneshot::Sender<Request>) {
-        self.tx.waiters.push(key.clone());
-        self.waiters.insert(key, waiter);
-    }
-
-    /// Tells the raised request's waiter, once committed, how it was resolved.
-    pub(crate) fn resolved(&mut self, id: SessionId, request: Request) {
-        self.tx.fx.resolved.push((id, request));
+    /// Stages a host request change.
+    pub(crate) fn effect(&mut self, effect: HostEffect) {
+        self.tx.fx.host.push(effect);
     }
 
     /// Publishes one record's timeline ops and raw frame.
@@ -256,16 +273,16 @@ impl Core {
         self.next_generation
     }
 
-    /// Appends a machine-feed change to the rev log.
-    pub(crate) fn emit(&mut self, event: MachineEvent) -> rusqlite::Result<()> {
+    /// Appends a sessions-feed change to the rev log.
+    pub(crate) fn emit(&mut self, event: SessionsEvent) -> rusqlite::Result<()> {
         self.tx.rev.get_or_insert(self.rev);
         self.rev = Rev(self.rev.0 + 1);
-        let change = MachineChange {
+        let change = SessionsChange {
             rev: self.rev,
             event,
         };
         self.store.append_rev(self.rev, &change)?;
-        self.tx.fx.machine.push(change);
+        self.tx.fx.feed.push(change);
         Ok(())
     }
 
@@ -309,7 +326,7 @@ impl Core {
             && *before != self.settings
         {
             self.store.kv_set("settings", &self.settings)?;
-            self.emit(MachineEvent::SettingsChanged {
+            self.emit(SessionsEvent::SettingsChanged {
                 settings: self.settings.clone(),
             })?;
         }
@@ -360,6 +377,10 @@ impl Core {
         if session.agent.borrow().as_ref() != Some(&agent) {
             self.tx.fx.agent.push((id, agent));
         }
+        let info = session.info();
+        if session.info.borrow().as_ref() != Some(&info) {
+            self.tx.fx.info.push((id, info));
+        }
         let detail = self.detail(session);
         let detail_changed = emitted.detail.as_ref() != Some(&detail);
         let head = session.live.processed_seq;
@@ -383,7 +404,7 @@ impl Core {
         }
         if changed {
             summary.updated_at = now;
-            self.emit(MachineEvent::SessionUpserted {
+            self.emit(SessionsEvent::SessionUpserted {
                 session: Box::new(summary.clone()),
             })?;
         }
@@ -422,25 +443,31 @@ impl Core {
                 });
             }
         }
-        for change in fx.machine {
-            let _ = self.machine_tx.send(change);
+        for change in fx.feed {
+            let _ = self.sessions_tx.send(change);
+        }
+        for effect in fx.host {
+            match effect {
+                HostEffect::Send(request) => self.bridge.send(request),
+                HostEffect::Withdraw(id) => self.bridge.withdraw(&id),
+                HostEffect::Expire(expire, error) => {
+                    expire.send_replace(Some(error));
+                }
+            }
         }
         for (id, update) in fx.updates {
             if let Some(session) = self.sessions.get(&id) {
                 let _ = session.updates.send(update);
             }
         }
-        for (id, request) in fx.resolved {
-            if let Some(waiter) = self.waiters.remove(&(id, request.id.clone())) {
-                let _ = waiter.send(request);
-            }
-        }
-        // Waiters of deleted sessions learn it from their closed channel.
-        let sessions = &self.sessions;
-        self.waiters.retain(|(id, _), _| sessions.contains_key(id));
         for (id, state) in fx.agent {
             if let Some(session) = self.sessions.get(&id) {
                 session.agent.send_replace(Some(state));
+            }
+        }
+        for (id, info) in fx.info {
+            if let Some(session) = self.sessions.get(&id) {
+                session.info.send_replace(Some(info));
             }
         }
         for (id, summary, detail) in fx.emitted {
@@ -462,9 +489,6 @@ impl Core {
     fn abort(&mut self) -> Vec<Task> {
         self.store.rollback();
         let tx = std::mem::take(&mut self.tx);
-        for key in &tx.waiters {
-            self.waiters.remove(key);
-        }
         for id in tx.created {
             if let Some(mut session) = self.sessions.remove(&id) {
                 session.abort_tasks();
@@ -498,7 +522,7 @@ impl Core {
     // Summaries
     // -----------------------------------------------------------------------------------------
 
-    /// The session's summary, with roll-ups over its same-machine descendants.
+    /// The session's summary, with roll-ups over its descendants.
     pub(crate) fn summary(&self, id: SessionId) -> SessionSummary {
         let session = &self.sessions[&id];
         let data = &session.data;
@@ -533,8 +557,8 @@ impl Core {
             id,
             name: data.name.clone(),
             title: session.derived.title.clone(),
-            cwd: data.cwd.clone(),
-            agent: data.agent.clone(),
+            workspaces: session.workspaces(),
+            shells: data.shells.iter().map(|s| s.shell.clone()).collect(),
             created_at: data.created_at,
             updated_at: session
                 .emitted
@@ -543,7 +567,6 @@ impl Core {
                 .map_or(data.created_at, |s| s.updated_at),
             closed_at: data.closed_at,
             parent_id: data.parent_id,
-            spawned_by: data.spawned_by.clone(),
             state,
             last_outcome: data.last_outcome,
             last_error: data.last_error.clone(),

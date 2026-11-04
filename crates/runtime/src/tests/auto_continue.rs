@@ -5,10 +5,10 @@ use controlroom_drivers::fake::{FakeScript, FakeStep};
 use controlroom_protocol::agent::{
     AgentQuestion, AgentTodoAddParams, AgentTodoUpdateParams, QuestionAskParams,
 };
-use controlroom_protocol::daemon::SessionUpdateParams;
+use controlroom_protocol::agentd::{SessionSummary, SessionUpdateParams};
 use controlroom_protocol::ids::{OpId, SessionId, TodoId};
 use controlroom_protocol::session::{
-    Attention, AutoContinueStatus, RunOutcome, SessionState, SessionSummary, TodoStatus,
+    Attention, AutoContinueStatus, RunOutcome, SessionState, TodoStatus,
 };
 use controlroom_protocol::timeline::RunTrigger;
 

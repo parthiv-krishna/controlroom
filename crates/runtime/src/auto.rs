@@ -20,7 +20,7 @@
 
 use controlroom_drivers::LineTag;
 use controlroom_protocol::RpcError;
-use controlroom_protocol::daemon::SessionUpdateParams;
+use controlroom_protocol::agentd::SessionUpdateParams;
 use controlroom_protocol::ids::SessionId;
 use controlroom_protocol::session::{AutoContinueInfo, AutoContinueStatus, RunOutcome, TodoStatus};
 use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
@@ -197,11 +197,14 @@ pub(crate) fn waiting_on(session: &Session) -> Option<String> {
     }
     let work = session.live_work();
     if work.jobs > 0 {
-        let name = session.running_job_name().unwrap_or_default();
+        let name = session.running_job().unwrap_or_default();
         return Some(format!("waiting on job {name}"));
     }
     if work.children > 0 {
         return Some("waiting on a subagent".into());
+    }
+    if work.host_calls > 0 {
+        return Some("waiting on an unreachable host".into());
     }
     if work.asks > 0 {
         return Some("waiting on a reply".into());

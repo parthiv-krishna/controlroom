@@ -1,5 +1,5 @@
-//! `daemon.sqlite`: sessions, queue, op dedup, decisions, the materialized timeline, the rev log
-//! and settings. One connection, used under the runtime's lock; every entry point runs as one
+//! `agent.sqlite`: sessions, queue, op dedup, decisions, the materialized timeline, the rev log,
+//! job cursors and settings. One connection, used under the runtime's lock; every entry point runs as one
 //! transaction ([`Store::begin`], [`Store::commit`], [`Store::rollback`]).
 //!
 //! The database runs in WAL mode with `synchronous=FULL`: a committed decision or queue change

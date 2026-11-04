@@ -8,7 +8,7 @@
 //! - Closing an entry (done, blocked, skipped) counts as auto-continue progress.
 
 use controlroom_protocol::RpcError;
-use controlroom_protocol::daemon::{
+use controlroom_protocol::agentd::{
     TodoAddParams, TodoRemoveParams, TodoReorderParams, TodoUpdateParams,
 };
 use controlroom_protocol::ids::{ItemId, SessionId, TodoId};
@@ -309,10 +309,10 @@ impl crate::runtime::Runtime {
     pub async fn todo_add(
         &self,
         params: TodoAddParams,
-    ) -> Result<controlroom_protocol::daemon::TodoAddResult, RpcError> {
+    ) -> Result<controlroom_protocol::agentd::TodoAddResult, RpcError> {
         self.command("todo.add", &params.op_id, &params, |core| {
             let todos = core.edit_todos(params.id, user(&params.by), Edit::add(&params))?;
-            Ok(controlroom_protocol::daemon::TodoAddResult { todos })
+            Ok(controlroom_protocol::agentd::TodoAddResult { todos })
         })
         .await
     }

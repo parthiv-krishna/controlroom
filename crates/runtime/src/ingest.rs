@@ -73,6 +73,7 @@ impl Core {
         for op in &out.ops {
             session.derived.preview.apply(op);
         }
+        let finished = finished_tool_ids(&out.ops);
         for event in &out.events {
             observe(session, event);
         }
@@ -117,6 +118,9 @@ impl Core {
         if !loading {
             self.resolve_doubt(id);
             self.reconcile(id);
+        }
+        for tool_call in finished {
+            self.tool_finished(id, &tool_call);
         }
         Ok(())
     }
@@ -371,4 +375,22 @@ fn requeue(data: &mut SessionData, entry: QueueEntry, id: QueueId) {
     if !steered {
         data.queue_paused = true;
     }
+}
+
+/// Tool calls whose end these ops record (their host results can be released).
+fn finished_tool_ids(ops: &[controlroom_protocol::timeline::TimelineOp]) -> Vec<String> {
+    use controlroom_protocol::timeline::{ItemBody, TimelineOp, ToolStatus};
+    ops.iter()
+        .filter_map(|op| match op {
+            TimelineOp::Upsert { item } => match &item.body {
+                ItemBody::ToolCall {
+                    tool_call_id,
+                    status: ToolStatus::Completed | ToolStatus::Failed | ToolStatus::Cancelled,
+                    ..
+                } => Some(tool_call_id.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
 }

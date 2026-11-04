@@ -1,6 +1,6 @@
 //! `request.respond`: the first decision wins, and `then` is applied under the same op id.
 
-use controlroom_protocol::daemon::{PromptResult, RequestRespondParams, RequestRespondResult};
+use controlroom_protocol::agentd::{PromptResult, RequestRespondParams, RequestRespondResult};
 use controlroom_protocol::ids::QueueId;
 use controlroom_protocol::session::{
     PromptOrigin, Request, RequestAnswer, RequestKind, RequestState, Response,

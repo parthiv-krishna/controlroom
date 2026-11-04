@@ -9,9 +9,9 @@ use std::time::Duration;
 use controlroom_drivers::fake::wire::{Command, Input};
 use controlroom_drivers::fake::{AgentOutput, FakeAgent, FakeScript};
 use controlroom_drivers::{Capabilities, Driver, FakeDriver};
+use controlroom_protocol::RpcError;
 use controlroom_protocol::ids::{RemotePath, Seq, SessionId, UnixMillis};
 use controlroom_protocol::session::DriverKind;
-use controlroom_protocol::{ErrorData, Resource, RpcError};
 use controlroom_supervisor::{Exec, SpawnSpec};
 use controlroom_transcript::{Body, ExitInfo, Line, Meta, Record, StopCause};
 use futures::future::BoxFuture;
@@ -35,23 +35,14 @@ impl Clock for ManualClock {
     }
 }
 
-/// The fake agents config: `fake` is the only agent.
+/// The fake agents config: the fake agent.
 pub(crate) struct FakeAgents {
     pub capabilities: Capabilities,
 }
 
 impl Agents for FakeAgents {
-    fn resolve(&self, agent: &str) -> Result<DriverKind, RpcError> {
-        if agent == "fake" {
-            return Ok(DriverKind::Fake);
-        }
-        Err(RpcError::new(
-            ErrorData::NotFound {
-                resource: Resource::Agent,
-                id: agent.into(),
-            },
-            "unknown agent",
-        ))
+    fn kind(&self) -> Result<DriverKind, RpcError> {
+        Ok(DriverKind::Fake)
     }
 
     fn driver(&self, _kind: DriverKind) -> Box<dyn Driver> {
@@ -64,7 +55,7 @@ impl Agents for FakeAgents {
         Ok(SpawnSpec {
             kind: controlroom_transcript::ProcessKind::Agent,
             exec: Exec::Argv(argv),
-            cwd: launch.cwd.as_str().into(),
+            cwd: format!("/srv/agent/sessions/{}/work", launch.session).into(),
             env_file: None,
             stdin: controlroom_transcript::StdinMode::Pipe,
             timeout_ms: None,
@@ -333,14 +324,6 @@ impl Proc {
 }
 
 impl Host for FakeHost {
-    fn resolve_cwd(&self, cwd: &RemotePath) -> BoxFuture<'_, Result<RemotePath, RpcError>> {
-        let cwd = match cwd.as_str().strip_prefix('~') {
-            Some(rest) => RemotePath::new(format!("/home/alice{rest}")),
-            None => cwd.clone(),
-        };
-        Box::pin(async move { Ok(cwd) })
-    }
-
     fn launch(&self, session: SessionId, spec: SpawnSpec) -> BoxFuture<'_, Result<(), HostError>> {
         Box::pin(async move {
             {

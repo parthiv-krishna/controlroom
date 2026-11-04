@@ -9,7 +9,7 @@ use controlroom_protocol::agent::{
     AgentQuestion, AgentQuestionOption, AgentTodoAddParams, AgentTodoUpdateParams, NotifyParams,
     QuestionAskParams, QuestionWithdrawParams,
 };
-use controlroom_protocol::daemon::{
+use controlroom_protocol::agentd::{
     IfBusy, RequestRespondParams, SessionPromptParams, TodoAddParams, TodoRemoveParams,
     TodoReorderParams, TodoUpdateParams,
 };
@@ -580,7 +580,7 @@ async fn run_triggers_name_the_device_queue_and_schedule() {
 #[tokio::test]
 async fn an_answer_resumes_an_agent_that_was_idle_stopped_meanwhile() {
     let mut h = Harness::new(FakeScript::default()).await;
-    h.rt.set_settings(controlroom_protocol::daemon::SettingsSetParams {
+    h.rt.set_settings(controlroom_protocol::agentd::SettingsSetParams {
         op_id: OpId::generate(),
         idle_timeout_h: Some(1),
         retention: None,
