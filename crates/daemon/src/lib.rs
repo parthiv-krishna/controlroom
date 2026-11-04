@@ -1,23 +1,18 @@
 //! controlroomd: the per-user daemon on an execution machine, as a library behind the
-//! `controlroomd` binary's subcommands.
+//! `controlroomd` binary's subcommands. Sessions (and pi) moved to `controlroom-agentd` on the
+//! server; this daemon becomes the host role (workspaces, shells, tools, jobs).
 //!
 //! - [`dirs`], [`config`], [`version`], [`shell`]: paths, configuration and host helpers;
-//! - [`instance`], [`serve`], [`connect`]: the single daemon instance, the daemon API it serves
-//!   (the session runtime behind its host and agents ports), and the stdio bridge the
-//!   controller runs over SSH;
-//! - [`launch`]: agent launch glue (session dirs, nono profile, supervisor spawn spec);
+//! - [`instance`], [`serve`], [`connect`]: the single daemon instance, the API it serves, and
+//!   the stdio bridge the controller runs over SSH;
 //! - [`doctor`]: environment checks;
-//! - [`ctl`]: the debug client and its timeline renderer;
-//! - [`credential`], [`supervise`]: nono's credential helper and the supervisor entry point.
+//! - [`supervise`]: the supervisor entry point.
 
 pub mod config;
 pub mod connect;
-pub mod credential;
-pub mod ctl;
 pub mod dirs;
 pub mod doctor;
 pub mod instance;
-pub mod launch;
 pub mod serve;
 pub mod shell;
 pub mod supervise;

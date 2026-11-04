@@ -9,8 +9,8 @@ use crate::harness::*;
 fn create_prompt_reply_idle() {
     let env = Env::with(texts(&["Hello there."]));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     assert_eq!(client.prompt(&id, "hi")["outcome"], "sent");
     let summary = client.wait_session(&id, "idle after the reply", |s| {
@@ -46,8 +46,8 @@ fn create_prompt_reply_idle() {
 fn create_with_a_first_prompt_and_a_detail_only_subscription() {
     let env = Env::with(texts(&["Started on it."]));
     let client = env.client();
-    client.watch_machine();
-    let create = json!({"op_id": op(), "agent": "fake", "cwd": env.work(), "sandbox_level": "off",
+    client.watch_sessions();
+    let create = json!({"op_id": op(), "workspaces": env.workspaces(), "sandbox_level": "off",
                         "prompt": {"content": text("fix the flaky test")}});
     let created = client.call("session.create", create.clone());
     assert_eq!(created["prompt"]["outcome"], "queued");
@@ -87,9 +87,9 @@ fn create_with_a_first_prompt_and_a_detail_only_subscription() {
 fn op_id_replay_applies_once() {
     let env = Env::with(json!({}));
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     let create =
-        json!({"op_id": "create-1", "agent": "fake", "cwd": env.work(), "sandbox_level": "off"});
+        json!({"op_id": "create-1", "workspaces": env.workspaces(), "sandbox_level": "off"});
     let first = client.call("session.create", create.clone());
     let again = client.call("session.create", create);
     assert_eq!(first["session"]["id"], again["session"]["id"]);
@@ -110,7 +110,7 @@ fn op_id_replay_applies_once() {
         json!({"op_id": "prompt-1", "id": id}),
         "op_id_conflict",
     );
-    let snapshot = env.client().watch_machine();
+    let snapshot = env.client().watch_sessions();
     assert_eq!(
         snapshot["snapshot"]["sessions"].as_array().unwrap().len(),
         1
@@ -131,8 +131,8 @@ fn option_value(summary: &Value, id: &str) -> Value {
 fn set_option_model_and_thinking_including_during_a_turn() {
     let env = Env::with(json!({"replies": [gated("Working", "busy", " done.")]}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     // Choices arrive with the state refresh after start (only the value before that).
     client.wait_session(&id, "options", |s| {
         s["state"] == "idle"
@@ -187,8 +187,8 @@ fn context_usage_is_on_the_summary() {
         {"content": [{"type": "text", "text": "counted"}], "usage": {"input": 500, "output": 40}}
     ]}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "count");
     let summary = client.wait_session(&id, "context usage", |s| {
@@ -201,8 +201,8 @@ fn context_usage_is_on_the_summary() {
 fn start_fresh_with_history() {
     let env = Env::with(texts(&["Remember 42.", "Fresh start."]));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "remember");
     client.wait_session(&id, "the first turn", |s| s["last_outcome"] == "completed");
@@ -257,8 +257,8 @@ fn agent_sessions(client: &Client, session: &str) -> usize {
 fn close_reopen_delete() {
     let env = Env::with(json!({}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     let (supervisor, _) = env.supervisor_pids(&id);
 

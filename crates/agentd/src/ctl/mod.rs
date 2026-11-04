@@ -1,16 +1,19 @@
-//! `controlroomd ctl`: a debugging client for the local daemon (`hello` with the `debug` role)
-//! and a terminal renderer for timeline ops.
+//! `controlroom-agentd ctl`: a debugging client for the local agent daemon (`hello` with the
+//! `debug` role) and a terminal renderer for timeline ops.
 //!
 //! ```text
-//! controlroomd ctl hello                         handshake; prints the daemon's hello result
-//! controlroomd ctl call <method> [<params JSON>] any daemon method; prints the result
-//! controlroomd ctl watch <session> [--since N]   subscribe and render the timeline live
-//! controlroomd ctl render [<file>]               render ops offline (JSONL from a file or stdin)
-//! controlroomd ctl create [--agent pi] [--cwd D] [--sandbox off] [prompt...]
-//! controlroomd ctl prompt <session> <text...>
-//! controlroomd ctl cancel <session>
-//! controlroomd ctl approve <session> <request> <option>
+//! controlroom-agentd ctl hello                         handshake; prints the hello result
+//! controlroom-agentd ctl call <method> [<params JSON>] any method; prints the result
+//! controlroom-agentd ctl watch <session> [--since N]   subscribe and render the timeline live
+//! controlroom-agentd ctl render [<file>]               render ops offline (JSONL)
+//! controlroom-agentd ctl create --workspace <machine id>:<path>... [--sandbox off] [prompt...]
+//! controlroom-agentd ctl prompt <session> <text...>
+//! controlroom-agentd ctl cancel <session>
+//! controlroom-agentd ctl approve <session> <request> <option>
 //! ```
+//!
+//! Creating a session needs the controller connected (it carries the workspaces' requests to
+//! their hosts).
 //!
 //! `render` accepts lines that are `session.events` notifications, their params, or single
 //! timeline ops, so recorded feeds and driver output can be inspected without a daemon.
@@ -23,28 +26,27 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, bail};
-use controlroom_protocol::daemon::notifications::SessionEvents;
-use controlroom_protocol::daemon::{
+use controlroom_protocol::agentd::notifications::SessionEvents;
+use controlroom_protocol::agentd::{
     InitialPrompt, PromptResult, RequestRespondParams, SessionCreateParams, SessionEventsParams,
     SessionOpParams, SessionPromptParams, SessionSubscribeParams, methods,
 };
-use controlroom_protocol::ids::{OpId, RequestId, SessionId};
-use controlroom_protocol::session::{ContentPart, Response, SandboxLevel};
+use controlroom_protocol::ids::{MachineId, OpId, RemotePath, RequestId, SessionId};
+use controlroom_protocol::session::{ContentPart, Response, SandboxLevel, WorkspaceSpec};
 use controlroom_protocol::timeline::TimelineOp;
 use controlroom_protocol::{NotificationMethod, Seq};
 use serde_json::Value;
 
-use crate::connect::connect_or_start;
-use crate::dirs::Dirs;
+use crate::serve::Location;
 use client::DaemonClient;
 use render::Renderer;
 
-/// Arguments of `controlroomd ctl`.
+/// Arguments of `controlroom-agentd ctl`.
 #[derive(Debug, clap::Args)]
 pub struct Args {
-    /// State directory [default: ~/.local/state/controlroom].
-    #[arg(long, global = true)]
-    state_dir: Option<PathBuf>,
+    /// Where the agent daemon is (as for `serve`).
+    #[command(flatten)]
+    location: Location,
     #[command(subcommand)]
     command: Cmd,
 }
@@ -70,12 +72,9 @@ enum Cmd {
     },
     /// Create a session and print its summary; with a prompt, send it too.
     Create {
-        /// The agent key in agents.toml.
-        #[arg(long, default_value = "pi")]
-        agent: String,
-        /// The working directory [default: the current directory].
-        #[arg(long)]
-        cwd: Option<String>,
+        /// A workspace, `<machine id>:<path>` (repeat for more; the first is the primary).
+        #[arg(long = "workspace", required = true)]
+        workspaces: Vec<String>,
         /// A name for the session.
         #[arg(long)]
         name: Option<String>,
@@ -118,21 +117,25 @@ enum Cmd {
 pub fn run(args: Args) -> ExitCode {
     let result = match args.command {
         Cmd::Render { file } => render_file(file),
-        command => Dirs::from_env(args.state_dir.as_deref())
+        command => args
+            .location
+            .dirs()
             .map_err(anyhow::Error::from)
-            .and_then(|dirs| online(&dirs, command)),
+            .and_then(|dirs| online(dirs.socket().as_path(), command)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("controlroomd ctl: {e:#}");
+            eprintln!("controlroom-agentd ctl: {e:#}");
             ExitCode::FAILURE
         }
     }
 }
 
-fn online(dirs: &Dirs, command: Cmd) -> anyhow::Result<()> {
-    let mut client = DaemonClient::new(connect_or_start(dirs)?)?;
+fn online(socket: &std::path::Path, command: Cmd) -> anyhow::Result<()> {
+    let stream = std::os::unix::net::UnixStream::connect(socket)
+        .with_context(|| format!("connecting to {}", socket.display()))?;
+    let mut client = DaemonClient::new(stream)?;
     let hello = client.hello().context("hello")?;
     match command {
         Cmd::Hello => print_json(&serde_json::to_value(hello)?),
@@ -145,12 +148,11 @@ fn online(dirs: &Dirs, command: Cmd) -> anyhow::Result<()> {
         }
         Cmd::Watch { session, since } => watch(&mut client, session, since),
         Cmd::Create {
-            agent,
-            cwd,
+            workspaces,
             name,
             sandbox,
             prompt,
-        } => create(&mut client, agent, cwd, name, sandbox, &prompt),
+        } => create(&mut client, &workspaces, name, sandbox, &prompt),
         Cmd::Prompt { session, text } => {
             print_json(&serde_json::to_value(prompt(&mut client, session, &text)?)?)
         }
@@ -185,16 +187,24 @@ fn online(dirs: &Dirs, command: Cmd) -> anyhow::Result<()> {
 
 fn create(
     client: &mut DaemonClient,
-    agent: String,
-    cwd: Option<String>,
+    workspaces: &[String],
     name: Option<String>,
     sandbox: Option<String>,
     first_prompt: &[String],
 ) -> anyhow::Result<()> {
-    let cwd = match cwd {
-        Some(cwd) => cwd,
-        None => std::env::current_dir()?.to_string_lossy().into_owned(),
-    };
+    let workspaces = workspaces
+        .iter()
+        .map(|w| {
+            let (machine, path) = w
+                .split_once(':')
+                .with_context(|| format!("{w:?} is not <machine id>:<path>"))?;
+            let machine_id: MachineId = machine.parse().context("the machine id")?;
+            Ok(WorkspaceSpec {
+                machine_id,
+                path: RemotePath::new(path),
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
     let sandbox_level = sandbox
         .map(|level| match level.as_str() {
             "strict" => Ok(SandboxLevel::Strict),
@@ -205,11 +215,9 @@ fn create(
         .transpose()?;
     let created = client.call::<methods::SessionCreate>(SessionCreateParams {
         op_id: OpId::generate(),
-        agent,
-        cwd: cwd.into(),
+        workspaces,
         name,
         parent_id: None,
-        spawned_by: None,
         sandbox_level,
         sandbox: None,
         prompt: (!first_prompt.is_empty()).then(|| InitialPrompt {

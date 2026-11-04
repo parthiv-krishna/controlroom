@@ -129,6 +129,23 @@ pub fn resolve_program(shell: &AbsPath, program: &str) -> Result<Option<String>,
     })
 }
 
+/// Finds a program from a `sandbox.toml` setting (`nono`, `oauth_helper`): an absolute (or `~/`)
+/// path as is, a program name through the login shell; then canonicalized (store paths, not
+/// profile links).
+pub fn find_program(shell: &AbsPath, setting: &str, home: &AbsPath) -> Result<AbsPath, String> {
+    let path = if setting.starts_with('/') || setting.starts_with('~') {
+        crate::dirs::expand_home(setting, home)
+            .map_err(|e| e.to_string())?
+            .to_string()
+    } else {
+        resolve_program(shell, setting)
+            .map_err(|e| e.describe(shell.as_str()))?
+            .ok_or_else(|| format!("`{setting}` not found by the login shell ({shell} -lc)"))?
+    };
+    let real = std::fs::canonicalize(&path).map_err(|e| format!("{path}: {e}"))?;
+    AbsPath::from_path(&real).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,11 +1,12 @@
 //! Clients: the handshake and errors, the single-controller rule, subscriptions resuming from
-//! `since_seq`/`since_rev`, `connect` and `ctl` against a real serve.
+//! `since_seq`/`since_rev`, and `ctl` against a real serve.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::process::Stdio;
 
 use serde_json::{Value, json};
 
+use crate::controller::CONTROLLER;
 use crate::harness::*;
 
 #[test]
@@ -32,13 +33,10 @@ fn hello_required_and_errors() {
 
     raw.call_err(
         "session.create",
-        json!({"op_id": op(), "agent": "nope", "cwd": env.work()}),
-        "not_found",
-    );
-    raw.call_err(
-        "session.create",
-        json!({"op_id": op(), "agent": "fake", "cwd": env.path().join("missing")}),
-        "fs_error",
+        json!({"op_id": op(), "workspaces": [
+            {"machine_id": ulid::Ulid::generate().to_string(), "path": env.work()}
+        ]}),
+        "machine_unavailable",
     );
     raw.call_err("session.nope", json!({}), "method_not_found");
     raw.call_err("session.prompt", json!({"id": 3}), "invalid_params");
@@ -63,21 +61,15 @@ fn hello_required_and_errors() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|a| a["agent"] == "fake")
+        .find(|a| a["agent"] == "pi")
         .unwrap()
         .clone();
     assert_eq!(
         (fake["status"].as_str(), fake["driver"].as_str()),
         (Some("ok"), Some("pi"))
     );
-    let fs = raw.call("fs.list", json!({"path": "~"}));
-    assert!(
-        fs["entries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|e| e["name"] == "work")
-    );
+    // Listings are the hosts' (through the controller), not the agent daemon's.
+    raw.call_err("fs.list", json!({"path": "~"}), "method_not_found");
     let settings = raw.call("settings.set", json!({"op_id": op(), "idle_timeout_h": 12}));
     assert_eq!(settings["idle_timeout_h"], 12);
     assert_eq!(raw.call("settings.get", json!({}))["idle_timeout_h"], 12);
@@ -92,50 +84,32 @@ fn controller(id: &str) -> Value {
 #[test]
 fn one_controller_per_daemon() {
     let env = Env::with(json!({}));
-    let (a, b) = (
-        ulid::Ulid::generate().to_string(),
-        ulid::Ulid::generate().to_string(),
-    );
-    let first = Client::connect(&env.socket());
-    first.call("hello", controller(&a));
-    first.watch_machine();
-
+    // The fake controller is connected: another controller is refused.
     let other = Client::connect(&env.socket());
-    let err = other.call_err("hello", controller(&b), "controller_conflict");
-    assert_eq!(err["data"]["controller_id"], a);
-    // Debug clients connect alongside.
-    env.client().call("settings.get", json!({}));
-
+    let err = other.call_err(
+        "hello",
+        controller(&ulid::Ulid::generate().to_string()),
+        "controller_conflict",
+    );
+    assert_eq!(err["data"]["controller_id"], CONTROLLER);
+    // Debug clients connect alongside, but can't carry host requests.
+    let debug = env.client();
+    debug.call("settings.get", json!({}));
+    debug.call_err("hostops.subscribe", json!({}), "unsupported");
     // The same controller reconnecting replaces the old connection.
     let again = Client::connect(&env.socket());
-    again.call("hello", controller(&a));
-    first.wait_closed();
+    again.call("hello", controller(CONTROLLER));
+    env.controller().wait_closed();
     again.call("settings.get", json!({}));
-    // Once it is gone, another controller may connect.
-    drop(again);
-    let next = Client::connect(&env.socket());
-    let deadline = std::time::Instant::now() + TIMEOUT;
-    loop {
-        match next.try_call("hello", controller(&b)) {
-            Ok(_) => break,
-            Err(e) if e["data"]["kind"] == "controller_conflict" => {
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "the old controller stayed"
-                );
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            Err(e) => panic!("{e}"),
-        }
-    }
+    again.call("hostops.subscribe", json!({}));
 }
 
 #[test]
 fn subscriptions_resume_from_since_seq_and_since_rev() {
     let env = Env::with(texts(&["One.", "Two."]));
     let client = env.client();
-    let machine = client.watch_machine();
-    let id = client.create("fake", &env.work());
+    let machine = client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "first");
     client.wait_session(&id, "the first turn", |s| s["last_outcome"] == "completed");
@@ -146,14 +120,14 @@ fn subscriptions_resume_from_since_seq_and_since_rev() {
         ops.iter()
             .any(|op| op["item"]["content"][0]["text"] == "One.")
     );
-    let rev = client.call("machine.subscribe", json!({"since_rev": machine["rev"]}));
+    let rev = client.call("sessions.subscribe", json!({"since_rev": machine["rev"]}));
     assert!(
         rev["snapshot"].is_null(),
         "a known rev resumes without a snapshot"
     );
 
     let later = env.client();
-    later.watch_machine();
+    later.watch_sessions();
     later.prompt(&id, "second");
     later.wait_session(&id, "the second turn", |s| {
         s["state"] == "idle" && s["preview"].as_str().unwrap().contains("Two")
@@ -186,47 +160,17 @@ fn subscriptions_resume_from_since_seq_and_since_rev() {
 }
 
 #[test]
-fn connect_starts_the_daemon_and_bridges() {
-    let mut env = Env::new();
-    env.agent("fake", texts(&["Bridged."]));
-    let mut child = env
-        .command()
-        .arg("connect")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut stdin = child.stdin.take().unwrap();
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let mut call = |id: u64, method: &str, params: Value| -> Value {
-        let request = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-        writeln!(stdin, "{request}").unwrap();
-        loop {
-            let line: Value = serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap();
-            if line["id"] == id {
-                return line;
-            }
-        }
-    };
-    let hello = call(1, "hello", hello_params(json!({"kind": "debug"})));
-    assert!(hello["result"]["daemon_id"].is_string(), "{hello}");
-    let created = call(
-        2,
-        "session.create",
-        json!({"op_id": op(), "agent": "fake", "cwd": env.work(), "sandbox_level": "off"}),
-    );
-    assert_eq!(created["result"]["session"]["agent"], "fake", "{created}");
-    drop(stdin);
-    assert!(child.wait().unwrap().success());
-    // The detached daemon keeps serving after the bridge is gone.
-    env.client().call("settings.get", json!({}));
-}
-
-#[test]
 fn ctl_round_trip() {
     let env = Env::with(texts(&["From ctl."]));
     let ctl = |args: &[&str]| {
-        let out = env.command().arg("ctl").args(args).output().unwrap();
+        let out = env
+            .command()
+            .arg("ctl")
+            .arg("--state-dir")
+            .arg(env.state())
+            .args(args)
+            .output()
+            .unwrap();
         assert!(
             out.status.success(),
             "ctl {args:?}: {}",
@@ -234,20 +178,16 @@ fn ctl_round_trip() {
         );
         String::from_utf8(out.stdout).unwrap()
     };
-    let work = env.work();
-    let created = ctl(&[
-        "create",
-        "--agent",
-        "fake",
-        "--cwd",
-        &work,
-        "--sandbox",
-        "off",
-    ]);
+    let workspace = format!(
+        "{}:{}",
+        env.workspaces()[0]["machine_id"].as_str().unwrap(),
+        env.work()
+    );
+    let created = ctl(&["create", "--workspace", &workspace, "--sandbox", "off"]);
     let summary: Value = serde_json::from_str(&created).unwrap();
     let id = summary["id"].as_str().unwrap().to_owned();
     let watcher = env.client();
-    watcher.watch_machine();
+    watcher.watch_sessions();
     watcher.wait_idle(&id);
     ctl(&["prompt", &id, "hello", "ctl"]);
     watcher.wait_session(&id, "the reply", |s| {
@@ -260,13 +200,16 @@ fn ctl_round_trip() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|a| a["agent"] == "fake")
+            .any(|a| a["agent"] == "pi")
     );
 
     // `ctl watch` renders the timeline until the daemon goes away.
     let mut watch = env
         .command()
-        .args(["ctl", "watch", &id])
+        .arg("ctl")
+        .arg("--state-dir")
+        .arg(env.state())
+        .args(["watch", &id])
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
@@ -288,12 +231,12 @@ fn ctl_round_trip() {
 fn unsubscribe_right_after_subscribe_always_finds_it() {
     let env = Env::with(json!({}));
     let client = env.client();
-    let id = client.create("fake", &env.work());
+    let id = client.create(&env.workspaces());
     for _ in 0..200 {
-        let machine = client.call("machine.subscribe", json!({"since_rev": null}));
+        let feed = client.call("sessions.subscribe", json!({"since_rev": null}));
         client.call(
             "unsubscribe",
-            json!({"subscription_id": machine["subscription_id"]}),
+            json!({"subscription_id": feed["subscription_id"]}),
         );
         let session = client.call("session.subscribe", json!({"id": id, "since_seq": 0}));
         client.call(

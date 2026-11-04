@@ -1,14 +1,14 @@
-//! A blocking JSON-RPC client for the daemon socket, speaking `hello` as a debug client.
+//! A blocking JSON-RPC client for the agent daemon socket, speaking `hello` as a debug client.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-use controlroom_protocol::daemon::{ClientRole, HelloParams, HelloResult, methods};
+use controlroom_protocol::agentd::{ClientRole, HelloParams, HelloResult, methods};
 use controlroom_protocol::jsonrpc::{JsonRpcVersion, encode_line};
 use controlroom_protocol::{
-    DAEMON_PROTOCOL_VERSION, ErrorData, Message, Method, RpcError, RpcId, RpcNotification,
+    AGENTD_PROTOCOL_VERSION, ErrorData, Message, Method, RpcError, RpcId, RpcNotification,
     RpcRequest,
 };
 use serde_json::Value;
@@ -69,8 +69,8 @@ impl DaemonClient {
     /// `hello` as a debug client.
     pub fn hello(&mut self) -> Result<HelloResult, CallError> {
         self.call::<methods::Hello>(HelloParams {
-            protocol_version: DAEMON_PROTOCOL_VERSION,
-            client_name: format!("controlroomd ctl {VERSION}"),
+            protocol_version: AGENTD_PROTOCOL_VERSION,
+            client_name: format!("controlroom-agentd ctl {VERSION}"),
             role: ClientRole::Debug,
         })
     }
@@ -164,7 +164,7 @@ mod tests {
                 .write_all(
                     format!(
                         "{}\n{}\n",
-                        r#"{"jsonrpc":"2.0","method":"machine.events","params":{"n":1}}"#,
+                        r#"{"jsonrpc":"2.0","method":"sessions.events","params":{"n":1}}"#,
                         serde_json::json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":"later","data":{"kind":"unsupported"}}})
                     )
                     .as_bytes(),
@@ -174,7 +174,10 @@ mod tests {
         let mut client = DaemonClient::new(ours).unwrap();
         let err = client.hello().unwrap_err();
         assert!(matches!(&err, CallError::Rpc(e) if e.data == Some(ErrorData::Unsupported)));
-        assert_eq!(client.next_notification().unwrap().method, "machine.events");
+        assert_eq!(
+            client.next_notification().unwrap().method,
+            "sessions.events"
+        );
         server.join().unwrap();
         assert!(matches!(client.next_notification(), Err(CallError::Closed)));
     }

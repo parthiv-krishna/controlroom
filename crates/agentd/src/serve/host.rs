@@ -1,4 +1,4 @@
-//! The runtime's [`Host`] port on a real machine: detached supervisors over their sockets,
+//! The runtime's [`Host`] port on the server: detached supervisors over their sockets,
 //! transcripts and session files under the state dir.
 //!
 //! Each [`SupervisorConn`] holds one writer connection (`write`, `barrier`, `terminate`) and
@@ -10,7 +10,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use controlroom_protocol::ids::{RemotePath, Seq, SessionId};
-use controlroom_protocol::{ErrorData, RpcError};
 use controlroom_runtime::ports::{Host, HostError, RecordStream, SupervisorConn};
 use controlroom_sandbox::SessionLayout;
 use controlroom_supervisor::{Client, ClientError, ErrorCode, LaunchRequest, SpawnSpec};
@@ -19,7 +18,7 @@ use futures::future::BoxFuture;
 use tokio::sync::mpsc;
 
 use super::agent::AgentSockets;
-use crate::dirs::{Dirs, expand_home};
+use crate::dirs::Dirs;
 use crate::launch::supervisor_paths;
 
 /// How long `connect` keeps retrying while a previous writer connection is released.
@@ -28,21 +27,21 @@ const WRITER_RETRY: Duration = Duration::from_secs(10);
 /// Records read ahead from a transcript file.
 const FILE_READ_AHEAD: usize = 256;
 
-/// Supervisors and session files of this daemon.
-pub struct DaemonHost {
+/// Supervisors and session files of the agent daemon.
+pub struct ServerHost {
     dirs: Dirs,
-    /// The `controlroomd` that runs supervisors (the immutable versioned binary).
-    controlroomd: PathBuf,
+    /// The `controlroom-agentd` that runs supervisors.
+    agentd: PathBuf,
     /// The agent sockets (a deleted session's is stopped and removed).
     sockets: Arc<AgentSockets>,
 }
 
-impl DaemonHost {
-    /// A host for `dirs`, running supervisors from `controlroomd`.
-    pub fn new(dirs: Dirs, controlroomd: PathBuf, sockets: Arc<AgentSockets>) -> Self {
+impl ServerHost {
+    /// A host for `dirs`, running supervisors from `agentd`.
+    pub fn new(dirs: Dirs, agentd: PathBuf, sockets: Arc<AgentSockets>) -> Self {
         Self {
             dirs,
-            controlroomd,
+            agentd,
             sockets,
         }
     }
@@ -52,34 +51,11 @@ impl DaemonHost {
     }
 }
 
-pub(super) fn host_error(e: impl std::fmt::Display) -> HostError {
+fn host_error(e: impl std::fmt::Display) -> HostError {
     HostError(e.to_string())
 }
 
-fn fs_error(path: &RemotePath, detail: impl std::fmt::Display) -> RpcError {
-    RpcError::new(
-        ErrorData::FsError {
-            path: path.clone(),
-            detail: detail.to_string(),
-        },
-        format!("{path}: {detail}"),
-    )
-}
-
-impl Host for DaemonHost {
-    fn resolve_cwd(&self, cwd: &RemotePath) -> BoxFuture<'_, Result<RemotePath, RpcError>> {
-        let cwd = cwd.clone();
-        Box::pin(async move {
-            let path =
-                expand_home(cwd.as_str(), self.dirs.home()).map_err(|e| fs_error(&cwd, e))?;
-            match tokio::fs::metadata(path.as_path()).await {
-                Ok(meta) if meta.is_dir() => Ok(RemotePath::from(path.as_str())),
-                Ok(_) => Err(fs_error(&cwd, "not a directory")),
-                Err(e) => Err(fs_error(&cwd, e)),
-            }
-        })
-    }
-
+impl Host for ServerHost {
     fn launch(&self, session: SessionId, spec: SpawnSpec) -> BoxFuture<'_, Result<(), HostError>> {
         Box::pin(async move {
             let id = Self::session_id(session)?;
@@ -88,7 +64,7 @@ impl Host for DaemonHost {
                 paths: supervisor_paths(&self.dirs, &id),
                 spec,
             };
-            controlroom_supervisor::launch(&self.controlroomd, &request)
+            controlroom_supervisor::launch(&self.agentd, &request)
                 .await
                 .map(|_| ())
                 .map_err(host_error)
@@ -168,9 +144,7 @@ impl Host for DaemonHost {
 
 /// Connects to the supervisor at `socket` in the writer role; `None` when none runs. Retries
 /// while a previous writer connection is being released.
-pub(super) async fn connect_writer(
-    socket: PathBuf,
-) -> Result<Option<Arc<dyn SupervisorConn>>, HostError> {
+async fn connect_writer(socket: PathBuf) -> Result<Option<Arc<dyn SupervisorConn>>, HostError> {
     let deadline = Instant::now() + WRITER_RETRY;
     loop {
         match Client::connect(&socket, true).await {
@@ -254,7 +228,7 @@ impl RecordStream for SupervisorRecords {
 }
 
 /// Records of a transcript file, read on a blocking thread.
-pub(super) struct FileRecords(mpsc::Receiver<Record>);
+struct FileRecords(mpsc::Receiver<Record>);
 
 impl RecordStream for FileRecords {
     fn next(&mut self) -> BoxFuture<'_, Option<Record>> {
@@ -264,7 +238,7 @@ impl RecordStream for FileRecords {
 
 /// Streams the complete records of `path` from `from` to its current end. A missing file is
 /// an empty transcript; a corrupt record ends the stream (logged).
-pub(super) fn read_file(path: PathBuf, from: u64) -> FileRecords {
+fn read_file(path: PathBuf, from: u64) -> FileRecords {
     let (tx, rx) = mpsc::channel(FILE_READ_AHEAD);
     tokio::task::spawn_blocking(move || {
         let mut reader = match Reader::open(&path, from) {

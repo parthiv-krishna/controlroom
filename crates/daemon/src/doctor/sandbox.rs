@@ -8,7 +8,7 @@ use controlroom_sandbox::probe::{self, Landlock, NonoStatus, PINNED_NONO_VERSION
 
 use super::{check, unknown};
 use crate::dirs::Dirs;
-use crate::launch::find_program;
+use crate::shell::find_program;
 
 /// Landlock ABI that filters TCP (nono's network confinement needs it).
 const NETWORK_ABI: u32 = 4;

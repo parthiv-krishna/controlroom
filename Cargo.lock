@@ -589,6 +589,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
+name = "controlroom-agentd"
+version = "0.0.9"
+dependencies = [
+ "anyhow",
+ "clap",
+ "controlroom-drivers",
+ "controlroom-fixture-tool",
+ "controlroom-protocol",
+ "controlroom-runtime",
+ "controlroom-sandbox",
+ "controlroom-supervisor",
+ "controlroom-transcript",
+ "futures",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "ulid",
+]
+
+[[package]]
 name = "controlroom-client-core"
 version = "0.0.9"
 dependencies = [
@@ -784,14 +810,10 @@ version = "0.0.9"
 dependencies = [
  "anyhow",
  "clap",
- "controlroom-drivers",
- "controlroom-fixture-tool",
  "controlroom-protocol",
- "controlroom-runtime",
  "controlroom-sandbox",
  "controlroom-supervisor",
  "controlroom-transcript",
- "futures",
  "rustix",
  "serde",
  "serde_json",
@@ -801,7 +823,6 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "ulid",
 ]
 
 [[package]]

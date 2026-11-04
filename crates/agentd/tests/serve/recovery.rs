@@ -32,8 +32,8 @@ fn daemon_killed_mid_turn_loses_nothing() {
         {"content": [{"type": "text", "text": "Second answer."}]},
     ]}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "first");
     env.wait_gate("mid");
@@ -44,7 +44,7 @@ fn daemon_killed_mid_turn_loses_nothing() {
     client.wait_closed();
     env.start();
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     // Reattached, mid-run, with the queued prompt still waiting.
     let s = client.wait_session(&id, "reattached", |s| s["state"] == "working");
     assert_eq!(s["queue"]["len"], 1);
@@ -71,8 +71,8 @@ fn a_run_finishing_while_the_daemon_is_down_is_picked_up() {
         {"content": [{"type": "text", "text": "Second answer."}]},
     ]}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "first");
     env.wait_gate("mid");
@@ -84,7 +84,7 @@ fn a_run_finishing_while_the_daemon_is_down_is_picked_up() {
     });
     env.start();
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     client.wait_session(&id, "the queued prompt answered", |s| {
         s["state"] == "idle"
             && s["queue"]["len"] == 0
@@ -99,8 +99,8 @@ fn agent_crash_mid_turn_is_interrupted() {
         {"content": [{"type": "text", "text": "Partial"}, {"type": "crash", "code": 3}]},
     ]}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "go");
     let s = client.wait_session(&id, "interrupted", |s| s["state"] == "interrupted");
@@ -112,8 +112,8 @@ fn agent_crash_mid_turn_is_interrupted() {
 fn supervisor_killed_mid_turn_is_interrupted() {
     let env = Env::with(json!({"replies": [gated("Working", "hold", ".")]}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "go");
     env.wait_gate("hold");
@@ -128,8 +128,8 @@ fn supervisor_killed_mid_turn_is_interrupted() {
 fn dormant_session_resumes_lazily_on_prompt() {
     let mut env = Env::with(texts(&["First.", "Resumed."]));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "one");
     client.wait_session(&id, "the first turn", |s| s["last_outcome"] == "completed");
@@ -147,7 +147,7 @@ fn dormant_session_resumes_lazily_on_prompt() {
 
     env.start();
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     client.wait_session(&id, "dormant", |s| s["state"] == "dormant");
     assert_eq!(client.prompt(&id, "two")["outcome"], "queued");
     client.wait_session(&id, "the resumed turn", |s| {

@@ -1,11 +1,12 @@
 //! The `ctl` timeline renderer against golden output, from synthetic ops.
 //!
-//! Regenerate the golden files with `UPDATE_GOLDEN=1 cargo test -p controlroomd --test
+//! Regenerate the golden files with `UPDATE_GOLDEN=1 cargo test -p controlroom-agentd --test
 //! ctl_render` and review the diff.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use controlroom_agentd::ctl::render::Renderer;
 use controlroom_protocol::ids::{DaemonId, ItemId, JobId, RequestId, SessionId, TodoId};
 use controlroom_protocol::session::{
     Author, ContentPart, Job, JobStatus, OptionStyle, PeerRef, Request, RequestAnswer, RequestKind,
@@ -17,7 +18,6 @@ use controlroom_protocol::timeline::{
     TokenUsage, ToolKind, ToolOutput, ToolStatus, UsageScope,
 };
 use controlroom_protocol::{Seq, UnixMillis};
-use controlroomd::ctl::render::Renderer;
 
 const ULID: &str = "01HZY3K4M5N6P7Q8R9S0T1V2W3";
 
@@ -402,7 +402,7 @@ fn ctl_render_reads_jsonl() {
     input.push_str(&serde_json::to_string(&ops[2]).unwrap());
     input.push('\n');
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_controlroomd"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_controlroom-agentd"))
         .args(["ctl", "render"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -424,10 +424,10 @@ fn ctl_render_reads_jsonl() {
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout), "agent: Hello\n");
 
-    let bad = Command::new(env!("CARGO_BIN_EXE_controlroomd"))
+    let bad = Command::new(env!("CARGO_BIN_EXE_controlroom-agentd"))
         .args(["ctl", "render", "/nonexistent/ops.jsonl"])
         .output()
         .unwrap();
     assert!(!bad.status.success());
-    assert!(String::from_utf8_lossy(&bad.stderr).contains("controlroomd ctl:"));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("controlroom-agentd ctl:"));
 }

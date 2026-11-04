@@ -2,7 +2,7 @@
 # (spec §11, §14). Built from the upstream tag, independent of the nixpkgs revision, so a
 # nixpkgs bump never changes the sandbox. Bump it only together with
 # `controlroom_sandbox::probe::PINNED_NONO_VERSION`, and re-run the validation scripts
-# (crates/sandbox/scripts/validate-nono.sh, crates/daemon/scripts/acceptance-pi-nono.sh).
+# (crates/sandbox/scripts/validate-nono.sh, crates/agentd/scripts/acceptance-pi-nono.sh).
 { pkgs }:
 pkgs.rustPlatform.buildRustPackage (finalAttrs: {
   pname = "nono";

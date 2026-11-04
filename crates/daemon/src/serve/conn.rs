@@ -75,6 +75,10 @@ impl Conn {
     }
 
     /// Registers a running feed.
+    #[expect(
+        dead_code,
+        reason = "the host role's subscriptions (jobs, approvals) use it"
+    )]
     pub fn add_subscription(&self, id: SubscriptionId, task: AbortHandle) {
         self.subscriptions
             .lock()
@@ -83,6 +87,7 @@ impl Conn {
     }
 
     /// Ends a feed; `false` if there is no such subscription.
+    #[expect(dead_code, reason = "the host role's `unsubscribe` uses it")]
     pub fn remove_subscription(&self, id: &SubscriptionId) -> bool {
         let task = self
             .subscriptions
@@ -93,6 +98,7 @@ impl Conn {
     }
 
     /// Closes the connection (a feed that can't catch up, a replaced controller).
+    #[expect(dead_code, reason = "the host role's feeds use it")]
     pub fn close(&self) {
         self.close.send_replace(true);
     }
@@ -214,7 +220,7 @@ fn hello(conn: &Conn, request: RpcRequest<Value>) -> Result<Value, RpcError> {
     let result = HelloResult {
         daemon_version: VERSION.to_owned(),
         protocol_version: DAEMON_PROTOCOL_VERSION,
-        daemon_id: conn.shared.runtime.daemon_id(),
+        daemon_id: conn.shared.daemon_id,
         capabilities: conn.shared.capabilities.clone(),
     };
     serde_json::to_value(result).map_err(|e| RpcError::new(ErrorData::InternalError, e.to_string()))

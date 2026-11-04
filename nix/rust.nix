@@ -17,7 +17,7 @@ let
   testDataDirs = lib.filter builtins.pathExists [
     ../fixtures
     ../crates/sandbox/tests/golden
-    ../crates/daemon/tests/golden
+    ../crates/agentd/tests/golden
     ../crates/drivers/tests/golden
   ];
   src = lib.fileset.toSource {

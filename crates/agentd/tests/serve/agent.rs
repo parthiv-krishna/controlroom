@@ -73,8 +73,8 @@ fn the_extension_drives_todos_a_question_and_auto_continue() {
             .unwrap()
             .contains(&json!("todos"))
     );
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
 
     // The agent plans two items, ends its turn, and auto-continue starts the next run, in
@@ -160,8 +160,8 @@ fn the_extension_drives_todos_a_question_and_auto_continue() {
 fn the_agent_socket_takes_only_its_session_token_and_survives_a_restart() {
     let mut env = Env::with(json!({}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     let socket = agent_socket(&env, &id);
     let token = agent_token(&env, &id);

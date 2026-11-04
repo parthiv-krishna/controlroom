@@ -1,23 +1,27 @@
 //! One agent connection: newline-delimited JSON-RPC, `hello` with the session's token first,
-//! then the agent API calls (each on its own task, a few at a time) and `state` notifications
-//! whenever the session's todo list, open questions or auto-continue change.
+//! then the agent API calls (each on its own task, a few at a time), `state` notifications
+//! whenever the session's todo list, open questions or auto-continue change, `session.info`
+//! whenever its workspaces or shells change, and the progress of its running `bash` calls.
 
 use std::sync::Arc;
 
-use controlroom_protocol::agent::notifications::State;
+use controlroom_protocol::agent::notifications::{
+    HostOutput, HostWaitingInput, SessionInfoChanged, State,
+};
 use controlroom_protocol::agent::{AgentHelloParams, AgentHelloResult, AgentRequest, methods};
 use controlroom_protocol::ids::SessionId;
 use controlroom_protocol::jsonrpc::{encode_line, parse_params};
 use controlroom_protocol::{
-    AGENT_PROTOCOL_VERSION, Ack, ErrorData, Message, Method, RpcError, RpcId, RpcNotification,
-    RpcRequest, RpcResponse,
+    AGENT_PROTOCOL_VERSION, Ack, Capability, ErrorData, Message, Method, RpcError, RpcId,
+    RpcNotification, RpcRequest, RpcResponse,
 };
-use controlroom_runtime::Runtime;
+use controlroom_runtime::{AgentEvent, Runtime};
 use controlroom_sandbox::webhook::HookSecret;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Semaphore, mpsc};
 
 use crate::dirs::Dirs;
@@ -45,7 +49,8 @@ pub async fn serve(stream: UnixStream, runtime: Runtime, dirs: Dirs, id: Session
     });
     let mut reader = BufReader::new(read);
     let slots = Arc::new(Semaphore::new(MAX_IN_FLIGHT));
-    let mut state_task = None;
+    let mut pushes: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+    let mut hello_done = false;
     let mut line = Vec::new();
     loop {
         line.clear();
@@ -67,13 +72,15 @@ pub async fn serve(stream: UnixStream, runtime: Runtime, dirs: Dirs, id: Session
                 continue;
             }
         };
-        if state_task.is_none() {
+        if !hello_done {
             let request_id = request.id.clone();
             let result = hello(&dirs, id, request);
-            let ok = result.is_ok();
+            hello_done = result.is_ok();
             respond(&out, request_id, result).await;
-            if ok {
-                state_task = Some(tokio::spawn(push_state(runtime.clone(), id, out.clone())));
+            if hello_done {
+                pushes.push(tokio::spawn(push_state(runtime.clone(), id, out.clone())));
+                pushes.push(tokio::spawn(push_info(runtime.clone(), id, out.clone())));
+                pushes.push(tokio::spawn(push_events(runtime.clone(), id, out.clone())));
             }
             continue;
         }
@@ -88,7 +95,7 @@ pub async fn serve(stream: UnixStream, runtime: Runtime, dirs: Dirs, id: Session
             drop(slot);
         });
     }
-    if let Some(task) = state_task {
+    for task in pushes {
         task.abort();
     }
     drop(out);
@@ -134,7 +141,11 @@ fn hello(dirs: &Dirs, id: SessionId, request: RpcRequest<Value>) -> Result<Value
         daemon_version: VERSION.to_owned(),
         protocol_version: AGENT_PROTOCOL_VERSION,
         session_id: id,
-        capabilities: Vec::new(),
+        capabilities: vec![
+            Capability::TODOS,
+            Capability::JOBS,
+            Capability::REMOTE_TOOLS,
+        ],
     }))
 }
 
@@ -160,16 +171,12 @@ async fn handle(
         AgentRequest::JobUnfollow(p) => json(runtime.agent_job_unfollow(id, p).await),
         AgentRequest::JobStatus(p) => json(runtime.agent_job_status(id, p).await),
         AgentRequest::JobKill(p) => json(runtime.agent_job_kill(id, p).await),
-        // Remote tools belong to the agent daemon; this daemon doesn't advertise them.
-        AgentRequest::SessionInfoMethod(_)
-        | AgentRequest::HostCall(_)
-        | AgentRequest::HostCancel(_)
-        | AgentRequest::ShellOpen(_)
-        | AgentRequest::ShellList(_)
-        | AgentRequest::ShellClose(_) => Err(RpcError::new(
-            ErrorData::Unsupported,
-            "remote tools need the agent daemon",
-        )),
+        AgentRequest::SessionInfoMethod(_) => json(runtime.session_info(id).await),
+        AgentRequest::HostCall(p) => json(runtime.host_call(id, p).await),
+        AgentRequest::HostCancel(p) => json(runtime.host_cancel(id, p).await.map(|()| Ack {})),
+        AgentRequest::ShellOpen(p) => json(runtime.shell_open(id, p).await),
+        AgentRequest::ShellList(_) => json(runtime.shell_list(id).await),
+        AgentRequest::ShellClose(p) => json(runtime.shell_close(id, p).await.map(|()| Ack {})),
     }
 }
 
@@ -189,6 +196,50 @@ async fn push_state(runtime: Runtime, id: SessionId, out: mpsc::Sender<String>) 
         }
         if states.changed().await.is_err() {
             return;
+        }
+    }
+}
+
+/// Sends the session's `session.info` now and on every change.
+async fn push_info(runtime: Runtime, id: SessionId, out: mpsc::Sender<String>) {
+    let mut infos = match runtime.info_watch(id).await {
+        Ok(infos) => infos,
+        Err(e) => {
+            tracing::warn!("session {id}: session info: {e}");
+            return;
+        }
+    };
+    loop {
+        let info = infos.borrow_and_update().clone();
+        if let Some(info) = info {
+            send(&out, &RpcNotification::new::<SessionInfoChanged>(info)).await;
+        }
+        if infos.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+/// Forwards the progress of the session's running `bash` calls.
+async fn push_events(runtime: Runtime, id: SessionId, out: mpsc::Sender<String>) {
+    let mut events = match runtime.agent_events(id).await {
+        Ok(events) => events,
+        Err(e) => {
+            tracing::warn!("session {id}: host events: {e}");
+            return;
+        }
+    };
+    loop {
+        match events.recv().await {
+            Ok(AgentEvent::Output(params)) => {
+                send(&out, &RpcNotification::new::<HostOutput>(params)).await;
+            }
+            Ok(AgentEvent::WaitingInput(params)) => {
+                send(&out, &RpcNotification::new::<HostWaitingInput>(params)).await;
+            }
+            // Output is progress only: the call's result carries all of it.
+            Err(RecvError::Lagged(n)) => tracing::debug!("session {id}: skipped {n} host events"),
+            Err(RecvError::Closed) => return,
         }
     }
 }

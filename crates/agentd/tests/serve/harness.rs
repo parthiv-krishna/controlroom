@@ -1,11 +1,12 @@
-//! Harness for end-to-end tests: a real `controlroomd serve` in a scratch `HOME`, real
-//! supervisors, and `controlroom-fake-agent` (pi RPC) as the agent, driven over the socket.
+//! Harness for end-to-end tests: a real `controlroom-agentd serve` in a scratch directory, real
+//! supervisors, `controlroom-fake-agent` (pi RPC) as the agent, and a fake controller (see
+//! [`crate::controller`]) that serves one machine, `devbox`, whose host runs in this process.
 //!
 //! **Finding the fake agent.** `CARGO_BIN_EXE_*` only covers this package's binaries, so the
-//! harness looks for `controlroom-fake-agent` next to `controlroomd`: both land in the same
-//! `target/<profile>/` under `cargo test` of the workspace and under crane's `cargoTest`.
+//! harness looks for `controlroom-fake-agent` next to `controlroom-agentd`: both land in the
+//! same `target/<profile>/` under `cargo test` of the workspace and under crane's `cargoTest`.
 //! `$CONTROLROOM_FAKE_AGENT` overrides the path; if it is missing (`cargo test -p
-//! controlroomd` on a clean tree) the harness builds it once through `$CARGO`.
+//! controlroom-agentd` on a clean tree) the harness builds it once through `$CARGO`.
 //!
 //! **No sleeps.** The agent stops at named gates (files in a shared directory) that tests
 //! release; waits poll for a condition with a deadline that only turns a hang into a failure.
@@ -25,7 +26,9 @@ use controlroom_transcript::{Body, Record, read_all};
 use rustix::process::{Pid, Signal, kill_process};
 use serde_json::{Value, json};
 
-pub const BIN: &str = env!("CARGO_BIN_EXE_controlroomd");
+use crate::controller::FakeController;
+
+pub const BIN: &str = env!("CARGO_BIN_EXE_controlroom-agentd");
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A stand-in `$SHELL`: runs `-lc <command>` with a plain `/bin/sh`, so host profile scripts
@@ -86,11 +89,13 @@ pub fn op() -> String {
     ulid::Ulid::generate().to_string()
 }
 
-/// A scratch `HOME` with a daemon, agents and gates.
+/// A scratch directory with an agent daemon, its agent, a fake controller and gates.
 pub struct Env {
     dir: tempfile::TempDir,
-    agents: Vec<(String, String)>,
     daemon: Option<Child>,
+    controller: Option<FakeController>,
+    /// The fake controller's machine (stable across agent daemon restarts).
+    machine: String,
 }
 
 impl Env {
@@ -111,15 +116,16 @@ impl Env {
         std::fs::create_dir_all(dir.path().join("gates")).unwrap();
         Env {
             dir,
-            agents: Vec::new(),
             daemon: None,
+            controller: None,
+            machine: ulid::Ulid::generate().to_string(),
         }
     }
 
-    /// An environment with agent `fake` running `scenario`, and a started daemon.
+    /// An environment whose agent runs `scenario`, with a started daemon.
     pub fn with(scenario: Value) -> Self {
         let mut env = Env::new();
-        env.agent("fake", scenario);
+        env.agent(scenario);
         env.start();
         env
     }
@@ -129,15 +135,25 @@ impl Env {
     }
 
     pub fn state(&self) -> PathBuf {
-        self.path().join(".local/state/controlroom")
+        self.path().join("state")
     }
 
     pub fn work(&self) -> String {
         self.path().join("work").to_string_lossy().into_owned()
     }
 
+    /// One workspace, `devbox:<work>`, as `session.create` takes it.
+    pub fn workspaces(&self) -> Value {
+        json!([{"machine_id": self.machine, "path": self.work()}])
+    }
+
     pub fn socket(&self) -> PathBuf {
-        self.state().join("run/daemon.sock")
+        self.state().join("run/agentd.sock")
+    }
+
+    /// The fake controller (while the daemon runs).
+    pub fn controller(&self) -> &FakeController {
+        self.controller.as_ref().expect("the daemon is running")
     }
 
     pub fn transcript_path(&self, session: &str) -> PathBuf {
@@ -147,9 +163,9 @@ impl Env {
             .join("transcript.jsonl")
     }
 
-    /// Registers agent `name` as the fake agent running `scenario` (pi driver).
-    pub fn agent(&mut self, name: &str, scenario: Value) {
-        let file = self.path().join(format!("scenario-{name}.json"));
+    /// Makes the sessions' agent the fake agent running `scenario` (pi driver).
+    pub fn agent(&mut self, scenario: Value) {
+        let file = self.path().join("scenario.json");
         std::fs::write(&file, scenario.to_string()).unwrap();
         let command = format!(
             "{} --scenario {} --gate-dir {}",
@@ -157,20 +173,16 @@ impl Env {
             file.display(),
             self.path().join("gates").display()
         );
-        self.agents.push((name.to_owned(), command));
-        let toml: String = self
-            .agents
-            .iter()
-            .map(|(name, command)| {
-                format!("[agents.{name}]\ncommand = {command:?}\ndriver = \"pi\"\n")
-            })
-            .collect();
-        let config = self.path().join(".config/controlroom");
+        let config = self.state().join("config");
         std::fs::create_dir_all(&config).unwrap();
-        std::fs::write(config.join("agents.toml"), toml).unwrap();
+        std::fs::write(
+            config.join("agents.toml"),
+            format!("[agents.pi]\ncommand = {command:?}\ndriver = \"pi\"\n"),
+        )
+        .unwrap();
     }
 
-    /// `controlroomd` with this environment. The fake agent's directory is on its `PATH`, as
+    /// `controlroom-agentd` with this environment. The fake agent's directory is on its `PATH`, as
     /// agents must be for nono (`doctor` reports agents elsewhere as missing).
     pub fn command(&self) -> Command {
         let agent_dir = fake_agent()
@@ -186,11 +198,12 @@ impl Env {
             .env("PATH", path)
             .env("HOME", self.path())
             .env_remove("PI_CODING_AGENT_DIR")
-            .env("CONTROLROOMD_LOG", "debug");
+            .env("CONTROLROOM_AGENTD_LOG", "debug");
         cmd
     }
 
-    /// Starts `controlroomd serve` in the foreground and waits for its socket.
+    /// Starts `controlroom-agentd serve` and waits for its socket, then connects the fake
+    /// controller.
     pub fn start(&mut self) {
         assert!(self.daemon.is_none(), "the daemon is already running");
         let log = std::fs::OpenOptions::new()
@@ -210,6 +223,7 @@ impl Env {
         self.daemon = Some(child);
         let socket = self.socket();
         wait_until("the daemon socket", || UnixStream::connect(&socket).is_ok());
+        self.controller = Some(FakeController::connect(&socket, &self.machine, self.path()));
     }
 
     /// SIGKILLs the daemon (supervisors and agents keep running).
@@ -217,10 +231,12 @@ impl Env {
         let mut child = self.daemon.take().expect("the daemon is running");
         child.kill().unwrap();
         child.wait().unwrap();
+        self.controller = None;
     }
 
     /// SIGTERMs the daemon and waits for it to exit.
     pub fn stop_daemon(&mut self) -> std::process::ExitStatus {
+        self.controller = None;
         let mut child = self.daemon.take().expect("the daemon is running");
         let pid = Pid::from_raw(child.id() as i32).unwrap();
         kill_process(pid, Signal::TERM).unwrap();
@@ -372,7 +388,7 @@ fn write_executable(path: &Path, content: &str) {
 struct Inbox {
     responses: HashMap<i64, Value>,
     notifications: Vec<Value>,
-    /// Latest summary per session, from `machine.events` of this client's subscriptions.
+    /// Latest summary per session, from `sessions.events` of this client's subscriptions.
     summaries: HashMap<String, Value>,
     closed: bool,
 }
@@ -400,7 +416,7 @@ impl Client {
                 if let Some(id) = value.get("id").and_then(Value::as_i64) {
                     inbox.responses.insert(id, value);
                 } else {
-                    if value["method"] == "machine.events" {
+                    if value["method"] == "sessions.events" {
                         for change in value["params"]["changes"].as_array().unwrap() {
                             if change["kind"] == "session_upserted" {
                                 let session = change["session"].clone();
@@ -502,9 +518,9 @@ impl Client {
         self.call("hello", hello_params(json!({"kind": "debug"})))
     }
 
-    /// Subscribes to the machine feed so [`Client::wait_session`] works.
-    pub fn watch_machine(&self) -> Value {
-        let result = self.call("machine.subscribe", json!({"since_rev": null}));
+    /// Subscribes to the sessions feed so [`Client::wait_session`] works.
+    pub fn watch_sessions(&self) -> Value {
+        let result = self.call("sessions.subscribe", json!({"since_rev": null}));
         let mut inbox = self.lock();
         for session in result["snapshot"]["sessions"]
             .as_array()
@@ -519,7 +535,7 @@ impl Client {
         result
     }
 
-    /// Waits for a summary of `session` matching `pred` (needs [`Client::watch_machine`]).
+    /// Waits for a summary of `session` matching `pred` (needs [`Client::watch_sessions`]).
     pub fn wait_session(&self, session: &str, what: &str, pred: impl Fn(&Value) -> bool) -> Value {
         self.wait(&format!("session {what}"), |inbox| {
             inbox.summaries.get(session).filter(|s| pred(s)).cloned()
@@ -539,6 +555,22 @@ impl Client {
         })
     }
 
+    /// Waits (without a deadline) for a notification matching `pred`, taking it out of the
+    /// log; `None` once the connection is closed.
+    pub fn next_notification(&self, pred: impl Fn(&Value) -> bool) -> Option<Value> {
+        let (_, cond) = &*self.inbox;
+        let mut inbox = self.lock();
+        loop {
+            if let Some(index) = inbox.notifications.iter().position(&pred) {
+                return Some(inbox.notifications.remove(index));
+            }
+            if inbox.closed {
+                return None;
+            }
+            inbox = cond.wait(inbox).unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
     /// Waits until the daemon closes the connection.
     pub fn wait_closed(&self) {
         self.wait("the connection to close", |inbox| {
@@ -546,11 +578,11 @@ impl Client {
         });
     }
 
-    /// Creates a session of `agent` (sandbox off) in `cwd`; returns its id.
-    pub fn create(&self, agent: &str, cwd: &str) -> String {
+    /// Creates a session (sandbox off) on `workspaces` ([`Env::workspaces`]); returns its id.
+    pub fn create(&self, workspaces: &Value) -> String {
         let result = self.call(
             "session.create",
-            json!({"op_id": op(), "agent": agent, "cwd": cwd, "sandbox_level": "off"}),
+            json!({"op_id": op(), "workspaces": workspaces, "sandbox_level": "off"}),
         );
         result["session"]["id"].as_str().unwrap().to_owned()
     }
@@ -566,7 +598,7 @@ impl Client {
     /// The session's `last_turn_end_seq` now, from a fresh snapshot (the feed's latest
     /// summary may lag behind).
     pub fn turn_mark(&self, session: &str) -> u64 {
-        let result = self.call("machine.subscribe", json!({"since_rev": null}));
+        let result = self.call("sessions.subscribe", json!({"since_rev": null}));
         self.call(
             "unsubscribe",
             json!({"subscription_id": result["subscription_id"]}),
@@ -655,10 +687,17 @@ pub fn queue_texts(client: &Client, session: &str) -> Vec<String> {
         .collect()
 }
 
+impl Client {
+    /// Closes the connection in both directions (the reader thread then sees it closed).
+    pub fn shutdown(&self) {
+        let writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
+        let _ = writer.shutdown(std::net::Shutdown::Both);
+    }
+}
+
 impl Drop for Client {
     fn drop(&mut self) {
         // The reader thread holds a clone of the stream: close both directions explicitly.
-        let writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
-        let _ = writer.shutdown(std::net::Shutdown::Both);
+        self.shutdown();
     }
 }

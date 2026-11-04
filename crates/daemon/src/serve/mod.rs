@@ -1,32 +1,21 @@
 //! `controlroomd serve`: the per-user daemon (spec §3, §6).
 //!
-//! Startup order: claim the instance (lock, bind the socket; [`crate::instance`]), open the
-//! runtime (`daemon.sqlite`), report ready (when detached), then accept connections while
-//! [`Runtime::recover`] re-folds transcripts and reattaches supervisors concurrently;
-//! commands wait for it. The socket is bound before recovery, so a slow recovery never makes
-//! `connect` time out.
+//! Startup order: claim the instance (lock, bind the socket; [`crate::instance`]), report
+//! ready (when detached), then accept connections.
 //!
-//! Running: one task per connection ([`conn`]), `tick()` once a second, leaked `/tmp/nono-*`
-//! directories cleaned once at start. SIGTERM or SIGINT stop accepting, drop every supervisor
-//! connection and exit 0; agents keep running under their supervisors. SIGHUP is ignored.
+//! Sessions moved to the agent daemon (`controlroom-agentd`); until the host role lands, this
+//! daemon serves the handshake, `fs.list`, `doctor.report` and `agents.list`, and answers
+//! session methods with `unsupported`.
 //!
-//! - [`host`], [`agents`], [`jobs`]: the runtime's ports on this machine;
-//! - [`agent`]: the per-session agent sockets `@controlroom/pi` talks to;
-//! - [`conn`], [`controller`], [`dispatch`], [`feeds`], [`fs_list`]: the daemon API;
-//! - [`webhook`]: nono's approval requests, raised as `sandbox` requests on the session. It is
-//!   bound before the runtime opens (launches need its port); if it can't bind, approvals
-//!   fail closed (`approve` rules deny) and `hello` doesn't advertise `sandbox_approvals`.
+//! Running: one task per connection ([`conn`]), leaked `/tmp/nono-*` directories cleaned once
+//! at start. SIGTERM or SIGINT stop accepting and exit 0. SIGHUP is ignored.
+//!
+//! - [`conn`], [`controller`], [`dispatch`], [`fs_list`]: the daemon API.
 
-mod agent;
-mod agents;
 mod conn;
 mod controller;
 mod dispatch;
-mod feeds;
 mod fs_list;
-mod host;
-mod jobs;
-mod webhook;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -35,13 +24,11 @@ use std::time::Duration;
 
 use anyhow::Context;
 use controlroom_protocol::Capability;
-use controlroom_runtime::ports::SystemClock;
-use controlroom_runtime::{Runtime, RuntimeConfig};
-use controlroom_sandbox::AbsPath;
+use controlroom_protocol::ids::DaemonId;
 use tokio::signal::unix::{SignalKind, signal};
 
 use crate::config::sandbox as sandbox_config;
-use crate::dirs::Dirs;
+use crate::dirs::{Dirs, write_private_file};
 use crate::instance::{self, Claim, ReadyLine, Started};
 
 /// Leaked nono temp dirs older than this are removed at start.
@@ -64,8 +51,8 @@ pub struct Args {
 
 /// Daemon-wide state shared by connections.
 pub struct Shared {
-    /// The session runtime.
-    pub runtime: Runtime,
+    /// This installation's stable id.
+    pub daemon_id: DaemonId,
     /// The daemon's directories.
     pub dirs: Dirs,
     /// The connected controller.
@@ -133,48 +120,7 @@ async fn serve_async(
     instance: instance::Instance,
     detached: bool,
 ) -> anyhow::Result<()> {
-    let exe = std::env::current_exe().context("resolving the controlroomd path")?;
-    let controlroomd = AbsPath::from_path(&exe).context("the controlroomd path")?;
-    let hooks = match webhook::bind(&dirs).await {
-        Ok(listener) => Some(listener),
-        Err(e) => {
-            tracing::error!("the approval webhook can't listen ({e}); approvals will deny");
-            None
-        }
-    };
-    let webhook_port = hooks
-        .as_ref()
-        .and_then(|l| l.local_addr().ok())
-        .map(|a| a.port());
-    let sockets = agent::AgentSockets::new(dirs.clone(), tokio::runtime::Handle::current());
-    let agents = Arc::new(agents::DaemonAgents::new(
-        dirs.clone(),
-        controlroomd,
-        webhook_port,
-        sockets.clone(),
-    ));
-    let runtime = Runtime::open(RuntimeConfig {
-        db_path: dirs.state().join("daemon.sqlite").as_path().to_owned(),
-        host: Arc::new(host::DaemonHost::new(
-            dirs.clone(),
-            exe.clone(),
-            sockets.clone(),
-        )),
-        agents: agents.clone(),
-        job_host: Arc::new(jobs::DaemonJobs::new(dirs.clone(), exe, agents)),
-        clock: Arc::new(SystemClock),
-    })?;
-    // Agents that outlived the previous daemon reconnect to their sockets.
-    let open = runtime
-        .subscribe_machine(None)
-        .map_err(|e| anyhow::anyhow!("listing sessions: {e}"))?
-        .snapshot
-        .map(|s| s.sessions)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|s| s.closed_at.is_none())
-        .map(|s| s.id);
-    sockets.serve(runtime.clone(), open);
+    let daemon_id = daemon_id(&dirs)?;
     instance.listener.set_nonblocking(true)?;
     let listener = tokio::net::UnixListener::from_std(instance.listener)?;
     if detached {
@@ -186,34 +132,11 @@ async fn serve_async(
         let dirs = dirs.clone();
         move || clean_nono_tmp(&dirs)
     });
-    tokio::spawn({
-        let runtime = runtime.clone();
-        async move {
-            runtime.recover().await;
-            tracing::info!("recovery finished");
-        }
-    });
-    let ticker = tokio::spawn({
-        let runtime = runtime.clone();
-        async move {
-            let mut every = tokio::time::interval(Duration::from_secs(1));
-            loop {
-                every.tick().await;
-                runtime.tick();
-            }
-        }
-    });
-
-    let mut capabilities = vec![Capability::TODOS, Capability::JOBS];
-    let hooks = hooks.map(|listener| {
-        capabilities.push(Capability::SANDBOX_APPROVALS);
-        tokio::spawn(webhook::serve(listener, runtime.clone(), dirs.clone()))
-    });
     let shared = Arc::new(Shared {
-        runtime: runtime.clone(),
+        daemon_id,
         dirs,
         controllers: controller::Controllers::default(),
-        capabilities,
+        capabilities: Vec::<Capability>::new(),
     });
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
@@ -233,13 +156,22 @@ async fn serve_async(
             _ = hangup.recv() => tracing::info!("ignoring SIGHUP"),
         }
     }
-    tracing::info!("shutting down; agents keep running");
-    ticker.abort();
-    if let Some(hooks) = hooks {
-        hooks.abort();
-    }
-    runtime.shutdown().await;
+    tracing::info!("shutting down");
     Ok(())
+}
+
+/// This installation's id, created on first start (`<state>/daemon.id`).
+fn daemon_id(dirs: &Dirs) -> anyhow::Result<DaemonId> {
+    let path = dirs.state().join("daemon.id");
+    if let Ok(text) = std::fs::read_to_string(path.as_path())
+        && let Ok(id) = text.trim().parse()
+    {
+        return Ok(id);
+    }
+    let id = DaemonId::generate();
+    write_private_file(&path, id.to_string().as_bytes())
+        .with_context(|| format!("writing {path}"))?;
+    Ok(id)
 }
 
 fn init_logging() {

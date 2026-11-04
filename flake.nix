@@ -122,7 +122,8 @@
         // (piFor pkgs).checks
         # The browser end-to-end test in NixOS VMs (needs KVM): x86_64 only.
         // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
-          vm-e2e = (e2eFor pkgs).check;
+          # The browser end-to-end test (vm-e2e) is off while sessions move from the execution
+          # hosts to controlroom-agentd; R2 rewrites it for the remote-tools topology.
           # services.controlroom in a VM: secrets, OIDC rendering, sandbox, exposure.
           vm-module = import ./nix/tests/module.nix {
             inherit pkgs;

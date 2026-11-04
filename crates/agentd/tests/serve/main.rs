@@ -1,12 +1,13 @@
-//! End-to-end scenarios over the real socket: `controlroomd serve`, real supervisors and
-//! `controlroom-fake-agent` speaking pi RPC (driver `pi`). See [`harness`].
+//! End-to-end scenarios over the real sockets: `controlroom-agentd serve`, real supervisors,
+//! `controlroom-fake-agent` speaking pi RPC (driver `pi`) and a fake controller carrying host
+//! requests. See [`harness`] and [`controller`].
 
 mod agent;
-mod approvals;
 mod clients;
+mod controller;
 mod harness;
-mod jobs;
 mod queue;
 mod recovery;
+mod remote;
 mod requests;
 mod sessions;

@@ -201,20 +201,6 @@ fn concurrent_connects_share_one_daemon() {
 }
 
 #[test]
-fn ctl_hello_starts_the_daemon() {
-    let home = Home::new();
-    let out = home.command(&["ctl", "hello"]).output().unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let hello: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(hello["protocol_version"]["major"], 1);
-    assert_eq!(home.daemons().len(), 1);
-}
-
-#[test]
 fn connect_fails_cleanly_without_home() {
     let out = Command::new(BIN)
         .arg("connect")

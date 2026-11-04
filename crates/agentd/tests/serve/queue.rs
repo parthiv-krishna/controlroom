@@ -19,8 +19,8 @@ fn queue_auto_advances_and_pauses_on_failure() {
         {"content": [{"type": "text", "text": "Four."}]},
     ]}));
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     assert_eq!(client.prompt(&id, "first")["outcome"], "sent");
     env.wait_gate("first");
@@ -61,7 +61,7 @@ fn queue_auto_advances_and_pauses_on_failure() {
 /// The agent reaching the gate doesn't mean the daemon has folded its output yet: tests that
 /// depend on what the daemon saw of the run wait for it with [`wait_preview`].
 fn busy_with_queue(env: &Env, client: &Client) -> (String, String) {
-    let id = client.create("fake", &env.work());
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "first");
     env.wait_gate("hold");
@@ -89,7 +89,7 @@ fn send_now(client: &Client, id: &str, queue_id: &str) -> Value {
 fn send_now_during_text_steers() {
     let env = Env::with(json!({"replies": [gated("Writing", "hold", " more.")]}));
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     let (id, queue_id) = busy_with_queue(&env, &client);
     wait_preview(&client, &id, "Writing");
     assert_eq!(send_now(&client, &id, &queue_id)["outcome"], "steered");
@@ -113,7 +113,7 @@ fn send_now_during_a_tool_steers_after_the_tool() {
         {"content": [{"type": "text", "text": "Built."}]},
     ]}));
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     let (id, queue_id) = busy_with_queue(&env, &client);
     // The running tool's title.
     wait_preview(&client, &id, "make");
@@ -153,7 +153,7 @@ fn send_now_during_a_dialog_steers_and_the_dialog_stays_open() {
         {"content": [{"type": "text", "text": "Done."}]},
     ]}));
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     let (id, queue_id) = busy_with_queue(&env, &client);
     env.release("hold");
     let s = client.wait_session(&id, "the dialog", |s| {
@@ -174,7 +174,7 @@ fn send_now_during_a_dialog_steers_and_the_dialog_stays_open() {
 fn cancel_pauses_the_queue() {
     let env = Env::with(json!({"replies": [gated("Long", "hold", " answer.")]}));
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     let (id, _) = busy_with_queue(&env, &client);
     client.call("session.cancel", json!({"op_id": op(), "id": id}));
     let s = client.wait_session(&id, "the cancelled run", |s| {

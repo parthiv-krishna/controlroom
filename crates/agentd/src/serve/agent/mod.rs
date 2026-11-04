@@ -9,6 +9,9 @@
 //! - **Lifetime.** A socket is bound before its agent starts (from the launch) and again for
 //!   every open session when the daemon starts, so agents that outlive the daemon reconnect.
 //!   Deleting the session stops its listener and removes the socket.
+//! - **Remote tools.** The connection advertises `remote_tools` and pushes `session.info` after
+//!   `hello` and on every change, plus `host.output` and `host.waiting_input` while the
+//!   session's `bash` calls run.
 
 mod conn;
 

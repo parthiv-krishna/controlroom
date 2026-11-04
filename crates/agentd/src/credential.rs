@@ -1,7 +1,7 @@
-//! `controlroomd credential <session> <provider>`: prints a provider's real credential for
+//! `controlroom-agentd credential <session> <provider>`: prints a provider's real credential for
 //! nono's `credential_capture` (spec §11.3): its API key, or for an OAuth provider a fresh
-//! access token from the controlroom-pi bundle's helper, refreshed by pi under the real
-//! `auth.json` lock (controlroomd is the only refresher of session credentials).
+//! access token from the controlroom-pi bundle's helper, refreshed by pi under the agent dir's
+//! `auth.json` lock (the agent daemon is the only refresher of model credentials).
 //!
 //! nono runs this host-side, unsandboxed, and injects stdout into requests on the provider's
 //! credential route. The credential goes to stdout only, without a trailing newline; errors go
@@ -14,10 +14,10 @@ use std::process::ExitCode;
 use controlroom_sandbox::credential::{Secret, load_manifest, resolve_credential};
 use controlroom_sandbox::{AbsPath, Name, SessionId, SessionLayout};
 
-/// Arguments of `controlroomd credential`.
+/// Arguments of `controlroom-agentd credential`.
 #[derive(Debug, clap::Args)]
 pub struct Args {
-    /// Daemon state directory (default: `~/.local/state/controlroom`).
+    /// Agent daemon state directory [default: as for `serve`].
     #[arg(long)]
     state_dir: Option<PathBuf>,
     /// OAuth tokens must stay valid this long after they are printed (nono caches them for the
@@ -45,7 +45,7 @@ pub fn run(args: Args) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("controlroomd credential: {e}");
+            eprintln!("controlroom-agentd credential: {e}");
             ExitCode::FAILURE
         }
     }
@@ -54,7 +54,7 @@ pub fn run(args: Args) -> ExitCode {
 fn credential(args: &Args) -> Result<Secret, String> {
     let state_dir = match &args.state_dir {
         Some(dir) => AbsPath::from_path(dir).map_err(|e| e.to_string())?,
-        None => crate::dirs::Dirs::from_env(None)
+        None => crate::dirs::Dirs::from_env(crate::dirs::Overrides::default())
             .map_err(|e| e.to_string())?
             .state()
             .clone(),

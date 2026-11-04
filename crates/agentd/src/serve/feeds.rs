@@ -1,24 +1,27 @@
-//! `machine.subscribe` and `session.subscribe` as notification feeds.
+//! `sessions.subscribe`, `session.subscribe` and `hostops.subscribe` as notification feeds.
 //!
 //! The subscribe result is queued before the feed task starts, so it precedes every
 //! notification of the subscription. A feed that lags behind the runtime's broadcast
 //! resubscribes from the last rev or `head_seq` it sent, so the client sees no gap. If the
-//! machine rev log no longer reaches back that far, the feed can't be repaired in place and
-//! the connection is closed; the client reconnects and resubscribes (disconnecting does
-//! nothing else). A detail-only session subscription (`timeline: false`) gets no backlog and
+//! sessions rev log no longer reaches back that far, or the host bridge feed lags (its pending
+//! requests can only be resent whole), the feed can't be repaired in place and the connection
+//! is closed; the controller reconnects and resubscribes (disconnecting does nothing else). A detail-only session subscription (`timeline: false`) gets no backlog and
 //! no timeline ops, only the detail when it changes (and raw frames if it asked for them).
 
 use std::sync::Arc;
 
-use controlroom_protocol::daemon::notifications::{MachineEvents, SessionEvents};
-use controlroom_protocol::daemon::{
-    MachineEventsParams, MachineSubscribeParams, MachineSubscribeResult, SessionEventsParams,
-    SessionSubscribeParams, SessionSubscribeResult,
+use controlroom_protocol::agentd::notifications::{
+    HostOpsRequest, HostOpsWithdraw, SessionEvents, SessionsEvents,
+};
+use controlroom_protocol::agentd::{
+    HostOpsRequestParams, HostOpsSubscribeResult, HostOpsWithdrawParams, SessionEventsParams,
+    SessionSubscribeParams, SessionSubscribeResult, SessionsChange, SessionsEventsParams,
+    SessionsSubscribeParams, SessionsSubscribeResult,
 };
 use controlroom_protocol::ids::{Rev, Seq, SessionId, SubscriptionId};
 use controlroom_protocol::timeline::{RawFrame, TimelineItem, TimelineOp};
 use controlroom_protocol::{RpcError, RpcId, RpcNotification};
-use controlroom_runtime::SessionUpdate;
+use controlroom_runtime::{BridgeEvent, SessionUpdate};
 use tokio::sync::broadcast::{Receiver, error::RecvError, error::TryRecvError};
 
 use super::conn::Conn;
@@ -30,19 +33,19 @@ fn to_value<T: serde::Serialize>(value: &T) -> Result<serde_json::Value, RpcErro
     serde_json::to_value(value).map_err(super::dispatch::internal)
 }
 
-/// `machine.subscribe`.
-pub async fn subscribe_machine(conn: &Arc<Conn>, id: RpcId, params: MachineSubscribeParams) {
-    let subscription = match conn.shared.runtime.subscribe_machine(params.since_rev) {
+/// `sessions.subscribe`.
+pub async fn subscribe_sessions(conn: &Arc<Conn>, id: RpcId, params: SessionsSubscribeParams) {
+    let subscription = match conn.shared.runtime.subscribe_sessions(params.since_rev) {
         Ok(s) => s,
         Err(e) => return conn.respond(id, Err(e)).await,
     };
     let subscription_id = SubscriptionId::generate();
-    let result = MachineSubscribeResult {
+    let result = SessionsSubscribeResult {
         subscription_id,
         rev: subscription.rev,
         snapshot: subscription.snapshot,
     };
-    let feed = machine_feed(
+    let feed = sessions_feed(
         conn.clone(),
         subscription_id,
         subscription.rev,
@@ -74,12 +77,12 @@ async fn start_after_result(
     let _ = go.send(());
 }
 
-async fn machine_feed(
+async fn sessions_feed(
     conn: Arc<Conn>,
     subscription_id: SubscriptionId,
     rev: Rev,
-    backlog: Vec<controlroom_protocol::daemon::MachineChange>,
-    mut changes: Receiver<controlroom_protocol::daemon::MachineChange>,
+    backlog: Vec<SessionsChange>,
+    mut changes: Receiver<SessionsChange>,
 ) {
     let mut last = rev;
     let mut batch = backlog;
@@ -87,11 +90,11 @@ async fn machine_feed(
         batch.retain(|c| c.rev > last);
         if let Some(change) = batch.last() {
             last = change.rev;
-            let params = MachineEventsParams {
+            let params = SessionsEventsParams {
                 subscription_id,
                 changes: std::mem::take(&mut batch),
             };
-            conn.send(&RpcNotification::new::<MachineEvents>(params))
+            conn.send(&RpcNotification::new::<SessionsEvents>(params))
                 .await;
         }
         match changes.recv().await {
@@ -105,13 +108,13 @@ async fn machine_feed(
                     }
                 }
             }
-            Err(RecvError::Lagged(_)) => match conn.shared.runtime.subscribe_machine(Some(last)) {
+            Err(RecvError::Lagged(_)) => match conn.shared.runtime.subscribe_sessions(Some(last)) {
                 Ok(again) if again.snapshot.is_none() => {
                     batch = again.backlog;
                     changes = again.changes;
                 }
                 _ => {
-                    tracing::warn!("machine feed lagged past the rev log; closing the connection");
+                    tracing::warn!("sessions feed lagged past the rev log; closing the connection");
                     conn.close();
                     return;
                 }
@@ -119,6 +122,75 @@ async fn machine_feed(
             Err(RecvError::Closed) => return,
         }
     }
+}
+
+/// `hostops.subscribe`: every pending host request, then new ones and withdrawals.
+pub async fn subscribe_hostops(conn: &Arc<Conn>, id: RpcId) {
+    let subscription = conn.shared.runtime.hostops_subscribe();
+    let subscription_id = subscription.subscription_id;
+    let result = HostOpsSubscribeResult {
+        subscription_id,
+        requests: subscription.requests,
+    };
+    let feed = hostops_feed(conn.clone(), subscription_id, subscription.events);
+    start_after_result(conn, id, subscription_id, to_value(&result), feed).await;
+}
+
+async fn hostops_feed(
+    conn: Arc<Conn>,
+    subscription_id: SubscriptionId,
+    mut events: Receiver<BridgeEvent>,
+) {
+    loop {
+        let first = match events.recv().await {
+            Ok(event) => event,
+            Err(RecvError::Lagged(_)) => {
+                tracing::warn!("the host bridge feed lagged; closing the connection");
+                conn.close();
+                return;
+            }
+            Err(RecvError::Closed) => return,
+        };
+        let mut batch = vec![first];
+        while batch.len() < BATCH {
+            match events.try_recv() {
+                Ok(event) => batch.push(event),
+                Err(_) => break,
+            }
+        }
+        let mut requests = Vec::new();
+        for event in batch {
+            match event {
+                BridgeEvent::Request(request) => requests.push(*request),
+                BridgeEvent::Withdraw(id) => {
+                    send_requests(&conn, subscription_id, std::mem::take(&mut requests)).await;
+                    let params = HostOpsWithdrawParams {
+                        subscription_id,
+                        ids: vec![id],
+                    };
+                    conn.send(&RpcNotification::new::<HostOpsWithdraw>(params))
+                        .await;
+                }
+            }
+        }
+        send_requests(&conn, subscription_id, requests).await;
+    }
+}
+
+async fn send_requests(
+    conn: &Conn,
+    subscription_id: SubscriptionId,
+    requests: Vec<controlroom_protocol::agentd::HostOpRequest>,
+) {
+    if requests.is_empty() {
+        return;
+    }
+    let params = HostOpsRequestParams {
+        subscription_id,
+        requests,
+    };
+    conn.send(&RpcNotification::new::<HostOpsRequest>(params))
+        .await;
 }
 
 /// `session.subscribe`.

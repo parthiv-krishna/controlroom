@@ -44,8 +44,8 @@ fn answers(env: &Env, id: &str) -> Vec<Value> {
 fn dialog_approve_and_deny() {
     let env = Env::with(permission_scenario());
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
 
     client.prompt(&id, "clean up");
@@ -92,8 +92,8 @@ fn dialog_approve_and_deny() {
 fn two_clients_race_a_decision() {
     let env = Env::with(permission_scenario());
     let setup = env.client();
-    setup.watch_machine();
-    let id = setup.create("fake", &env.work());
+    setup.watch_sessions();
+    let id = setup.create(&env.workspaces());
     setup.wait_idle(&id);
     setup.prompt(&id, "go");
     let request = pending_request(&setup, &id);
@@ -134,8 +134,8 @@ fn two_clients_race_a_decision() {
 fn an_answer_is_sent_once_across_a_daemon_restart() {
     let mut env = Env::with(permission_scenario());
     let client = env.client();
-    client.watch_machine();
-    let id = client.create("fake", &env.work());
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
     client.wait_idle(&id);
     client.prompt(&id, "go");
     let request = pending_request(&client, &id);
@@ -144,7 +144,7 @@ fn an_answer_is_sent_once_across_a_daemon_restart() {
     env.kill_daemon();
     env.start();
     let client = env.client();
-    client.watch_machine();
+    client.watch_sessions();
     client.wait_session(&id, "the turn end", |s| {
         s["state"] == "idle" && s["last_outcome"] == "completed"
     });

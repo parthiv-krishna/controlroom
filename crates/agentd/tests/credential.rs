@@ -1,4 +1,4 @@
-//! `controlroomd credential` end to end: a built session dir, the real binary.
+//! `controlroom-agentd credential` end to end: a built session dir, the real binary.
 
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
@@ -9,12 +9,12 @@ use controlroom_sandbox::{AbsPath, SessionId, SessionLayout};
 const SESSION: &str = "01HZY3K4M5N6P7Q8R9S0T1V2W3";
 
 fn controlroomd(state: &AbsPath, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_controlroomd"))
+    Command::new(env!("CARGO_BIN_EXE_controlroom-agentd"))
         .args(["credential", "--state-dir", state.as_str()])
         .args(args)
         .env_remove("XDG_DATA_HOME")
         .output()
-        .expect("run controlroomd")
+        .expect("run controlroom-agentd")
 }
 
 /// A user agent dir with an API key and an OAuth credential, and a session built from it.
