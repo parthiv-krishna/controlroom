@@ -1,29 +1,29 @@
 // View state for this visit: selection, list filters, peeking panes, modals, drafts.
 import { emptyFilters, type FacetKey, type Filters } from '../model/filters';
-import type { MachineId, ProjectId, SessionId, TaskId, TaskStatus } from '../protocol';
+import type { ProjectId, SessionId, TaskId, TaskStatus, WorkspaceSpec } from '../protocol';
+import type { UNASSIGNED } from '../model/projects';
 
+/** A session, by its global id. */
 export interface SessionRef {
-  machine_id: MachineId;
   id: SessionId;
 }
 
 export interface NewSessionPreset {
-  machine_id?: MachineId;
-  cwd?: string;
+  /** The workspaces to start with, the primary first. */
+  workspaces?: WorkspaceSpec[];
   tasks?: TaskId[];
   prompt?: string;
 }
 export interface NewTaskPreset {
   status?: TaskStatus;
   project_ids?: ProjectId[];
-  /** `<machine id>/<session id>` values. */
-  sessions?: string[];
+  sessions?: SessionId[];
 }
 
 export type Modal =
   | { kind: 'new-session'; preset: NewSessionPreset }
   | { kind: 'new-task'; preset: NewTaskPreset }
-  | { kind: 'project'; id: ProjectId | null; paths?: string[] }
+  | { kind: 'project'; id: ProjectId | null }
   | { kind: 'start-fresh'; session: SessionRef }
   | { kind: 'link-tasks'; session: SessionRef }
   | { kind: 'task'; id: TaskId };
@@ -38,7 +38,8 @@ export interface RawFocus {
 export type SettingsTab = 'machines' | 'keys' | 'notifications' | 'devices' | 'sandbox' | 'contacts' | 'schedules' | 'keyboard' | 'appearance';
 
 export class View {
-  project = $state<ProjectId | null>(null);
+  /** The rail's scope: a project, Unassigned, or everything (null). */
+  project = $state<ProjectId | typeof UNASSIGNED | null>(null);
   current = $state<SessionRef | null>(null);
   openTask = $state<TaskId | null>(null);
   /** The session list. */
@@ -64,17 +65,17 @@ export class View {
   modal = $state<Modal | null>(null);
   palette = $state<string | null>(null);
   help = $state(false);
-  /** Composer drafts by session key. */
+  /** Composer drafts by session id. */
   drafts = $state<Record<string, string>>({});
   /** The last list search, for n/N. */
   lastSearch = $state('');
-  /** Session panels folded or opened by the user, by `<panel>:<session key>`. */
+  /** Session panels folded or opened by the user, by `<panel>:<session id>`. */
   panels = $state<Record<string, boolean>>({});
-  /** Timeline items expanded or collapsed by the user, by `<session key>#<item id>`. */
+  /** Timeline items expanded or collapsed by the user, by `<session id>#<item id>`. */
   expanded = $state<Record<string, boolean>>({});
-  /** The open raw view per session key, and the records it was opened at. */
+  /** The open raw view per session id, and the records it was opened at. */
   raw = $state<Record<string, RawFocus>>({});
-  /** The job open in the jobs strip, by session key (a timeline job item opens it too). */
+  /** The job open in the jobs strip, by session id (a timeline job item opens it too). */
   jobOpen = $state<Record<string, string | null>>({});
   /** A timeline item to scroll to and flash (a raw record's link back). */
   focusItem = $state<{ key: string; id: string } | null>(null);

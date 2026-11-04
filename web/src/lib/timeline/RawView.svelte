@@ -5,13 +5,12 @@
   import { onDestroy, untrack } from 'svelte';
   import { useApp } from '../app/app.svelte';
   import type { RawFocus } from '../app/view.svelte';
-  import { keyOf } from '../model/projects';
-  import type { MachineSession, RawFrame, RawStream } from '../protocol';
+  import type { FeedSession, RawFrame, RawStream } from '../protocol';
   import type { SessionFeed } from '../state/session-feeds.svelte';
 
-  let { s, feed, focus }: { s: MachineSession; feed: SessionFeed; focus: RawFocus } = $props();
+  let { s, feed, focus }: { s: FeedSession; feed: SessionFeed; focus: RawFocus } = $props();
   const app = useApp();
-  const key = $derived(keyOf(s));
+  const key = $derived(s.id);
   const raw = $derived(feed.timeline.raw);
 
   // Re-runs only when the target moves, not on every frame that arrives.

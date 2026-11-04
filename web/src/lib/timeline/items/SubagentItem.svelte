@@ -27,7 +27,7 @@
     {#if target}<button class="btn ghost xs" aria-expanded={live} onclick={() => ctx.toggle(item.id, false)}>{live ? 'hide live' : 'live'}</button>{/if}
   </div>
   {#if item.result}<div class="result"><Markdown text={item.result} /></div>{/if}
-  {#if live && target}<ChildTail child={target.session} />{/if}
+  {#if live && target}<ChildTail child={target} />{/if}
 </div>
 
 <style>

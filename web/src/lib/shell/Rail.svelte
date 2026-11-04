@@ -1,26 +1,27 @@
 <script lang="ts">
-  // The project rail: ∗ all projects, each project's two-letter code with its stoplight, ＋ new
-  // project view, ⚙ settings.
+  // The project rail: ∗ all projects, each project (a group of tasks) as its two-letter code with
+  // its stoplight, ○ Unassigned (sessions no task's project claims), ＋ new project, ⚙ settings.
   import { useApp } from '../app/app.svelte';
-  import { health, projectCode } from '../model/projects';
-  import type { Project } from '../protocol';
+  import { UNASSIGNED, health, projectCode, scopeName, type Scope } from '../model/projects';
   import Icon from '../ui/Icon.svelte';
   import Stoplight from '../ui/Stoplight.svelte';
 
   const app = useApp();
-  const items = $derived<(Project | null)[]>([null, ...app.client.feed.projectList]);
+  const items = $derived<Scope[]>([null, ...app.client.feed.projectList, UNASSIGNED]);
+  const idOf = (s: Scope) => (s === null || s === UNASSIGNED ? s : s.id);
 </script>
 
 <nav class="rail" aria-label="Projects" data-pane="rail">
-  {#each items as p, i (p?.id ?? 'all')}
-    {@const on = app.view.project === (p?.id ?? null)}
-    <button class="pi" aria-label={p ? p.name : 'All projects'} aria-pressed={on} title={p ? p.name : 'All projects'} onclick={() => app.openProject(p?.id ?? null)}>
-      <span class="code" class:on class:home={!p} style:--pc={p?.color ?? 'var(--fg)'}>{p ? projectCode(p) : '∗'}</span>
+  {#each items as p, i (idOf(p) ?? 'all')}
+    {@const on = app.view.project === idOf(p)}
+    {@const real = p !== null && p !== UNASSIGNED ? p : null}
+    <button class="pi" aria-label={scopeName(p)} aria-pressed={on} title={scopeName(p)} onclick={() => app.openProject(idOf(p))}>
+      <span class="code" class:on class:home={!real} style:--pc={real?.color ?? 'var(--fg)'}>{real ? projectCode(real) : p === UNASSIGNED ? '○' : '∗'}</span>
       <Stoplight h={health(app.ctx, p)} />
     </button>
-    {#if i === 0}<span class="sep"></span>{/if}
+    {#if i === 0 || i === items.length - 2}<span class="sep"></span>{/if}
   {/each}
-  <button class="code add" title="New project view" aria-label="New project view" onclick={() => (app.view.modal = { kind: 'project', id: null })}><Icon name="plus" size={16} /></button>
+  <button class="code add" title="New project" aria-label="New project" onclick={() => (app.view.modal = { kind: 'project', id: null })}><Icon name="plus" size={16} /></button>
   <span class="sp"></span>
   <button class="code add" title="Settings" aria-label="Settings" onclick={() => app.openSettings()}><Icon name="gear" size={18} /></button>
 </nav>

@@ -1,8 +1,9 @@
 <script lang="ts">
-  // A tool call: title, status, exit and duration; expanded, its input and output. Nested calls
-  // (`parent_tool_call_id`) are shown inside their parent.
+  // A tool call: title (remote files as `machine:path`), status, exit and duration; expanded, its
+  // input and output. Nested calls (`parent_tool_call_id`) are shown inside their parent.
   import { elapsed } from '../../model/format';
   import type { ItemOf } from '../../state/timeline.svelte';
+  import MachinePaths from '../../ui/MachinePaths.svelte';
   import { useTimeline } from '../context';
   import ItemView from '../ItemView.svelte';
   import ToolOutputView from './ToolOutputView.svelte';
@@ -21,7 +22,7 @@
 <div class="tool s-{item.status}" class:nested={depth > 0}>
   <button class="head" aria-expanded={open} onclick={() => ctx.toggle(item.id, running)}>
     <span class="glyph" aria-hidden="true">{GLYPH[item.tool_kind]}</span>
-    <span class="title">{item.title || item.name}</span>
+    <span class="title"><MachinePaths text={item.title || item.name} /></span>
     {#if children.length}<span class="kids">{children.length} sub-call{children.length === 1 ? '' : 's'}</span>{/if}
     <span class="st">{#if running}<span class="spin"></span>{/if}{status}</span>
   </button>

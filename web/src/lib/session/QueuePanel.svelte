@@ -4,11 +4,11 @@
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import { contentText, textContent } from '../model/misc';
-  import type { MachineSession, QueueItem } from '../protocol';
+  import type { FeedSession, QueueItem } from '../protocol';
 
-  let { s, items }: { s: MachineSession; items: QueueItem[] } = $props();
+  let { s, items }: { s: FeedSession; items: QueueItem[] } = $props();
   const app = useApp();
-  const online = $derived(app.client.online && !s.stale);
+  const online = $derived(app.client.online);
 
   async function edit(q: QueueItem) {
     const text = await app.dialogs.ask({ title: 'Edit queued message', value: contentText(q.content), multiline: true, ok: 'Save' });

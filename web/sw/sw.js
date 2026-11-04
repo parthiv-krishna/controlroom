@@ -38,7 +38,8 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(caches.match(request).then((hit) => hit || fetch(request)));
 });
 
-// Payload: { title?, body?, machine_id, session_id, name?, machine?, state? }
+// Payload: { title?, body?, session_id, name?, machine?, state? } (`machine`: the primary
+// workspace's machine name).
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -50,7 +51,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body: data.body || [data.machine, data.state].filter(Boolean).join(' · '),
-      tag: data.machine_id && data.session_id ? `${data.machine_id}/${data.session_id}` : undefined,
+      tag: data.session_id || undefined,
       data,
       icon: inScope('icon.svg'),
     }),
@@ -59,13 +60,13 @@ self.addEventListener('push', (event) => {
 
 /** The SPA's deep link; its query lets the page pre-render before the socket opens. */
 function deepLink(data) {
-  if (!data.machine_id || !data.session_id) return scope;
+  if (!data.session_id) return scope;
   const query = new URLSearchParams();
   if (data.name) query.set('n', data.name);
   if (data.machine) query.set('m', data.machine);
   if (data.state) query.set('st', data.state);
   const qs = query.toString();
-  return `${scope}#/s/${encodeURIComponent(data.machine_id)}/${encodeURIComponent(data.session_id)}${qs ? '?' + qs : ''}`;
+  return `${scope}#/s/${encodeURIComponent(data.session_id)}${qs ? '?' + qs : ''}`;
 }
 
 self.addEventListener('notificationclick', (event) => {

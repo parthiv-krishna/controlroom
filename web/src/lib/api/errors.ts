@@ -41,7 +41,10 @@ export function describeError(e: unknown): string {
   const d = e.data;
   switch (d.kind) {
     case 'timeout': return 'Timed out';
-    case 'machine_unavailable': return 'Machine unavailable';
+    case 'machine_unavailable': return `Machine ${d.connectivity.state.replace(/_/g, ' ')}`;
+    case 'connection_lost': return 'The link to the machine dropped';
+    case 'conflict': return `${d.path} changed meanwhile`;
+    case 'shell_gone': return `The shell ${d.shell} is gone`;
     case 'already_resolved': return d.request.answer ? `Already answered on ${d.request.answer.by?.label ?? 'another device'}` : 'Already answered';
     case 'agent_unavailable': return `${d.agent}: ${d.detail}`;
     case 'sandbox_unavailable': return `Sandbox unavailable: ${d.detail}`;

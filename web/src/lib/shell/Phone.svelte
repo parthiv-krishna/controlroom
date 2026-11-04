@@ -4,7 +4,7 @@
   import { useApp } from '../app/app.svelte';
   import SessionList from '../list/SessionList.svelte';
   import { notes } from '../model/notifications';
-  import { needsYouElsewhere, projectCode } from '../model/projects';
+  import { UNASSIGNED, needsYouElsewhere, projectCode, scopeName } from '../model/projects';
   import { statusLabel } from '../model/status';
   import NotificationsPanel from '../notifications/NotificationsPanel.svelte';
   import SessionPane from '../session/SessionPane.svelte';
@@ -16,9 +16,9 @@
   const view = app.view;
   const cur = $derived(app.current);
   const p = $derived(app.project);
-  const n = $derived(notes(app.ctx, p));
+  const n = $derived(notes(app.ctx, app.scope));
   const hot = $derived(n.blocking.length + n.problems.length > 0);
-  const elsewhere = $derived(needsYouElsewhere(app.ctx, p));
+  const elsewhere = $derived(needsYouElsewhere(app.ctx, app.scope));
   const detail = $derived(view.page === 'sessions' && view.phoneDetail && !!cur);
 </script>
 
@@ -26,7 +26,7 @@
   {#if !detail}
     <header class="top">
       <button class="proj" style:--pc={p?.color ?? 'var(--fg)'} aria-label="Projects" onclick={() => (view.drawer = true)}>
-        <span class="ic" class:home={!p}>{p ? projectCode(p) : '∗'}</span><span class="nm">{p ? p.name : 'All projects'}</span><span class="muted">▾</span>
+        <span class="ic" class:home={!p}>{p ? projectCode(p) : app.scope === UNASSIGNED ? '○' : '∗'}</span><span class="nm">{scopeName(app.scope)}</span><span class="muted">▾</span>
         {#if elsewhere}<span class="else" title="needs you in other projects">{elsewhere}</span>{/if}
       </button>
       <button class="bell" class:on={view.notesOpen} aria-label="Notifications" onclick={() => app.toggleNotes()}>

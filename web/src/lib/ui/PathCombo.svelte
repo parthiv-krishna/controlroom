@@ -1,11 +1,18 @@
 <script lang="ts">
-  // The working-directory field: browses the machine's real directories (`fs.list`), recent
-  // directories first. Tab or › opens a folder. Remote paths are POSIX strings (`/`, `~`).
+  // A directory field for one machine: browses its real directories (`fs.list` on that machine),
+  // recent directories first. Tab or › opens a folder. Remote paths are POSIX strings (`/`, `~`).
   import { useApp } from '../app/app.svelte';
   import type { MachineId } from '../protocol';
   import type { Suggestion } from './TagInput.svelte';
 
-  let { value = $bindable(), machineId, id, recent = [] }: { value: string; machineId: MachineId; id: string; recent?: string[] } = $props();
+  let {
+    value = $bindable(),
+    machineId,
+    id,
+    recent = [],
+    label = 'Directory',
+    autofocus = false,
+  }: { value: string; machineId: MachineId; id: string; recent?: string[]; label?: string; autofocus?: boolean } = $props();
 
   const app = useApp();
   const listId = $props.id();
@@ -16,6 +23,7 @@
   let request = 0;
 
   async function dirs(dir: string): Promise<string[]> {
+    if (!machineId) return [];
     const r = await app.client.call('fs.list', { machine_id: machineId, path: dir });
     return (r?.entries ?? []).filter((e) => e.kind === 'dir' || e.kind === 'symlink').map((e) => e.name);
   }
@@ -85,11 +93,11 @@
     placeholder="~/src/project"
     autocomplete="off"
     spellcheck="false"
-    data-autofocus
+    data-autofocus={autofocus || undefined}
     role="combobox"
     aria-controls={listId}
     aria-expanded={open}
-    aria-label="Working directory"
+    aria-label={label}
     onfocus={() => (open = true)}
     onblur={() => setTimeout(() => (open = false), 120)}
     oninput={() => { open = true; hi = 0; }}

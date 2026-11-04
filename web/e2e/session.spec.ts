@@ -1,18 +1,18 @@
 import { expect, test } from '@playwright/test';
-import { M, S, calls, start } from './helpers';
+import { S, calls, start } from './helpers';
 
 test('request card: Allow once records request.respond on the session', async ({ page }) => {
-  await start(page, { machine: M.buildbox, id: S.auth });
+  await start(page, S.auth);
   const card = page.getByRole('main').locator('[data-request="req-2"]');
   await expect(card.getByText('Edit src/auth/refresh.rs')).toBeVisible();
   await card.getByRole('button', { name: 'Allow once' }).click();
   await expect.poll(async () => (await calls(page, 'request.respond')).map((c) => c.params)).toContainEqual(
-    expect.objectContaining({ machine_id: M.buildbox, id: S.auth, request_id: 'req-2', response: { kind: 'choice', option_id: 'allow_once' } }),
+    expect.objectContaining({ id: S.auth, request_id: 'req-2', response: { kind: 'choice', option_id: 'allow_once' } }),
   );
 });
 
 test('request card: Reject and steer denies and sends the text', async ({ page }) => {
-  await start(page, { machine: M.buildbox, id: S.auth });
+  await start(page, S.auth);
   const card = page.getByRole('main').locator('[data-request="req-2"]');
   await card.getByRole('button', { name: 'Reject and steer…' }).click();
   await card.getByLabel('Steer').fill('Use a mutex instead');
@@ -22,7 +22,7 @@ test('request card: Reject and steer denies and sends the text', async ({ page }
 });
 
 test('a subagent request rolled up to the parent is answered on the child', async ({ page }) => {
-  await start(page, { machine: M.devbox, id: S.coord });
+  await start(page, S.coord);
   const card = page.getByRole('main').locator('[data-request="req-3"]');
   await expect(card.getByText('from subagent')).toBeVisible();
   await card.getByRole('button', { name: 'Allow once' }).click();
@@ -31,7 +31,7 @@ test('a subagent request rolled up to the parent is answered on the child', asyn
 });
 
 test('composer: Enter queues while busy, Esc stops; queue items show sending and send now', async ({ page }) => {
-  await start(page, { machine: M.devbox, id: S.flaky });
+  await start(page, S.flaky);
   const queue = page.getByLabel('Queue');
   await expect(queue.getByText('sending')).toBeVisible();
   await queue.getByRole('button', { name: '⚡ Send now' }).first().click();
@@ -47,7 +47,7 @@ test('composer: Enter queues while busy, Esc stops; queue items show sending and
 });
 
 test('scripted feed: the in-flight queue item is echoed and leaves the queue', async ({ page }) => {
-  await start(page, { machine: M.devbox, id: S.flaky });
+  await start(page, S.flaky);
   const queue = page.getByLabel('Queue');
   await expect(queue.getByText('Re-run only the failing spec')).toBeVisible();
   await page.evaluate(() => {
@@ -59,7 +59,7 @@ test('scripted feed: the in-flight queue item is echoed and leaves the queue', a
 });
 
 test('todo panel and auto-continue; jobs strip', async ({ page }) => {
-  await start(page, { machine: M.buildbox, id: S.jobs });
+  await start(page, S.jobs);
   const todo = page.getByLabel('Todo');
   await expect(todo.getByText('Auto-continue')).toContainText('on');
   await expect(todo.getByText('Not continuing: waiting on job tests')).toBeVisible();
@@ -83,14 +83,14 @@ test('notifications: blocking and non-blocking tiers; Dismiss answers declined',
   await expect(panel.getByText('agents keep working')).toBeVisible();
   await expect(panel.getByText('Failed or stopped')).toBeVisible();
   await expect(panel.getByText('Finished')).toBeVisible();
-  await expect(panel.getByText(/gpubox.*1 request waiting/)).toBeVisible();
+  await expect(panel.getByText(/gpubox.*1 session with a workspace there/)).toBeVisible();
   await panel.locator('[data-request="req-12"]').getByRole('button', { name: 'Dismiss' }).click();
   const [call] = await calls(page, 'request.respond');
   expect(call.params).toMatchObject({ id: S.blog, response: { kind: 'dismiss' } });
 });
 
 test('schedules panel: add a schedule', async ({ page }) => {
-  await start(page, { machine: M.devbox, id: '01JAS000000000000000000018' });
+  await start(page, '01JAS000000000000000000018');
   const panel = page.getByLabel('Schedules');
   await expect(panel.getByText('Weekdays 09:00')).toBeVisible();
   await panel.getByRole('button', { name: '+ Add schedule' }).click();
@@ -103,7 +103,7 @@ test('schedules panel: add a schedule', async ({ page }) => {
 });
 
 test('schedules panel: recent runs and run now', async ({ page }) => {
-  await start(page, { machine: M.devbox, id: '01JAS000000000000000000018' });
+  await start(page, '01JAS000000000000000000018');
   const row = page.getByLabel('Schedules').locator('[data-schedule="01JAC000000000000000000001"]');
   await row.getByRole('button', { name: 'fired' }).click();
   await expect(row.locator('.hist')).toContainText('missed \u00d73');
@@ -114,7 +114,7 @@ test('schedules panel: recent runs and run now', async ({ page }) => {
 });
 
 test('a question with several parts is answered in one go', async ({ page }) => {
-  await start(page, { machine: M.devbox, id: S.blog });
+  await start(page, S.blog);
   const card = page.getByRole('main').locator('[data-request="req-12"]');
   await expect(card.getByText('Which sections should it cover?')).toBeVisible();
   await card.getByRole('button', { name: 'Operators' }).click();
@@ -133,4 +133,36 @@ test('a question with several parts is answered in one go', async ({ page }) => 
       ],
     },
   });
+});
+
+test('session header: every workspace with its availability, and the overlap warning', async ({ page }) => {
+  await start(page, S.auth);
+  const header = page.getByRole('banner');
+  const workspaces = header.getByLabel('Workspaces');
+  await expect(workspaces.locator('[data-workspace]')).toHaveText([/buildbox:~\/src\/acme-api/, /devbox:~\/src\/acme-web/]);
+  // Another open session works in the same directory: a warning, with a link to it.
+  await expect(workspaces.locator('[data-overlap]')).toContainText('buildbox:~/src/acme-api is also used by');
+  await workspaces.locator('[data-overlap]').getByRole('button', { name: 'upgrade tokio to 1.47' }).click();
+  await expect(page.getByRole('option', { name: /upgrade tokio to 1.47/ })).toHaveAttribute('aria-selected', 'true');
+
+  // A workspace on an unreachable machine: the session keeps its state, the workspace waits.
+  await start(page, S.dedupe);
+  await expect(page.getByRole('banner').locator('[data-workspace]').first()).toContainText(/gpubox:~\/data\/dedupe\s*unreachable since/);
+  await expect(page.locator('[data-machine-banner="gpubox"]')).toContainText('tool calls there wait up to 10m');
+  await expect(page.getByRole('banner').getByText('Needs approval')).toBeVisible();
+});
+
+test('a command waiting for terminal input names its shell; a privileged command says it runs unsandboxed', async ({ page }) => {
+  await start(page, S.jobs);
+  const input = page.locator('[data-request="req-term-1"]').first();
+  await expect(input).toContainText('git rebase -i HEAD~3');
+  await expect(input.locator('[data-shell="buildbox"]')).toContainText('type in its terminal');
+
+  await start(page, S.deploy);
+  const privileged = page.locator('[data-request="req-priv-1"]').first();
+  await expect(privileged).toContainText('sudo systemctl restart nginx');
+  await expect(privileged).toContainText('unsandboxed on devbox');
+  await privileged.getByRole('button', { name: 'Allow once' }).click();
+  const [call] = await calls(page, 'request.respond');
+  expect(call.params).toMatchObject({ id: S.deploy, request_id: 'req-priv-1', response: { kind: 'choice', option_id: 'allow-once' } });
 });

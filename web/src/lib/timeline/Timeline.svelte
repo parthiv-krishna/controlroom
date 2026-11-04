@@ -9,18 +9,17 @@
   import { useApp } from '../app/app.svelte';
   import { freshDividers } from '../model/fresh';
   import { HeightIndex, visibleRange } from '../model/heights';
-  import { keyOf } from '../model/projects';
-  import type { MachineSession, TimelineItem } from '../protocol';
+  import type { FeedSession, TimelineItem } from '../protocol';
   import RequestCard from '../session/RequestCard.svelte';
   import { Timeline } from '../state/timeline.svelte';
   import { provideTimeline } from './context';
   import ItemView from './ItemView.svelte';
   import RawView from './RawView.svelte';
 
-  let { s }: { s: MachineSession } = $props();
+  let { s }: { s: FeedSession } = $props();
   const app = useApp();
-  const key = $derived(keyOf(s));
-  const feed = $derived(app.client.sessions.get(s.machine_id, s.id));
+  const key = $derived(s.id);
+  const feed = $derived(app.client.sessions.get(s.id));
   const timeline = $derived(feed?.timeline ?? new Timeline());
   const rows = $derived(timeline.rows);
   const raw = $derived(app.view.raw[key] ?? null);

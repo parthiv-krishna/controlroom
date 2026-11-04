@@ -6,16 +6,17 @@
   import { onSession } from '../app/app.svelte';
   import { displayName } from '../model/filters';
   import { notes, type RequestNote } from '../model/notifications';
-  import { keyOf, tasksFor } from '../model/projects';
+  import { tasksFor } from '../model/projects';
   import { ago, connLabel, statusKind } from '../model/status';
-  import type { MachineSession } from '../protocol';
+  import { machinesOf } from '../model/workspaces';
+  import type { FeedSession } from '../protocol';
   import RequestCard from '../session/RequestCard.svelte';
   import MachineFix from '../settings/MachineFix.svelte';
   import StatusIcon from '../ui/StatusIcon.svelte';
 
   let { overlay = false }: { overlay?: boolean } = $props();
   const app = useApp();
-  const n = $derived(notes(app.ctx, app.project));
+  const n = $derived(notes(app.ctx, app.scope));
   const others = $derived(app.project ? notes(app.ctx, null).total - n.total : 0);
   const fixes = $derived(app.client.feed.machineList.filter((m) => m.connectivity.state === 'action_required'));
   const unreachable = $derived(n.offline.filter((o) => o.machine.connectivity.state !== 'action_required'));
@@ -25,18 +26,18 @@
     ['questions', 'Questions', n.questions],
   ]);
 
-  function openCard(e: MouseEvent, s: MachineSession) {
+  function openCard(e: MouseEvent, s: FeedSession) {
     if ((e.target as HTMLElement).closest('button, input, textarea, a')) return;
     if (!app.desk) app.view.notesOpen = false;
     app.open(s);
   }
-  const isOn = (s: MachineSession) => !!app.view.current && keyOf(app.view.current) === keyOf(s);
+  const isOn = (s: FeedSession) => !!app.view.current && app.view.current.id === s.id;
 </script>
 
-{#snippet head(s: MachineSession)}
+{#snippet head(s: FeedSession)}
   {@const t = tasksFor(app.ctx, s)[0]}
   <div class="ch"><StatusIcon kind={statusKind(s)} /><b>{displayName(s)}</b><span class="t">{ago(s.updated_at)}</span></div>
-  <div class="sub">{t ? `${t.title} · ` : ''}{app.client.feed.machines.get(s.machine_id)?.name ?? ''}</div>
+  <div class="sub">{t ? `${t.title} · ` : ''}{machinesOf(s).map((id) => app.client.feed.machines.get(id)?.name ?? '?').join(', ')}</div>
 {/snippet}
 
 <aside class="np" class:overlay aria-label="Notifications" data-pane="notifications">
@@ -48,7 +49,7 @@
     {#each sections as [kind, label, cards] (kind)}
       {#if cards.length}
         <div class="sec">{label}{#if kind === 'questions'}<span class="hint">agents keep working</span>{/if}</div>
-        {#each cards as c (keyOf(c.s) + c.req.id)}
+        {#each cards as c (c.s.id + c.req.id)}
           <div class="card k-{kind}" class:on={isOn(c.s)} role="button" tabindex="0" onclick={(e) => openCard(e, c.s)} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(c.s); }}>
             {@render head(c.s)}
             <RequestCard req={c.req} s={c.s} compact />
@@ -58,13 +59,13 @@
     {/each}
     {#if n.problems.length}
       <div class="sec">Failed or stopped</div>
-      {#each n.problems as s (keyOf(s))}
+      {#each n.problems as s (s.id)}
         <div class="card" class:on={isOn(s)} role="button" tabindex="0" onclick={(e) => openCard(e, s)} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(s); }}>
           {@render head(s)}
           <div class="what">{s.last_error ?? s.preview}</div>
           <div class="acts">
             {#if (s.state === 'interrupted' || s.state === 'dormant') && s.resumable}<button class="btn sm primary" disabled={!online} onclick={() => app.client.call('session.resume', onSession(s))}>Resume</button>{/if}
-            {#if s.state === 'interrupted' || s.state === 'failed'}<button class="btn sm" disabled={!online} onclick={() => (app.view.modal = { kind: 'start-fresh', session: { machine_id: s.machine_id, id: s.id } })}>Start fresh</button>{/if}
+            {#if s.state === 'interrupted' || s.state === 'failed'}<button class="btn sm" disabled={!online} onclick={() => (app.view.modal = { kind: 'start-fresh', session: { id: s.id } })}>Start fresh</button>{/if}
             <button class="btn sm ghost" disabled={!online} onclick={() => app.markRead(s)}>Dismiss</button>
           </div>
         </div>
@@ -72,7 +73,7 @@
     {/if}
     {#if n.finished.length}
       <div class="sec">Finished{#if n.finished.length > 1}<button class="link" disabled={!online} onclick={() => n.finished.forEach((s) => app.markRead(s))}>Mark all read</button>{/if}</div>
-      {#each n.finished as s (keyOf(s))}
+      {#each n.finished as s (s.id)}
         <div class="card" class:on={isOn(s)} role="button" tabindex="0" onclick={(e) => openCard(e, s)} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(s); }}>
           {@render head(s)}
           <div class="what">{s.preview}</div>
@@ -86,9 +87,9 @@
         <MachineFix {m} compact />
       </div>
     {/each}
-    {#each unreachable as { machine, waiting } (machine.id)}
+    {#each unreachable as { machine, sessions } (machine.id)}
       <div class="off">
-        <StatusIcon kind="offline" /><span><b>{machine.name}</b> {connLabel(machine)} · {waiting} request{waiting === 1 ? '' : 's'} waiting</span>
+        <StatusIcon kind="offline" /><span><b>{machine.name}</b> {connLabel(machine)} · {sessions} session{sessions === 1 ? '' : 's'} with a workspace there</span>
         {#if machine.connectivity.state === 'incompatible'}
           <button class="btn sm" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: machine.id })}>Upgrade</button>
         {:else}

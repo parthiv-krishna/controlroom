@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { M, S, calls, start } from './helpers';
+import { S, calls, start } from './helpers';
 
 test('rail: projects filter the list; panes toggle and their pins persist', async ({ page }) => {
   await start(page);
@@ -23,7 +23,7 @@ test('rail: projects filter the list; panes toggle and their pins persist', asyn
   await expect(page.getByRole('button', { name: 'Unpin notifications' })).toBeVisible();
 });
 
-test('session list: search, filter by state and group by location', async ({ page }) => {
+test('session list: search, filter by state and group by machine (a session under every machine it touches)', async ({ page }) => {
   await start(page);
   const list = page.getByRole('listbox', { name: 'Session list' });
   await page.getByLabel('Search sessions').fill('logouts');
@@ -39,8 +39,34 @@ test('session list: search, filter by state and group by location', async ({ pag
   await expect(list.getByText('inbox triage')).toBeVisible();
 
   await page.getByRole('button', { name: /Group/ }).click();
-  await page.getByRole('menuitemradio', { name: 'Location' }).click();
-  await expect(list.locator('[data-group^="h:"]')).toHaveText([/buildbox/, /devbox/, /gpubox/]);
+  await page.getByRole('menuitemradio', { name: 'Machine' }).click();
+  await expect(list.locator('[data-group^="m:"]')).toHaveText([/buildbox/, /devbox/, /gpubox/]);
+  // Two workspaces: listed under both machines.
+  await expect(list.getByRole('option', { name: /auth token refresh race/ })).toHaveCount(2);
+  // gpubox is unreachable: its group offers no new session.
+  await expect(list.locator('[data-group^="m:"]').filter({ hasText: 'gpubox' }).getByRole('button', { name: /New session/ })).toHaveCount(0);
+
+  // Filter by machine: the sessions with a workspace there.
+  await page.getByRole('button', { name: 'Filter' }).click();
+  const filter = page.getByRole('dialog', { name: 'Filter' });
+  await filter.getByRole('button', { name: 'Machine' }).click();
+  await filter.getByText('gpubox').click();
+  await page.keyboard.press('Escape');
+  // Grouped by machine, it shows under both of its machines.
+  await expect(list.getByRole('option')).toHaveText([/dataset dedupe/, /dataset dedupe/]);
+});
+
+test('rail: Unassigned holds the sessions that no project claims', async ({ page }) => {
+  await start(page);
+  const list = page.getByRole('listbox', { name: 'Session list' });
+  await page.getByRole('navigation', { name: 'Projects' }).getByRole('button', { name: 'Unassigned' }).click();
+  await expect(page.getByRole('region', { name: 'Sessions' }).getByText('Unassigned', { exact: true })).toBeVisible();
+  await expect(list.getByText('inbox triage')).toBeVisible();
+  await expect(list.getByText('auth token refresh race')).toHaveCount(0);
+  // Linking a session to a task is what moves it into the task's projects.
+  await page.getByRole('navigation', { name: 'Projects' }).getByRole('button', { name: 'Acme API' }).click();
+  await expect(list.getByText('auth token refresh race')).toBeVisible();
+  await expect(list.getByText('inbox triage')).toHaveCount(0);
 });
 
 test('subagents: a filter matching only a child keeps the parent as a dimmed ancestor', async ({ page }) => {
@@ -58,13 +84,12 @@ test('drag a session row onto a task group links it', async ({ page }) => {
   await row.dragTo(page.locator('[data-group^="t:"]').filter({ hasText: 'Release v0.2' }));
   await expect.poll(async () => (await calls(page, 'tasks.link')).map((c) => c.params)).toContainEqual({
     task_id: '01JAT000000000000000000003',
-    machine_id: M.devbox,
     session_id: '01JAS000000000000000000018',
   });
 });
 
 test('keyboard: j/k move through sessions, ? shows help, ⌘K opens the palette', async ({ page }) => {
-  await start(page, { machine: M.buildbox, id: S.auth });
+  await start(page, S.auth);
   await page.locator('body').press('j');
   await expect(page.locator('h2, .head').getByText('upgrade tokio to 1.47').first()).toBeVisible();
   await page.locator('body').press('k');
@@ -98,7 +123,7 @@ test('phone: list, full-screen conversation with its panels, back', async ({ bro
 });
 
 test('offline: a push deep link pre-renders, then "can\'t reach server"', async ({ page }) => {
-  await page.goto(`/?offline#/s/${M.devbox}/${S.flaky}?n=flaky%20e2e%20tests&m=devbox&st=Working`);
+  await page.goto(`/?offline#/s/${S.flaky}?n=flaky%20e2e%20tests&m=devbox&st=Working`);
   await expect(page.getByRole('heading', { name: 'flaky e2e tests' })).toBeVisible();
   await expect(page.getByText('devbox · Working')).toBeVisible();
   await expect(page.getByText("Can't reach server")).toBeVisible();

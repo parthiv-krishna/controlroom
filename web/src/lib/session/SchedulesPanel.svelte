@@ -5,12 +5,12 @@
   import { useApp } from '../app/app.svelte';
   import { formatIn, humanSchedule, inTime, localZone, parseCron, runText, runWhen } from '../model/schedule';
   import { ago } from '../model/status';
-  import type { IfBusy, MachineSession, MissedPolicy, Schedule, ScheduleSpec } from '../protocol';
+  import type { IfBusy, FeedSession, MissedPolicy, Schedule, ScheduleSpec } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
 
-  let { s }: { s: MachineSession } = $props();
+  let { s }: { s: FeedSession } = $props();
   const app = useApp();
-  const list = $derived(app.client.feed.scheduleList.filter((x) => x.machine_id === s.machine_id && x.session_id === s.id));
+  const list = $derived(app.client.feed.scheduleList.filter((x) => x.session_id === s.id));
   const online = $derived(app.client.online);
   const supported = $derived(app.client.hello?.capabilities.includes('schedules') ?? false);
   const closed = $derived(s.state === 'closed');
@@ -62,7 +62,7 @@
     const fields = { name: draft.name.trim(), spec, timezone: draft.timezone.trim() || 'UTC', message: draft.message.trim(), if_busy: draft.if_busy, missed: draft.missed };
     const r = draft.id
       ? await app.client.call('schedules.update', { schedule_id: draft.id, ...fields })
-      : await app.client.call('schedules.create', { machine_id: s.machine_id, session_id: s.id, enabled: !closed, ...fields });
+      : await app.client.call('schedules.create', { session_id: s.id, enabled: !closed, ...fields });
     if (r) draft = null;
   }
   function editorKey(e: KeyboardEvent) {
@@ -118,7 +118,7 @@
         {/if}
       </div>
       <div class="acts">
-        <button class="btn xs" disabled={!online || !supported || s.stale || closed} title={s.stale ? 'The machine is unreachable' : 'Send the message now (same busy rule)'} onclick={() => runNow(x)}>Run now</button>
+        <button class="btn xs" disabled={!online || !supported || closed} title="Send the message now (same busy rule)" onclick={() => runNow(x)}>Run now</button>
         <button class="btn xs ghost" disabled={!online || !supported} onclick={() => edit(x)}>Edit</button>
         <button class="btn xs ghost bad-t" disabled={!online || !supported} onclick={() => remove(x)}>Delete</button>
       </div>

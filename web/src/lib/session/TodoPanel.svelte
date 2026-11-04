@@ -4,15 +4,15 @@
   // own (only blocked entries left, stalled, budget used up, or a user cancel).
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
-  import { keyOf, tasksFor } from '../model/projects';
-  import type { MachineSession, SessionDetail, Todo, TodoStatus } from '../protocol';
+  import { tasksFor } from '../model/projects';
+  import type { FeedSession, SessionDetail, Todo, TodoStatus } from '../protocol';
   import { dismissable } from '../ui/actions';
 
-  let { s, detail }: { s: MachineSession; detail: SessionDetail } = $props();
+  let { s, detail }: { s: FeedSession; detail: SessionDetail } = $props();
   const app = useApp();
-  const key = $derived('todo:' + keyOf(s));
+  const key = $derived('todo:' + s.id);
   const open = $derived(app.view.panels[key] ?? true);
-  const online = $derived(app.client.online && !s.stale);
+  const online = $derived(app.client.online);
   const ac = $derived(detail.auto_continue);
   const counted = $derived(detail.todos.filter((t) => t.status !== 'skipped'));
   const done = $derived(counted.filter((t) => t.status === 'done').length);

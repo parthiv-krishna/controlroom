@@ -5,12 +5,12 @@ import { getContext, setContext } from 'svelte';
 import { visibleSessions } from '../model/filters';
 import { GROUPS, groupSessions, type Group, type GroupBy } from '../model/grouping';
 import { deepLinkHash } from '../model/misc';
-import { keyOf, type Ctx } from '../model/projects';
+import { UNASSIGNED, type Ctx, type Scope } from '../model/projects';
 import { busy } from '../model/status';
 import { taskPrompt } from '../model/tasks';
 import { randomUuid } from '../model/uuid';
 import { leadsToMatch, treeIndex, treeRoots, type TreeIndex } from '../model/tree';
-import type { MachineSession, OpId, Project, SessionDetail, Task, TaskStatus } from '../protocol';
+import type { FeedSession, OpId, Project, SessionDetail, SessionId, Task, TaskStatus } from '../protocol';
 import type { Client } from '../state/client.svelte';
 import { Dialogs, Toasts } from './overlays.svelte';
 import { Prefs } from './prefs.svelte';
@@ -20,7 +20,7 @@ import { View, type NewSessionPreset, type SessionRef, type SettingsTab } from '
 export const newOpId = (): OpId => randomUuid();
 
 /** The common params of a pass-through command on a session. */
-export const onSession = (s: SessionRef) => ({ machine_id: s.machine_id, op_id: newOpId(), id: s.id });
+export const onSession = (s: SessionRef) => ({ op_id: newOpId(), id: s.id });
 
 export class App {
   readonly prefs = new Prefs();
@@ -29,30 +29,34 @@ export class App {
   readonly toasts = new Toasts();
 
   readonly ctx: Ctx;
+  /** The rail's scope. */
+  readonly scope: Scope;
+  /** The scope's project, when it is one (Unassigned and everything aren't). */
   readonly project: Project | null;
-  readonly current: MachineSession | undefined;
+  readonly current: FeedSession | undefined;
   /** The session list as shown: visible sessions, their groups and the subagent tree. */
   readonly listing: { visible: Set<string>; tree: TreeIndex; groups: Group[] };
 
   constructor(readonly client: Client) {
     client.onError = (message) => this.toasts.show(message, 'error');
     const feed = client.feed;
-    this.ctx = $derived({ machines: feed.machines, machineList: feed.machineList, sessions: feed.sessionList, tasks: feed.taskList });
-    this.project = $derived((this.view.project && feed.projects.get(this.view.project)) || null);
-    this.current = $derived(this.view.current ? feed.sessions.get(keyOf(this.view.current)) : undefined);
+    this.ctx = $derived({ machines: feed.machines, machineList: feed.machineList, sessions: feed.sessionList, tasks: feed.taskList, overlaps: feed.overlaps });
+    this.project = $derived((this.view.project && this.view.project !== UNASSIGNED && feed.projects.get(this.view.project)) || null);
+    this.scope = $derived(this.view.project === UNASSIGNED ? UNASSIGNED : this.project);
+    this.current = $derived(this.view.current ? feed.sessions.get(this.view.current.id) : undefined);
     this.listing = $derived.by(() => {
       const keep = new Set(this.view.keep);
-      const list = visibleSessions(this.ctx, this.project, this.view.filters, this.view.q, keep);
-      const visible = new Set(list.map(keyOf));
+      const list = visibleSessions(this.ctx, this.scope, this.view.filters, this.view.q, keep);
+      const visible = new Set(list.map((s) => s.id));
       const tree = treeIndex(this.ctx.sessions, keep);
-      const groups = groupSessions(this.ctx, this.project, list, this.prefs.group, this.view.collapsed, this.view.filtering);
+      const groups = groupSessions(this.ctx, this.scope, list, this.prefs.group, this.view.filtering);
       return { visible, tree, groups };
     });
   }
 
   /** The detail of a session whose feed is held (the open session), else null. */
   detail(s: SessionRef): SessionDetail | null {
-    return this.client.sessions.get(s.machine_id, s.id)?.detail ?? null;
+    return this.client.sessions.get(s.id)?.detail ?? null;
   }
 
   get desk(): boolean {
@@ -62,15 +66,15 @@ export class App {
   // -------------------------------------------------------------------------------- navigation
 
   open(ref: SessionRef): void {
-    const key = keyOf(ref);
-    if (!this.view.keep.includes(key)) this.view.keep = [];
-    this.view.current = { machine_id: ref.machine_id, id: ref.id };
+    if (!this.view.keep.includes(ref.id)) this.view.keep = [];
+    this.view.current = { id: ref.id };
     this.view.page = 'sessions';
     this.view.phoneDetail = true;
     this.view.drawer = false;
-    if (typeof history !== 'undefined') history.replaceState(null, '', deepLinkHash(ref.machine_id, ref.id));
+    if (typeof history !== 'undefined') history.replaceState(null, '', deepLinkHash(ref.id));
   }
 
+  /** Scopes the views to a project, to Unassigned, or to everything (null). */
   openProject(id: string | null): void {
     this.view.keep = [];
     this.view.project = id;
@@ -92,17 +96,17 @@ export class App {
   }
 
   /** Sessions in list order (as shown, folded groups and subagents excluded), for j/k. */
-  orderedSessions(): MachineSession[] {
+  orderedSessions(): FeedSession[] {
     const { groups, visible, tree } = this.listing;
-    const out: MachineSession[] = [];
+    const out: FeedSession[] = [];
     const seen = new Set<string>();
-    const walk = (s: MachineSession, dim: boolean) => {
-      const k = keyOf(s);
+    const walk = (s: FeedSession, dim: boolean) => {
+      const k = s.id;
       if (seen.has(k)) return;
       seen.add(k);
       if (!dim || visible.has(k)) out.push(s);
       if (this.view.collapsed['c:' + k]) return;
-      for (const c of tree.children(s)) if (!dim || leadsToMatch(c, visible, tree)) walk(c, dim && !visible.has(keyOf(c)));
+      for (const c of tree.children(s)) if (!dim || leadsToMatch(c, visible, tree)) walk(c, dim && !visible.has(c.id));
     };
     for (const g of groups) {
       if (this.view.collapsed[g.key]) continue;
@@ -115,7 +119,7 @@ export class App {
     const list = this.orderedSessions();
     if (!list.length) return;
     const cur = this.view.current;
-    const i = cur ? list.findIndex((s) => s.machine_id === cur.machine_id && s.id === cur.id) : -1;
+    const i = cur ? list.findIndex((s) => s.id === cur.id) : -1;
     const next = i < 0 ? list[step > 0 ? 0 : list.length - 1] : list[Math.max(0, Math.min(list.length - 1, i + step))];
     this.open(next);
   }
@@ -150,35 +154,25 @@ export class App {
     this.view.modal = { kind: 'new-session', preset };
   }
 
-  /** "+ New session" in the list header: preset from the project's first location when clear. */
-  newSessionHere(): void {
-    const prefix = this.project?.location_prefixes[0];
-    const preset: NewSessionPreset = {};
-    if (prefix?.machine_id && this.client.feed.machines.get(prefix.machine_id)?.connectivity.state === 'connected') preset.machine_id = prefix.machine_id;
-    if (prefix?.path_prefix) preset.cwd = prefix.path_prefix;
-    this.newSession(preset);
-  }
-
   startTask(t: Task): void {
     this.newSession({ tasks: [t.id], prompt: taskPrompt(t) });
   }
 
   /** The new-task dialog, pre-assigned to the project being viewed. */
-  newTask(status: TaskStatus = 'todo', sessions: string[] = []): void {
-    this.view.modal = { kind: 'new-task', preset: { status, project_ids: this.view.project ? [this.view.project] : [], sessions } };
+  newTask(status: TaskStatus = 'todo', sessions: SessionId[] = []): void {
+    this.view.modal = { kind: 'new-task', preset: { status, project_ids: this.project ? [this.project.id] : [], sessions } };
   }
 
   // ------------------------------------------------------------------------- session actions
 
   /** Archive (close); the row stays visible with ↺ until the user navigates away. */
-  async archive(s: MachineSession): Promise<void> {
+  async archive(s: FeedSession): Promise<void> {
     if (busy(s) && !(await this.dialogs.confirm({ title: 'Stop and archive?', body: 'The agent is stopped; the history is kept.', ok: 'Stop and archive', danger: true }))) return;
     if ((await this.client.call('session.close', onSession(s))) === undefined) return;
-    const key = keyOf(s);
-    if (!this.view.keep.includes(key)) this.view.keep = [...this.view.keep, key];
+    if (!this.view.keep.includes(s.id)) this.view.keep = [...this.view.keep, s.id];
   }
 
-  async unarchive(s: MachineSession): Promise<void> {
+  async unarchive(s: FeedSession): Promise<void> {
     try {
       await this.client.request('session.reopen', onSession(s));
     } catch (e) {
@@ -187,14 +181,14 @@ export class App {
     }
   }
 
-  async remove(s: MachineSession): Promise<void> {
+  async remove(s: FeedSession): Promise<void> {
     if (!(await this.dialogs.confirm({ title: 'Delete session?', body: 'The transcript is deleted permanently.', ok: 'Delete', danger: true }))) return;
     if ((await this.client.call('session.delete', onSession(s))) === undefined) return;
-    if (this.view.current && keyOf(this.view.current) === keyOf(s)) this.view.current = null;
+    if (this.view.current?.id === s.id) this.view.current = null;
   }
 
   /** Marks everything up to the last turn's end as read. */
-  markRead(s: MachineSession): void {
+  markRead(s: FeedSession): void {
     void this.client.call('session.mark_read', { ...onSession(s), seq: s.last_turn_end_seq });
   }
 
@@ -206,7 +200,7 @@ export class App {
     const visible = typeof document === 'undefined' || (document.visibilityState === 'visible' && document.hasFocus());
     void this.client.call('client.focus', {
       device_id: this.client.device.id,
-      session: showing ? { machine_id: c.machine_id, session_id: c.id } : null,
+      session_id: showing ? c.id : null,
       visible,
     });
   }

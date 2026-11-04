@@ -12,7 +12,7 @@
 
   const tasks = $derived.by(() => {
     const q = app.view.boardQ.trim().toLowerCase();
-    return app.ctx.tasks.filter((t) => taskIn(t, app.project) && (!q || t.title.toLowerCase().includes(q)));
+    return app.ctx.tasks.filter((t) => taskIn(t, app.scope) && (!q || t.title.toLowerCase().includes(q)));
   });
 
   function move(t: Task, status: TaskStatus, before: string | null = null) {

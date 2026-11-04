@@ -6,11 +6,11 @@
   import { onSession } from '../app/app.svelte';
   import { levelLabel } from '../model/sandbox';
   import { ago } from '../model/status';
-  import type { MachineSession, SandboxGrant, SessionDetail } from '../protocol';
+  import type { FeedSession, SandboxGrant, SessionDetail } from '../protocol';
   import { dismissable } from '../ui/actions';
   import Icon from '../ui/Icon.svelte';
 
-  let { s, detail }: { s: MachineSession; detail: SessionDetail | null } = $props();
+  let { s, detail }: { s: FeedSession; detail: SessionDetail | null } = $props();
   const app = useApp();
   let pop = $state<'sandbox' | 'peers' | null>(null);
   let sandboxAnchor: HTMLElement | undefined = $state();
@@ -36,11 +36,10 @@
     }
     await app.client.call('sandbox.revoke', { ...onSession(s), grant_id: g.id });
   }
-  /** A peer's session on this controller, via its daemon id. */
-  function openPeer(daemonId: string, sessionId: string) {
-    const m = app.client.feed.machineList.find((x) => x.daemon_id === daemonId);
+  /** A peer's session, if the feed has it. */
+  function openPeer(sessionId: string) {
     pop = null;
-    if (m) app.open({ machine_id: m.id, id: sessionId });
+    if (app.client.feed.sessions.has(sessionId)) app.open({ id: sessionId });
   }
 </script>
 
@@ -77,7 +76,7 @@
         <div class="pop" role="dialog" aria-label="Peers" use:dismissable={{ close, anchor: peersAnchor }}>
           <b>Peers</b>
           {#each peers as p (p.peer.session_id)}
-            <button class="peer" onclick={() => openPeer(p.peer.daemon_id, p.peer.session_id)}>
+            <button class="peer" onclick={() => openPeer(p.peer.session_id)}>
               <span class="pn">{p.peer.name}</span><span class="rel">{REL[p.relation]}{p.task ? `: ${p.task}` : ''}</span>
             </button>
           {/each}

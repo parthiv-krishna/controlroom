@@ -1,13 +1,14 @@
 // Presentation of server-owned state: one icon language for sessions and machines (spec §13).
 // Nothing here computes session state or attention; it only maps the summary's fields to icons
-// and labels. A `stale` session (its machine is unreachable) shows as disconnected.
-import type { Attention, Machine, MachineSession, SessionState } from '../protocol';
+// and labels. Sessions never go stale: an unreachable machine only makes its workspaces
+// unavailable, which the tooltip names.
+import type { Attention, FeedSession, Machine, MachineId, SessionState } from '../protocol';
 
 export type StatusKind = 'working' | 'attention' | 'asking' | 'complete' | 'done' | 'stopped' | 'idle' | 'offline' | 'archived';
 
-/** The session's attention as the UI counts it: none while closed or disconnected. */
-export function attentionOf(s: MachineSession): Exclude<Attention, 'unknown'> | null {
-  if (s.stale || s.state === 'closed' || !s.attention || s.attention === 'unknown') return null;
+/** The session's attention as the UI counts it: none while closed. */
+export function attentionOf(s: { state: SessionState; attention: Attention | null }): Exclude<Attention, 'unknown'> | null {
+  if (s.state === 'closed' || !s.attention || s.attention === 'unknown') return null;
   return s.attention;
 }
 
@@ -17,9 +18,8 @@ export const busy = (s: { state: SessionState }): boolean =>
 
 const STOPPED_OUTCOMES = new Set(['cancelled', 'failed', 'max_tokens', 'refusal']);
 
-export function statusKind(s: MachineSession, ignoreStale = false): StatusKind {
+export function statusKind(s: FeedSession): StatusKind {
   if (s.state === 'closed') return 'archived';
-  if (s.stale && !ignoreStale) return 'offline';
   switch (s.state) {
     case 'awaiting_permission':
     case 'awaiting_input':
@@ -39,10 +39,9 @@ export function statusKind(s: MachineSession, ignoreStale = false): StatusKind {
   return 'idle';
 }
 
-export function statusLabel(s: MachineSession, ignoreStale = false): string {
-  switch (statusKind(s, ignoreStale)) {
+export function statusLabel(s: FeedSession): string {
+  switch (statusKind(s)) {
     case 'archived': return 'Archived';
-    case 'offline': return 'Disconnected';
     case 'attention': return s.state === 'awaiting_input' ? 'Needs answer' : 'Needs approval';
     case 'working': return s.state === 'starting' ? 'Starting' : 'Working';
     case 'asking': return 'Question';
@@ -56,10 +55,14 @@ export function statusLabel(s: MachineSession, ignoreStale = false): string {
   }
 }
 
-/** The tooltip: a disconnected session names its machine and its last known state. */
-export function statusTitle(s: MachineSession, m: Machine | undefined, now = Date.now()): string {
-  if (statusKind(s) !== 'offline' || !m) return statusLabel(s);
-  return `${m.name} ${connLabel(m)} · last seen ${ago(m.last_seen, now)} · was: ${statusLabel(s, true)}`;
+/** The tooltip: the status, plus the machines of workspaces that can't be reached. */
+export function statusTitle(s: FeedSession, machines: ReadonlyMap<MachineId, Machine>): string {
+  const away = s.workspaces
+    .filter((w) => w.availability.connectivity.state !== 'connected')
+    .map((w) => machines.get(w.machine_id))
+    .filter((m): m is Machine => !!m)
+    .map((m) => `${m.name} ${connLabel(m)}`);
+  return [statusLabel(s), ...new Set(away)].join(' · ');
 }
 
 // ---------------------------------------------------------------------------------------- machines

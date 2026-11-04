@@ -4,9 +4,13 @@
   import { newOpId, useApp } from '../app/app.svelte';
   import type { SettingsTab } from '../app/view.svelte';
   import { displayName } from '../model/filters';
+  import { machinesOf } from '../model/workspaces';
+  import type { FeedSession } from '../protocol';
   import { autofocus } from '../ui/actions';
 
   const app = useApp();
+  /** The session's machines, by name. */
+  const machineNames = (s: FeedSession) => machinesOf(s).map((id) => app.client.feed.machines.get(id)?.name ?? '?').join(', ');
   const view = app.view;
   let q = $state('');
   let sel = $state(0);
@@ -43,14 +47,14 @@
 
   async function approve() {
     const cur = app.current;
-    const all = [...(cur ? [cur] : []), ...app.ctx.sessions].filter((s) => !s.stale);
+    const all = [...(cur ? [cur] : []), ...app.ctx.sessions];
     for (const s of all) {
       const r = s.requests.find((x) => x.blocking && x.state === 'pending' && x.options.some((o) => o.style === 'allow'));
       const opt = r?.options.find((o) => o.style === 'allow');
       if (!r || !opt) continue;
       const id = r.origin_child ?? s.id;
-      const ok = await app.client.call('request.respond', { machine_id: s.machine_id, op_id: newOpId(), id, request_id: r.id, response: { kind: 'choice', option_id: opt.id } });
-      if (ok) app.toasts.show(`${opt.label}: ${r.title}`, 'ok', { machine_id: s.machine_id, id });
+      const ok = await app.client.call('request.respond', { op_id: newOpId(), id, request_id: r.id, response: { kind: 'choice', option_id: opt.id } });
+      if (ok) app.toasts.show(`${opt.label}: ${r.title}`, 'ok', { id });
       return;
     }
     app.toasts.show('Nothing to approve');
@@ -67,7 +71,7 @@
     const sessions: Item[] = app.ctx.sessions
       .filter((s) => s.state !== 'closed' && (!t || displayName(s).toLowerCase().includes(t)))
       .slice(0, t ? 8 : 6)
-      .map((s) => ({ kind: 'session', label: displayName(s), hint: `${app.client.feed.machines.get(s.machine_id)?.name ?? ''} · ${s.state.replace(/_/g, ' ')}`, run: () => app.open(s) }));
+      .map((s) => ({ kind: 'session', label: displayName(s), hint: `${machineNames(s)} · ${s.state.replace(/_/g, ' ')}`, run: () => app.open(s) }));
     const commands: Item[] = EX.filter((e) => !t || e.cmd.includes(t) || e.what.toLowerCase().includes(t)).map((e) => ({ kind: 'command', label: e.what, hint: `:${e.cmd}`, run: () => e.run('') }));
     return [...sessions, ...commands];
   });

@@ -33,13 +33,24 @@ test('tasks: the detail pane and the new-task dialog (everything in one go)', as
   expect(add.params).toMatchObject({ task_id: '01JAT000000000000000000001', text: 'Ship it' });
 });
 
-test('new session dialog: machine, agent, directory and sandbox', async ({ page }) => {
+test('new session dialog: several workspaces, primary first, tasks pre-filled from a task, sandbox', async ({ page }) => {
   await start(page);
   await page.getByRole('button', { name: '+ New session' }).click();
   const dialog = page.getByRole('dialog', { name: 'New session' });
-  await expect(dialog.getByLabel('Machine')).toContainText('buildbox');
-  await expect(dialog.getByRole('radio', { name: 'pi' })).toBeChecked();
-  await dialog.getByLabel('Working directory').fill('~/src/acme-api');
+  await expect(dialog.getByLabel('Machine 1')).toContainText('buildbox');
+  await dialog.getByLabel('Directory 1').fill('~/src/acme-api');
+  // Another open session uses that directory: allowed, with a warning.
+  await expect(dialog.locator('[data-overlap]')).toContainText('auth token refresh race');
+  await dialog.getByRole('button', { name: '+ Add workspace' }).click();
+  await expect(dialog.getByLabel('Machine 2')).toContainText('devbox');
+  await dialog.getByLabel('Directory 2').fill('~/src/acme-web');
+  // An unreachable machine can't be picked.
+  await dialog.getByLabel('Machine 2').click();
+  await expect(page.getByRole('option', { name: /gpubox/ })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  // The second becomes the primary.
+  await dialog.getByRole('button', { name: '↑ primary' }).click();
+  await expect(dialog.getByLabel('Machine 1')).toContainText('devbox');
   await dialog.getByLabel('Sandbox level').click();
   await dialog.getByRole('option', { name: /^Off/ }).click();
   await expect(dialog.getByText('no sandbox')).toBeVisible();
@@ -47,10 +58,28 @@ test('new session dialog: machine, agent, directory and sandbox', async ({ page 
   await dialog.getByLabel('First message').fill('reproduce the bug');
   await dialog.getByRole('button', { name: '↵ Create session' }).click();
   const [create] = await calls(page, 'session.create');
-  expect(create.params).toMatchObject({ machine_id: M.buildbox, agent: 'pi', cwd: '~/src/acme-api', name: 'try the fix', sandbox_level: 'off', task_ids: [] });
+  expect(create.params).toMatchObject({
+    workspaces: [
+      { machine_id: M.devbox, path: '~/src/acme-web' },
+      { machine_id: M.buildbox, path: '~/src/acme-api' },
+    ],
+    name: 'try the fix',
+    sandbox_level: 'off',
+    task_ids: [],
+  });
   // The first message travels in the create call (the server links tasks and sends it once).
   expect((create.params as { prompt: { content: unknown } }).prompt.content).toEqual([{ kind: 'text', text: 'reproduce the bug' }]);
   expect(await calls(page, 'session.prompt')).toEqual([]);
+});
+
+test('new session from a task: the task is pre-filled', async ({ page }) => {
+  await start(page);
+  const group = page.locator('[data-group^="t:"]').filter({ hasText: 'Write onboarding guide' });
+  await group.hover();
+  await group.getByRole('button', { name: 'New session for this task' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New session' });
+  await expect(dialog.locator('.field').filter({ hasText: 'Tasks' })).toContainText('Write onboarding guide');
+  await expect(dialog.getByLabel('First message')).toHaveValue(/Write onboarding guide/);
 });
 
 test('settings: tabs, the add-machine flow, devices and sandbox defaults', async ({ page }) => {
@@ -89,17 +118,12 @@ test('settings: tabs, the add-machine flow, devices and sandbox defaults', async
   await expect(page.getByRole('navigation', { name: 'Projects' })).toBeVisible();
 });
 
-test('project view: Save as view from a location filter', async ({ page }) => {
+test('a project is a named group of tasks', async ({ page }) => {
   await start(page);
-  await page.getByRole('button', { name: 'Filter' }).click();
-  const menu = page.getByRole('dialog', { name: 'Filter' });
-  await menu.getByRole('button', { name: 'Location' }).click();
-  await menu.getByText('acme-api', { exact: true }).click();
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Save as view' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Project view' });
+  await page.getByRole('navigation', { name: 'Projects' }).getByRole('button', { name: 'New project' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Project' });
   await dialog.getByLabel('Name').fill('API');
   await dialog.getByRole('button', { name: '↵ Save' }).click();
   const [create] = await calls(page, 'projects.create');
-  expect(create.params).toMatchObject({ name: 'API', location_prefixes: [{ machine_id: M.buildbox, path_prefix: '~/src/acme-api' }] });
+  expect(create.params).toEqual({ name: 'API', color: expect.any(String) });
 });

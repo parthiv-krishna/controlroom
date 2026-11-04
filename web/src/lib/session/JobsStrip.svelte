@@ -5,20 +5,20 @@
   // as lines arrive (at most every few seconds). A timeline job item opens its job here too.
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
-  import { keyOf } from '../model/projects';
   import { duration } from '../model/status';
-  import type { Job, JobLogs, MachineSession } from '../protocol';
+  import { onMachine } from '../model/workspaces';
+  import type { Job, JobLogs, FeedSession } from '../protocol';
   import StatusIcon from '../ui/StatusIcon.svelte';
 
   const LOG_REFRESH_MS = 3000;
   const LOG_LINES = 40;
 
-  let { s, jobs }: { s: MachineSession; jobs: Job[] } = $props();
+  let { s, jobs }: { s: FeedSession; jobs: Job[] } = $props();
   const app = useApp();
-  const key = $derived(keyOf(s));
+  const key = $derived(s.id);
   const openId = $derived(app.view.jobOpen[key] ?? null);
   const job = $derived(jobs.find((j) => j.id === openId) ?? null);
-  const online = $derived(app.client.online && !s.stale);
+  const online = $derived(app.client.online);
   let logs = $state<JobLogs | null>(null);
   let logsFor: string | null = null;
   let fetchedAt = 0;
@@ -39,7 +39,7 @@
     }
     const t = setTimeout(() => {
       fetchedAt = Date.now();
-      void app.client.call('job.logs', { machine_id: s.machine_id, id: s.id, job_id: j.id, max_lines: LOG_LINES }).then((r) => {
+      void app.client.call('job.logs', { id: s.id, job_id: j.id, max_lines: LOG_LINES }).then((r) => {
         if (r && logsFor === j.id) logs = r;
       });
     }, Math.max(0, fetchedAt + LOG_REFRESH_MS - Date.now()));
@@ -65,10 +65,11 @@
   {/each}
 </div>
 {#if job}
+  {@const log = onMachine(job.machine_id, job.log_path, app.client.feed.machines)}
   <div class="detail">
     <div class="dh">
       <code>{job.command}</code><span class="sp"></span>
-      <span class="muted small">{STATUS[job.status]}{job.exit !== null ? ` · exit ${job.exit}` : ''}{job.signal ? ` · ${job.signal}` : ''}{job.timeout_s ? ` · timeout ${duration(job.timeout_s * 1000)}` : ''} · {took(job)} · {job.lines} lines</span>
+      <span class="muted small">{#if job.machine_id}on {app.client.feed.machines.get(job.machine_id)?.name ?? 'a removed machine'} · {/if}{STATUS[job.status]}{job.exit !== null ? ` · exit ${job.exit}` : ''}{job.signal ? ` · ${job.signal}` : ''}{job.timeout_s ? ` · timeout ${duration(job.timeout_s * 1000)}` : ''} · {took(job)} · {job.lines} lines</span>
       {#if job.status === 'running'}<button class="btn xs danger" disabled={!online} onclick={() => app.client.call('job.kill', { ...onSession(s), job_id: job.id })}>Kill</button>{/if}
       <button class="btn xs ghost" aria-label="Close" onclick={() => (app.view.jobOpen[key] = null)}>✕</button>
     </div>
@@ -79,8 +80,8 @@
         {#if job.follow}<button class="btn xs ghost" disabled={!online} title="Stop waking the agent on output; it still wakes on exit" onclick={() => app.client.call('job.unfollow', { ...onSession(s), job_id: job.id })}>Unfollow</button>{/if}
       {/if}
       <span class="sp"></span>
-      <code class="path" title={job.log_path}>{job.log_path}</code>
-      <button class="btn xs" onclick={() => app.copy(job.log_path)}>Copy</button>
+      <code class="path" title={log}>{log}</code>
+      <button class="btn xs" onclick={() => app.copy(log)}>Copy</button>
     </div>
     <pre class="log" aria-label="Log tail">{logs ? logs.lines.join('\n') || '(no output yet)' : '…'}</pre>
   </div>

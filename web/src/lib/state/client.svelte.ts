@@ -31,7 +31,7 @@ export class Client {
   ) {
     this.device = device;
     this.sessions = new SessionFeeds({
-      subscribe: (machine_id, id, since_seq, raw_since) => this.transport.request('session.subscribe', { machine_id, id, since_seq, raw_since }),
+      subscribe: (id, since_seq, raw_since) => this.transport.request('session.subscribe', { id, since_seq, raw_since }),
       unsubscribe: (subscription_id) => this.transport.request('unsubscribe', { subscription_id }),
     });
     this.conn = transport.state;
@@ -42,7 +42,7 @@ export class Client {
       if (p.subscription_id !== this.stateSub) return;
       if (this.feed.apply(p.changes) === 'gap') void this.syncState();
       // A removed session's timeline is never shown again.
-      for (const c of p.changes) if (c.kind === 'session_removed') this.sessions.drop(c.machine_id, c.session_id);
+      for (const c of p.changes) if (c.kind === 'session_removed') this.sessions.drop(c.session_id);
     });
     transport.subscribe('session.events', (p) => this.sessions.receive(p));
     if (transport.state === 'open') void this.sync();

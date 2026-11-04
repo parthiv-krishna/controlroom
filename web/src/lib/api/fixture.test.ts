@@ -16,17 +16,16 @@ describe('FixtureTransport', () => {
     await open(t);
     const r = await t.request('state.subscribe', { since: null });
     expect(r.snapshot?.sessions).toHaveLength(fixture.snapshot.sessions.length);
-    const key = Object.keys(fixture.details)[0];
-    const [machine_id, id] = key.split('/');
-    const sub = await t.request('session.subscribe', { machine_id, id, since_seq: 0 });
-    expect(sub.detail).toEqual(fixture.details[key]);
+    const id = Object.keys(fixture.details)[0];
+    const sub = await t.request('session.subscribe', { id, since_seq: 0 });
+    expect(sub.detail).toEqual(fixture.details[id]);
   });
 
   it('records mutations and answers acks or canned results', async () => {
     const t = new FixtureTransport(loadFixture(), { autoplay: false });
     await open(t);
-    await expect(t.request('session.cancel', { machine_id: 'm', op_id: 'o', id: 's' })).resolves.toEqual({});
-    await expect(t.request('session.prompt', { machine_id: 'm', op_id: 'o', id: 's', content: [], origin: { kind: 'user', device: null }, if_busy: 'queue' })).resolves.toEqual({ outcome: 'sent' });
+    await expect(t.request('session.cancel', { op_id: 'o', id: 's' })).resolves.toEqual({});
+    await expect(t.request('session.prompt', { op_id: 'o', id: 's', content: [], origin: { kind: 'user', device: null }, if_busy: 'queue' })).resolves.toEqual({ outcome: 'sent' });
     expect(t.calls.map((c) => c.method)).toEqual(['session.cancel', 'session.prompt']);
   });
 
@@ -51,28 +50,27 @@ describe('FixtureTransport', () => {
 
   it('replays a recorded timeline: backlog after the result, then live steps, raw only on request', async () => {
     const fixture = loadFixture();
-    const key = Object.keys(fixture.timelines!).find((k) => fixture.timelines![k].live.length)!;
-    const recorded = fixture.timelines![key];
-    const [machine_id, id] = key.split('/');
+    const id = Object.keys(fixture.timelines!).find((k) => fixture.timelines![k].live.length)!;
+    const recorded = fixture.timelines![id];
     const t = new FixtureTransport(fixture, { autoplay: false });
     await open(t);
     const events: SessionEventsParams[] = [];
     t.subscribe('session.events', (p) => events.push(p));
-    const sub = await t.request('session.subscribe', { machine_id, id, since_seq: 0 });
+    const sub = await t.request('session.subscribe', { id, since_seq: 0 });
     expect(sub.head_seq).toBe(recorded.head_seq);
     expect(events).toHaveLength(0);
     await new Promise((r) => setTimeout(r, 0));
     expect(events[0]).toMatchObject({ subscription_id: sub.subscription_id, head_seq: recorded.head_seq, raw: [] });
     expect(events[0].ops).toHaveLength(recorded.items.length);
-    expect(t.advance(machine_id, id, 2)).toBe(2);
+    expect(t.advance(id, 2)).toBe(2);
     expect(events.slice(1).map((e) => e.head_seq)).toEqual(recorded.live.slice(0, 2).map((s) => s.head_seq));
     // A resubscribe from the head gets nothing twice; one with raw_since gets the raw frames.
     events.length = 0;
-    const again = await t.request('session.subscribe', { machine_id, id, since_seq: recorded.live[1].head_seq, raw_since: 0 });
+    const again = await t.request('session.subscribe', { id, since_seq: recorded.live[1].head_seq, raw_since: 0 });
     await new Promise((r) => setTimeout(r, 0));
     expect(events[0].ops).toEqual([]);
     expect(events[0].raw?.length).toBeGreaterThan(0);
-    t.advance(machine_id, id);
+    t.advance(id);
     expect(events.at(-1)).toMatchObject({ subscription_id: again.subscription_id, raw: recorded.live[2].raw });
   });
 
@@ -87,14 +85,28 @@ describe('FixtureTransport', () => {
 describe('the development fixture', () => {
   const f = loadFixture();
   const machines = new Set(f.snapshot.machines.map((m) => m.id));
-  const sessions = new Set(f.snapshot.sessions.map((s) => `${s.machine_id}/${s.id}`));
+  const sessions = new Set(f.snapshot.sessions.map((s) => s.id));
 
   it('references only known machines, sessions and projects', () => {
-    for (const s of f.snapshot.sessions) expect(machines).toContain(s.machine_id);
+    for (const s of f.snapshot.sessions) for (const w of s.workspaces) expect(machines).toContain(w.machine_id);
+    for (const s of f.snapshot.sessions) for (const sh of s.shells) expect(s.workspaces.map((w) => w.id)).toContain(sh.workspace_id);
     for (const key of Object.keys(f.details)) expect(sessions).toContain(key);
+    for (const key of Object.keys(f.timelines ?? {})) expect(sessions).toContain(key);
     const projects = new Set(f.snapshot.projects.map((p) => p.id));
     for (const t of f.snapshot.tasks) for (const p of t.project_ids) expect(projects).toContain(p);
-    for (const x of f.snapshot.schedules) expect(sessions).toContain(`${x.machine_id}/${x.session_id}`);
+    for (const x of f.snapshot.schedules) expect(sessions).toContain(x.session_id);
+    for (const o of f.snapshot.overlaps) {
+      expect(machines).toContain(o.machine_id);
+      for (const id of o.session_ids) expect(sessions).toContain(id);
+    }
+  });
+
+  it("derives every session's projects from the tasks that link it", () => {
+    const order = f.snapshot.projects.map((p) => p.id);
+    for (const s of f.snapshot.sessions) {
+      const linked = new Set(f.snapshot.tasks.filter((t) => t.links.includes(s.id)).flatMap((t) => t.project_ids));
+      expect(s.project_ids).toEqual(order.filter((id) => linked.has(id)));
+    }
   });
 
   it('continues the feed from the cursor', () => {

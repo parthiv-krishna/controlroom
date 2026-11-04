@@ -4,7 +4,7 @@
   import { useApp } from '../app/app.svelte';
   import type { NewTaskPreset } from '../app/view.svelte';
   import { displayName } from '../model/filters';
-  import { keyOf } from '../model/projects';
+  import { primaryWorkspace, wsLabel } from '../model/workspaces';
   import { PRIORITIES, TASK_COLUMNS } from '../model/tasks';
   import type { Priority, TaskStatus } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
@@ -33,10 +33,13 @@
     feed.projectList.filter((p) => !picked.includes(p.id) && p.name.toLowerCase().includes(q.trim().toLowerCase())).map((p) => ({ value: p.id, label: p.name }));
   const sessionSuggest = (q: string, picked: string[]): Suggestion[] =>
     app.ctx.sessions
-      .filter((s) => s.state !== 'closed' && !picked.includes(keyOf(s)) && displayName(s).toLowerCase().includes(q.trim().toLowerCase()))
+      .filter((s) => s.state !== 'closed' && !picked.includes(s.id) && displayName(s).toLowerCase().includes(q.trim().toLowerCase()))
       .sort((a, b) => b.updated_at - a.updated_at)
       .slice(0, 15)
-      .map((s) => ({ value: keyOf(s), label: displayName(s), hint: feed.machines.get(s.machine_id)?.name }));
+      .map((s) => {
+        const w = primaryWorkspace(s);
+        return { value: s.id, label: displayName(s), hint: w ? wsLabel(w, feed.machines) : undefined };
+      });
 
   function addItem(e: KeyboardEvent) {
     if (e.key !== 'Enter' || e.shiftKey || e.isComposing || !item.trim()) return; // empty: Enter creates
@@ -49,7 +52,7 @@
     if (busy) return;
     if (!title.trim()) return app.toasts.show('Give the task a title', 'error');
     busy = true;
-    const links = sessions.map((k) => feed.sessions.get(k)).filter((s) => !!s).map((s) => ({ machine_id: s.machine_id, session_id: s.id }));
+    const links = sessions.filter((id) => feed.sessions.has(id));
     const t = await app.client.call('tasks.create', {
       title: title.trim(),
       status,

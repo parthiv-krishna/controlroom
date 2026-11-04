@@ -33,16 +33,19 @@ describe('StateFeed', () => {
     expect(feed.cursor?.rev).toBe(11);
   });
 
-  it('removes sessions by machine and id and ignores unknown change kinds', () => {
+  it('removes sessions by id, replaces the overlaps and ignores unknown change kinds', () => {
     const feed = new StateFeed();
     feed.reset(fixture.snapshot, { epoch: 'E', rev: 1 });
+    expect(feed.overlaps).toEqual(fixture.snapshot.overlaps);
     const s = fixture.snapshot.sessions[0];
     feed.apply([
-      { rev: 2, kind: 'session_removed', machine_id: s.machine_id, session_id: s.id },
-      { rev: 3, kind: 'unknown' },
+      { rev: 2, kind: 'session_removed', session_id: s.id },
+      { rev: 3, kind: 'overlaps_changed', overlaps: [] },
+      { rev: 4, kind: 'unknown' },
     ]);
-    expect(feed.sessions.has(`${s.machine_id}/${s.id}`)).toBe(false);
-    expect(feed.cursor?.rev).toBe(3);
+    expect(feed.sessions.has(s.id)).toBe(false);
+    expect(feed.overlaps).toEqual([]);
+    expect(feed.cursor?.rev).toBe(4);
   });
 
   it('needs a cursor before applying events', () => {

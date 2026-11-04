@@ -5,23 +5,22 @@
   import type { Theme } from '../app/prefs.svelte';
   import { SHORTCUTS } from '../keys/shortcuts';
   import { displayName } from '../model/filters';
-  import { sessionKey } from '../model/projects';
   import { formatIn, humanSchedule, runText } from '../model/schedule';
   import { ago } from '../model/status';
-  import type { SessionLink } from '../protocol';
+  import type { SessionId } from '../protocol';
 
   let { tab }: { tab: Extract<SettingsTab, 'contacts' | 'schedules' | 'keyboard' | 'appearance'> } = $props();
   const app = useApp();
   const feed = app.client.feed;
   const online = $derived(app.client.online);
 
-  const nameOf = (l: SessionLink) => {
-    const s = feed.sessions.get(sessionKey(l.machine_id, l.session_id));
+  const nameOf = (id: SessionId) => {
+    const s = feed.sessions.get(id);
     return s ? displayName(s) : 'missing session';
   };
-  function open(l: SessionLink) {
+  function open(id: SessionId) {
     app.view.settings = null;
-    app.open({ machine_id: l.machine_id, id: l.session_id });
+    app.open({ id });
   }
   const schedules = $derived([...feed.scheduleList].sort((a, b) => (a.enabled === b.enabled ? (a.next_run ?? Infinity) - (b.next_run ?? Infinity) : a.enabled ? -1 : 1)));
   const THEMES: [Theme, string][] = [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']];
@@ -47,10 +46,10 @@
       <div class="pair">
         <div><b>{x.name}</b> <span class="small muted">{humanSchedule(x.spec)} · {x.timezone}</span></div>
         <div class="small muted">
-          <button class="linkish" onclick={() => open({ machine_id: x.machine_id, session_id: x.session_id })}>{nameOf({ machine_id: x.machine_id, session_id: x.session_id })}</button>
-          · {feed.machines.get(x.machine_id)?.name ?? 'removed machine'}{#if x.enabled && x.next_run} · next {formatIn(x.next_run, x.timezone)}{/if}{#if last} · last <span class="o-{last.outcome}">{runText(last)}</span> {ago(last.until ?? last.at)}{/if}
+          <button class="linkish" onclick={() => open(x.session_id)}>{nameOf(x.session_id)}</button>
+          {#if x.enabled && x.next_run} · next {formatIn(x.next_run, x.timezone)}{/if}{#if last} · last <span class="o-{last.outcome}">{runText(last)}</span> {ago(last.until ?? last.at)}{/if}
         </div>
-        {#if x.pending_run}<div class="small o-missed" data-pending>The {formatIn(x.pending_run, x.timezone)} run is waiting for the machine</div>{/if}
+        {#if x.pending_run}<div class="small o-missed" data-pending>The {formatIn(x.pending_run, x.timezone)} run is waiting for the agent daemon</div>{/if}
       </div>
       <label class="check small"><input type="checkbox" checked={x.enabled} aria-label="Enable {x.name}" disabled={!online} onchange={(e) => app.client.call('schedules.update', { schedule_id: x.id, enabled: e.currentTarget.checked })} /> enabled</label>
     </div>

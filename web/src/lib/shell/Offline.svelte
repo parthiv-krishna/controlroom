@@ -20,7 +20,7 @@
     <div class="card">
       <div class="small muted">Notification</div>
       <h2>{link.name ?? 'Session'}</h2>
-      <div class="muted">{link.machine ?? link.machine_id}{link.state ? ` · ${link.state}` : ''}</div>
+      <div class="muted">{link.machine ?? ''}{link.state ? ` · ${link.state}` : ''}</div>
     </div>
   {/if}
   <div class="msg">

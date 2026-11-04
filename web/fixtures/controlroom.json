@@ -41,22 +41,17 @@
     },
     "update_available": false,
     "auto_upgrade": true,
+    "grace_s": 600,
     "last_seen": 1767600000000,
     "version": "0.1.0",
     "arch": "x86_64",
     "last_error": null,
     "capabilities": [
+     "shells",
+     "pty",
      "jobs",
-     "todos",
-     "subagents",
-     "mailbox"
+     "sandbox_approvals"
     ],
-    "settings": {
-     "idle_timeout_h": 48,
-     "retention": {
-      "delete_closed_after_days": null
-     }
-    },
     "doctor": {
      "daemon_version": "0.1.0",
      "user": "alice",
@@ -110,22 +105,17 @@
     },
     "update_available": true,
     "auto_upgrade": true,
+    "grace_s": 600,
     "last_seen": 1767600000000,
     "version": "0.0.9",
     "arch": "x86_64",
     "last_error": null,
     "capabilities": [
+     "shells",
+     "pty",
      "jobs",
-     "todos",
-     "subagents",
-     "mailbox"
+     "sandbox_approvals"
     ],
-    "settings": {
-     "idle_timeout_h": 48,
-     "retention": {
-      "delete_closed_after_days": null
-     }
-    },
     "doctor": {
      "daemon_version": "0.0.9",
      "user": "alice",
@@ -179,6 +169,7 @@
     },
     "update_available": false,
     "auto_upgrade": true,
+    "grace_s": 600,
     "last_seen": 1767589200000,
     "version": "0.1.0",
     "arch": "x86_64",
@@ -186,10 +177,8 @@
     "capabilities": [
      "jobs",
      "todos",
-     "subagents",
-     "mailbox"
+     "subagents"
     ],
-    "settings": null,
     "doctor": {
      "daemon_version": "0.1.0",
      "user": "alice",
@@ -248,6 +237,7 @@
     },
     "update_available": false,
     "auto_upgrade": true,
+    "grace_s": 600,
     "last_seen": 1767513600000,
     "version": "0.1.0",
     "arch": "aarch64",
@@ -255,10 +245,8 @@
     "capabilities": [
      "jobs",
      "todos",
-     "subagents",
-     "mailbox"
+     "subagents"
     ],
-    "settings": null,
     "doctor": {
      "daemon_version": "0.1.0",
      "user": "alice",
@@ -297,14 +285,14 @@
    },
    {
     "id": "01JAM000000000000000000005",
-    "name": "legacy",
-    "host": "legacy.example.com",
+    "name": "oldbox",
+    "host": "oldbox.example.com",
     "port": 22,
     "user": "alice",
     "key_id": null,
     "host_key": {
      "algorithm": "ssh-ed25519",
-     "fingerprint": "SHA256:legacyFixtureHostKeyFingerprint0000000000"
+     "fingerprint": "SHA256:oldboxFixtureHostKeyFingerprint0000000000"
     },
     "daemon_id": "01JAA000000000000000000005",
     "connectivity": {
@@ -312,6 +300,7 @@
     },
     "update_available": false,
     "auto_upgrade": false,
+    "grace_s": 600,
     "last_seen": 1767599700000,
     "version": "0.0.3",
     "arch": "x86_64",
@@ -319,28 +308,76 @@
     "capabilities": [
      "jobs",
      "todos",
-     "subagents",
-     "mailbox"
+     "subagents"
     ],
-    "settings": null,
     "doctor": null,
     "bootstrap": null
    }
   ],
   "sessions": [
    {
-    "machine_id": "01JAM000000000000000000002",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000001"
+    ],
     "id": "01JAS000000000000000000001",
     "name": null,
     "title": "auth token refresh race",
-    "cwd": "/home/alice/src/acme-api",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000001",
+      "machine_id": "01JAM000000000000000000002",
+      "path": "~/src/acme-api",
+      "root": "/home/alice/src/acme-api",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     },
+     {
+      "id": "01JAW000000000000000000002",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/acme-web",
+      "root": "/home/alice/src/acme-web",
+      "primary": false,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "buildbox",
+      "workspace_id": "01JAW000000000000000000001",
+      "cwd": "/home/alice/src/acme-api",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     },
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000002",
+      "cwd": "/home/alice/src/acme-web",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599880000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "awaiting_permission",
     "last_outcome": null,
     "last_error": null,
@@ -374,7 +411,7 @@
       "detail": "Wrap rotation in a single-flight per session.",
       "body": {
        "kind": "diff",
-       "path": "/home/alice/src/acme-api/src/auth/refresh.rs",
+       "path": "buildbox:~/src/acme-api/src/auth/refresh.rs",
        "old": "pub async fn refresh(db: &Db, old: &Token) -> Result<Token> {\n    let new = rotate_refresh(&db, &old).await?;\n    Ok(new)\n}",
        "new": "pub async fn refresh(db: &Db, old: &Token) -> Result<Token> {\n    let key = old.session_id();\n    INFLIGHT.run(key, || async {\n        rotate_refresh(db, old).await\n    }).await\n}"
       },
@@ -405,6 +442,7 @@
     ],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -483,18 +521,44 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000002"
+    ],
     "id": "01JAS000000000000000000002",
     "name": "flaky e2e tests",
     "title": null,
-    "cwd": "/home/alice/src/controlroom/web",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000003",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/controlroom/web",
+      "root": "/home/alice/src/controlroom/web",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000003",
+      "cwd": "/home/alice/src/controlroom/web",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599940000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "working",
     "last_outcome": null,
     "last_error": null,
@@ -523,6 +587,7 @@
     "requests": [],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 1,
      "children": 0,
      "asks": 0
@@ -579,26 +644,53 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000002",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000002"
+    ],
     "id": "01JAS000000000000000000003",
     "name": "e2e flake hunt",
     "title": null,
-    "cwd": "/home/alice/src/controlroom",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000004",
+      "machine_id": "01JAM000000000000000000002",
+      "path": "~/src/controlroom",
+      "root": "/home/alice/src/controlroom",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "buildbox",
+      "workspace_id": "01JAW000000000000000000004",
+      "cwd": "/home/alice/src/controlroom",
+      "state": {
+       "state": "waiting_input",
+       "call_id": "toolu_hunt_7"
+      },
+      "reset_pending": false,
+      "foreground": "git"
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599760000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
-    "state": "idle",
+    "state": "awaiting_input",
     "last_outcome": "completed",
     "last_error": null,
     "read_seq": 40,
     "last_turn_end_seq": 40,
     "unread": false,
-    "preview": "Waiting for the test job",
-    "attention": null,
+    "preview": "Waiting for input in buildbox",
+    "attention": "approval",
     "rollup": {
      "approvals": 0,
      "questions": 0,
@@ -616,13 +708,40 @@
      "auto_send": true,
      "send_now_pending": false
     },
-    "requests": [],
+    "requests": [
+     {
+      "id": "req-term-1",
+      "kind": "terminal_input",
+      "blocking": true,
+      "state": "pending",
+      "title": "git asks for input in buildbox",
+      "detail": "The command has waited for input for 2 s. Type in the terminal; the agent can't.",
+      "body": {
+       "kind": "terminal_input",
+       "machine": "buildbox",
+       "shell": "buildbox",
+       "command": "git rebase -i HEAD~3"
+      },
+      "options": [
+       {
+        "id": "interrupt",
+        "label": "Interrupt",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599700000
+     }
+    ],
     "todo": {
      "done": 1,
      "total": 3,
      "auto_continue": "on"
     },
     "live_work": {
+     "host_calls": 0,
      "jobs": 1,
      "children": 0,
      "asks": 0
@@ -679,18 +798,44 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000002"
+    ],
     "id": "01JAS000000000000000000004",
     "name": "release 0.2 checklist",
     "title": null,
-    "cwd": "/home/alice/src/controlroom",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000005",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/controlroom",
+      "root": "/home/alice/src/controlroom",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000005",
+      "cwd": "/home/alice/src/controlroom",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599820000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "working",
     "last_outcome": null,
     "last_error": null,
@@ -723,6 +868,7 @@
      "auto_continue": "on"
     },
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -779,18 +925,44 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000003"
+    ],
     "id": "01JAS000000000000000000005",
     "name": null,
     "title": "docs site refresh",
-    "cwd": "/home/alice/src/docs",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000006",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/docs",
+      "root": "/home/alice/src/docs",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000006",
+      "cwd": "/home/alice/src/docs",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599640000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "awaiting_permission",
     "last_outcome": null,
     "last_error": null,
@@ -858,6 +1030,7 @@
     ],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -914,18 +1087,44 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000003"
+    ],
     "id": "01JAS000000000000000000006",
     "name": "blog: deep dive",
     "title": null,
-    "cwd": "/home/alice/src/docs/blog",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000007",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/docs/blog",
+      "root": "/home/alice/src/docs/blog",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000007",
+      "cwd": "/home/alice/src/docs/blog",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599280000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "idle",
     "last_outcome": "completed",
     "last_error": null,
@@ -1006,6 +1205,7 @@
     ],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -1062,18 +1262,42 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [],
     "id": "01JAS000000000000000000007",
     "name": "NixOS module hardening",
     "title": null,
-    "cwd": "/home/alice/src/controlroom/nix",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000008",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/controlroom/nix",
+      "root": "/home/alice/src/controlroom/nix",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000008",
+      "cwd": "/home/alice/src/controlroom/nix",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767598500000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "failed",
     "last_outcome": "failed",
     "last_error": "Provider error after 3 retries",
@@ -1102,6 +1326,7 @@
     "requests": [],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -1158,18 +1383,42 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000002",
-    "stale": false,
+    "project_ids": [],
     "id": "01JAS000000000000000000008",
     "name": "nightly data pipeline",
     "title": null,
-    "cwd": "/home/alice/data/pipeline",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000009",
+      "machine_id": "01JAM000000000000000000002",
+      "path": "~/data/pipeline",
+      "root": "/home/alice/data/pipeline",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "buildbox",
+      "workspace_id": "01JAW000000000000000000009",
+      "cwd": "/home/alice/data/pipeline",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767597600000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "interrupted",
     "last_outcome": null,
     "last_error": null,
@@ -1198,6 +1447,7 @@
     "requests": [],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -1254,18 +1504,42 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [],
     "id": "01JAS000000000000000000009",
     "name": "migrate UI to Svelte 5 runes",
     "title": null,
-    "cwd": "/home/alice/src/controlroom/web",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000010",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/controlroom/web",
+      "root": "/home/alice/src/controlroom/web",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000010",
+      "cwd": "/home/alice/src/controlroom/web",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599520000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "idle",
     "last_outcome": "completed",
     "last_error": null,
@@ -1294,6 +1568,7 @@
     "requests": [],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -1350,18 +1625,44 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000002"
+    ],
     "id": "01JAS000000000000000000010",
     "name": "lint cleanup",
     "title": null,
-    "cwd": "/home/alice/src/controlroom",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000011",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/controlroom",
+      "root": "/home/alice/src/controlroom",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000011",
+      "cwd": "/home/alice/src/controlroom",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767340800000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "dormant",
     "last_outcome": "completed",
     "last_error": null,
@@ -1390,6 +1691,7 @@
     "requests": [],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -1446,18 +1748,69 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000002"
+    ],
     "id": "01JAS000000000000000000011",
     "name": "benchmark coordinator",
     "title": null,
-    "cwd": "/home/alice/src/bench",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000012",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/bench",
+      "root": "/home/alice/src/bench",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     },
+     {
+      "id": "01JAW000000000000000000013",
+      "machine_id": "01JAM000000000000000000002",
+      "path": "~/src/bench",
+      "root": "/home/alice/src/bench",
+      "primary": false,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000012",
+      "cwd": "/home/alice/src/bench",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     },
+     {
+      "name": "buildbox",
+      "workspace_id": "01JAW000000000000000000013",
+      "cwd": "/home/alice/src/bench",
+      "state": {
+       "state": "running",
+       "call_id": "toolu_bench_3"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599880000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "working",
     "last_outcome": null,
     "last_error": null,
@@ -1492,7 +1845,7 @@
       "body": {
        "kind": "command",
        "command": "./sweep.sh --ctx 64k..128k",
-       "cwd": "/home/alice/src/bench/sweep-64k"
+       "cwd": "devbox:~/src/bench/sweep-64k"
       },
       "options": [
        {
@@ -1527,7 +1880,7 @@
        "kind": "spawn",
        "machine": "gpubox",
        "agent": "pi",
-       "cwd": "/home/alice/src/bench/sweep-256k",
+       "cwd": "devbox:~/src/bench/sweep-256k",
        "title": "sweep: 256k"
       },
       "options": [
@@ -1552,6 +1905,7 @@
     ],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 2,
      "asks": 0
@@ -1608,18 +1962,42 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [],
     "id": "01JAS000000000000000000012",
     "name": "sweep: 64k–128k",
     "title": null,
-    "cwd": "/home/alice/src/bench/sweep-64k",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000014",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/bench/sweep-64k",
+      "root": "/home/alice/src/bench/sweep-64k",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000014",
+      "cwd": "/home/alice/src/bench/sweep-64k",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599820000,
     "closed_at": null,
     "parent_id": "01JAS000000000000000000011",
-    "spawned_by": null,
     "state": "awaiting_permission",
     "last_outcome": null,
     "last_error": null,
@@ -1654,7 +2032,7 @@
       "body": {
        "kind": "command",
        "command": "./sweep.sh --ctx 64k..128k",
-       "cwd": "/home/alice/src/bench/sweep-64k"
+       "cwd": "devbox:~/src/bench/sweep-64k"
       },
       "options": [
        {
@@ -1683,6 +2061,7 @@
     ],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -1739,18 +2118,42 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [],
     "id": "01JAS000000000000000000013",
     "name": "sweep: 8k–32k",
     "title": null,
-    "cwd": "/home/alice/src/bench/sweep-8k",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000015",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/bench/sweep-8k",
+      "root": "/home/alice/src/bench/sweep-8k",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000015",
+      "cwd": "/home/alice/src/bench/sweep-8k",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599940000,
     "closed_at": null,
     "parent_id": "01JAS000000000000000000011",
-    "spawned_by": null,
     "state": "working",
     "last_outcome": null,
     "last_error": null,
@@ -1779,6 +2182,7 @@
     "requests": [],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -1835,18 +2239,66 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000003",
-    "stale": true,
+    "project_ids": [],
     "id": "01JAS000000000000000000014",
     "name": "dataset dedupe",
     "title": null,
-    "cwd": "/home/alice/data/dedupe",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000016",
+      "machine_id": "01JAM000000000000000000003",
+      "path": "~/data/dedupe",
+      "root": "/home/alice/data/dedupe",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "unreachable"
+       },
+       "since": 1767589200000
+      }
+     },
+     {
+      "id": "01JAW000000000000000000017",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/data/samples",
+      "root": "/home/alice/data/samples",
+      "primary": false,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "gpubox",
+      "workspace_id": "01JAW000000000000000000016",
+      "cwd": "/home/alice/data/dedupe",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     },
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000017",
+      "cwd": "/home/alice/data/samples",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767589200000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "awaiting_permission",
     "last_outcome": null,
     "last_error": null,
@@ -1910,6 +2362,7 @@
     ],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -1966,26 +2419,50 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [],
     "id": "01JAS000000000000000000015",
     "name": "legacy deploy scripts",
     "title": null,
-    "cwd": "/home/alice/src/legacy-deploy",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000018",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/legacy-deploy",
+      "root": "/home/alice/src/legacy-deploy",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000018",
+      "cwd": "/home/alice/src/legacy-deploy",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767582000000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
-    "state": "idle",
+    "state": "awaiting_permission",
     "last_outcome": "completed",
     "last_error": null,
     "read_seq": 40,
     "last_turn_end_seq": 40,
     "unread": false,
-    "preview": "Scripts updated.",
-    "attention": null,
+    "preview": "Run systemctl restart nginx unsandboxed?",
+    "attention": "approval",
     "rollup": {
      "approvals": 0,
      "questions": 0,
@@ -2003,9 +2480,42 @@
      "auto_send": true,
      "send_now_pending": false
     },
-    "requests": [],
+    "requests": [
+     {
+      "id": "req-priv-1",
+      "kind": "privileged",
+      "blocking": true,
+      "state": "pending",
+      "title": "Run unsandboxed on devbox: systemctl restart nginx",
+      "detail": null,
+      "body": {
+       "kind": "privileged",
+       "machine": "devbox",
+       "command": "sudo systemctl restart nginx",
+       "reason": "The new config needs a restart.",
+       "cwd": "devbox:~/src/legacy-deploy"
+      },
+      "options": [
+       {
+        "id": "allow-once",
+        "label": "Allow once",
+        "style": "allow"
+       },
+       {
+        "id": "deny",
+        "label": "Deny",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599800000
+     }
+    ],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -2062,18 +2572,42 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [],
     "id": "01JAS000000000000000000016",
     "name": "rotate secrets",
     "title": null,
-    "cwd": "/home/alice/src/ops",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000019",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/src/ops",
+      "root": "/home/alice/src/ops",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000019",
+      "cwd": "/home/alice/src/ops",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767427200000,
     "closed_at": 1767427200000,
     "parent_id": null,
-    "spawned_by": null,
     "state": "closed",
     "last_outcome": "completed",
     "last_error": null,
@@ -2102,6 +2636,7 @@
     "requests": [],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -2158,18 +2693,44 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000002",
-    "stale": false,
+    "project_ids": [
+     "01JAP000000000000000000001"
+    ],
     "id": "01JAS000000000000000000017",
     "name": "upgrade tokio to 1.47",
     "title": null,
-    "cwd": "/home/alice/src/acme-api",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000020",
+      "machine_id": "01JAM000000000000000000002",
+      "path": "~/src/acme-api",
+      "root": "/home/alice/src/acme-api",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "buildbox",
+      "workspace_id": "01JAW000000000000000000020",
+      "cwd": "/home/alice/src/acme-api",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767599100000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "awaiting_permission",
     "last_outcome": null,
     "last_error": null,
@@ -2235,6 +2796,7 @@
     ],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -2291,18 +2853,42 @@
     "resumable": true
    },
    {
-    "machine_id": "01JAM000000000000000000001",
-    "stale": false,
+    "project_ids": [],
     "id": "01JAS000000000000000000018",
     "name": "inbox triage",
     "title": null,
-    "cwd": "/home/alice/notes",
-    "agent": "pi",
+    "workspaces": [
+     {
+      "id": "01JAW000000000000000000021",
+      "machine_id": "01JAM000000000000000000001",
+      "path": "~/notes",
+      "root": "/home/alice/notes",
+      "primary": true,
+      "added_at": 1767427200000,
+      "availability": {
+       "connectivity": {
+        "state": "connected"
+       },
+       "since": 1767427200000
+      }
+     }
+    ],
+    "shells": [
+     {
+      "name": "devbox",
+      "workspace_id": "01JAW000000000000000000021",
+      "cwd": "/home/alice/notes",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     }
+    ],
     "created_at": 1767427200000,
     "updated_at": 1767528000000,
     "closed_at": null,
     "parent_id": null,
-    "spawned_by": null,
     "state": "idle",
     "last_outcome": "completed",
     "last_error": null,
@@ -2331,6 +2917,7 @@
     "requests": [],
     "todo": null,
     "live_work": {
+     "host_calls": 0,
      "jobs": 0,
      "children": 0,
      "asks": 0
@@ -2387,43 +2974,47 @@
     "resumable": true
    }
   ],
+  "overlaps": [
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "path": "/home/alice/src/controlroom",
+    "session_ids": [
+     "01JAS000000000000000000004",
+     "01JAS000000000000000000010"
+    ]
+   },
+   {
+    "machine_id": "01JAM000000000000000000001",
+    "path": "/home/alice/src/controlroom/web",
+    "session_ids": [
+     "01JAS000000000000000000002",
+     "01JAS000000000000000000009"
+    ]
+   },
+   {
+    "machine_id": "01JAM000000000000000000002",
+    "path": "/home/alice/src/acme-api",
+    "session_ids": [
+     "01JAS000000000000000000001",
+     "01JAS000000000000000000017"
+    ]
+   }
+  ],
   "projects": [
    {
     "id": "01JAP000000000000000000001",
     "name": "Acme API",
-    "color": "#f97316",
-    "location_prefixes": [
-     {
-      "machine_id": null,
-      "path_prefix": "~/src/acme-api"
-     }
-    ]
+    "color": "#f97316"
    },
    {
     "id": "01JAP000000000000000000002",
     "name": "Controlroom",
-    "color": "#a78bfa",
-    "location_prefixes": [
-     {
-      "machine_id": "01JAM000000000000000000001",
-      "path_prefix": "/home/alice/src/controlroom"
-     },
-     {
-      "machine_id": null,
-      "path_prefix": "~/src/bench"
-     }
-    ]
+    "color": "#a78bfa"
    },
    {
     "id": "01JAP000000000000000000003",
     "name": "Docs",
-    "color": "#22d3ee",
-    "location_prefixes": [
-     {
-      "machine_id": null,
-      "path_prefix": "~/src/docs"
-     }
-    ]
+    "color": "#22d3ee"
    }
   ],
   "tasks": [
@@ -2454,14 +3045,8 @@
      }
     ],
     "links": [
-     {
-      "machine_id": "01JAM000000000000000000002",
-      "session_id": "01JAS000000000000000000001"
-     },
-     {
-      "machine_id": "01JAM000000000000000000002",
-      "session_id": "01JAS000000000000000000017"
-     }
+     "01JAS000000000000000000001",
+     "01JAS000000000000000000017"
     ],
     "created_at": 1767168000000,
     "updated_at": 1767513600000,
@@ -2478,14 +3063,8 @@
     "notes": "",
     "checklist": [],
     "links": [
-     {
-      "machine_id": "01JAM000000000000000000001",
-      "session_id": "01JAS000000000000000000002"
-     },
-     {
-      "machine_id": "01JAM000000000000000000002",
-      "session_id": "01JAS000000000000000000003"
-     }
+     "01JAS000000000000000000002",
+     "01JAS000000000000000000003"
     ],
     "created_at": 1767168000000,
     "updated_at": 1767513600000,
@@ -2513,14 +3092,8 @@
      }
     ],
     "links": [
-     {
-      "machine_id": "01JAM000000000000000000001",
-      "session_id": "01JAS000000000000000000004"
-     },
-     {
-      "machine_id": "01JAM000000000000000000001",
-      "session_id": "01JAS000000000000000000010"
-     }
+     "01JAS000000000000000000004",
+     "01JAS000000000000000000010"
     ],
     "created_at": 1767168000000,
     "updated_at": 1767513600000,
@@ -2537,14 +3110,8 @@
     "notes": "",
     "checklist": [],
     "links": [
-     {
-      "machine_id": "01JAM000000000000000000001",
-      "session_id": "01JAS000000000000000000005"
-     },
-     {
-      "machine_id": "01JAM000000000000000000001",
-      "session_id": "01JAS000000000000000000006"
-     }
+     "01JAS000000000000000000005",
+     "01JAS000000000000000000006"
     ],
     "created_at": 1767168000000,
     "updated_at": 1767513600000,
@@ -2561,10 +3128,7 @@
     "notes": "",
     "checklist": [],
     "links": [
-     {
-      "machine_id": "01JAM000000000000000000001",
-      "session_id": "01JAS000000000000000000011"
-     }
+     "01JAS000000000000000000011"
     ],
     "created_at": 1767168000000,
     "updated_at": 1767513600000,
@@ -2610,14 +3174,8 @@
     "notes": "",
     "checklist": [],
     "links": [
-     {
-      "machine_id": "01JAM000000000000000000001",
-      "session_id": "01JAS000000000000000000016"
-     },
-     {
-      "machine_id": "01JAM000000000000000000003",
-      "session_id": "01JAS000000000000000000099"
-     }
+     "01JAS000000000000000000016",
+     "01JAS000000000000000000099"
     ],
     "created_at": 1767168000000,
     "updated_at": 1767513600000,
@@ -2627,14 +3185,8 @@
   "grants": [
    {
     "id": "01JAG000000000000000000001",
-    "from": {
-     "machine_id": "01JAM000000000000000000001",
-     "session_id": "01JAS000000000000000000009"
-    },
-    "to": {
-     "machine_id": "01JAM000000000000000000001",
-     "session_id": "01JAS000000000000000000002"
-    },
+    "from": "01JAS000000000000000000009",
+    "to": "01JAS000000000000000000002",
     "scope": "pair",
     "granted_at": 1767513600000,
     "by": {
@@ -2646,7 +3198,6 @@
   "schedules": [
    {
     "id": "01JAC000000000000000000001",
-    "machine_id": "01JAM000000000000000000001",
     "session_id": "01JAS000000000000000000018",
     "name": "Inbox triage",
     "spec": {
@@ -2680,7 +3231,6 @@
    },
    {
     "id": "01JAC000000000000000000002",
-    "machine_id": "01JAM000000000000000000001",
     "session_id": "01JAS000000000000000000002",
     "name": "Nightly CI check",
     "spec": {
@@ -2716,7 +3266,7 @@
   ]
  },
  "details": {
-  "01JAM000000000000000000001/01JAS000000000000000000002": {
+  "01JAS000000000000000000002": {
    "agent_sessions": [
     {
      "driver": "pi",
@@ -2803,13 +3353,15 @@
      "timeout_s": null,
      "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000001.log",
      "lines": 120,
-     "follow": null
+     "follow": null,
+     "machine_id": "01JAM000000000000000000001",
+     "workspace_id": "01JAW000000000000000000003"
     }
    ],
    "peers": [
     {
      "peer": {
-      "daemon_id": "01JAA000000000000000000002",
+      "daemon_id": "01JAA000000000000000000001",
       "session_id": "01JAS000000000000000000003",
       "name": "e2e flake hunt"
      },
@@ -2827,7 +3379,7 @@
     }
    ]
   },
-  "01JAM000000000000000000002/01JAS000000000000000000003": {
+  "01JAS000000000000000000003": {
    "agent_sessions": [
     {
      "driver": "pi",
@@ -2894,7 +3446,9 @@
       "buffer_seconds": 15,
       "pattern": "FAIL|Error",
       "next_wake_at": 1767600012000
-     }
+     },
+     "machine_id": "01JAM000000000000000000002",
+     "workspace_id": "01JAW000000000000000000004"
     },
     {
      "id": "01JAJ000000000000000000003",
@@ -2909,7 +3463,9 @@
      "timeout_s": null,
      "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000003.log",
      "lines": 12,
-     "follow": null
+     "follow": null,
+     "machine_id": "01JAM000000000000000000002",
+     "workspace_id": "01JAW000000000000000000004"
     },
     {
      "id": "01JAJ000000000000000000004",
@@ -2924,7 +3480,9 @@
      "timeout_s": null,
      "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000004.log",
      "lines": 40,
-     "follow": null
+     "follow": null,
+     "machine_id": "01JAM000000000000000000002",
+     "workspace_id": "01JAW000000000000000000004"
     }
    ],
    "peers": [
@@ -2939,7 +3497,7 @@
     }
    ]
   },
-  "01JAM000000000000000000001/01JAS000000000000000000004": {
+  "01JAS000000000000000000004": {
    "agent_sessions": [
     {
      "driver": "pi",
@@ -3049,7 +3607,7 @@
     }
    ]
   },
-  "01JAM000000000000000000001/01JAS000000000000000000011": {
+  "01JAS000000000000000000011": {
    "agent_sessions": [
     {
      "driver": "pi",
@@ -3089,7 +3647,7 @@
     }
    ]
   },
-  "01JAM000000000000000000002/01JAS000000000000000000001": {
+  "01JAS000000000000000000001": {
    "agent_sessions": [
     {
      "driver": "pi",
@@ -3111,7 +3669,7 @@
    "peers": [
     {
      "peer": {
-      "daemon_id": "01JAA000000000000000000002",
+      "daemon_id": "01JAA000000000000000000001",
       "session_id": "01JAS000000000000000000017",
       "name": "upgrade tokio to 1.47"
      },
@@ -3120,7 +3678,7 @@
     }
    ]
   },
-  "01JAM000000000000000000001/01JAS000000000000000000009": {
+  "01JAS000000000000000000009": {
    "agent_sessions": [
     {
      "driver": "pi",
@@ -3178,18 +3736,6 @@
    "last_seen": 1767596400000,
    "push": true
   },
-  "agents.list": {
-   "agents": [
-    {
-     "agent": "pi",
-     "driver": "pi",
-     "command": "pi",
-     "status": "ok",
-     "path": "/home/alice/.nix-profile/bin/pi",
-     "detail": ""
-    }
-   ]
-  },
   "fs.list": {
    "path": "/home/alice",
    "entries": [
@@ -3246,6 +3792,12 @@
     }
    ],
    "checked_at": 1767592800000
+  },
+  "settings.get": {
+   "idle_timeout_h": 48,
+   "retention": {
+    "delete_closed_after_days": null
+   }
   },
   "settings.set": {
    "idle_timeout_h": 48,
@@ -3327,22 +3879,17 @@
    },
    "update_available": false,
    "auto_upgrade": true,
+   "grace_s": 600,
    "last_seen": 1767600000000,
    "version": "0.1.0",
    "arch": "x86_64",
    "last_error": null,
    "capabilities": [
+    "shells",
+    "pty",
     "jobs",
-    "todos",
-    "subagents",
-    "mailbox"
+    "sandbox_approvals"
    ],
-   "settings": {
-    "idle_timeout_h": 48,
-    "retention": {
-     "delete_closed_after_days": null
-    }
-   },
    "doctor": {
     "daemon_version": "0.1.0",
     "user": "alice",
@@ -3401,17 +3948,17 @@
    },
    "update_available": false,
    "auto_upgrade": true,
+   "grace_s": 600,
    "last_seen": 1767513600000,
    "version": "0.1.0",
    "arch": "aarch64",
    "last_error": null,
    "capabilities": [
+    "shells",
+    "pty",
     "jobs",
-    "todos",
-    "subagents",
-    "mailbox"
+    "sandbox_approvals"
    ],
-   "settings": null,
    "doctor": {
     "daemon_version": "0.1.0",
     "user": "alice",
@@ -4334,18 +4881,44 @@
       "rev": 101,
       "kind": "session_upserted",
       "session": {
-       "machine_id": "01JAM000000000000000000001",
-       "stale": false,
+       "project_ids": [
+        "01JAP000000000000000000002"
+       ],
        "id": "01JAS000000000000000000002",
        "name": "flaky e2e tests",
        "title": null,
-       "cwd": "/home/alice/src/controlroom/web",
-       "agent": "pi",
+       "workspaces": [
+        {
+         "id": "01JAW000000000000000000003",
+         "machine_id": "01JAM000000000000000000001",
+         "path": "~/src/controlroom/web",
+         "root": "/home/alice/src/controlroom/web",
+         "primary": true,
+         "added_at": 1767427200000,
+         "availability": {
+          "connectivity": {
+           "state": "connected"
+          },
+          "since": 1767427200000
+         }
+        }
+       ],
+       "shells": [
+        {
+         "name": "devbox",
+         "workspace_id": "01JAW000000000000000000003",
+         "cwd": "/home/alice/src/controlroom/web",
+         "state": {
+          "state": "idle"
+         },
+         "reset_pending": false,
+         "foreground": null
+        }
+       ],
        "created_at": 1767427200000,
        "updated_at": 1767600000000,
        "closed_at": null,
        "parent_id": null,
-       "spawned_by": null,
        "state": "working",
        "last_outcome": null,
        "last_error": null,
@@ -4374,6 +4947,7 @@
        "requests": [],
        "todo": null,
        "live_work": {
+        "host_calls": 0,
         "jobs": 1,
         "children": 0,
         "asks": 0
@@ -4437,7 +5011,6 @@
    "delay_ms": 100,
    "notification": "session.events",
    "params": {
-    "machine_id": "01JAM000000000000000000001",
     "id": "01JAS000000000000000000002",
     "head_seq": 120,
     "ops": [],
@@ -4510,13 +5083,15 @@
        "timeout_s": null,
        "log_path": "/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000001.log",
        "lines": 120,
-       "follow": null
+       "follow": null,
+       "machine_id": "01JAM000000000000000000001",
+       "workspace_id": "01JAW000000000000000000003"
       }
      ],
      "peers": [
       {
        "peer": {
-        "daemon_id": "01JAA000000000000000000002",
+        "daemon_id": "01JAA000000000000000000001",
         "session_id": "01JAS000000000000000000003",
         "name": "e2e flake hunt"
        },
@@ -4545,18 +5120,42 @@
       "rev": 102,
       "kind": "session_upserted",
       "session": {
-       "machine_id": "01JAM000000000000000000001",
-       "stale": false,
+       "project_ids": [],
        "id": "01JAS000000000000000000013",
        "name": "sweep: 8k–32k",
        "title": null,
-       "cwd": "/home/alice/src/bench/sweep-8k",
-       "agent": "pi",
+       "workspaces": [
+        {
+         "id": "01JAW000000000000000000015",
+         "machine_id": "01JAM000000000000000000001",
+         "path": "~/src/bench/sweep-8k",
+         "root": "/home/alice/src/bench/sweep-8k",
+         "primary": true,
+         "added_at": 1767427200000,
+         "availability": {
+          "connectivity": {
+           "state": "connected"
+          },
+          "since": 1767427200000
+         }
+        }
+       ],
+       "shells": [
+        {
+         "name": "devbox",
+         "workspace_id": "01JAW000000000000000000015",
+         "cwd": "/home/alice/src/bench/sweep-8k",
+         "state": {
+          "state": "idle"
+         },
+         "reset_pending": false,
+         "foreground": null
+        }
+       ],
        "created_at": 1767427200000,
        "updated_at": 1767600000000,
        "closed_at": null,
        "parent_id": "01JAS000000000000000000011",
-       "spawned_by": null,
        "state": "idle",
        "last_outcome": "completed",
        "last_error": null,
@@ -4585,6 +5184,7 @@
        "requests": [],
        "todo": null,
        "live_work": {
+        "host_calls": 0,
         "jobs": 0,
         "children": 0,
         "asks": 0

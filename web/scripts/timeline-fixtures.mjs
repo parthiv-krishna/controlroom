@@ -10,7 +10,9 @@
 //
 // Kinds pi never produces (todo, subagent, job, session_message, a withdrawn dialog, a child
 // actor, an unknown kind) are daemon-sourced; they are written by hand below (`synthetic`), as are
-// run triggers the runtime fills in (devices, schedules).
+// run triggers the runtime fills in (devices, schedules). The recordings ran pi's local tools; the
+// remote tools name files `machine:path`, so a tool's relative `path` gets the session's primary
+// machine (`notes.txt` → `devbox:notes.txt`).
 //
 // Run from web/: node scripts/timeline-fixtures.mjs
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -19,10 +21,20 @@ const root = new URL('../../', import.meta.url);
 const GOLDEN = new URL('crates/drivers/tests/golden/pi/', root);
 const RECORDINGS = new URL('fixtures/pi-rpc/1.2.0/', root);
 const OUT = new URL('web/fixtures/timelines.json', root);
-const fixture = JSON.parse(readFileSync(new URL('web/fixtures/controlroom.json', root), 'utf8'));
+/** Parses JSON, naming its source when it is malformed (the generator stops then). */
+function parseJson(text, source) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`${source}: ${e.message}`, { cause: e });
+  }
+}
 
-const M = { devbox: '01JAM000000000000000000001', buildbox: '01JAM000000000000000000002' };
-const DAEMON = { devbox: '01JAA000000000000000000001' };
+const readJson = (url) => parseJson(readFileSync(url, 'utf8'), url.pathname);
+const fixture = readJson(new URL('web/fixtures/controlroom.json', root));
+
+/** The agent daemon: every session's `PeerRef.daemon_id`. */
+const AGENTD = '01JAA000000000000000000001';
 const sid = (n) => `01JAS0000000000000000000${String(n).padStart(2, '0')}`;
 const LAPTOP = { device_id: 'device-laptop', label: 'Laptop (Firefox on Linux)' };
 const PHONE = { device_id: 'device-phone', label: 'Phone (Safari on iPhone)' };
@@ -34,21 +46,35 @@ const RAW_CAP = 600;
 
 // ------------------------------------------------------------------------------------ sources
 
-const golden = (name) => JSON.parse(readFileSync(new URL(`${name}.json`, GOLDEN), 'utf8'));
+const golden = (name) => readJson(new URL(`${name}.json`, GOLDEN));
 const recording = (name) =>
   readFileSync(new URL(`${name}.jsonl`, RECORDINGS), 'utf8')
     .split('\n')
     .filter(Boolean)
-    .map((l) => JSON.parse(l));
+    .map((l, i) => parseJson(l, `${name}.jsonl:${i + 1}`));
 
 // ----------------------------------------------------------------------------------- rewriting
 
+/** A tool call's relative `path` (title and input) as `machine:path`. */
+function remotePath(it, machine) {
+  let input;
+  try {
+    input = JSON.parse(it.input ?? '');
+  } catch {
+    return it;
+  }
+  const p = input?.path;
+  if (typeof p !== 'string' || p.includes(':')) return it;
+  const remote = `${machine}:${p}`;
+  return { ...it, title: it.title.split(p).join(remote), input: JSON.stringify({ ...input, path: remote }, null, 2) };
+}
+
 /** Shifts one chapter into its place in the session: seq offset, id prefix, time offset. */
-function shifter({ seq, prefix, dt, trigger }) {
+function shifter({ seq, prefix, dt, trigger, machine }) {
   const id = (x) => (x == null ? x : prefix + x);
   const item = (it) => {
-    const out = { ...it, id: id(it.id), seq_from: it.seq_from + seq, seq_to: it.seq_to + seq, ts: it.ts + dt };
-    if (it.kind === 'tool_call') Object.assign(out, { tool_call_id: id(it.tool_call_id), parent_tool_call_id: id(it.parent_tool_call_id) });
+    let out = { ...it, id: id(it.id), seq_from: it.seq_from + seq, seq_to: it.seq_to + seq, ts: it.ts + dt };
+    if (it.kind === 'tool_call') out = remotePath({ ...out, tool_call_id: id(it.tool_call_id), parent_tool_call_id: id(it.parent_tool_call_id) }, machine);
     if (it.kind === 'run' && trigger) out.trigger = trigger;
     if (it.kind === 'request') {
       const r = it.request;
@@ -102,7 +128,7 @@ function materialize(items, ops) {
  * `{ name, live?, trigger? }`, or `{ synthetic: (seq, ts) => items }`. `withRaw: false` leaves out the
  * raw frames (the long timeline, to keep the fixture small).
  */
-function session(key, chapters, endTs, withRaw = true) {
+function session(key, machine, chapters, endTs, withRaw = true) {
   const items = new Map();
   const raw = [];
   const live = [];
@@ -119,7 +145,7 @@ function session(key, chapters, endTs, withRaw = true) {
     }
     const g = golden(c.name);
     const records = recording(c.name);
-    const shift = shifter({ seq: seqBase, prefix: n ? `c${n}.` : '', dt: startTs - records[0].ts, trigger: c.trigger });
+    const shift = shifter({ seq: seqBase, prefix: n ? `c${n}.` : '', dt: startTs - records[0].ts, trigger: c.trigger, machine });
     const frames = withRaw ? records.map(shift.frame) : [];
     if (!c.live) {
       materialize(items, g.folded.flatMap((f) => f.ops.map(shift.op)));
@@ -169,7 +195,7 @@ const withdrawnDialog = (s, ts) => [
 
 /** The coordinator's daemon-sourced items: subagents, the todo list, mailbox messages. */
 const coordinator = (s, ts) => {
-  const child = (n, name) => ({ daemon_id: DAEMON.devbox, session_id: sid(n), name });
+  const child = (n, name) => ({ daemon_id: AGENTD, session_id: sid(n), name });
   return [
     userMsg('k.user', s + 1, ts, 'Sweep the context sizes: spawn one subagent per range and compare the results.'),
     run('k.run', s + 2, s + 30, ts + 300, { kind: 'user', device: LAPTOP }),
@@ -194,13 +220,13 @@ const coordinator = (s, ts) => {
     {
       ...base('k.mail1', s + 7, s + 7, ts + 1800),
       kind: 'session_message', message_id: '01JAX000000000000000000901', direction: 'sent',
-      peer: { daemon_id: DAEMON.devbox, session_id: sid(9), name: 'migrate UI to Svelte 5 runes' },
+      peer: { daemon_id: AGENTD, session_id: sid(9), name: 'migrate UI to Svelte 5 runes' },
       text: 'Is the **benchmark page** ready for the new numbers?', reply_to: null, expects_reply: true, outcome: 'delivered', late: false,
     },
     {
       ...base('k.mail2', s + 8, s + 8, ts + 2400),
       kind: 'session_message', message_id: '01JAX000000000000000000902', direction: 'received',
-      peer: { daemon_id: DAEMON.devbox, session_id: sid(9), name: 'migrate UI to Svelte 5 runes' },
+      peer: { daemon_id: AGENTD, session_id: sid(9), name: 'migrate UI to Svelte 5 runes' },
       text: 'Yes, push them to `bench/results.json`.', reply_to: '01JAX000000000000000000901', expects_reply: false, outcome: 'delivered', late: false,
     },
     { ...base('k.future', s + 9, s + 9, ts + 2600), kind: 'unknown' },
@@ -208,10 +234,12 @@ const coordinator = (s, ts) => {
   ];
 };
 
-/** Jobs: started and finished, with log files. */
+/** Jobs on buildbox: started and finished, with log files. */
 const jobs = (s, ts) => {
+  const ws = fixture.snapshot.sessions.find((x) => x.id === sid(3)).workspaces[0];
   const job = (id, name, command, status, exit, lines, ended) => ({
-    id, name, command, cwd: '/home/alice/src/controlroom', status, exit, signal: status === 'killed' ? 'SIGKILL' : null,
+    id, name, command, cwd: '/home/alice/src/controlroom', machine_id: ws.machine_id, workspace_id: ws.id,
+    status, exit, signal: status === 'killed' ? 'SIGKILL' : null,
     started_at: ts, ended_at: ended, timeout_s: null, log_path: `/home/alice/src/controlroom/.controlroom/jobs/${id}.log`, lines, follow: null,
   });
   return [
@@ -224,30 +252,30 @@ const jobs = (s, ts) => {
 
 // --------------------------------------------------------------------------------------- build
 
-const ends = new Map(fixture.snapshot.sessions.map((x) => [`${x.machine_id}/${x.id}`, x.updated_at]));
-const at = (machine, n) => {
-  const key = `${machine}/${sid(n)}`;
-  if (!ends.has(key)) throw new Error(`unknown fixture session ${key}`);
-  return [key, ends.get(key)];
+const sessions = new Map(fixture.snapshot.sessions.map((x) => [x.id, x]));
+const machineNames = new Map(fixture.snapshot.machines.map((m) => [m.id, m.name]));
+const build = (n, chapters, withRaw) => {
+  const s = sessions.get(sid(n));
+  if (!s) throw new Error(`unknown fixture session ${sid(n)}`);
+  return session(s.id, machineNames.get(s.workspaces[0].machine_id), chapters, s.updated_at, withRaw);
 };
-const build = ([key, end], chapters, withRaw) => session(key, chapters, end, withRaw);
 
 const LONG = ['plain-text', 'tool-calls', 'thinking', 'steer', 'nested-tool', 'retry-success', 'parallel-tools'];
 const timelines = Object.fromEntries([
   // Streams a permission dialog live after a backlog (answer it from the timeline).
-  build(at(M.devbox, 4), [{ name: 'plain-text', trigger: { kind: 'user', device: LAPTOP } }, 'steer', 'tool-calls', { name: 'permission-dialog', live: true }]),
+  build(4, [{ name: 'plain-text', trigger: { kind: 'user', device: LAPTOP } }, 'steer', 'tool-calls', { name: 'permission-dialog', live: true }]),
   // A subagent streaming thinking, text and nested tools (also its parent's live tail).
-  build(at(M.devbox, 13), ['plain-text', { name: 'thinking', live: true }, { name: 'nested-tool', live: true }]),
-  build(at(M.devbox, 9), ['nested-tool', 'parallel-tools', 'model-thinking', 'error-stop', 'queue-when-idle']),
+  build(13, ['plain-text', { name: 'thinking', live: true }, { name: 'nested-tool', live: true }]),
+  build(9, ['nested-tool', 'parallel-tools', 'model-thinking', 'error-stop', 'queue-when-idle']),
   // Dialogs answered, expired and withdrawn; then the agent was killed.
-  build(at(M.buildbox, 8), ['extension-dialogs', 'extension-dialog-timeout', 'abort-dialog', { synthetic: withdrawnDialog }, 'crash-sigkill']),
-  build(at(M.devbox, 7), ['retry-success', { name: 'retry-exhausted', trigger: { kind: 'auto_continue' } }]),
-  build(at(M.buildbox, 3), ['compact', { synthetic: jobs }, 'length-stop']),
-  build(at(M.devbox, 2), ['abort-text', 'abort-tool', 'abort-then-prompt', { name: 'follow-up', trigger: { kind: 'queue', device: LAPTOP } }, 'steer-during-tool']),
-  build(at(M.devbox, 11), [{ synthetic: coordinator }, 'plain-text']),
-  build(at(M.devbox, 18), [{ name: 'plain-text', trigger: { kind: 'schedule', schedule_id: '01JAY000000000000000000001', name: 'Inbox triage' } }, 'sigterm-idle']),
+  build(8, ['extension-dialogs', 'extension-dialog-timeout', 'abort-dialog', { synthetic: withdrawnDialog }, 'crash-sigkill']),
+  build(7, ['retry-success', { name: 'retry-exhausted', trigger: { kind: 'auto_continue' } }]),
+  build(3, ['compact', { synthetic: jobs }, 'length-stop']),
+  build(2, ['abort-text', 'abort-tool', 'abort-then-prompt', { name: 'follow-up', trigger: { kind: 'queue', device: LAPTOP } }, 'steer-during-tool']),
+  build(11, [{ synthetic: coordinator }, 'plain-text']),
+  build(18, [{ name: 'plain-text', trigger: { kind: 'schedule', schedule_id: '01JAY000000000000000000001', name: 'Inbox triage' } }, 'sigterm-idle']),
   // A long timeline (windowing).
-  build(at(M.devbox, 6), Array.from({ length: 40 }, (_, i) => LONG[i % LONG.length]), false),
+  build(6, Array.from({ length: 40 }, (_, i) => LONG[i % LONG.length]), false),
 ]);
 
 writeFileSync(OUT, JSON.stringify(timelines) + '\n');

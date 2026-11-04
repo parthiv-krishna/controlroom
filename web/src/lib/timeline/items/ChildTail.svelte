@@ -3,22 +3,22 @@
   // concurrent subscription), and releases it when hidden.
   import { untrack } from 'svelte';
   import { useApp } from '../../app/app.svelte';
-  import type { MachineSession } from '../../protocol';
+  import type { FeedSession } from '../../protocol';
   import { Timeline } from '../../state/timeline.svelte';
   import { provideTimeline, useTimeline } from '../context';
   import ItemView from '../ItemView.svelte';
 
-  let { child }: { child: MachineSession } = $props();
+  let { child }: { child: FeedSession } = $props();
   const app = useApp();
   const parent = useTimeline();
   const TAIL = 4;
 
   $effect(() => {
-    const { machine_id, id } = child;
-    const feed = untrack(() => app.client.sessions.acquire(machine_id, id, app.client.online));
+    const { id } = child;
+    const feed = untrack(() => app.client.sessions.acquire(id, app.client.online));
     return () => untrack(() => app.client.sessions.release(feed));
   });
-  const timeline = $derived(app.client.sessions.get(child.machine_id, child.id)?.timeline ?? new Timeline());
+  const timeline = $derived(app.client.sessions.get(child.id)?.timeline ?? new Timeline());
   const tail = $derived(timeline.rows.slice(-TAIL));
 
   provideTimeline({

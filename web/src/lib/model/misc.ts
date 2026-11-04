@@ -20,9 +20,8 @@ export function guessDeviceName(ua: string): string {
   return os ? `${browser} on ${os}` : browser;
 }
 
-/** `#/s/<machine>/<session>?n=<name>&m=<machine name>&st=<state>`: a push notification's link. */
+/** `#/s/<session>?n=<name>&m=<machine name>&st=<state>`: a push notification's link. */
 export interface DeepLink {
-  machine_id: string;
   id: string;
   name: string | null;
   machine: string | null;
@@ -30,17 +29,17 @@ export interface DeepLink {
 }
 
 export function parseDeepLink(hash: string): DeepLink | null {
-  const m = /^#\/s\/([^/?]+)\/([^/?]+)(?:\?(.*))?$/.exec(hash);
+  const m = /^#\/s\/([^/?]+)(?:\?(.*))?$/.exec(hash);
   if (!m) return null;
-  const q = new URLSearchParams(m[3] ?? '');
+  const q = new URLSearchParams(m[2] ?? '');
   try {
-    return { machine_id: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]), name: q.get('n'), machine: q.get('m'), state: q.get('st') };
+    return { id: decodeURIComponent(m[1]), name: q.get('n'), machine: q.get('m'), state: q.get('st') };
   } catch {
     return null;
   }
 }
 
-export const deepLinkHash = (machineId: string, id: string): string => `#/s/${encodeURIComponent(machineId)}/${encodeURIComponent(id)}`;
+export const deepLinkHash = (id: string): string => `#/s/${encodeURIComponent(id)}`;
 
 /** The text of a prompt (images and resources as placeholders). */
 export function contentText(parts: readonly ContentPart[]): string {

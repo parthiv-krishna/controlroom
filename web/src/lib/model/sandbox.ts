@@ -1,11 +1,11 @@
 // Sandbox levels in the new-session dialog (spec §11.6). The session's own `SandboxInfo` comes from
-// the server; before a session exists, the dialog previews its default level from the profiles:
-// the strictest level among the machine and every project whose location matches.
-import type { Machine, Project, SandboxLevel, SandboxProfile } from '../protocol';
-import { prefixMatch } from './location';
+// the server; before a session exists, the dialog previews its default level from the profiles as
+// the server computes it: the strictest level among its workspaces' machines and its tasks'
+// projects.
+import type { MachineId, ProjectId, SandboxLevel, SandboxProfile } from '../protocol';
 
 export const LEVELS: { value: SandboxLevel; label: string; hint: string }[] = [
-  { value: 'strict', label: 'Strict', hint: 'Working directory and session dirs only' },
+  { value: 'strict', label: 'Strict', hint: 'Workspace directories and session dirs only' },
   { value: 'relaxed', label: 'Relaxed', hint: 'Plus read-only home config (git, …)' },
   { value: 'off', label: 'Off', hint: 'Unconfined: the agent can read and write anything your user can' },
 ];
@@ -16,11 +16,10 @@ const STRICTNESS: Record<SandboxLevel, number> = { strict: 2, relaxed: 1, off: 0
 /** Whether `level` confines less than `than`. */
 export const looser = (level: SandboxLevel, than: SandboxLevel): boolean => STRICTNESS[level] < STRICTNESS[than];
 
-/** The default level a new session at `cwd` on `machine` would get (`strict` when nothing is set). */
-export function defaultLevel(profiles: readonly SandboxProfile[], machine: Machine, cwd: string, projects: readonly Project[]): SandboxLevel {
-  const matching = new Set(projects.filter((p) => p.location_prefixes.some((x) => prefixMatch({ cwd }, machine, x))).map((p) => p.id));
+/** The default level of a new session on `machines` linked to tasks of `projects` (`strict` when nothing is set). */
+export function defaultLevel(profiles: readonly SandboxProfile[], machines: readonly MachineId[], projects: readonly ProjectId[]): SandboxLevel {
   const levels = profiles
-    .filter((p) => (p.scope.kind === 'machine' && p.scope.machine_id === machine.id) || (p.scope.kind === 'project' && matching.has(p.scope.project_id)))
+    .filter((p) => (p.scope.kind === 'machine' && machines.includes(p.scope.machine_id)) || (p.scope.kind === 'project' && projects.includes(p.scope.project_id)))
     .map((p) => p.level)
     .filter((l): l is SandboxLevel => l !== null);
   if (!levels.length) return 'strict';

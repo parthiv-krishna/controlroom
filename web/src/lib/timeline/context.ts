@@ -1,11 +1,11 @@
 // What every timeline item component needs from the timeline it is shown in.
 import { getContext, setContext } from 'svelte';
-import type { MachineSession, TimelineItem } from '../protocol';
+import type { FeedSession, TimelineItem } from '../protocol';
 import type { Timeline } from '../state/timeline.svelte';
 
 export interface TimelineContext {
   /** The session the timeline belongs to (its current summary). */
-  readonly s: MachineSession;
+  readonly s: FeedSession;
   readonly timeline: Timeline;
   /** Whether an item is expanded (per session and item, so ids never collide across sessions). */
   isOpen(id: string, fallback: boolean): boolean;

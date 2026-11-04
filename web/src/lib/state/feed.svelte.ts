@@ -6,8 +6,9 @@ import { SvelteMap } from 'svelte/reactivity';
 import type {
   ContactGrant,
   Device,
+  FeedSession,
   Machine,
-  MachineSession,
+  Overlap,
   Project,
   Schedule,
   StateChange,
@@ -15,19 +16,20 @@ import type {
   StateSnapshot,
   Task,
 } from '../protocol';
-import { sessionKey } from '../model/projects';
 
 export type ApplyResult = 'applied' | 'gap';
 
 export class StateFeed {
   readonly machines = new SvelteMap<string, Machine>();
-  /** By `<machine id>/<session id>`. */
-  readonly sessions = new SvelteMap<string, MachineSession>();
+  /** Global sessions by id. */
+  readonly sessions = new SvelteMap<string, FeedSession>();
   readonly projects = new SvelteMap<string, Project>();
   readonly tasks = new SvelteMap<string, Task>();
   readonly grants = new SvelteMap<string, ContactGrant>();
   readonly schedules = new SvelteMap<string, Schedule>();
   readonly devices = new SvelteMap<string, Device>();
+  /** Directories several open sessions share (replaced whole). */
+  overlaps = $state.raw<Overlap[]>([]);
   /** Set by the first snapshot. */
   loaded = $state(false);
   /** The last applied position (not reactive: only the sync engine reads it). */
@@ -44,7 +46,8 @@ export class StateFeed {
   /** Replaces everything with a snapshot at `cursor`. */
   reset(snapshot: StateSnapshot, cursor: StateCursor): void {
     fill(this.machines, snapshot.machines, (m) => m.id);
-    fill(this.sessions, snapshot.sessions, (s) => sessionKey(s.machine_id, s.id));
+    fill(this.sessions, snapshot.sessions, (s) => s.id);
+    this.overlaps = snapshot.overlaps;
     fill(this.projects, snapshot.projects, (p) => p.id);
     fill(this.tasks, snapshot.tasks, (t) => t.id);
     fill(this.grants, snapshot.grants, (g) => g.id);
@@ -78,8 +81,9 @@ export class StateFeed {
     switch (c.kind) {
       case 'machine_upserted': this.machines.set(c.machine.id, c.machine); break;
       case 'machine_removed': this.machines.delete(c.machine_id); break;
-      case 'session_upserted': this.sessions.set(sessionKey(c.session.machine_id, c.session.id), c.session); break;
-      case 'session_removed': this.sessions.delete(sessionKey(c.machine_id, c.session_id)); break;
+      case 'session_upserted': this.sessions.set(c.session.id, c.session); break;
+      case 'session_removed': this.sessions.delete(c.session_id); break;
+      case 'overlaps_changed': this.overlaps = c.overlaps; break;
       case 'project_upserted': this.projects.set(c.project.id, c.project); break;
       case 'project_removed': this.projects.delete(c.project_id); break;
       case 'task_upserted': this.tasks.set(c.task.id, c.task); break;

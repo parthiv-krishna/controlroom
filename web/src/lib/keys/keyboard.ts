@@ -3,8 +3,7 @@
 // the list shortcuts when no field, dialog or modal has the keyboard.
 import type { App } from '../app/app.svelte';
 import { displayName } from '../model/filters';
-import { loc } from '../model/location';
-import { keyOf } from '../model/projects';
+import { primaryWorkspace, wsLabel } from '../model/workspaces';
 import { moveFocus } from './navigator';
 
 const inField = (t: EventTarget | null): t is HTMLElement =>
@@ -67,7 +66,7 @@ export function onKey(app: App, e: KeyboardEvent): void {
     }
     case 'h':
     case 'l':
-      if (vim && cur) view.collapsed['c:' + keyOf(cur)] = e.key === 'h';
+      if (vim && cur) view.collapsed['c:' + cur.id] = e.key === 'h';
       return;
     case 'n':
     case 'N':
@@ -75,8 +74,8 @@ export function onKey(app: App, e: KeyboardEvent): void {
       if (e.key === 'n') app.toggleNotes();
       return;
     case 'y': {
-      const m = cur && app.client.feed.machines.get(cur.machine_id);
-      if (vim && cur && m) void app.copy(loc(cur, m));
+      const w = cur && primaryWorkspace(cur);
+      if (vim && w) void app.copy(wsLabel(w, app.client.feed.machines));
       return;
     }
     case '/': {
@@ -117,7 +116,7 @@ function nextMatch(app: App, dir: 1 | -1): void {
   const q = app.view.lastSearch.toLowerCase();
   const list = app.orderedSessions();
   const cur = app.view.current;
-  const i = cur ? list.findIndex((s) => s.machine_id === cur.machine_id && s.id === cur.id) : -1;
+  const i = cur ? list.findIndex((s) => s.id === cur.id) : -1;
   for (let step = 1; step <= list.length; step++) {
     const s = list[(i + dir * step + list.length * 2) % list.length];
     if (displayName(s).toLowerCase().includes(q)) return app.open(s);

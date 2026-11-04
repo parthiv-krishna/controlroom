@@ -8,7 +8,6 @@
   import Palette from './lib/keys/Palette.svelte';
   import ModalHost from './lib/modals/ModalHost.svelte';
   import { parseDeepLink } from './lib/model/misc';
-  import { keyOf } from './lib/model/projects';
   import { attentionOf } from './lib/model/status';
   import Settings from './lib/settings/Settings.svelte';
   import Desktop from './lib/shell/Desktop.svelte';
@@ -52,7 +51,7 @@
     if (opened || !client.feed.loaded) return;
     opened = true;
     if (deepLink) {
-      const linked = client.feed.sessions.get(keyOf(deepLink));
+      const linked = client.feed.sessions.get(deepLink.id);
       if (linked) return app.open(linked);
       app.toasts.show('That session is no longer available', 'error');
     }
@@ -65,7 +64,7 @@
     const cur = view.current;
     if (!cur) return;
     // The feed map is reactive; only the open session should re-run this.
-    const feed = untrack(() => client.sessions.acquire(cur.machine_id, cur.id, client.online));
+    const feed = untrack(() => client.sessions.acquire(cur.id, client.online));
     return () => untrack(() => client.sessions.release(feed));
   });
 
@@ -91,7 +90,7 @@
     const onResize = () => (view.wide = window.innerWidth > 760);
     const onHash = () => {
       const link = parseDeepLink(location.hash);
-      const s = link && client.feed.sessions.get(keyOf(link));
+      const s = link && client.feed.sessions.get(link.id);
       if (s && view.current?.id !== s.id) app.open(s);
     };
     const onVisible = () => app.reportFocus();

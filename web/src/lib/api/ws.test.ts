@@ -69,11 +69,11 @@ describe('WebSocketTransport', () => {
     await settle();
     expect(last().url).toBe('ws://h/api/ws');
     expect(t.auth).toEqual({ status: 'ok' });
-    const call = t.request('agents.list', { machine_id: 'm1' });
+    const call = t.request('fs.list', { machine_id: 'm1', path: '~' });
     last().open();
     expect(t.state).toBe('open');
     const sent = JSON.parse(last().sent[0]);
-    expect(sent).toMatchObject({ jsonrpc: '2.0', method: 'agents.list', params: { machine_id: 'm1' } });
+    expect(sent).toMatchObject({ jsonrpc: '2.0', method: 'fs.list', params: { machine_id: 'm1', path: '~' } });
     last().reply(0, { result: { agents: [] } });
     await expect(call).resolves.toEqual({ agents: [] });
   });
@@ -109,11 +109,11 @@ describe('WebSocketTransport', () => {
     await settle();
     const quick = t.request('keys.list', {}, { timeoutMs: 50 });
     const quickFailed = expect(quick).rejects.toBeInstanceOf(RpcError);
-    const slow = t.request('agents.list', { machine_id: 'm1' }, { timeoutMs: 5_000 });
+    const slow = t.request('fs.list', { machine_id: 'm1', path: '~' }, { timeoutMs: 5_000 });
     await vi.advanceTimersByTimeAsync(60);
     await quickFailed;
     last().open();
-    expect(last().sent.map((s) => JSON.parse(s).method)).toEqual(['agents.list']);
+    expect(last().sent.map((s) => JSON.parse(s).method)).toEqual(['fs.list']);
     last().reply(0, { result: { agents: [] } });
     await expect(slow).resolves.toEqual({ agents: [] });
   });
@@ -131,9 +131,9 @@ describe('WebSocketTransport', () => {
     // reconnect: queued-while-connecting call is sent, the failed one is not
     await vi.advanceTimersByTimeAsync(10);
     await settle();
-    const queued = t.request('agents.list', { machine_id: 'm1' });
+    const queued = t.request('fs.list', { machine_id: 'm1', path: '~' });
     last().open();
-    expect(last().sent.map((s) => JSON.parse(s).method)).toEqual(['agents.list']);
+    expect(last().sent.map((s) => JSON.parse(s).method)).toEqual(['fs.list']);
     last().reply(0, { result: { agents: [] } });
     await expect(queued).resolves.toEqual({ agents: [] });
   });

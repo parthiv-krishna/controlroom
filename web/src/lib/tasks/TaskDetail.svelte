@@ -3,9 +3,8 @@
   // their pending requests, answerable inline), start a session, link an existing one, delete.
   import { useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
-  import { normPath } from '../model/location';
-  import { keyOf } from '../model/projects';
   import { statusKind } from '../model/status';
+  import { primaryWorkspace, wsLabel } from '../model/workspaces';
   import { PRIORITIES, TASK_COLUMNS, columnTasks, orderFor, rollup } from '../model/tasks';
   import type { Priority, Task, TaskStatus } from '../protocol';
   import RequestCard from '../session/RequestCard.svelte';
@@ -47,7 +46,7 @@
     item = '';
   }
   const linkable = $derived(
-    app.ctx.sessions.filter((s) => s.state !== 'closed' && !t.links.some((l) => l.machine_id === s.machine_id && l.session_id === s.id)),
+    app.ctx.sessions.filter((s) => s.state !== 'closed' && !t.links.includes(s.id)),
   );
   async function remove() {
     if (!(await app.dialogs.confirm({ title: 'Delete task?', body: 'Linked sessions are kept.', ok: 'Delete', danger: true }))) return;
@@ -83,23 +82,23 @@
   </div>
   <div class="sec-h">Agent sessions <span>({r.sessions.length})</span></div>
   <div class="sessions">
-    {#each r.sessions as s, i (s ? keyOf(s) : `missing-${i}`)}
+    {#each r.sessions as s, i (s ? s.id : `missing-${i}`)}
       {@const link = t.links[i]}
       {#if s}
-        {@const m = app.client.feed.machines.get(s.machine_id)}
-        <div class="s" class:on={!!app.view.current && keyOf(app.view.current) === keyOf(s)} class:unread={s.unread} role="button" tabindex="0" onclick={(e) => { if (!(e.target as HTMLElement).closest('button, input, textarea')) app.open(s); }} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(s); }}>
+        {@const w = primaryWorkspace(s)}
+        <div class="s" class:on={!!app.view.current && app.view.current.id === s.id} class:unread={s.unread} role="button" tabindex="0" onclick={(e) => { if (!(e.target as HTMLElement).closest('button, input, textarea')) app.open(s); }} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(s); }}>
           <StatusIcon kind={statusKind(s)} />
           <div class="sm">
             <div class="sn">{displayName(s)}{#if s.todo} <span class="muted small">{s.todo.done}/{s.todo.total}</span>{/if}</div>
-            <div class="sp-l">{m?.name}:{m ? normPath(s.cwd, m.user) : s.cwd}{#if s.preview} · {s.preview}{/if}</div>
-            {#if !s.stale}{#each s.requests.filter((x) => x.state === 'pending') as req (req.id)}<RequestCard {req} {s} compact />{/each}{/if}
+            <div class="sp-l">{w ? wsLabel(w, app.client.feed.machines) : ''}{#if s.workspaces.length > 1} +{s.workspaces.length - 1}{/if}{#if s.preview} · {s.preview}{/if}</div>
+            {#each s.requests.filter((x) => x.state === 'pending') as req (req.id)}<RequestCard {req} {s} compact />{/each}
           </div>
-          <button class="unlink" aria-label="Unlink {displayName(s)}" title="Unlink from this task" disabled={!online} onclick={() => app.client.call('tasks.unlink', { task_id: t.id, ...link })}>✕</button>
+          <button class="unlink" aria-label="Unlink {displayName(s)}" title="Unlink from this task" disabled={!online} onclick={() => app.client.call('tasks.unlink', { task_id: t.id, session_id: link })}>✕</button>
         </div>
       {:else}
         <div class="s missing">
           <span class="q">?</span><div class="sm"><div class="sn">Missing session</div></div>
-          <button class="unlink" aria-label="Unlink missing session" disabled={!online} onclick={() => app.client.call('tasks.unlink', { task_id: t.id, ...link })}>✕</button>
+          <button class="unlink" aria-label="Unlink missing session" disabled={!online} onclick={() => app.client.call('tasks.unlink', { task_id: t.id, session_id: link })}>✕</button>
         </div>
       {/if}
     {:else}
@@ -108,7 +107,7 @@
   </div>
   <div class="acts">
     <button class="btn sm primary" onclick={() => app.startTask(t)}>▶ Start session for this task</button>
-    <Dropdown value="" placeholder="+ Link existing session…" label="Link existing session" disabled={!online} options={linkable.map((s) => ({ value: keyOf(s), label: displayName(s), hint: app.client.feed.machines.get(s.machine_id)?.name }))} onchange={(v) => { const s = app.client.feed.sessions.get(v); if (s) void app.client.call('tasks.link', { task_id: t.id, machine_id: s.machine_id, session_id: s.id }); }} />
+    <Dropdown value="" placeholder="+ Link existing session…" label="Link existing session" disabled={!online} options={linkable.map((s) => ({ value: s.id, label: displayName(s), hint: app.client.feed.machines.get(primaryWorkspace(s)?.machine_id ?? '')?.name }))} onchange={(v) => void app.client.call('tasks.link', { task_id: t.id, session_id: v })} />
     <button class="btn sm ghost bad-t" disabled={!online} onclick={remove}>Delete task</button>
   </div>
 </div>

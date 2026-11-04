@@ -1,31 +1,35 @@
 <script lang="ts">
-  // Banners above the timeline: the machine's connection (unreachable, connecting, action required,
-  // outdated), asleep, interrupted, failed, archived, and a send-now waiting for a safe point.
+  // Banners above the timeline: each machine of the session's workspaces that can't be reached
+  // (unreachable, connecting, action required, outdated; the session keeps running, only tool
+  // calls there wait), asleep, interrupted, failed, archived, and a send-now waiting for a safe
+  // point.
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
-  import { ago, connLabel } from '../model/status';
-  import type { Machine, MachineSession } from '../protocol';
+  import { ago, connLabel, duration } from '../model/status';
+  import { unavailable } from '../model/workspaces';
+  import type { FeedSession, Machine } from '../protocol';
   import MachineFix from '../settings/MachineFix.svelte';
 
-  let { s, m }: { s: MachineSession; m: Machine | undefined } = $props();
+  let { s }: { s: FeedSession } = $props();
   const app = useApp();
-  const online = $derived(app.client.online && !s.stale);
-  const startFresh = () => (app.view.modal = { kind: 'start-fresh', session: { machine_id: s.machine_id, id: s.id } });
+  /** The machines of unavailable workspaces, each once. */
+  const away = $derived([...new Set(unavailable(s).map((w) => w.machine_id))].map((id) => app.client.feed.machines.get(id)).filter((m): m is Machine => !!m));
+  const online = $derived(app.client.online);
+  const startFresh = () => (app.view.modal = { kind: 'start-fresh', session: { id: s.id } });
   const resume = () => app.client.call('session.resume', onSession(s));
 </script>
 
-{#if m && m.connectivity.state !== 'connected'}
-  {@const machine = m}
+{#each away as machine (machine.id)}
   {#if machine.connectivity.state === 'unreachable'}
-    <div class="banner warn">⚠ <b>{machine.name}</b> unreachable · last seen {ago(machine.last_seen)} <button class="btn sm" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: machine.id })}>Retry now</button></div>
+    <div class="banner warn" data-machine-banner={machine.name}>⚠ <b>{machine.name}</b> unreachable · last seen {ago(machine.last_seen)} · tool calls there wait up to {duration(machine.grace_s * 1000)} <button class="btn sm" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: machine.id })}>Retry now</button></div>
   {:else if machine.connectivity.state === 'action_required'}
     <div class="banner act"><MachineFix m={machine} compact /></div>
   {:else if machine.connectivity.state === 'incompatible'}
     <div class="banner warn">⚠ {machine.name}: daemon {machine.version ?? ''} is outdated <button class="btn sm primary" disabled={!app.client.online} onclick={() => app.client.call('machines.upgrade', { machine_id: machine.id })}>Upgrade daemon</button></div>
   {:else}
-    <div class="banner info"><span class="spin"></span> {connLabel(machine)}</div>
+    <div class="banner info"><span class="spin"></span> {machine.name}: {connLabel(machine)}</div>
   {/if}
-{/if}
+{/each}
 {#if s.state === 'dormant'}
   {#if s.resumable}
     <div class="banner">☾ Agent asleep <button class="btn sm" disabled={!online} onclick={resume}>Wake</button></div>

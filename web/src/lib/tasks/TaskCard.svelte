@@ -4,7 +4,6 @@
   // columns; a session row dropped on a card links the session.
   import { useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
-  import { keyOf } from '../model/projects';
   import { statusKind } from '../model/status';
   import { columnLabel, rollup, suggestMove } from '../model/tasks';
   import type { Task } from '../protocol';
@@ -36,8 +35,7 @@
     if (!raw) return;
     e.preventDefault();
     e.stopPropagation();
-    const link = JSON.parse(raw) as { machine_id: string; session_id: string };
-    void app.client.call('tasks.link', { task_id: t.id, ...link });
+    void app.client.call('tasks.link', { task_id: t.id, session_id: raw });
   }
   function open(e: MouseEvent) {
     if (!(e.target as HTMLElement).closest('button')) app.openTask(t.id);
@@ -69,7 +67,7 @@
   </div>
   {#if shown.length}
     <div class="ss">
-      {#each shown.slice(0, 4) as s, i (s ? keyOf(s) : `missing-${i}`)}
+      {#each shown.slice(0, 4) as s, i (s ? s.id : `missing-${i}`)}
         {#if s}
           <button class="s" class:unread={s.unread} title={displayName(s)} onclick={() => app.open(s)}><StatusIcon kind={statusKind(s)} /><span class="sn">{displayName(s)}</span>{#if s.todo}<span class="todo">{s.todo.done}/{s.todo.total}</span>{/if}</button>
         {:else}
@@ -85,7 +83,7 @@
     {#if r.problems}<span class="rp" title="failed or stopped"><StatusIcon kind="stopped" />{r.problems}</span>{/if}
     {#if r.working}<span class="rp" title="working"><StatusIcon kind="working" />{r.working}</span>{/if}
     {#if r.unread}<span class="rp" title="finished, unread"><StatusIcon kind="complete" />{r.unread}</span>{/if}
-    {#if r.stale}<span class="rp" title="disconnected"><StatusIcon kind="offline" />{r.stale}</span>{/if}
+    {#if r.unreachable}<span class="rp" title="a machine is unreachable"><StatusIcon kind="offline" />{r.unreachable}</span>{/if}
     {#if !t.links.length}<span class="rp none">not started</span>{/if}
     {#if !t.links.length && t.status !== 'done'}<button class="btn xs ghost start" title="Start a session for this task" onclick={() => app.startTask(t)}>▶ start</button>{/if}
   </div>

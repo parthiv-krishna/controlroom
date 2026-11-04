@@ -1,5 +1,7 @@
 <script lang="ts">
-  // The structured subject of a request: command, path, endpoint, diff, git push, contact, spawn.
+  // The structured subject of a request: command, path, endpoint, diff, git push, contact, spawn,
+  // a command waiting for terminal input (the user types in that shell's terminal; the agent
+  // can't), and a privileged command (it runs unsandboxed on the host).
   import type { RequestBody } from '../protocol';
   import Diff from '../ui/Diff.svelte';
 
@@ -28,6 +30,13 @@
 {:else if body.kind === 'spawn'}
   <div class="line"><span class="acc">spawn</span> {body.agent} on <b>{body.machine}</b> · {body.title}</div>
   {#if !compact}<div class="small muted">in <code>{body.cwd}</code></div>{/if}
+{:else if body.kind === 'terminal_input'}
+  <pre class="code">$ {body.command}</pre>
+  <div class="line" data-shell={body.shell}>waits for input in the shell <b class="shell">{body.shell}</b> on <b>{body.machine}</b>: type in its terminal</div>
+{:else if body.kind === 'privileged'}
+  <pre class="code">$ {body.command}</pre>
+  <div class="line"><span class="acc">unsandboxed</span> on <b>{body.machine}</b>{#if body.cwd && !compact} · in <code>{body.cwd}</code>{/if}</div>
+  {#if body.reason}<div class="reason">“{body.reason}”</div>{/if}
 {/if}
 
 <style>
@@ -36,4 +45,5 @@
   .acc { font: 650 10.5px var(--mono); text-transform: uppercase; padding: 1px 6px; border-radius: 5px; background: var(--bg3); }
   .warn { color: var(--warn); font-size: 12.5px; }
   .reason { color: var(--muted); font-style: italic; font-size: 13px; }
+  .shell { font-family: var(--mono); }
 </style>

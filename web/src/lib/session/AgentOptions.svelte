@@ -4,14 +4,14 @@
   // the agent reported its choices (empty until then).
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
-  import type { MachineSession } from '../protocol';
+  import type { FeedSession } from '../protocol';
   import ContextMeter from '../ui/ContextMeter.svelte';
   import Dropdown from '../ui/Dropdown.svelte';
 
-  let { s }: { s: MachineSession } = $props();
+  let { s }: { s: FeedSession } = $props();
   const app = useApp();
   const agentLive = $derived(['idle', 'working', 'awaiting_permission', 'awaiting_input'].includes(s.state));
-  const editable = $derived(app.client.online && !s.stale && agentLive);
+  const editable = $derived(app.client.online && agentLive);
 </script>
 
 <span class="opts">

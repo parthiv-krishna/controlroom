@@ -2,26 +2,27 @@
   // Phone: the project switcher drawer (projects with stoplights, machines that need attention,
   // settings).
   import { useApp } from '../app/app.svelte';
-  import { health, projectCode } from '../model/projects';
+  import { UNASSIGNED, health, projectCode, scopeName, type Scope } from '../model/projects';
   import { connLabel } from '../model/status';
-  import type { Project } from '../protocol';
   import Stoplight from '../ui/Stoplight.svelte';
 
   const app = useApp();
-  const items = $derived<(Project | null)[]>([null, ...app.client.feed.projectList]);
+  const items = $derived<Scope[]>([null, ...app.client.feed.projectList, UNASSIGNED]);
+  const idOf = (s: Scope) => (s === null || s === UNASSIGNED ? s : s.id);
   const down = $derived(app.client.feed.machineList.filter((m) => m.connectivity.state !== 'connected'));
 </script>
 
 <div class="bg" role="presentation" onmousedown={(e) => { if (e.target === e.currentTarget) app.view.drawer = false; }}>
   <div class="drawer" role="dialog" aria-label="Projects">
     <div class="h">Projects</div>
-    {#each items as p (p?.id ?? 'all')}
-      <button class="p" class:on={app.view.project === (p?.id ?? null)} style:--pc={p?.color ?? 'var(--fg)'} onclick={() => app.openProject(p?.id ?? null)}>
-        <span class="ic" class:home={!p}>{p ? projectCode(p) : '∗'}</span><span class="nm">{p ? p.name : 'All projects'}</span>
+    {#each items as p (idOf(p) ?? 'all')}
+      {@const real = p !== null && p !== UNASSIGNED ? p : null}
+      <button class="p" class:on={app.view.project === idOf(p)} style:--pc={real?.color ?? 'var(--fg)'} onclick={() => app.openProject(idOf(p))}>
+        <span class="ic" class:home={!real}>{real ? projectCode(real) : p === UNASSIGNED ? '○' : '∗'}</span><span class="nm">{scopeName(p)}</span>
         <Stoplight row h={health(app.ctx, p)} />
       </button>
     {/each}
-    <button class="p add" onclick={() => { app.view.drawer = false; app.view.modal = { kind: 'project', id: null }; }}><span class="ic">+</span><span class="nm">New project view</span></button>
+    <button class="p add" onclick={() => { app.view.drawer = false; app.view.modal = { kind: 'project', id: null }; }}><span class="ic">+</span><span class="nm">New project</span></button>
     {#if down.length}
       <div class="h">Machines</div>
       {#each down as m (m.id)}

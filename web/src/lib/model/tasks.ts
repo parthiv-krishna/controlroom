@@ -1,8 +1,9 @@
 // The tasks board: columns, sort keys for moves, the roll-up of linked sessions, and the suggested
 // column move (shown, never applied automatically).
-import type { MachineSession, Priority, Task, TaskStatus } from '../protocol';
+import type { FeedSession, Priority, Task, TaskStatus } from '../protocol';
 import type { Ctx } from './projects';
 import { attentionOf } from './status';
+import { unavailable } from './workspaces';
 
 export const TASK_COLUMNS: { id: TaskStatus; label: string; icon: string }[] = [
   { id: 'backlog', label: 'Backlog', icon: '◌' },
@@ -37,15 +38,16 @@ export interface Rollup {
   problems: number;
   unread: number;
   working: number;
-  stale: number;
-  /** One per link; null marks a missing session (purged, or its machine removed). */
-  sessions: (MachineSession | null)[];
+  /** Open sessions with a workspace on a machine that can't be reached. */
+  unreachable: number;
+  /** One per link; null marks a missing session (deleted). */
+  sessions: (FeedSession | null)[];
 }
 
 export function rollup(ctx: Ctx, t: Task): Rollup {
-  const r: Rollup = { approvals: 0, questions: 0, problems: 0, unread: 0, working: 0, stale: 0, sessions: [] };
-  for (const link of t.links) {
-    const s = ctx.sessions.find((x) => x.machine_id === link.machine_id && x.id === link.session_id) ?? null;
+  const r: Rollup = { approvals: 0, questions: 0, problems: 0, unread: 0, working: 0, unreachable: 0, sessions: [] };
+  for (const id of t.links) {
+    const s = ctx.sessions.find((x) => x.id === id) ?? null;
     r.sessions.push(s);
     if (!s) continue;
     const a = attentionOf(s);
@@ -53,8 +55,8 @@ export function rollup(ctx: Ctx, t: Task): Rollup {
     else if (a === 'question') r.questions++;
     else if (a === 'problem') r.problems++;
     else if (a === 'unread') r.unread++;
-    if (s.stale && s.state !== 'closed') r.stale++;
-    else if (s.state === 'working' || s.state === 'starting') r.working++;
+    if (s.state !== 'closed' && unavailable(s).length) r.unreachable++;
+    if (s.state === 'working' || s.state === 'starting') r.working++;
   }
   return r;
 }
@@ -62,8 +64,8 @@ export function rollup(ctx: Ctx, t: Task): Rollup {
 export function suggestMove(ctx: Ctx, t: Task): { to: TaskStatus; why: string } | null {
   const r = rollup(ctx, t);
   if ((t.status === 'backlog' || t.status === 'todo') && (r.working || r.approvals)) return { to: 'doing', why: 'a linked agent is active' };
-  const linked = r.sessions.filter((s): s is MachineSession => s !== null);
-  const stopped = (s: MachineSession) => s.state === 'idle' || s.state === 'closed' || s.state === 'dormant';
+  const linked = r.sessions.filter((s): s is FeedSession => s !== null);
+  const stopped = (s: FeedSession) => s.state === 'idle' || s.state === 'closed' || s.state === 'dormant';
   if (t.status === 'doing' && linked.length && !r.working && !r.approvals && !r.problems && linked.every(stopped)) {
     return { to: 'review', why: 'all linked agents have stopped' };
   }

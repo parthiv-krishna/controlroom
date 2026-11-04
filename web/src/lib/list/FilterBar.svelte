@@ -1,11 +1,10 @@
 <script lang="ts">
-  // Search, the two-pane Filter menu (State, Task, Location tree, Host, Agent), Group by, active
-  // filter chips with "Save as view", and "+ New session".
+  // Search, the two-pane Filter menu (State, Task, Machine), Group by, active filter chips, and
+  // "+ New session".
   import { useApp } from '../app/app.svelte';
   import { FACETS, STATES, filterCount, type FacetKey } from '../model/filters';
   import { GROUPS } from '../model/grouping';
-  import { locOptions, locTree } from '../model/location';
-  import { inProject, taskIn } from '../model/projects';
+  import { taskIn } from '../model/projects';
   import { dismissable } from '../ui/actions';
   import Icon from '../ui/Icon.svelte';
 
@@ -21,7 +20,6 @@
     depth: number;
     /** A machine's connectivity dot. */
     dot?: string;
-    host?: boolean;
   }
   const options = $derived.by((): Opt[] => {
     const ctx = app.ctx;
@@ -30,16 +28,10 @@
         return STATES.map(([value, label]) => ({ value, label, depth: 0 }));
       case 'task':
         return ctx.tasks
-          .filter((t) => taskIn(t, app.project) && (t.status !== 'done' || view.filters.task.includes(t.id)))
+          .filter((t) => taskIn(t, app.scope) && (t.status !== 'done' || view.filters.task.includes(t.id)))
           .map((t) => ({ value: t.id, label: t.title, depth: 0 }));
-      case 'location': {
-        const sessions = ctx.sessions.filter((s) => s.state !== 'closed' && inProject(ctx, s, app.project));
-        return locOptions(locTree(sessions, ctx.machineList)).map((o) => ({ value: o.value, label: o.label, depth: o.depth, dot: o.host ? o.machine.connectivity.state : undefined, host: o.host }));
-      }
       case 'machine':
         return ctx.machineList.map((m) => ({ value: m.id, label: m.name, depth: 0, dot: m.connectivity.state }));
-      case 'agent':
-        return [...new Set(ctx.sessions.map((s) => s.agent))].sort().map((a) => ({ value: a, label: a, depth: 0 }));
       default:
         return [];
     }
@@ -56,7 +48,6 @@
   }
   function chipLabel(k: FacetKey, v: string): string {
     switch (k) {
-      case 'location': return v.endsWith(':') ? v + '*' : v;
       case 'task': return app.client.feed.tasks.get(v)?.title ?? v;
       case 'machine': return app.client.feed.machines.get(v)?.name ?? v;
       case 'state': return STATES.find(([s]) => s === v)?.[1] ?? v;
@@ -93,7 +84,7 @@
           <label style:padding-left="{7 + o.depth * 16}px">
             <input type="checkbox" checked={view.filters[view.filterSection].includes(o.value)} onchange={(e) => toggle(o.value, e.currentTarget.checked)} />
             {#if o.dot}<span class="dot {o.dot}"></span>{/if}
-            <span class:loc={view.filterSection === 'location' && !o.host} class:host={o.host}>{o.label}</span>
+            <span>{o.label}</span>
           </label>
         {:else}
           <div class="small muted">Nothing to filter by</div>
@@ -109,13 +100,12 @@
   {/if}
 </div>
 <div class="chips">
-  <button class="new" onclick={() => app.newSessionHere()}>+ New session</button>
+  <button class="new" onclick={() => app.newSession()}>+ New session</button>
   {#each FACETS as [k] (k)}
     {#each view.filters[k] as v (v)}
-      <span class="fchip"><span class="muted">{facetLabel(k)}</span><span class="v" class:loc={k === 'location'}>{chipLabel(k, v)}</span><button aria-label="Remove filter" onclick={() => remove(k, v)}>×</button></span>
+      <span class="fchip"><span class="muted">{facetLabel(k)}</span><span class="v">{chipLabel(k, v)}</span><button aria-label="Remove filter" onclick={() => remove(k, v)}>×</button></span>
     {/each}
   {/each}
-  {#if view.filters.location.length}<button class="save" title="Save as a project view" onclick={() => (view.modal = { kind: 'project', id: null, paths: view.filters.location.slice() })}>Save as view</button>{/if}
 </div>
 
 <style>
@@ -138,8 +128,6 @@
   .opts label { display: flex; gap: 8px; align-items: center; padding: 5px 7px; border-radius: 6px; cursor: pointer; font-size: 13px; min-width: 0; }
   .opts label:hover { background: var(--bg3); }
   .opts label > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .loc { font: 12px var(--mono); }
-  .host { font-weight: 600; }
   .gmenu { right: 0; padding: 5px; min-width: 160px; display: flex; flex-direction: column; }
   .chk { width: 14px; }
   .chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; }
@@ -148,7 +136,6 @@
   .fchip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; background: var(--bg3); border-radius: 999px; padding: 1px 3px 1px 9px; max-width: 100%; }
   .fchip .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
   .fchip button { background: none; border: none; color: var(--muted); cursor: pointer; font: inherit; padding: 0 4px; }
-  .save { background: none; border: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; }
   @media (max-width: 760px) {
     .search { font-size: 16px; }
     .mbtn { padding: 8px 10px; }

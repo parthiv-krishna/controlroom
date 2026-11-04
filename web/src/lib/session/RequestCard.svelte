@@ -9,20 +9,19 @@
   import { RpcError, describeError } from '../api/errors';
   import { displayName } from '../model/filters';
   import { textContent } from '../model/misc';
-  import { sessionKey } from '../model/projects';
-  import type { MachineSession, Question, QuestionAnswer, Request, Response } from '../protocol';
+  import type { FeedSession, Question, QuestionAnswer, Request, Response } from '../protocol';
   import Icon from '../ui/Icon.svelte';
   import Markdown from '../ui/Markdown.svelte';
   import RequestBody from './RequestBody.svelte';
 
-  let { req, s, compact = false }: { req: Request; s: MachineSession; compact?: boolean } = $props();
+  let { req, s, compact = false }: { req: Request; s: FeedSession; compact?: boolean } = $props();
   const app = useApp();
 
   const KIND: Record<Request['kind'], string> = { permission: 'Permission', question: 'Question', dialog: 'Dialog', sandbox: 'Sandbox', contact: 'Contact', spawn: 'Spawn', terminal_input: 'Input', privileged: 'Privileged', unknown: 'Request' };
-  // A rolled-up request is answered on the child session (same machine).
+  // A rolled-up request is answered on the child session.
   const targetId = $derived(req.origin_child ?? s.id);
-  const child = $derived(req.origin_child ? app.client.feed.sessions.get(sessionKey(s.machine_id, req.origin_child)) : undefined);
-  const live = $derived(app.client.online && !s.stale);
+  const child = $derived(req.origin_child ? app.client.feed.sessions.get(req.origin_child) : undefined);
+  const live = $derived(app.client.online);
   const pending = $derived(req.state === 'pending');
   const deny = $derived(req.options.find((o) => o.style === 'deny'));
   const questions = $derived(req.questions);
@@ -44,7 +43,6 @@
     busy = true;
     try {
       await app.client.request('request.respond', {
-        machine_id: s.machine_id,
         op_id: newOpId(),
         id: targetId,
         request_id: req.id,
@@ -104,7 +102,7 @@
     }
   }
   function startSteer(mode: 'steer' | 'reason') {
-    if (compact) app.open({ machine_id: s.machine_id, id: targetId });
+    if (compact) app.open({ id: targetId });
     else steering = mode;
   }
   function freeKey(e: KeyboardEvent) {
@@ -123,7 +121,7 @@
     <b class="title">{req.title}</b>
   </div>
   {#if req.origin_child}
-    <div class="from">from subagent <button class="linkish" onclick={() => app.open({ machine_id: s.machine_id, id: targetId })}>{child ? displayName(child) : 'subagent'}</button></div>
+    <div class="from">from subagent <button class="linkish" onclick={() => app.open({ id: targetId })}>{child ? displayName(child) : 'subagent'}</button></div>
   {/if}
   {#if req.detail && !compact}<div class="detail"><Markdown text={req.detail} /></div>{/if}
   {#if req.body}<RequestBody body={req.body} {compact} />{/if}
@@ -147,7 +145,7 @@
       <div class="acts end">
         {#if !req.blocking}<button class="btn ghost" class:sm={compact} title="Answers “declined”; the agent decides on its own" disabled={!live || busy} onclick={() => respond({ kind: 'dismiss' })}>Dismiss</button>{/if}
         {#if compact && !quick}
-          <button class="btn sm" onclick={() => app.open({ machine_id: s.machine_id, id: targetId })}>Answer…</button>
+          <button class="btn sm" onclick={() => app.open({ id: targetId })}>Answer…</button>
         {:else if !compact && (!quick || questions.some((q) => q.free_text))}
           <button class="btn primary" disabled={!live || busy || !answers.length} onclick={answer}><span class="kbd">↵</span> Answer</button>
         {/if}
@@ -159,7 +157,7 @@
         {/each}
         {#if req.kind === 'permission' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={() => startSteer('steer')}>Reject and steer…</button>{/if}
         {#if req.kind === 'sandbox' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={() => startSteer('reason')}>{deny.label} with reason…</button>{/if}
-        {#if !live}<span class="small warn-t">{s.stale ? 'machine offline' : 'not connected'}</span>{/if}
+        {#if !live}<span class="small warn-t">not connected</span>{/if}
       </div>
       {#if steering}
         <div class="steer">

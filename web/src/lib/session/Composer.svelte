@@ -5,17 +5,16 @@
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import { textContent } from '../model/misc';
-  import { keyOf } from '../model/projects';
   import { busy } from '../model/status';
-  import type { MachineSession } from '../protocol';
+  import type { FeedSession } from '../protocol';
 
-  let { s }: { s: MachineSession } = $props();
+  let { s }: { s: FeedSession } = $props();
   const app = useApp();
-  const key = $derived(keyOf(s));
+  const key = $derived(s.id);
   const isBusy = $derived(busy(s));
-  const disabled = $derived(!app.client.online || s.stale || s.state === 'closed');
+  const disabled = $derived(!app.client.online || s.state === 'closed');
   const placeholder = $derived(
-    s.state === 'closed' ? 'Archived' : s.stale ? 'Machine offline' : !app.client.online ? 'Not connected' : isBusy ? 'Queue a message…' : s.state === 'dormant' && !s.resumable ? 'Start fresh to continue' : 'Message…',
+    s.state === 'closed' ? 'Archived' : !app.client.online ? 'Not connected' : isBusy ? 'Queue a message…' : s.state === 'dormant' && !s.resumable ? 'Start fresh to continue' : 'Message…',
   );
   let sending = $state(false);
 

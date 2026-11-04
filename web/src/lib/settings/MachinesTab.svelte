@@ -1,9 +1,11 @@
 <script lang="ts">
-  // Machine cards: connection, doctor results, idle stop and retention (daemon settings), key,
-  // auto-upgrade, retry/upgrade/remove, "+ Session here"; and the add-machine flow.
+  // The server's agent settings (idle stop, retention: the agent daemon's), then machine cards:
+  // connection, doctor results, key, tool-call grace, auto-upgrade, retry/upgrade/remove,
+  // "+ Session here"; and the add-machine flow.
   import { newOpId, useApp } from '../app/app.svelte';
-  import { ago, connLabel, isLive, upgrading } from '../model/status';
-  import type { KeysListResult, Machine } from '../protocol';
+  import { ago, connLabel, upgrading } from '../model/status';
+  import { touches } from '../model/workspaces';
+  import type { DaemonSettings, KeysListResult, Machine } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
   import AddMachine from './AddMachine.svelte';
   import DoctorView from './DoctorView.svelte';
@@ -17,20 +19,41 @@
     if (online) void app.client.call('keys.list', {}).then((r) => (keys = r ?? null));
   });
 
-  const sessionsOn = (m: Machine) => app.ctx.sessions.filter((s) => s.machine_id === m.id && s.state !== 'closed').length;
+  /** The agent daemon's settings (every session runs on the server). */
+  let server = $state<DaemonSettings | null>(null);
+  $effect(() => {
+    if (online) void app.client.call('settings.get', {}).then((r) => (server = r ?? null));
+  });
+
+  const sessionsOn = (m: Machine) => app.ctx.sessions.filter((s) => s.state !== 'closed' && touches(s, m.id)).length;
   const IDLE = [1, 12, 24, 48, 168];
   const RETENTION: [string, number | null][] = [['forever', null], ['7 days', 7], ['30 days', 30], ['90 days', 90]];
-  const setDaemon = (m: Machine, fields: { idle_timeout_h?: number; retention?: { delete_closed_after_days: number | null } }) =>
-    app.client.call('settings.set', { machine_id: m.id, op_id: newOpId(), ...fields });
+  /** How long a tool call waits for an unreachable machine before it fails (and its result comes late). */
+  const GRACE: [string, number][] = [['1 min', 60], ['10 min', 600], ['1 h', 3600], ['1 day', 86400]];
+  async function setServer(fields: { idle_timeout_h?: number; retention?: { delete_closed_after_days: number | null } }) {
+    const r = await app.client.call('settings.set', { op_id: newOpId(), ...fields });
+    if (r) server = r;
+  }
 
   async function remove(m: Machine) {
-    if (await app.dialogs.confirm({ title: `Remove ${m.name}?`, body: 'Its sessions keep running, but disappear from controlroom.', ok: 'Remove', danger: true })) await app.client.call('machines.remove', { machine_id: m.id });
+    const body = 'Sessions keep running; their workspaces there become unavailable.';
+    if (await app.dialogs.confirm({ title: `Remove ${m.name}?`, body, ok: 'Remove', danger: true })) await app.client.call('machines.remove', { machine_id: m.id });
   }
 </script>
 
 {#if adding}
   <AddMachine bind:this={wizard} {keys} onclose={() => (adding = false)} />
 {:else}
+  {#if server}
+    {@const ds = server}
+    <div class="card" data-server>
+      <div class="h"><b>Agents</b><span class="muted small">on the server</span></div>
+      <div class="settings small">
+        <span>Idle stop after</span><Dropdown small label="Idle stop" value={String(ds.idle_timeout_h)} disabled={!online} options={[...new Set([...IDLE, ds.idle_timeout_h])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: `${h} h` }))} onchange={(v) => setServer({ idle_timeout_h: Number(v) })} />
+        <span>Keep archived</span><Dropdown small label="Retention" value={String(ds.retention.delete_closed_after_days)} disabled={!online} options={RETENTION.map(([label, d]) => ({ value: String(d), label }))} onchange={(v) => setServer({ retention: { delete_closed_after_days: v === 'null' ? null : Number(v) } })} />
+      </div>
+    </div>
+  {/if}
   {#each app.client.feed.machineList as m (m.id)}
     {@const st = m.connectivity.state}
     <div class="card c-{st}" data-machine={m.id}>
@@ -43,11 +66,7 @@
       {#if m.bootstrap}<div class="small"><span class="spin"></span> {upgrading(m) ? 'Upgrading: ' : ''}{m.bootstrap.message}</div>{/if}
       {#if m.doctor}<DoctorView doctor={m.doctor} />{/if}
       <div class="settings small">
-        {#if m.settings}
-          {@const ds = m.settings}
-          <span>Idle stop after</span><Dropdown small label="Idle stop" value={String(ds.idle_timeout_h)} disabled={!online || !isLive(m)} options={[...new Set([...IDLE, ds.idle_timeout_h])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: `${h} h` }))} onchange={(v) => setDaemon(m, { idle_timeout_h: Number(v) })} />
-          <span>Keep archived</span><Dropdown small label="Retention" value={String(ds.retention.delete_closed_after_days)} disabled={!online || !isLive(m)} options={RETENTION.map(([label, d]) => ({ value: String(d), label }))} onchange={(v) => setDaemon(m, { retention: { delete_closed_after_days: v === 'null' ? null : Number(v) } })} />
-        {/if}
+        <span title="How long a tool call waits for this machine before it fails">Link-loss grace</span><Dropdown small label="Link-loss grace" value={String(m.grace_s)} disabled={!online} options={[...GRACE.filter(([, s]) => s !== m.grace_s), [`${m.grace_s} s`, m.grace_s] as [string, number]].sort((a, b) => a[1] - b[1]).map(([label, s]) => ({ value: String(s), label: GRACE.find(([, g]) => g === s)?.[0] ?? label }))} onchange={(v) => app.client.call('machines.set_settings', { machine_id: m.id, grace_s: Number(v) })} />
         {#if keys?.additional.length}
           <span>Key</span><Dropdown small label="SSH key" value={m.key_id ?? ''} disabled={!online} options={[{ value: '', label: 'controlroom key' }, ...keys.additional.map((k) => ({ value: k.id, label: k.name }))]} onchange={(v) => app.client.call('machines.set_settings', { machine_id: m.id, key: { key_id: v || null } })} />
         {/if}
@@ -57,7 +76,7 @@
         {#if st === 'unreachable'}<button class="btn sm" disabled={!online} onclick={() => app.client.call('machines.reconnect', { machine_id: m.id })}>Retry connection</button>{/if}
         {#if st === 'incompatible'}<button class="btn sm primary" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade daemon</button>
         {:else if st === 'connected' && m.update_available}<button class="btn sm" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade now</button>{/if}
-        {#if st === 'connected'}<button class="btn sm" onclick={() => { app.view.settings = null; app.newSession({ machine_id: m.id }); }}>+ Session here</button>{/if}
+        {#if st === 'connected'}<button class="btn sm" onclick={() => { app.view.settings = null; app.newSession({ workspaces: [{ machine_id: m.id, path: '~' }] }); }}>+ Session here</button>{/if}
         <button class="btn sm ghost bad-t" disabled={!online} onclick={() => remove(m)}>Remove</button>
       </div>
     </div>

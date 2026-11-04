@@ -5,9 +5,8 @@
 // A released feed is unsubscribed but parked with its timeline, so reopening a recent session
 // resumes from its head instead of reloading; the least recently released are evicted beyond
 // MAX_PARKED. Raw frames are opt-in: `showRaw` resubscribes with `raw_since`, `hideRaw` without.
-import type { MachineId, SessionDetail, SessionEventsParams, OnMachine, SessionId } from '../protocol';
+import type { SessionDetail, SessionEventsParams, SessionId } from '../protocol';
 import { SvelteMap } from 'svelte/reactivity';
-import { sessionKey } from '../model/projects';
 import { Timeline } from './timeline.svelte';
 
 /** Released feeds kept for a quick reopen. */
@@ -19,12 +18,7 @@ const RAW_TAIL = 300;
 
 /** The calls the feeds need, so they can be tested without a transport. */
 export interface FeedRpc {
-  subscribe(
-    machineId: MachineId,
-    id: SessionId,
-    sinceSeq: number,
-    rawSince: number | null,
-  ): Promise<{ subscription_id: string; head_seq: number; detail: SessionDetail }>;
+  subscribe(id: SessionId, sinceSeq: number, rawSince: number | null): Promise<{ subscription_id: string; head_seq: number; detail: SessionDetail }>;
   unsubscribe(subscriptionId: string): Promise<unknown>;
 }
 
@@ -40,10 +34,7 @@ export class SessionFeed {
   /** The subscribe call in flight, so concurrent acquires never subscribe twice. */
   inflight: Promise<void> | null = null;
 
-  constructor(
-    readonly machineId: MachineId,
-    readonly id: SessionId,
-  ) {}
+  constructor(readonly id: SessionId) {}
 }
 
 /** Whether the raw frames a feed streams already include `from` (or the live tail, for null). */
@@ -65,8 +56,8 @@ export class SessionFeeds {
   constructor(private readonly rpc: FeedRpc) {}
 
   /** The held feed of a session, if any. */
-  get(machineId: MachineId, id: SessionId): SessionFeed | undefined {
-    return this.feeds.get(sessionKey(machineId, id));
+  get(id: SessionId): SessionFeed | undefined {
+    return this.feeds.get(id);
   }
 
   /** How many released feeds are parked (for tests). */
@@ -75,11 +66,11 @@ export class SessionFeeds {
   }
 
   /** Holds a subscription for a session; release it with `release`. */
-  acquire(machineId: MachineId, id: SessionId, online: boolean): SessionFeed {
-    const key = sessionKey(machineId, id);
+  acquire(id: SessionId, online: boolean): SessionFeed {
+    const key = id;
     let feed = this.feeds.get(key);
     if (!feed) {
-      feed = this.parked.get(key) ?? new SessionFeed(machineId, id);
+      feed = this.parked.get(key) ?? new SessionFeed(id);
       this.parked.delete(key);
       this.feeds.set(key, feed);
     }
@@ -90,7 +81,7 @@ export class SessionFeeds {
 
   release(feed: SessionFeed): void {
     if (--feed.refs > 0) return;
-    const key = sessionKey(feed.machineId, feed.id);
+    const key = feed.id;
     this.feeds.delete(key);
     this.end(feed);
     feed.rawSince = null;
@@ -103,8 +94,8 @@ export class SessionFeeds {
   }
 
   /** Applies a `session.events` notification to the feed it belongs to (stale ids are ignored). */
-  receive(params: OnMachine<SessionEventsParams>): void {
-    const feed = this.feeds.get(sessionKey(params.machine_id, params.id));
+  receive(params: SessionEventsParams): void {
+    const feed = this.feeds.get(params.id);
     if (!feed || feed.subscriptionId !== params.subscription_id) return;
     feed.timeline.apply(params.ops, feed.headSeq);
     if (params.raw?.length && feed.rawSince !== null) feed.timeline.raw.add(params.raw);
@@ -140,12 +131,11 @@ export class SessionFeeds {
   }
 
   /** Forgets a removed session's feed, held or parked. */
-  drop(machineId: MachineId, id: SessionId): void {
-    const key = sessionKey(machineId, id);
-    this.parked.delete(key);
-    const feed = this.feeds.get(key);
+  drop(id: SessionId): void {
+    this.parked.delete(id);
+    const feed = this.feeds.get(id);
     if (!feed) return;
-    this.feeds.delete(key);
+    this.feeds.delete(id);
     this.end(feed);
   }
 
@@ -167,7 +157,7 @@ export class SessionFeeds {
 
   private subscribe(feed: SessionFeed): void {
     const attempt = this.rpc
-      .subscribe(feed.machineId, feed.id, feed.headSeq, feed.rawSince)
+      .subscribe(feed.id, feed.headSeq, feed.rawSince)
       .then((r) => {
         if (feed.inflight !== attempt || feed.refs <= 0) {
           // Superseded (released, reconnected or resubscribed): end the orphan.

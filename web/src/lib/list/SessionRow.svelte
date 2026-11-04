@@ -4,9 +4,8 @@
   // Rows drag onto a task (card or group header) to link the session.
   import { useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
-  import { keyOf } from '../model/projects';
   import { attentionOf, statusKind, statusTitle } from '../model/status';
-  import type { MachineSession } from '../protocol';
+  import type { FeedSession } from '../protocol';
   import ContextMeter, { ctxLevel } from '../ui/ContextMeter.svelte';
   import Icon from '../ui/Icon.svelte';
   import StatusIcon from '../ui/StatusIcon.svelte';
@@ -19,17 +18,17 @@
     folded = false,
     onfold,
     ancestor = false,
-  }: { s: MachineSession; indent?: number; child?: boolean; kids?: number; folded?: boolean; onfold?: () => void; ancestor?: boolean } = $props();
+  }: { s: FeedSession; indent?: number; child?: boolean; kids?: number; folded?: boolean; onfold?: () => void; ancestor?: boolean } = $props();
 
   const app = useApp();
-  const key = $derived(keyOf(s));
-  const on = $derived(!!app.view.current && keyOf(app.view.current) === key);
+  const key = $derived(s.id);
+  const on = $derived(!!app.view.current && app.view.current.id === key);
   const att = $derived(attentionOf(s));
   const ru = $derived(s.rollup);
   const idleJobs = $derived((s.state === 'idle' || s.state === 'dormant') && s.live_work.jobs > 0);
 
   function dragstart(e: DragEvent) {
-    e.dataTransfer?.setData('application/x-cr-session', JSON.stringify({ machine_id: s.machine_id, session_id: s.id }));
+    e.dataTransfer?.setData('application/x-cr-session', s.id);
     if (e.dataTransfer) e.dataTransfer.effectAllowed = 'link';
   }
   function onclick(e: MouseEvent) {
@@ -56,7 +55,7 @@
   {onclick}
   {onkeydown}
 >
-  <span class="st">{#if child}<span class="tree" aria-hidden="true">└</span>{/if}<StatusIcon kind={statusKind(s)} title={statusTitle(s, app.client.feed.machines.get(s.machine_id))} /></span>
+  <span class="st">{#if child}<span class="tree" aria-hidden="true">└</span>{/if}<StatusIcon kind={statusKind(s)} title={statusTitle(s, app.client.feed.machines)} /></span>
   <div class="main">
     <div class="name">
       <span class="nm">{displayName(s)}</span>

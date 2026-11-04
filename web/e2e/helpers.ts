@@ -12,11 +12,13 @@ export const S = {
   coord: '01JAS000000000000000000011',
   svelte: '01JAS000000000000000000009',
   sweep8k: '01JAS000000000000000000013',
+  dedupe: '01JAS000000000000000000014',
+  deploy: '01JAS000000000000000000015',
 };
 
 /** Opens the fixture build with the scripted feed paused (deterministic), optionally at a session. */
-export async function start(page: Page, session?: { machine: string; id: string }, query = 'paused'): Promise<void> {
-  await page.goto(`/?${query}${session ? `#/s/${session.machine}/${session.id}` : ''}`);
+export async function start(page: Page, session?: string, query = 'paused'): Promise<void> {
+  await page.goto(`/?${query}${session ? `#/s/${session}` : ''}`);
   await expect(page.getByRole('listbox', { name: 'Session list' })).toBeVisible();
 }
 
@@ -27,6 +29,6 @@ export async function calls(page: Page, method?: string): Promise<RecordedCall[]
 }
 
 /** Plays a session's next `n` recorded timeline steps (web/fixtures/timelines.json). */
-export async function advance(page: Page, session: { machine: string; id: string }, n = 1): Promise<number> {
-  return page.evaluate(({ machine, id, n }) => window.__fixture?.advance(machine, id, n) ?? 0, { ...session, n });
+export async function advance(page: Page, id: string, n = 1): Promise<number> {
+  return page.evaluate(({ id, n }) => window.__fixture?.advance(id, n) ?? 0, { id, n });
 }

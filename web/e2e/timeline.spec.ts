@@ -1,11 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
-import { M, S, advance, calls, start } from './helpers';
+import { S, advance, calls, start } from './helpers';
 
 // Sessions with recorded timelines (web/fixtures/timelines.json, see scripts/timeline-fixtures.mjs).
-const sweep = { machine: M.devbox, id: S.sweep8k }; // backlog plain-text; live thinking, nested-tool
-const release = { machine: M.devbox, id: S.release }; // live permission-dialog after a backlog
-const svelte = { machine: M.devbox, id: S.svelte }; // nested-tool, parallel-tools, … (static)
-const blog = { machine: M.devbox, id: S.blog }; // a long timeline (310 items)
+const sweep = S.sweep8k; // backlog plain-text; live thinking, nested-tool
+const release = S.release; // live permission-dialog after a backlog
+const svelte = S.svelte; // nested-tool, parallel-tools, … (static)
+const blog = S.blog; // a long timeline (310 items)
 
 const timeline = (page: Page) => page.getByRole('main').getByLabel('Timeline');
 const item = (page: Page, id: string) => timeline(page).locator(`[data-item="${id}"]`);
@@ -44,6 +44,8 @@ test('streaming text patches the message in place (identity, focus and caret sur
 
 test('nested tool calls render inside their parent, live and from the backlog', async ({ page }) => {
   await start(page, svelte);
+  // The nested call is near the top of a long timeline: scroll it into the rendered window.
+  await timeline(page).evaluate((el) => (el.scrollTop = 0));
   const parent = item(page, 'msg-11.0');
   await expect(parent).toContainText('fixture_nested');
   await expect(parent.locator('[data-item="tool-18"]')).toContainText('notes.txt');
@@ -61,7 +63,7 @@ test('a dialog streamed into the timeline is answered from the timeline', async 
   await expect(card).toContainText('Allow: echo fixture-guard ok?');
   await card.getByRole('button', { name: 'Allow' }).click();
   await expect.poll(async () => (await calls(page, 'request.respond')).map((c) => c.params)).toContainEqual(
-    expect.objectContaining({ machine_id: M.devbox, id: S.release, request_id: 'c3.dialog-18', response: { kind: 'choice', option_id: '0' } }),
+    expect.objectContaining({ id: S.release, request_id: 'c3.dialog-18', response: { kind: 'choice', option_id: '0' } }),
   );
   // The recording's answer arrives: the card shows the outcome.
   await advance(page, release, 1);
@@ -70,6 +72,7 @@ test('a dialog streamed into the timeline is answered from the timeline', async 
 
 test('raw view: an item opens its records, and a record links back to its item', async ({ page }) => {
   await start(page, svelte);
+  await timeline(page).evaluate((el) => (el.scrollTop = 0));
   const tool = item(page, 'tool-18');
   await tool.hover();
   await tool.getByRole('button', { name: /^#\d+/ }).last().click();

@@ -3,7 +3,6 @@
   // link to its raw records (shown on hover or focus) and, for a child session's item, its actor.
   import { useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
-  import { sessionKey } from '../model/projects';
   import type { ItemCell } from '../state/timeline.svelte';
   import { useTimeline } from './context';
   import CompactionItem from './items/CompactionItem.svelte';
@@ -29,7 +28,7 @@
   const it = $derived(cell.item);
   const actor = $derived.by(() => {
     if (it.actor === 'root') return null;
-    const child = app.client.feed.sessions.get(sessionKey(ctx.s.machine_id, it.actor));
+    const child = app.client.feed.sessions.get(it.actor);
     return child ? displayName(child) : 'subagent';
   });
   const seqLabel = $derived(it.seq_from === it.seq_to ? `#${it.seq_from}` : `#${it.seq_from}–${it.seq_to}`);
