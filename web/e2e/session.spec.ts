@@ -11,10 +11,10 @@ test('request card: Allow once records request.respond on the session', async ({
   );
 });
 
-test('request card: Reject and steer denies and sends the text', async ({ page }) => {
+test('request card: Reject & steer denies and sends the text', async ({ page }) => {
   await start(page, S.auth);
   const card = page.getByRole('main').locator('[data-request="req-2"]');
-  await card.getByRole('button', { name: 'Reject and steer…' }).click();
+  await card.getByRole('button', { name: 'Reject & steer…' }).click();
   await card.getByLabel('Steer').fill('Use a mutex instead');
   await card.getByLabel('Steer').press('Enter');
   const [call] = await calls(page, 'request.respond');
@@ -62,7 +62,7 @@ test('todo panel and auto-continue; jobs strip', async ({ page }) => {
   await start(page, S.jobs);
   const todo = page.getByLabel('Todo');
   await expect(todo.getByText('Auto-continue')).toContainText('on');
-  await expect(todo.getByText('Not continuing: waiting on job tests')).toBeVisible();
+  await expect(todo.getByText('◷ waiting on job tests')).toBeVisible();
   await todo.getByLabel('Add todo').fill('Write the regression test');
   await todo.getByLabel('Add todo').press('Enter');
   await todo.getByRole('button', { name: 'Turn off' }).click();
@@ -80,7 +80,7 @@ test('notifications: blocking and non-blocking tiers; Dismiss answers declined',
   await page.locator('body').press(']');
   const panel = page.getByRole('complementary', { name: 'Notifications' });
   await expect(panel.getByText('Needs you')).toBeVisible();
-  await expect(panel.getByText('agents keep working')).toBeVisible();
+  await expect(panel.getByText('Questions', { exact: true })).toBeVisible();
   await expect(panel.getByText('Failed or stopped')).toBeVisible();
   await expect(panel.getByText('Finished')).toBeVisible();
   await expect(panel.getByText(/gpubox.*1 session with a workspace there/)).toBeVisible();
@@ -93,7 +93,7 @@ test('schedules panel: add a schedule', async ({ page }) => {
   await start(page, '01JAS000000000000000000018');
   const panel = page.getByLabel('Schedules');
   await expect(panel.getByText('Weekdays 09:00')).toBeVisible();
-  await panel.getByRole('button', { name: '+ Add schedule' }).click();
+  await panel.getByRole('button', { name: '+ Schedule' }).click();
   await panel.getByLabel('Schedule name').fill('Evening sweep');
   await panel.getByLabel('Cron expression').fill('0 18 * * *');
   await panel.getByLabel('Schedule message').fill('Summarize the day');
@@ -148,7 +148,7 @@ test('session header: every workspace with its availability, and the overlap war
   // A workspace on an unreachable machine: the session keeps its state, the workspace waits.
   await start(page, S.dedupe);
   await expect(page.getByRole('banner').locator('[data-workspace]').first()).toContainText(/gpubox:~\/data\/dedupe\s*unreachable since/);
-  await expect(page.locator('[data-machine-banner="gpubox"]')).toContainText('tool calls there wait up to 10m');
+  await expect(page.locator('[data-machine-banner="gpubox"]')).toHaveAttribute('title', 'Tool calls there wait up to 10m');
   await expect(page.getByRole('banner').getByText('Needs approval')).toBeVisible();
 });
 

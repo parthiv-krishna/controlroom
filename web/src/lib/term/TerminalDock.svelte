@@ -100,12 +100,12 @@
     </div>
     {#if st.open && cur}
       {#if cur.state.state === 'waiting_input'}
-        <div class="banner wait" role="status">⌨ <b>The agent's command waits for input.</b> <span class="small">Type it in the terminal (passwords aren't echoed).</span></div>
+        <div class="banner wait" role="status">⌨ <b>Waiting for input</b> <span class="small">· passwords aren't echoed</span></div>
       {/if}
       {#if status.state === 'detached'}
-        <div class="banner" role="status">⚠ {status.reason} <span class="small">· output resumes when it's back</span></div>
+        <div class="banner" role="status">⚠ {status.reason}</div>
       {:else if status.state === 'ended'}
-        <div class="banner" role="status">{status.reason} <span class="small">· it reopens with the agent's next command</span> <button class="btn xs" onclick={() => xterm?.reconnect()}>Reconnect</button></div>
+        <div class="banner" role="status" title="Reopens with the agent's next command">{status.reason} <button class="btn xs" onclick={() => xterm?.reconnect()}>Reconnect</button></div>
       {:else if STATUS[status.state]}
         <div class="banner" role="status">{STATUS[status.state]}</div>
       {/if}

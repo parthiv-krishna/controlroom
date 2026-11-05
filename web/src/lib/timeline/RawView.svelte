@@ -98,13 +98,13 @@
     </div>
   </div>
   <div class="list" bind:this={list}>
-    {#if raw.clipped}<div class="muted small note">{raw.anchored ? 'Later records are not loaded; open the raw view from a later item to see them.' : 'Older records are not kept.'}</div>{/if}
+    {#if raw.clipped}<div class="muted small note">{raw.anchored ? 'Later records not loaded' : 'Older records are not kept.'}</div>{/if}
     {#each shown as f (f.seq)}
       <div class="line s-{f.stream}" class:focus={inFocus(f.seq)} data-seq={f.seq}>
         <button class="rec" aria-expanded={!!open[f.seq]} onclick={() => (open[f.seq] = !open[f.seq])}>
           <span class="seq">#{f.seq}</span><span class="t">{time(f.ts)}</span><span class="dir">{STREAM[f.stream]}</span><span class="sum">{summary(f)}</span>
         </button>
-        <button class="to-item" title="Show the timeline item this record belongs to" onclick={() => toItem(f.seq)}>item ↗</button>
+        <button class="to-item" onclick={() => toItem(f.seq)}>item ↗</button>
       </div>
       {#if open[f.seq]}<pre class="body">{body(f)}</pre>{/if}
     {:else}

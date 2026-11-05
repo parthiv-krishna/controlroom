@@ -82,19 +82,19 @@
     else if (run?.outcome === 'skipped') app.toasts.show(`“${x.name}” skipped: the session is busy`);
   }
   async function remove(x: Schedule) {
-    if (await app.dialogs.confirm({ title: `Delete schedule “${x.name}”?`, body: 'Past runs stay in the timeline.', ok: 'Delete', danger: true })) await app.client.call('schedules.delete', { schedule_id: x.id });
+    if (await app.dialogs.confirm({ title: `Delete schedule “${x.name}”?`, ok: 'Delete', danger: true })) await app.client.call('schedules.delete', { schedule_id: x.id });
   }
 </script>
 
 <div class="sched" aria-label="Schedules" data-pane="schedules">
   <div class="sh">
     <b>Schedules</b> <span class="muted">{list.length}</span><span class="sp"></span>
-    {#if !draft && supported}<button class="btn xs" disabled={!online} onclick={() => edit(null)}>+ Add schedule</button>{/if}
+    {#if !draft && supported}<button class="btn xs" disabled={!online} onclick={() => edit(null)}>+ Schedule</button>{/if}
   </div>
   {#if !supported}
     <div class="small muted">This server doesn't run schedules.</div>
   {:else if closed && list.length}
-    <div class="small muted">The session is closed, so its schedules are off. Reopen it to enable them.</div>
+    <div class="small muted">Archived: schedules off</div>
   {/if}
   {#each list as x (x.id)}
     {@const last = x.recent_runs[0]}
@@ -118,13 +118,13 @@
         {/if}
       </div>
       <div class="acts">
-        <button class="btn xs" disabled={!online || !supported || closed} title="Send the message now (same busy rule)" onclick={() => runNow(x)}>Run now</button>
+        <button class="btn xs" disabled={!online || !supported || closed} onclick={() => runNow(x)}>Run now</button>
         <button class="btn xs ghost" disabled={!online || !supported} onclick={() => edit(x)}>Edit</button>
         <button class="btn xs ghost bad-t" disabled={!online || !supported} onclick={() => remove(x)}>Delete</button>
       </div>
     </div>
   {:else}
-    {#if !draft && supported}<div class="small muted">No schedules. Add one to wake this agent with a message on a schedule.</div>{/if}
+    {#if !draft && supported}<div class="small muted">No schedules</div>{/if}
   {/each}
   {#if draft}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Esc and Ctrl-Enter from its fields) -->
@@ -141,7 +141,7 @@
         <input class="tz" aria-label="Time zone" bind:value={draft.timezone} />
       </div>
       <div class="small" class:bad-t={!cronOk}>{spec ? (cronOk ? humanSchedule(spec) : 'Invalid cron expression (minute hour day month weekday)') : ''}</div>
-      <textarea rows="2" placeholder="Message sent to the agent" aria-label="Schedule message" bind:value={draft.message}></textarea>
+      <textarea rows="2" placeholder="Message" aria-label="Schedule message" bind:value={draft.message}></textarea>
       <div class="er">
         <span class="small muted">If busy</span>
         <Dropdown small label="If busy" value={draft.if_busy} options={[{ value: 'queue', label: 'Queue the message' }, { value: 'skip', label: 'Skip this run' }]} onchange={(v) => draft && (draft.if_busy = v as IfBusy)} />

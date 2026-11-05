@@ -35,7 +35,7 @@ test('git push approvals across two tabs', async ({ page, browser }) => {
   await send(other, 'Push again');
   for (const p of [page, other]) await expect(card(p).locator('pre.code')).toContainText('HEAD:denied');
   await expect(card(page)).toHaveClass(/\bpending\b/);
-  await card(other).getByRole('button', { name: 'Deny with reason…' }).click();
+  await card(other).getByRole('button', { name: 'Deny with reason' }).click();
   await card(other).getByLabel('Reason').fill('not this branch');
   await card(other).getByLabel('Reason').press('Enter');
   for (const p of [page, other]) await expect(card(p).locator('.res')).toHaveText('→ Deny · Desktop');

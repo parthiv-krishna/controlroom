@@ -21,7 +21,7 @@
   <div class="qh">
     <b>Queue</b> <span class="muted">({s.queue.len})</span>
     {#if s.queue.paused}<span class="paused">paused</span><button class="btn xs primary" disabled={!online} onclick={() => app.client.call('queue.resume', onSession(s))}>Resume</button>{/if}
-    <label class="auto" title="Send the next queued message when a turn ends">
+    <label class="auto" title="Send next when a turn ends">
       <input type="checkbox" checked={s.queue.auto_send} disabled={!online} onchange={(e) => app.client.call('session.update', { ...onSession(s), auto_send: e.currentTarget.checked })} /> Auto-send
     </label>
   </div>
@@ -31,9 +31,9 @@
       <span class="text" title={contentText(q.content)}>{contentText(q.content)}</span>
       {#if q.origin.kind === 'schedule'}<span class="chip">schedule: {q.origin.name}</span>{/if}
       {#if q.sending}
-        <span class="chip sendchip" title="Being handed to the agent; it stays until the agent has it"><span class="spin"></span> sending</span>
+        <span class="chip sendchip" title="Sending"><span class="spin"></span> sending</span>
       {:else}
-        <button class="btn xs" title="Send now, ahead of the queue" disabled={!online} onclick={() => app.client.call('queue.send_now', { ...onSession(s), queue_id: q.id })}>⚡ Send now</button>
+        <button class="btn xs" disabled={!online} onclick={() => app.client.call('queue.send_now', { ...onSession(s), queue_id: q.id })}>⚡ Send now</button>
         <button class="btn xs ghost" title="Move up" aria-label="Move up" disabled={!online || i === 0} onclick={() => reorder(q, i - 1)}>↑</button>
         <button class="btn xs ghost" title="Move down" aria-label="Move down" disabled={!online || i === items.length - 1} onclick={() => reorder(q, i + 1)}>↓</button>
         <button class="btn xs ghost" title="Edit" aria-label="Edit" disabled={!online} onclick={() => edit(q)}>✎</button>

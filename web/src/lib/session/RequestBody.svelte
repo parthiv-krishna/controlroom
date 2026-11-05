@@ -36,7 +36,7 @@
 {:else if body.kind === 'git_push'}
   <pre class="code">{body.command}</pre>
   <div class="small"><span class="muted">remote</span> {body.remote} · <span class="muted">branch</span> <b>{body.branch}</b></div>
-  {#if body.force}<div class="warn">⚠ force-push: rewrites the history of {body.branch} on the remote</div>{/if}
+  {#if body.force}<div class="warn">⚠ force-push rewrites {body.branch}</div>{/if}
 {:else if body.kind === 'contact'}
   <div class="line">contact <b>{body.peer.name}</b></div>
   {#if body.reason}<div class="reason">“{body.reason}”</div>{/if}
@@ -45,7 +45,7 @@
   {#if !compact}<div class="small muted">in <code>{body.cwd}</code></div>{/if}
 {:else if body.kind === 'terminal_input'}
   <pre class="code">$ {body.command}</pre>
-  <div class="line" data-shell={body.shell}>waits for input in the shell {#if session}<OpenTerminal {session} shell={body.shell} {open} />{:else}<b class="shell">{body.shell}</b>{/if} on <b>{body.machine}</b>: type in its terminal</div>
+  <div class="line" data-shell={body.shell}>{#if session}<OpenTerminal {session} shell={body.shell} {open} />{:else}<b class="shell">{body.shell}</b>{/if} on <b>{body.machine}</b>: type in its terminal</div>
 {:else if body.kind === 'privileged'}
   <pre class="code">$ {body.command}</pre>
   <div class="line"><span class="acc">unsandboxed</span> on <b>{body.machine}</b>{#if body.cwd && !compact} · in <code>{body.cwd}</code>{/if}</div>

@@ -31,10 +31,9 @@
   let adding = $state('');
   let dragged: string | null = null;
 
-  /** Who changed the entry last: the agent, a device (its current label) or the system. */
+  /** Who changed the entry last, when not the agent: a device (its current label) or the system. */
   function author(t: Todo): string {
     const by = t.updated_by;
-    if (by.kind === 'agent') return 'agent';
     if (by.kind === 'user') return by.device ? (app.client.feed.devices.get(by.device.device_id)?.label ?? by.device.label) : 'user';
     return by.kind === 'system' ? 'system' : '?';
   }
@@ -84,15 +83,15 @@
     <button class="fold" aria-expanded={open} onclick={() => (app.view.panels[key] = !open)}>{open ? '▾' : '▸'} <b>Todo</b> <span class="muted">{done}/{counted.length}</span></button>
     <span class="bar"><span style:width="{counted.length ? (done / counted.length) * 100 : 0}%"></span></span>
     <span class="sp"></span>
-    <span class="ac ac-{ac.status}" title={ac.reason ?? 'Starts the next run while open entries remain'}>
-      Auto-continue <b>{AC[ac.status]}</b>{#if ac.status === 'on' || ac.status === 'budget'}<span class="muted"> · {ac.runs_used}/{ac.budget} runs</span>{/if}
+    <span class="ac ac-{ac.status}" title={ac.reason ?? 'Runs again while todos remain'}>
+      Auto-continue <b>{AC[ac.status]}</b>{#if ac.status === 'on' || ac.status === 'budget'}<span class="muted"> · {ac.runs_used}/{ac.budget}</span>{/if}
     </span>
     {#if ac.status === 'off'}<button class="btn xs" disabled={!online} onclick={() => setAuto({ auto_continue: true })}>Turn on</button>
     {:else if ac.status === 'on'}<button class="btn xs ghost" disabled={!online} onclick={() => setAuto({ auto_continue: false })}>Turn off</button>
     {:else if ac.status === 'budget'}<button class="btn xs primary" disabled={!online} onclick={raiseBudget}>Raise budget…</button>
     {:else}<button class="btn xs primary" disabled={!online} onclick={() => setAuto({ auto_continue: true })}>Resume</button>{/if}
   </div>
-  {#if ac.reason && ac.status !== 'off'}<div class="why ac-{ac.status}">{ac.status === 'on' ? '◷ Not continuing: ' : ''}{ac.reason}</div>{/if}
+  {#if ac.reason && ac.status !== 'off'}<div class="why ac-{ac.status}">{ac.status === 'on' ? '◷ ' : ''}{ac.reason}</div>{/if}
   {#if open}
     <ul>
       {#each detail.todos as t, i (t.id)}
@@ -109,10 +108,10 @@
             <!-- svelte-ignore a11y_autofocus -->
             <input class="edit" aria-label="Edit todo" bind:value={draft} onkeydown={(e) => editKey(e, t)} onblur={() => (editing = null)} autofocus />
           {:else}
-            <button class="text" title="Click to edit" disabled={!online} onclick={() => startEdit(t)}>{t.text}</button>
+            <button class="text" disabled={!online} onclick={() => startEdit(t)}>{t.text}</button>
           {/if}
           {#if t.reason && (t.status === 'blocked' || t.status === 'skipped')}<span class="reason" title={t.reason}>{t.reason}</span>{/if}
-          <span class="by" class:agent={t.updated_by.kind === 'agent'}>{author(t)}</span>
+          {#if t.updated_by.kind !== 'agent'}<span class="by">{author(t)}</span>{/if}
           <span class="acts">
             <button class="btn xs ghost" aria-label="Move up" disabled={!online || i === 0} onclick={() => reorder(t.id, i - 1)}>↑</button>
             <button class="btn xs ghost" aria-label="Move down" disabled={!online || i === detail.todos.length - 1} onclick={() => reorder(t.id, i + 1)}>↓</button>
@@ -122,9 +121,9 @@
       {/each}
     </ul>
     <div class="add">
-      <input placeholder="+ add a todo (Enter)" aria-label="Add todo" disabled={!online} bind:value={adding} onkeydown={addKey} />
+      <input placeholder="+ todo" aria-label="Add todo" disabled={!online} bind:value={adding} onkeydown={addKey} />
       {#each seedFrom as t (t.id)}
-        <button class="btn xs" disabled={!online} title="Add the task's checklist entries" onclick={() => app.client.call('todo.add', { ...onSession(s), texts: t.checklist.filter((c) => !c.done).map((c) => c.text) })}>Seed from “{t.title}”</button>
+        <button class="btn xs" disabled={!online} title="Add the checklist of “{t.title}”" onclick={() => app.client.call('todo.add', { ...onSession(s), texts: t.checklist.filter((c) => !c.done).map((c) => c.text) })}>+ checklist</button>
       {/each}
     </div>
   {/if}
@@ -163,7 +162,6 @@
   .edit { flex: 1; padding: 1px 4px; }
   .reason { font-size: 11.5px; color: var(--bad); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .by { font-size: 10.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
-  .by.agent { color: var(--info); }
   .acts { display: inline-flex; opacity: 0; }
   li:hover .acts, li:focus-within .acts { opacity: 1; }
   .add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

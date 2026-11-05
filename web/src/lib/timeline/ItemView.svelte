@@ -52,7 +52,7 @@
   {:else if it.kind === 'job'}<JobItem item={it} />
   {:else if it.kind === 'session_message'}<SessionMessageItem item={it} />
   {:else}<UnknownItem />{/if}
-  <button class="seq" title="Show the source records in the raw view" onclick={() => ctx.showRaw(it)}>{seqLabel}</button>
+  <button class="seq" title="Raw records" onclick={() => ctx.showRaw(it)}>{seqLabel}</button>
 </div>
 
 <style>

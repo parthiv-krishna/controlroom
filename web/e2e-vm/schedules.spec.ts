@@ -10,7 +10,7 @@ test('a schedule runs now and shows in the overview', async ({ page }) => {
   await openSession(page, 'two');
   await header(page).getByRole('button', { name: 'Schedules' }).click();
   const panel = page.locator('[data-pane="schedules"]');
-  await panel.getByRole('button', { name: '+ Add schedule' }).click();
+  await panel.getByRole('button', { name: '+ Schedule' }).click();
   await panel.getByLabel('Schedule name').fill('Inbox');
   await panel.getByLabel('Cron expression').fill('0 9 * * mon-fri');
   await panel.getByLabel('Time zone').fill('Europe/Berlin');

@@ -89,7 +89,7 @@ test('a terminal_input request opens and focuses the waiting shell', async ({ pa
   await card.getByRole('button', { name: 'Open terminal “buildbox”' }).click();
   const dock = page.getByRole('region', { name: 'Terminals' });
   await expect(dock.getByRole('tab', { name: /buildbox/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(dock.getByRole('status').filter({ hasText: 'waits for input' })).toBeVisible();
+  await expect(dock.getByRole('status').filter({ hasText: 'Waiting for input' })).toBeVisible();
   await expect.poll(() => inTerminal(page)).toBe(true);
   await page.keyboard.type('sudo true');
   await page.keyboard.press('Enter');

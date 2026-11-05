@@ -16,7 +16,7 @@ test('a command waiting for input is answered in the terminal tab', async ({ pag
 
   const dock = page.getByRole('region', { name: 'Terminals' });
   await expect(dock.getByRole('tab', { name: /^devbox/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(dock.getByRole('status')).toContainText("The agent's command waits for input");
+  await expect(dock.getByRole('status')).toContainText('Waiting for input');
   await expect(dock.locator('.xterm-rows')).toContainText('Name?');
   await dock.locator('.xterm').click();
   await page.keyboard.type('alice');

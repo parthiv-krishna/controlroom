@@ -160,7 +160,7 @@
     <div class="fresh" role="separator" aria-label="Started fresh"><span>Started fresh</span></div>
   {/snippet}
   <div class="timeline" data-pane="session" tabindex="-1" aria-label="Timeline" bind:this={scroller} onscroll={onScroll}>
-    <div class="bar"><button class="btn ghost xs" title="Show the raw transcript records" onclick={openRaw} disabled={!feed}>raw</button></div>
+    <div class="bar"><button class="btn ghost xs" onclick={openRaw} disabled={!feed}>raw</button></div>
     <div class="body">
       {#if timeline.trimmed}<div class="muted small trimmed">{timeline.trimmed} earlier items not kept</div>{/if}
       {#if !rows.length}

@@ -2,8 +2,8 @@
   // One card for every request kind (permission, question, dialog, sandbox, spawn, contact; unknown
   // kinds stay answerable from title, detail and options). Approvals block (the solid flag tier);
   // questions never block (outlined tier): answer or Dismiss ("declined"). A permission request with
-  // a deny option offers "Reject and steer…": deny, then send the text ahead of the queue. A sandbox
-  // request offers "Deny with reason…": the agent's command fails with that reason.
+  // a deny option offers "Reject & steer…": deny, then send the text ahead of the queue. A sandbox
+  // request offers "Deny…" (with a reason): the agent's command fails with that reason.
   // Used in the session pane, the notifications panel and the task detail (compact).
   import { newOpId, useApp } from '../app/app.svelte';
   import { RpcError, describeError } from '../api/errors';
@@ -143,7 +143,7 @@
         {/if}
       {/each}
       <div class="acts end">
-        {#if !req.blocking}<button class="btn ghost" class:sm={compact} title="Answers “declined”; the agent decides on its own" disabled={!live || busy} onclick={() => respond({ kind: 'dismiss' })}>Dismiss</button>{/if}
+        {#if !req.blocking}<button class="btn ghost" class:sm={compact} title="Answers “declined”" disabled={!live || busy} onclick={() => respond({ kind: 'dismiss' })}>Dismiss</button>{/if}
         {#if compact && !quick}
           <button class="btn sm" onclick={() => app.open({ id: targetId })}>Answer…</button>
         {:else if !compact && (!quick || questions.some((q) => q.free_text))}
@@ -155,21 +155,21 @@
         {#each req.options as o (o.id)}
           <button class="btn" class:sm={compact} class:primary={o.style === 'allow'} class:danger={o.style === 'deny'} disabled={!live || busy} onclick={() => choose(o.id)}>{o.label}</button>
         {/each}
-        {#if req.kind === 'permission' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={() => startSteer('steer')}>Reject and steer…</button>{/if}
-        {#if req.kind === 'sandbox' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={() => startSteer('reason')}>{deny.label} with reason…</button>{/if}
+        {#if req.kind === 'permission' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={() => startSteer('steer')}>Reject &amp; steer…</button>{/if}
+        {#if req.kind === 'sandbox' && deny && live && !steering}<button class="btn danger" class:sm={compact} aria-label="{deny.label} with reason" onclick={() => startSteer('reason')}>{deny.label}…</button>{/if}
         {#if !live}<span class="small warn-t">not connected</span>{/if}
       </div>
       {#if steering}
         <div class="steer">
           <!-- svelte-ignore a11y_autofocus -->
           {#if steering === 'reason'}
-            <textarea rows="2" placeholder="Why? The agent sees the reason." aria-label="Reason" bind:value={steer} onkeydown={steerKey} autofocus></textarea>
+            <textarea rows="2" placeholder="Reason" aria-label="Reason" bind:value={steer} onkeydown={steerKey} autofocus></textarea>
           {:else}
-            <textarea rows="2" placeholder="What should the agent do instead?" aria-label="Steer" bind:value={steer} onkeydown={steerKey} autofocus></textarea>
+            <textarea rows="2" placeholder="What to do instead" aria-label="Steer" bind:value={steer} onkeydown={steerKey} autofocus></textarea>
           {/if}
           <div class="acts end">
             <button class="btn" onclick={() => (steering = null)}><span class="kbd">Esc</span> Cancel</button>
-            <button class="btn danger" disabled={!steer.trim() || busy} onclick={sendSteer}><span class="kbd">↵</span> {steering === 'reason' ? deny?.label : 'Reject and steer'}</button>
+            <button class="btn danger" disabled={!steer.trim() || busy} onclick={sendSteer}><span class="kbd">↵</span> {steering === 'reason' ? deny?.label : 'Reject & steer'}</button>
           </div>
         </div>
       {/if}

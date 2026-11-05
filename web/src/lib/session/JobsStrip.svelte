@@ -51,7 +51,7 @@
   const kind = (j: Job) => (j.status === 'running' ? 'working' : j.status === 'succeeded' ? 'complete' : j.status === 'timed_out' ? 'idle' : 'stopped');
   const took = (j: Job) => duration((j.ended_at ?? now) - j.started_at);
   const wakeIn = (j: Job) => (j.follow?.next_wake_at != null ? Math.max(0, Math.ceil((j.follow.next_wake_at - now) / 1000)) : null);
-  const followText = (j: Job) => (j.follow ? `following${j.follow.pattern ? ` /${j.follow.pattern}/` : ''} · ${j.follow.buffer_seconds}s` : 'not followed (exit wake only)');
+  const followText = (j: Job) => (j.follow ? `following${j.follow.pattern ? ` /${j.follow.pattern}/` : ''} · ${j.follow.buffer_seconds}s` : 'wakes on exit');
 </script>
 
 <div class="jobs" aria-label="Background jobs">
@@ -75,9 +75,9 @@
     </div>
     <div class="meta">
       {#if job.status === 'running'}
-        <span class="follow" class:on={!!job.follow} title={job.follow ? 'Wakes the agent on new output and on exit' : 'Wakes the agent only on exit'}>{followText(job)}</span>
+        <span class="follow" class:on={!!job.follow} title={job.follow ? 'Wakes on output and exit' : 'Wakes on exit'}>{followText(job)}</span>
         {#if wakeIn(job) !== null}<span class="wake">next wake in {wakeIn(job)}s</span>{/if}
-        {#if job.follow}<button class="btn xs ghost" disabled={!online} title="Stop waking the agent on output; it still wakes on exit" onclick={() => app.client.call('job.unfollow', { ...onSession(s), job_id: job.id })}>Unfollow</button>{/if}
+        {#if job.follow}<button class="btn xs ghost" disabled={!online} onclick={() => app.client.call('job.unfollow', { ...onSession(s), job_id: job.id })}>Unfollow</button>{/if}
       {/if}
       <span class="sp"></span>
       <code class="path" title={log}>{log}</code>

@@ -48,7 +48,7 @@
   <div class="nb">
     {#each sections as [kind, label, cards] (kind)}
       {#if cards.length}
-        <div class="sec">{label}{#if kind === 'questions'}<span class="hint">agents keep working</span>{/if}</div>
+        <div class="sec">{label}</div>
         {#each cards as c (c.s.id + c.req.id)}
           <div class="card k-{kind}" class:on={isOn(c.s)} role="button" tabindex="0" onclick={(e) => openCard(e, c.s)} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(c.s); }}>
             {@render head(c.s)}
@@ -110,7 +110,6 @@
   .x { background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; }
   .nb { flex: 1; overflow-y: auto; padding: 4px 10px 52px; }
   .sec { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); padding: 14px 4px 6px; }
-  .hint { font-style: italic; }
   .link { margin-left: auto; background: none; border: none; color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer; }
   .link:hover { color: var(--fg); text-decoration: underline; }
   .card { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }

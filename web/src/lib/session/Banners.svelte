@@ -21,11 +21,11 @@
 
 {#each away as machine (machine.id)}
   {#if machine.connectivity.state === 'unreachable'}
-    <div class="banner warn" data-machine-banner={machine.name}>⚠ <b>{machine.name}</b> unreachable · last seen {ago(machine.last_seen)} · tool calls there wait up to {duration(machine.grace_s * 1000)} <button class="btn sm" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: machine.id })}>Retry now</button></div>
+    <div class="banner warn" data-machine-banner={machine.name} title="Tool calls there wait up to {duration(machine.grace_s * 1000)}">⚠ <b>{machine.name}</b> unreachable · {ago(machine.last_seen)} <button class="btn sm" aria-label="Retry connecting to {machine.name}" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: machine.id })}>Retry</button></div>
   {:else if machine.connectivity.state === 'action_required'}
     <div class="banner act"><MachineFix m={machine} compact /></div>
   {:else if machine.connectivity.state === 'incompatible'}
-    <div class="banner warn">⚠ {machine.name}: daemon {machine.version ?? ''} is outdated <button class="btn sm primary" disabled={!app.client.online} onclick={() => app.client.call('machines.upgrade', { machine_id: machine.id })}>Upgrade daemon</button></div>
+    <div class="banner warn">⚠ {machine.name}: daemon outdated <button class="btn sm primary" aria-label="Upgrade the daemon on {machine.name}" disabled={!app.client.online} onclick={() => app.client.call('machines.upgrade', { machine_id: machine.id })}>Upgrade</button></div>
   {:else}
     <div class="banner info"><span class="spin"></span> {machine.name}: {connLabel(machine)}</div>
   {/if}
@@ -34,10 +34,10 @@
   {#if s.resumable}
     <div class="banner">☾ Agent asleep <button class="btn sm" disabled={!online} onclick={resume}>Wake</button></div>
   {:else}
-    <div class="banner warn">☾ The agent can't resume this session <button class="btn sm primary" disabled={!online} onclick={startFresh}>Start fresh…</button></div>
+    <div class="banner warn">☾ Can't resume <button class="btn sm primary" disabled={!online} onclick={startFresh}>Start fresh…</button></div>
   {/if}
 {:else if s.state === 'interrupted'}
-  <div class="banner bad">⚡ Agent stopped mid-turn
+  <div class="banner bad">⚡ Interrupted
     {#if s.resumable}<button class="btn sm primary" disabled={!online} onclick={resume}>Resume</button>{/if}
     <button class="btn sm" disabled={!online} onclick={startFresh}>Start fresh…</button>
   </div>
@@ -52,7 +52,7 @@
   </div>
 {/if}
 {#if s.queue.send_now_pending}
-  <div class="banner info"><span class="spin"></span> Sending when the running step finishes</div>
+  <div class="banner info"><span class="spin"></span> Sending after this step</div>
 {/if}
 
 <style>
