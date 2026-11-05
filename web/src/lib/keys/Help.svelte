@@ -10,7 +10,7 @@
 {#if app.view.help}
   <Modal label="Keyboard" oncancel={close} onprimary={close}>
     <h3>Keyboard</h3>
-    <div class="small muted">Vim-forward; change it in <button class="linkish" onclick={() => { close(); app.openSettings('keyboard'); }}>Settings › Keyboard</button>.</div>
+    <div class="small muted"><button class="linkish" onclick={() => { close(); app.openSettings('keyboard'); }}>Settings</button></div>
     <table class="small">
       <tbody>
         {#each SHORTCUTS as [k, what] (k)}<tr><td><span class="key">{k}</span></td><td>{what}</td></tr>{/each}

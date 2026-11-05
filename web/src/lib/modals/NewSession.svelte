@@ -181,7 +181,7 @@
       </div>
       {#if shared.length}<div class="small warn-t" data-overlap>⚠ Also used by {shared.join(', ')}: edits can collide</div>{/if}
     {/each}
-    <button class="btn xs ghost add" onclick={addRow}>+ Add workspace</button>
+    <button class="btn xs ghost add" onclick={addRow}>+ Workspace</button>
   </div>
   <label class="field"><span>Name</span><input placeholder="Optional" bind:value={name} /></label>
   <div class="field"><span>Tasks</span><TagInput label="Tasks" bind:values={tasks} suggest={suggestTasks} chip={taskChip} placeholder="Add to a task…" empty="Type to find a task" /></div>
@@ -193,11 +193,11 @@
       {:else if level !== 'default' && looser(chosen, defaults)}<span class="badge">looser than defaults</span>{/if}
     </div>
   </div>
-  <label class="field"><span>First message</span><textarea rows="3" placeholder="Optional" bind:value={prompt}></textarea></label>
+  <label class="field"><span>Prompt</span><textarea rows="3" placeholder="Optional" bind:value={prompt}></textarea></label>
   {#if error}<div class="small bad-t" role="alert">{error}</div>{/if}
   <div class="acts">
     <button class="btn" onclick={close}><span class="kbd">Esc</span> Cancel</button>
-    <button class="btn primary" disabled={busy || !app.client.online} onclick={create}><span class="kbd">↵</span> Create session</button>
+    <button class="btn primary" disabled={busy || !app.client.online} onclick={create}><span class="kbd">↵</span> Create</button>
   </div>
 </Modal>
 

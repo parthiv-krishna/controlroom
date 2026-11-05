@@ -78,9 +78,9 @@
         <button class="btn xs ghost" aria-label="Remove item" disabled={!online} onclick={() => app.client.call('tasks.checklist_remove', { task_id: t.id, item_id: c.id })}>✕</button>
       </div>
     {/each}
-    <input placeholder="+ add item (Enter)" aria-label="Add checklist item" disabled={!online} bind:value={item} onkeydown={addItem} />
+    <input placeholder="+ item" aria-label="Add checklist item" disabled={!online} bind:value={item} onkeydown={addItem} />
   </div>
-  <div class="sec-h">Agent sessions <span>({r.sessions.length})</span></div>
+  <div class="sec-h">Sessions <span>({r.sessions.length})</span></div>
   <div class="sessions">
     {#each r.sessions as s, i (s ? s.id : `missing-${i}`)}
       {@const link = t.links[i]}
@@ -106,8 +106,8 @@
     {/each}
   </div>
   <div class="acts">
-    <button class="btn sm primary" onclick={() => app.startTask(t)}>▶ Start session for this task</button>
-    <Dropdown value="" placeholder="+ Link existing session…" label="Link existing session" disabled={!online} options={linkable.map((s) => ({ value: s.id, label: displayName(s), hint: app.client.feed.machines.get(primaryWorkspace(s)?.machine_id ?? '')?.name }))} onchange={(v) => void app.client.call('tasks.link', { task_id: t.id, session_id: v })} />
+    <button class="btn sm primary" onclick={() => app.startTask(t)}>▶ Start session</button>
+    <Dropdown value="" placeholder="+ Link session…" label="Link existing session" disabled={!online} options={linkable.map((s) => ({ value: s.id, label: displayName(s), hint: app.client.feed.machines.get(primaryWorkspace(s)?.machine_id ?? '')?.name }))} onchange={(v) => void app.client.call('tasks.link', { task_id: t.id, session_id: v })} />
     <button class="btn sm ghost bad-t" disabled={!online} onclick={remove}>Delete task</button>
   </div>
 </div>

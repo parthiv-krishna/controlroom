@@ -29,7 +29,7 @@
     app.openProject(p.id);
   }
   async function remove() {
-    if (!id || !(await app.dialogs.confirm({ title: 'Delete project?', body: 'Its tasks stay; they just leave the project.', ok: 'Delete', danger: true }))) return;
+    if (!id || !(await app.dialogs.confirm({ title: 'Delete project?', body: 'Its tasks are kept.', ok: 'Delete', danger: true }))) return;
     if (await app.client.call('projects.delete', { project_id: id })) {
       close();
       app.openProject(null);

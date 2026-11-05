@@ -37,7 +37,7 @@ function byTask(ctx: Ctx, scope: Scope, list: FeedSession[], filtering: boolean)
   const out: Group[] = [];
   for (const t of tasks) {
     const items = list.filter((s) => linksSession(t, s));
-    // Unstarted tasks show as empty groups ("Not started · Start") unless a filter is active.
+    // Unstarted tasks show as empty groups ("Start") unless a filter is active.
     if (items.length || !filtering) out.push({ key: 't:' + t.id, label: t.title, task: t, items });
   }
   const rest = list.filter((s) => !tasks.some((t) => linksSession(t, s)));

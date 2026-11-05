@@ -28,7 +28,7 @@
     run: () => void;
   }
   const EX: { cmd: string; args?: string; what: string; run: (arg: string) => void }[] = [
-    { cmd: 'approve', what: 'Approve the oldest pending approval (current session first)', run: () => void approve() },
+    { cmd: 'approve', what: 'Approve the oldest request', run: () => void approve() },
     { cmd: 'new', what: 'New session', run: () => app.newSession() },
     { cmd: 'task', what: 'New task', run: () => app.newTask() },
     {
@@ -103,7 +103,7 @@
 {#if view.palette !== null}
   <div class="bg" role="presentation" onmousedown={(e) => { if (e.target === e.currentTarget) close(); }}>
     <div class="pal" role="dialog" aria-label="Command palette">
-      <input bind:value={q} oninput={() => (sel = 0)} onkeydown={onkey} placeholder="Sessions and commands… (: for commands)" aria-label="Command" class:ex use:autofocus />
+      <input bind:value={q} oninput={() => (sel = 0)} onkeydown={onkey} placeholder="Go to session, or : for commands" aria-label="Command" class:ex use:autofocus />
       <div class="items" role="listbox" aria-label="Results">
         {#each items as it, i (it.kind + it.label + i)}
           {#if i === 0 || items[i - 1].kind !== it.kind}<div class="sec">{it.kind === 'session' ? 'Sessions' : 'Commands'}</div>{/if}
@@ -114,7 +114,6 @@
           <div class="none">{ex ? 'Unknown command' : 'No matches'}</div>
         {/each}
       </div>
-      <div class="foot small muted"><span class="kbd">↑↓</span> move · <span class="kbd">↵</span> open · <span class="kbd">Esc</span> close · <span class="kbd">:</span> commands</div>
     </div>
   </div>
 {/if}
@@ -132,5 +131,4 @@
   .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .h { font-size: 12px; color: var(--muted); white-space: nowrap; }
   .none { padding: 14px; color: var(--muted); font-size: 13px; }
-  .foot { border-top: 1px solid var(--line); padding: 6px 12px; }
 </style>

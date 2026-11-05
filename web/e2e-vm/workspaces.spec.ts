@@ -44,12 +44,12 @@ test('a session with workspaces on two machines, then from Unassigned to a task'
   await rail.getByRole('button', { name: 'Unassigned' }).click();
   await sessionRow(page, 'two').click();
   await header(page).getByRole('button', { name: '◆ link to task' }).click();
-  await page.getByRole('dialog', { name: 'Link to tasks' }).getByRole('button', { name: '+ New task from this session' }).click();
+  await page.getByRole('dialog', { name: 'Link to tasks' }).getByRole('button', { name: '+ New task' }).click();
   const task = page.getByRole('dialog', { name: 'New task' });
   await task.getByPlaceholder('What needs doing?').fill('Ship the web app');
   await task.getByRole('combobox', { name: 'Projects' }).fill('Web');
   await task.getByRole('combobox', { name: 'Projects' }).press('Enter');
-  await task.getByRole('button', { name: 'Create task' }).click();
+  await task.getByRole('button', { name: /Create$/ }).click();
   await expect(task).toHaveCount(0);
   await expect(header(page).getByRole('button', { name: '◆ Ship the web app' })).toBeVisible();
 

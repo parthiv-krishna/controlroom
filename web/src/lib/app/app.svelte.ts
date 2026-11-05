@@ -167,7 +167,7 @@ export class App {
 
   /** Archive (close); the row stays visible with ↺ until the user navigates away. */
   async archive(s: FeedSession): Promise<void> {
-    if (busy(s) && !(await this.dialogs.confirm({ title: 'Stop and archive?', body: 'The agent is stopped; the history is kept.', ok: 'Stop and archive', danger: true }))) return;
+    if (busy(s) && !(await this.dialogs.confirm({ title: 'Stop and archive?', ok: 'Stop and archive', danger: true }))) return;
     if ((await this.client.call('session.close', onSession(s))) === undefined) return;
     if (!this.view.keep.includes(s.id)) this.view.keep = [...this.view.keep, s.id];
   }

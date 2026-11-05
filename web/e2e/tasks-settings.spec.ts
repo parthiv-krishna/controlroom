@@ -18,7 +18,7 @@ test('tasks: the detail pane and the new-task dialog (everything in one go)', as
   const board = page.getByRole('region', { name: 'Tasks' });
   await board.locator('[data-task="01JAT000000000000000000001"]').getByText('Fix random logouts').click();
   const detail = page.getByLabel('Task details');
-  await expect(detail.getByText('Agent sessions')).toBeVisible();
+  await expect(detail.locator('.sec-h', { hasText: 'Sessions' })).toBeVisible();
   await detail.getByLabel('Add checklist item').fill('Ship it');
   await detail.getByLabel('Add checklist item').press('Enter');
   await board.getByRole('button', { name: '+ Task' }).click();
@@ -26,7 +26,7 @@ test('tasks: the detail pane and the new-task dialog (everything in one go)', as
   await dialog.getByPlaceholder('What needs doing?').fill('Write the changelog');
   await dialog.getByLabel('Add checklist item').fill('Collect PRs');
   await dialog.getByLabel('Add checklist item').press('Enter');
-  await dialog.getByRole('button', { name: '↵ Create task' }).click();
+  await dialog.getByRole('button', { name: '↵ Create' }).click();
   const [create] = await calls(page, 'tasks.create');
   expect(create.params).toMatchObject({ title: 'Write the changelog', status: 'todo', priority: 'p2', checklist: ['Collect PRs'] });
   const [add] = await calls(page, 'tasks.checklist_add');
@@ -35,13 +35,13 @@ test('tasks: the detail pane and the new-task dialog (everything in one go)', as
 
 test('new session dialog: several workspaces, primary first, tasks pre-filled from a task, sandbox', async ({ page }) => {
   await start(page);
-  await page.getByRole('button', { name: '+ New session' }).click();
+  await page.getByRole('button', { name: 'New session', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'New session' });
   await expect(dialog.getByLabel('Machine 1')).toContainText('buildbox');
   await dialog.getByLabel('Directory 1').fill('~/src/acme-api');
   // Another open session uses that directory: allowed, with a warning.
   await expect(dialog.locator('[data-overlap]')).toContainText('auth token refresh race');
-  await dialog.getByRole('button', { name: '+ Add workspace' }).click();
+  await dialog.getByRole('button', { name: '+ Workspace' }).click();
   await expect(dialog.getByLabel('Machine 2')).toContainText('devbox');
   await dialog.getByLabel('Directory 2').fill('~/src/acme-web');
   // An unreachable machine can't be picked.
@@ -55,8 +55,8 @@ test('new session dialog: several workspaces, primary first, tasks pre-filled fr
   await dialog.getByRole('option', { name: /^Off/ }).click();
   await expect(dialog.getByText('no sandbox')).toBeVisible();
   await dialog.getByLabel('Name').fill('try the fix');
-  await dialog.getByLabel('First message').fill('reproduce the bug');
-  await dialog.getByRole('button', { name: '↵ Create session' }).click();
+  await dialog.getByLabel('Prompt').fill('reproduce the bug');
+  await dialog.getByRole('button', { name: '↵ Create' }).click();
   const [create] = await calls(page, 'session.create');
   expect(create.params).toMatchObject({
     workspaces: [
@@ -79,7 +79,7 @@ test('new session from a task: the task is pre-filled', async ({ page }) => {
   await group.getByRole('button', { name: 'New session for this task' }).click();
   const dialog = page.getByRole('dialog', { name: 'New session' });
   await expect(dialog.locator('.field').filter({ hasText: 'Tasks' })).toContainText('Write onboarding guide');
-  await expect(dialog.getByLabel('First message')).toHaveValue(/Write onboarding guide/);
+  await expect(dialog.getByLabel('Prompt')).toHaveValue(/Write onboarding guide/);
 });
 
 test('settings: tabs, the add-machine flow, devices and sandbox defaults', async ({ page }) => {
@@ -88,7 +88,7 @@ test('settings: tabs, the add-machine flow, devices and sandbox defaults', async
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await expect(settings.getByText('host key changed', { exact: true })).toBeVisible();
 
-  await settings.getByRole('button', { name: '+ Add machine' }).click();
+  await settings.getByRole('button', { name: '+ Machine' }).click();
   await settings.getByPlaceholder('devbox.example.com').fill('newbox.example.com');
   await settings.getByPlaceholder('alice').fill('alice');
   await settings.getByRole('button', { name: /Connect/ }).click();

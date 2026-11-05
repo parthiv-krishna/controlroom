@@ -48,7 +48,7 @@
   role="option"
   tabindex="-1"
   aria-selected={on}
-  title={ancestor ? "Doesn't match the filter; shown because a subagent does" : undefined}
+  title={ancestor ? "Parent of a match" : undefined}
   draggable="true"
   data-session={s.id}
   ondragstart={dragstart}
@@ -60,8 +60,8 @@
     <div class="name">
       <span class="nm">{displayName(s)}</span>
       {#if s.context && ctxLevel(s.context.used, s.context.size) !== 'ok'}<ContextMeter usage={s.context} compact />{/if}
-      {#if s.todo}<span class="mini" title="Todo progress · auto-continue {s.todo.auto_continue}">{s.todo.done}/{s.todo.total}</span>{/if}
-      {#if idleJobs}<span class="mini jobs" title="Idle, but {s.live_work.jobs} background job(s) running">⚙ {s.live_work.jobs}</span>{/if}
+      {#if s.todo}<span class="mini" title="Todo · auto-continue {s.todo.auto_continue}">{s.todo.done}/{s.todo.total}</span>{/if}
+      {#if idleJobs}<span class="mini jobs" title="{s.live_work.jobs} jobs running">⚙ {s.live_work.jobs}</span>{/if}
       {#if ru.approvals}<span class="ru approvals" title="{ru.approvals} subagent(s) need you">↳ ⚑{ru.approvals}</span>
       {:else if ru.questions}<span class="ru questions" title="{ru.questions} subagent question(s)">↳ ?{ru.questions}</span>
       {:else if ru.problems}<span class="ru problems" title="{ru.problems} subagent(s) failed">↳ ✕{ru.problems}</span>{/if}

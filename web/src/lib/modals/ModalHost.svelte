@@ -36,8 +36,8 @@
 {:else if md?.kind === 'start-fresh' && session}
   <Modal label="Start fresh" oncancel={close} onprimary={startFresh}>
     <h3>Start fresh: {displayName(session)}</h3>
-    <p>Starts a new agent session here. The history stays visible, but the agent won't remember it.</p>
-    <label class="check"><input type="checkbox" bind:checked={includeHistory} /> Give the agent the previous conversation</label>
+    <p>The agent forgets this conversation; the history stays.</p>
+    <label class="check"><input type="checkbox" bind:checked={includeHistory} /> Pass the old conversation</label>
     <div class="acts">
       <button class="btn" onclick={close}><span class="kbd">Esc</span> Cancel</button>
       <button class="btn primary" disabled={!app.client.online} onclick={startFresh}><span class="kbd">↵</span> Start fresh</button>
@@ -64,7 +64,7 @@
       {/each}
     </div>
     <div class="acts">
-      <button class="btn" onclick={() => app.newTask('doing', [s.id])}>+ New task from this session</button>
+      <button class="btn" onclick={() => app.newTask('doing', [s.id])}>+ New task</button>
       <button class="btn primary" onclick={close}><span class="kbd">↵</span> Done</button>
     </div>
   </Modal>

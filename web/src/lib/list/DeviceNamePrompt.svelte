@@ -20,7 +20,7 @@
 </script>
 
 <div class="devname" role="region" aria-label="Name this device">
-  <div><b>Name this device</b> <span class="muted small">so you can tell it apart in Settings › Devices</span></div>
+  <div><b>Name this device</b></div>
   <div class="row">
     <input aria-label="Device name" bind:value={name} maxlength="60" onkeydown={onkey} />
     <button class="btn sm primary" onclick={save}>Save</button>

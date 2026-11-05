@@ -90,10 +90,10 @@ export async function newSession(
   page: Page,
   opts: { workspaces: Workspace[]; name: string; level: 'Strict' | 'Relaxed' | 'Off'; prompt?: string; overlap?: string },
 ): Promise<void> {
-  await page.getByRole('button', { name: '+ New session' }).click();
+  await page.getByRole('button', { name: 'New session', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'New session' });
   for (const [i, ws] of opts.workspaces.entries()) {
-    if (i > 0) await dialog.getByRole('button', { name: '+ Add workspace' }).click();
+    if (i > 0) await dialog.getByRole('button', { name: '+ Workspace' }).click();
     await choose(dialog, `Machine ${i + 1}`, ws.machine);
     await dialog.getByLabel(`Directory ${i + 1}`).fill(ws.path);
   }
@@ -102,8 +102,8 @@ export async function newSession(
   else await expect(dialog.locator('[data-overlap]')).toHaveCount(0);
   await dialog.getByLabel('Name').fill(opts.name);
   await choose(dialog, 'Sandbox level', opts.level);
-  if (opts.prompt) await dialog.getByLabel('First message').fill(opts.prompt);
-  await dialog.getByRole('button', { name: 'Create session' }).click();
+  if (opts.prompt) await dialog.getByLabel('Prompt').fill(opts.prompt);
+  await dialog.getByRole('button', { name: /Create$/ }).click();
   await expect(dialog).toHaveCount(0);
   await expect(header(page).locator('.et.heading')).toHaveText(opts.name);
 }
@@ -134,12 +134,12 @@ export function machineBanner(page: Page, machine: string): Locator {
 }
 
 /**
- * Waits until no machine banner is left in the open session, pressing "Retry now" while the
+ * Waits until no machine banner is left in the open session, pressing "Retry" while the
  * server waits out its reconnect backoff (it may also reconnect on its own first).
  */
 export async function waitReconnected(page: Page, machine: string): Promise<void> {
   const banner = machineBanner(page, machine);
-  const retry = banner.getByRole('button', { name: 'Retry now' });
+  const retry = banner.getByRole('button', { name: /^Retry connecting/ });
   await expect(async () => {
     if (await retry.isVisible()) await retry.click({ timeout: 1_000 });
     await expect(page.locator('[data-machine-banner]')).toHaveCount(0, { timeout: 5_000 });

@@ -98,7 +98,7 @@
         {#each treeRoots(g.items, listing.visible, listing.tree) as r (r.s.id)}{@render tree(r.s, 0, 0, r.dim)}{/each}
         {#if g.task && !g.items.length}
           {@const t = g.task}
-          <div class="gempty">Not started · <button class="linkish" onclick={() => app.startTask(t)}>Start</button></div>
+          <div class="gempty"><button class="linkish" onclick={() => app.startTask(t)}>Start</button></div>
         {/if}
       {/if}
     {:else}

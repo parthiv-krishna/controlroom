@@ -89,12 +89,12 @@
   <div class="field">
     <span>Checklist</span>
     {#each items as it, i (i)}<div class="item"><span>☐ {it}</span><button class="btn xs ghost" aria-label="Remove item" onclick={() => (items = items.filter((_, j) => j !== i))}>✕</button></div>{/each}
-    <input placeholder="+ add item (Enter)" aria-label="Add checklist item" bind:value={item} onkeydown={addItem} />
+    <input placeholder="+ item" aria-label="Add checklist item" bind:value={item} onkeydown={addItem} />
   </div>
   <div class="field"><span>Sessions</span><TagInput label="Linked sessions" bind:values={sessions} suggest={sessionSuggest} chip={sessionChip} placeholder="Link sessions…" empty="Type to find a session" /></div>
   <div class="acts">
     <button class="btn" onclick={close}><span class="kbd">Esc</span> Cancel</button>
-    <button class="btn primary" disabled={busy || !app.client.online} onclick={create}><span class="kbd">↵</span> Create task</button>
+    <button class="btn primary" disabled={busy || !app.client.online} onclick={create}><span class="kbd">↵</span> Create</button>
   </div>
 </Modal>
 

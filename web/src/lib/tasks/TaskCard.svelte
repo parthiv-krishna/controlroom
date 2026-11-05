@@ -84,7 +84,6 @@
     {#if r.working}<span class="rp" title="working"><StatusIcon kind="working" />{r.working}</span>{/if}
     {#if r.unread}<span class="rp" title="finished, unread"><StatusIcon kind="complete" />{r.unread}</span>{/if}
     {#if r.unreachable}<span class="rp" title="a machine is unreachable"><StatusIcon kind="offline" />{r.unreachable}</span>{/if}
-    {#if !t.links.length}<span class="rp none">not started</span>{/if}
     {#if !t.links.length && t.status !== 'done'}<button class="btn xs ghost start" title="Start a session for this task" onclick={() => app.startTask(t)}>▶ start</button>{/if}
   </div>
   {#if suggestion && dismissed !== suggestion.to}
@@ -120,7 +119,6 @@
   .more { font-size: 11px; color: var(--muted); padding-left: 28px; }
   .foot { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
   .rp { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--bg3); }
-  .rp.none { font-style: italic; color: var(--muted); }
   .start { margin-left: auto; }
   .sug { font-size: 11.5px; background: color-mix(in srgb, var(--info) 10%, var(--bg3)); padding: 4px 6px; border-radius: 6px; display: flex; gap: 4px; align-items: center; }
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
   // Search, the two-pane Filter menu (State, Task, Machine), Group by, active filter chips, and
-  // "+ New session".
+  // "+ Session".
   import { useApp } from '../app/app.svelte';
   import { FACETS, STATES, filterCount, type FacetKey } from '../model/filters';
   import { GROUPS } from '../model/grouping';
@@ -100,7 +100,7 @@
   {/if}
 </div>
 <div class="chips">
-  <button class="new" onclick={() => app.newSession()}>+ New session</button>
+  <button class="new" onclick={() => app.newSession()} aria-label="New session">+ Session</button>
   {#each FACETS as [k] (k)}
     {#each view.filters[k] as v (v)}
       <span class="fchip"><span class="muted">{facetLabel(k)}</span><span class="v">{chipLabel(k, v)}</span><button aria-label="Remove filter" onclick={() => remove(k, v)}>×</button></span>
