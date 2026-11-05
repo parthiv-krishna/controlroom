@@ -1,9 +1,11 @@
 # Rust builds via crane. Cargo is the source of truth; this wraps it for
-# `nix build` / `nix flake check`. `webDist` is the built UI (nix/web.nix).
+# `nix build` / `nix flake check`. `webDist` is the built UI (nix/web.nix); `nono` is the
+# pinned nono (nix/nono.nix), whose source the static host build reuses.
 {
   pkgs,
   crane,
   webDist,
+  nono,
 }:
 let
   inherit (pkgs) lib;
@@ -44,8 +46,43 @@ let
     }
   );
 
-  # Fully static controlroomd for arbitrary Linux hosts, cross-compiled with
-  # the matching musl toolchain (C dependencies such as bundled SQLite too).
+  # The cross-compilation settings of a fully static binary for `target`, built with the
+  # matching musl toolchain (C dependencies such as bundled SQLite or aws-lc too).
+  staticArgs =
+    { target, crossPkgs }:
+    let
+      cc = crossPkgs.stdenv.cc;
+      targetEnv = lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] target);
+      ccExe = "${cc}/bin/${cc.targetPrefix}cc";
+    in
+    {
+      CARGO_BUILD_TARGET = target;
+      CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
+      "CARGO_TARGET_${targetEnv}_LINKER" = ccExe;
+      "CC_${builtins.replaceStrings [ "-" ] [ "_" ] target}" = ccExe;
+      HOST_CC = "${pkgs.stdenv.cc}/bin/cc";
+      depsBuildBuild = [ cc ];
+      doCheck = false;
+    };
+
+  # Asserts that `$out/bin/<name>` is statically linked.
+  staticCheck = name: ''
+    file -L $out/bin/${name} | tee /dev/stderr | grep -Eq 'static(-pie|ally) linked'
+  '';
+
+  # The cross targets of the static host binaries.
+  targets = {
+    x86_64 = {
+      target = "x86_64-unknown-linux-musl";
+      crossPkgs = pkgs.pkgsCross.musl64;
+    };
+    aarch64 = {
+      target = "aarch64-unknown-linux-musl";
+      crossPkgs = pkgs.pkgsCross.aarch64-multiplatform-musl;
+    };
+  };
+
+  # Fully static controlroomd for arbitrary Linux hosts.
   mkStaticDaemon =
     {
       target,
@@ -55,20 +92,13 @@ let
       versionOverride ? null,
     }:
     let
-      cc = crossPkgs.stdenv.cc;
-      targetEnv = lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] target);
-      ccExe = "${cc}/bin/${cc.targetPrefix}cc";
-      args = commonArgs // {
-        pname = "controlroomd";
-        cargoExtraArgs = "--locked -p controlroomd";
-        CARGO_BUILD_TARGET = target;
-        CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
-        "CARGO_TARGET_${targetEnv}_LINKER" = ccExe;
-        "CC_${builtins.replaceStrings [ "-" ] [ "_" ] target}" = ccExe;
-        HOST_CC = "${pkgs.stdenv.cc}/bin/cc";
-        depsBuildBuild = [ cc ];
-        doCheck = false;
-      };
+      args =
+        commonArgs
+        // staticArgs { inherit target crossPkgs; }
+        // {
+          pname = "controlroomd";
+          cargoExtraArgs = "--locked -p controlroomd";
+        };
       cargoArtifacts = craneLib.buildDepsOnly args;
       regular = craneLib.buildPackage (
         args
@@ -76,9 +106,7 @@ let
           inherit cargoArtifacts;
           doInstallCheck = true;
           nativeInstallCheckInputs = [ pkgs.file ];
-          installCheckPhase = ''
-            file -L $out/bin/controlroomd | tee /dev/stderr | grep -Eq 'static(-pie|ally) linked'
-          '';
+          installCheckPhase = staticCheck "controlroomd";
         }
       );
     in
@@ -121,23 +149,51 @@ let
     }
   );
 
-  controlroomdStatic = {
-    x86_64 = mkStaticDaemon {
-      target = "x86_64-unknown-linux-musl";
-      crossPkgs = pkgs.pkgsCross.musl64;
-    };
-    aarch64 = mkStaticDaemon {
-      target = "aarch64-unknown-linux-musl";
-      crossPkgs = pkgs.pkgsCross.aarch64-multiplatform-musl;
-    };
-  };
+  controlroomdStatic = lib.mapAttrs (_: mkStaticDaemon) targets;
 
   # An x86_64 daemon that reports an older (pre-release) version, for the VM test's auto-upgrade.
-  controlroomdStaticOld = mkStaticDaemon {
-    target = "x86_64-unknown-linux-musl";
-    crossPkgs = pkgs.pkgsCross.musl64;
-    versionOverride = "${commonArgs.version}-old";
-  };
+  controlroomdStaticOld = mkStaticDaemon (
+    targets.x86_64 // { versionOverride = "${commonArgs.version}-old"; }
+  );
+
+  # The pinned nono, fully static and stripped (its release profile strips), for the hosts:
+  # bundled next to controlroomd and uploaded with it, so hosts need no nono of their own. The
+  # same source as ./nono.nix; its Linux keyring backend is pure Rust (no libdbus). The x86_64
+  # build runs `nono --version`; the aarch64 one is checked to be static, as controlroomd's is.
+  mkStaticNono =
+    arch:
+    { target, crossPkgs }:
+    let
+      args = staticArgs { inherit target crossPkgs; } // {
+        pname = "nono";
+        inherit (nono) version src;
+        strictDeps = true;
+        cargoExtraArgs = "--locked -p nono-cli";
+      };
+    in
+    craneLib.buildPackage (
+      args
+      // {
+        cargoArtifacts = craneLib.buildDepsOnly args;
+        doInstallCheck = true;
+        nativeInstallCheckInputs = [ pkgs.file ];
+        installCheckPhase = ''
+          runHook preInstallCheck
+          ${staticCheck "nono"}
+          file -L $out/bin/nono | grep -q ', stripped'
+        ''
+        + lib.optionalString (arch == "x86_64") ''
+          [ "$($out/bin/nono --version)" = "nono ${nono.version}" ]
+        ''
+        + ''
+          runHook postInstallCheck
+        '';
+        meta = nono.meta // {
+          description = "nono, static for controlroom's execution hosts";
+        };
+      }
+    );
+  nonoStatic = lib.mapAttrs mkStaticNono targets;
 
   # The agent daemon for the controlroom server (services.controlroom.agent): runs every pi
   # session; its supervisors are started from this binary's own path.
@@ -157,8 +213,9 @@ let
   );
 
   # The web server with the UI embedded (copied to web/dist, where rust-embed
-  # reads it) and both static daemons bundled for deployment. The bundled
-  # directory is compiled in as the default for `bundled_daemons_dir`.
+  # reads it) and both static daemons, with the static nono for each, bundled for
+  # deployment. The bundled directory is compiled in as the default for
+  # `bundled_daemons_dir`.
   controlroomWeb = craneLib.buildPackage (
     commonArgs
     // {
@@ -177,6 +234,9 @@ let
         install -m 755 ${controlroomdStatic.x86_64}/bin/controlroomd $daemons/controlroomd-x86_64-linux
         install -m 755 ${controlroomdStatic.aarch64}/bin/controlroomd $daemons/controlroomd-aarch64-linux
         echo ${commonArgs.version} > $daemons/version
+        install -m 755 ${nonoStatic.x86_64}/bin/nono $daemons/nono-x86_64-linux
+        install -m 755 ${nonoStatic.aarch64}/bin/nono $daemons/nono-aarch64-linux
+        echo ${nono.version} > $daemons/nono-version
       '';
       doInstallCheck = true;
       installCheckPhase = ''
@@ -198,6 +258,7 @@ in
     controlroomAgentd
     controlroomdStatic
     controlroomdStaticOld
+    nonoStatic
     protocolTsDrift
     ;
 

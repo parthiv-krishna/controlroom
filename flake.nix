@@ -58,6 +58,7 @@
         import ./nix/rust.nix {
           inherit pkgs crane;
           webDist = (webFor pkgs).dist;
+          nono = nonoFor pkgs;
         };
     in
     {
@@ -95,6 +96,9 @@
           # Static musl daemon binaries, deployed to execution machines over SSH.
           controlroomd-x86_64-linux = rust.controlroomdStatic.x86_64;
           controlroomd-aarch64-linux = rust.controlroomdStatic.aarch64;
+          # The pinned nono, static, bundled with them for the hosts.
+          nono-x86_64-linux = rust.nonoStatic.x86_64;
+          nono-aarch64-linux = rust.nonoStatic.aarch64;
           # The sandbox, pinned to the version the profiles are validated against.
           nono = nonoFor pkgs;
           # pi pinned for controlroom: launcher, @controlroom/pi, OAuth helper.
@@ -123,6 +127,9 @@
             ;
           controlroomd-static-x86_64 = rust.controlroomdStatic.x86_64;
           controlroomd-static-aarch64 = rust.controlroomdStatic.aarch64;
+          # Static and stripped; the x86_64 one asserts `nono --version`.
+          nono-static-x86_64 = rust.nonoStatic.x86_64;
+          nono-static-aarch64 = rust.nonoStatic.aarch64;
           controlroom-web = rust.controlroomWeb;
           protocol-ts-drift = rust.protocolTsDrift;
           web-check = web.check;
