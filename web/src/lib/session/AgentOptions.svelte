@@ -1,11 +1,10 @@
 <script lang="ts">
-  // The agent's neutral options (model, thinking level, …) and the context meter, from the summary.
+  // The agent's neutral options (model, thinking level, …), from the summary.
   // Changing one calls session.set_option, which needs a live agent; a select stays disabled until
   // the agent reported its choices (empty until then).
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import type { FeedSession } from '../protocol';
-  import ContextMeter from '../ui/ContextMeter.svelte';
   import Dropdown from '../ui/Dropdown.svelte';
 
   let { s }: { s: FeedSession } = $props();
@@ -25,7 +24,6 @@
       <label class="small check"><input type="checkbox" checked={o.value} disabled={!editable} onchange={(e) => app.client.call('session.set_option', { ...onSession(s), option_id: o.id, value: e.currentTarget.checked })} /> {o.label}</label>
     {/if}
   {/each}
-  {#if s.context}<ContextMeter usage={s.context} />{/if}
 </span>
 
 <style>

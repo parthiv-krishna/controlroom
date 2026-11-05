@@ -1,7 +1,7 @@
 <script lang="ts">
   // The session header: editable title, status, its workspaces (`machine:path` pills with each
-  // machine's availability, and a warning when another open session shares a directory), options
-  // and context, badges, icon actions (schedules, mark read/unread, archive), task chips and
+  // machine's availability, and a warning when another open session shares a directory), options,
+  // the usage statusline, badges, icon actions (schedules, mark read/unread, archive), task chips and
   // "link to task".
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
@@ -15,6 +15,7 @@
   import StatusIcon from '../ui/StatusIcon.svelte';
   import AgentOptions from './AgentOptions.svelte';
   import SessionBadges from './SessionBadges.svelte';
+  import Statusline from './Statusline.svelte';
   import Workspaces from './Workspaces.svelte';
 
   let { s, detail }: { s: FeedSession; detail: SessionDetail | null } = $props();
@@ -37,6 +38,7 @@
     <Workspaces {s} />
     <SessionBadges {s} {detail} />
     <AgentOptions {s} />
+    <Statusline {s} />
     <span class="acts">
       <button class="sa" class:on={schedulesShown} title="Schedules" aria-label="Schedules" aria-pressed={schedulesShown} onclick={() => (app.view.panels['schedules:' + key] = !schedulesShown)}><Icon name="clock" />{#if schedules}<span class="n">{schedules}</span>{/if}</button>
       {#if s.unread}
