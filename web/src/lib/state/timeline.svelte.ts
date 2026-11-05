@@ -8,6 +8,9 @@
 // - Ops are idempotent across resubscribes: `append_text`/`end` at or before the head already
 //   applied are skipped, and an upsert older than the item it would replace is ignored.
 // - Memory is bounded: at most MAX_ITEMS items (the oldest are trimmed) and MAX_RAW raw frames.
+// - The reading view stays quiet: retries fold into their run, a notice repeated verbatim (an
+//   extension's "ready" at each agent start) shows once with a count, and a session-info item
+//   shows only the values that changed (the first ones are what the header already shows).
 import type { RawFrame, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
 
 /** Items kept per timeline; older ones are trimmed (the protocol has no paging yet). */
@@ -42,6 +45,10 @@ const before = (a: ItemCell, seqFrom: number, arrival: number): boolean =>
  */
 export const hiddenInTimeline = (item: TimelineItem): boolean => item.kind === 'usage' && item.scope === 'turn';
 
+/** The title, model and thinking level a session-info item reports. */
+export type SessionInfo = Partial<Record<'title' | 'model' | 'thinking', string>>;
+const INFO_FIELDS = ['title', 'model', 'thinking'] as const;
+
 /** The nested-tool parent of an item, if it has one. */
 const parentOf = (item: TimelineItem): string | null =>
   item.kind === 'tool_call' && item.parent_tool_call_id && item.parent_tool_call_id !== item.tool_call_id ? item.parent_tool_call_id : null;
@@ -53,6 +60,12 @@ export class Timeline {
   children = $state.raw<ReadonlyMap<string, readonly ItemCell[]>>(new Map());
   /** How many old items were dropped to bound memory. */
   trimmed = $state(0);
+  /** Retries folded into the run they belong to, by the run's id. */
+  retries = $state.raw<ReadonlyMap<string, readonly ItemCell[]>>(new Map());
+  /** How often a shown notice was repeated verbatim (2 or more), by its id. */
+  repeats = $state.raw<ReadonlyMap<string, number>>(new Map());
+  /** The values a shown session-info item changed, by its id. */
+  infoChanges = $state.raw<ReadonlyMap<string, SessionInfo>>(new Map());
   /** Ids of the requests that have a timeline item (others are shown from the summary). */
   requestIds = $state.raw<ReadonlySet<string>>(new Set());
   /** Raw transcript frames (only while a raw view asks for them). */
@@ -61,6 +74,8 @@ export class Timeline {
   private readonly cells = new Map<string, ItemCell>();
   /** Tool call cells by `tool_call_id`. */
   private tools = new Map<string, ItemCell>();
+  /** The row that stands for an item folded or hidden from the rows (a retry's run, a repeat's first notice). */
+  private hosts = new Map<string, ItemCell>();
   /** Every cell, in order. */
   private order: ItemCell[] = [];
   private arrivals = 0;
@@ -78,16 +93,16 @@ export class Timeline {
     return this.order;
   }
 
-  /** The top-level row an item is shown in (itself, or the outermost tool call around it). */
+  /** The top-level row an item is shown in (itself, the outermost tool call around it, or its host). */
   rowOf(id: string): ItemCell | undefined {
     let cell = this.cells.get(id);
     for (let hops = 0; cell && hops < this.order.length; hops++) {
       const parent = parentOf(cell.item);
       const up = parent ? this.tools.get(parent) : undefined;
-      if (!up) return cell;
+      if (!up) break;
       cell = up;
     }
-    return cell;
+    return cell && (this.hosts.get(cell.id) ?? cell);
   }
 
   /**
@@ -132,7 +147,9 @@ export class Timeline {
       return true;
     }
     cell.item = item;
-    return parentOf(old) !== parentOf(item) || (old.kind === 'tool_call') !== (item.kind === 'tool_call');
+    // Notices and session info are folded by their content.
+    if (item.kind === 'notice' || item.kind === 'session_info' || old.kind !== item.kind) return true;
+    return parentOf(old) !== parentOf(item);
   }
 
   private update(id: string, change: (item: TimelineItem) => TimelineItem): void {
@@ -180,17 +197,70 @@ export class Timeline {
     }
     const rows: ItemCell[] = [];
     const children = new Map<string, ItemCell[]>();
+    const retries = new Map<string, ItemCell[]>();
+    const repeats = new Map<string, number>();
+    const infoChanges = new Map<string, SessionInfo>();
+    const hosts = new Map<string, ItemCell>();
+    // Per actor: its current run, the notices seen, and the session info known so far.
+    const runs = new Map<string, ItemCell>();
+    const notices = new Map<string, ItemCell>();
+    const known = new Map<string, SessionInfo>();
     for (const cell of this.order) {
-      const parent = parentOf(cell.item);
+      const { item } = cell;
+      const parent = parentOf(item);
       if (parent && tools.has(parent)) {
         const list = children.get(parent);
         if (list) list.push(cell);
         else children.set(parent, [cell]);
-      } else if (!hiddenInTimeline(cell.item)) rows.push(cell);
+        continue;
+      }
+      if (hiddenInTimeline(item)) continue;
+      if (item.kind === 'run') runs.set(item.actor, cell);
+      else if (item.kind === 'retry') {
+        const run = runs.get(item.actor);
+        if (run) {
+          const list = retries.get(run.id);
+          if (list) list.push(cell);
+          else retries.set(run.id, [cell]);
+          hosts.set(cell.id, run);
+          continue;
+        }
+      } else if (item.kind === 'notice') {
+        const key = `${item.actor}\n${item.level}\n${item.text}`;
+        const first = notices.get(key);
+        if (first) {
+          repeats.set(first.id, (repeats.get(first.id) ?? 1) + 1);
+          hosts.set(cell.id, first);
+          continue;
+        }
+        notices.set(key, cell);
+      } else if (item.kind === 'session_info') {
+        const before = known.get(item.actor) ?? {};
+        const now = { ...before };
+        const changed: SessionInfo = {};
+        for (const f of INFO_FIELDS) {
+          const v = item[f];
+          if (v === null) continue;
+          if (before[f] !== undefined && before[f] !== v) changed[f] = v;
+          now[f] = v;
+        }
+        known.set(item.actor, now);
+        if (!Object.keys(changed).length) {
+          const host = rows.at(-1);
+          if (host) hosts.set(cell.id, host);
+          continue;
+        }
+        infoChanges.set(cell.id, changed);
+      }
+      rows.push(cell);
     }
     this.tools = tools;
+    this.hosts = hosts;
     this.rows = rows;
     this.children = children;
+    this.retries = retries;
+    this.repeats = repeats;
+    this.infoChanges = infoChanges;
     if (requests.size !== this.requestIds.size || [...requests].some((id) => !this.requestIds.has(id))) this.requestIds = requests;
   }
 }

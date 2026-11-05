@@ -118,6 +118,44 @@ describe('Timeline', () => {
   });
 });
 
+describe('Timeline folding', () => {
+  const run = (id: string, seq: number, actor = 'root'): TimelineItem => ({
+    ...base, actor, id, seq_from: seq, seq_to: seq, kind: 'run', trigger: { kind: 'user', device: null }, state: 'settled', outcome: 'completed', error: null,
+  });
+  const retry = (id: string, seq: number, attempt: number): TimelineItem => ({
+    ...base, id, seq_from: seq, seq_to: seq, kind: 'retry', attempt, max_attempts: 3, phase: 'succeeded', delay_ms: null, error: '503',
+  });
+  const notice = (id: string, seq: number, text: string): TimelineItem => ({ ...base, id, seq_from: seq, seq_to: seq, kind: 'notice', level: 'info', text });
+  const info = (id: string, seq: number, fields: { model?: string; thinking?: string }): TimelineItem => ({
+    ...base, id, seq_from: seq, seq_to: seq, kind: 'session_info', title: null, model: fields.model ?? null, thinking: fields.thinking ?? null,
+  });
+
+  it('folds retries into their run; a retry before any run stays a row', () => {
+    const t = new Timeline();
+    t.apply([up(retry('r0', 1, 1)), up(run('run', 2)), up(msg('m', 3)), up(retry('r1', 4, 1)), up(retry('r2', 5, 2))], 0);
+    expect(ids(t)).toEqual(['r0', 'run', 'm']);
+    expect(t.retries.get('run')?.map((c) => c.id)).toEqual(['r1', 'r2']);
+    expect(t.rowOf('r2')?.id).toBe('run');
+  });
+
+  it('shows a repeated notice once, with its count', () => {
+    const t = new Timeline();
+    t.apply([up(notice('a', 1, 'ready')), up(msg('m', 2)), up(notice('b', 3, 'ready')), up(notice('c', 4, 'other')), up(notice('d', 5, 'ready'))], 0);
+    expect(ids(t)).toEqual(['a', 'm', 'c']);
+    expect(t.repeats.get('a')).toBe(3);
+    expect(t.repeats.has('c')).toBe(false);
+    expect(t.rowOf('d')?.id).toBe('a');
+  });
+
+  it('shows only session info that changed, never the first values', () => {
+    const t = new Timeline();
+    t.apply([up(msg('m', 1)), up(info('i1', 2, { model: 'A', thinking: 'low' })), up(info('i2', 3, { model: 'A' })), up(info('i3', 4, { model: 'B', thinking: 'low' }))], 0);
+    expect(ids(t)).toEqual(['m', 'i3']);
+    expect(t.infoChanges.get('i3')).toEqual({ model: 'B' });
+    expect(t.rowOf('i1')?.id).toBe('m');
+  });
+});
+
 describe('RawFrames', () => {
   const frame = (seq: number) => ({ seq, ts: 0, stream: 'from_agent' as const, text: `{"n":${seq}}` });
 
