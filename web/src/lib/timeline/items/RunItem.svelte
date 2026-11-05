@@ -67,7 +67,7 @@
 {/snippet}
 
 {#if quiet}
-  <div class="run quiet" title="{t.title} · {when}">{@render retried()}</div>
+  <div class="run quiet" class:bare={!retries.length} title="{t.title} · {when}">{@render retried()}</div>
 {:else}
   <div class="run o-{item.outcome ?? 'none'}" class:running={item.state === 'running'} title={when}>
     <span class="trig t-{item.trigger.kind}" title={t.title}>{t.label}</span>

@@ -91,7 +91,7 @@
     {:else if ac.status === 'budget'}<button class="btn xs primary" disabled={!online} onclick={raiseBudget}>Raise budget…</button>
     {:else}<button class="btn xs primary" disabled={!online} onclick={() => setAuto({ auto_continue: true })}>Resume</button>{/if}
   </div>
-  {#if ac.reason && ac.status !== 'off'}<div class="why ac-{ac.status}">{ac.status === 'on' ? '◷ ' : ''}{ac.reason}</div>{/if}
+  {#if ac.reason && ac.status !== 'off' && ac.status !== 'budget'}<div class="why ac-{ac.status}">{ac.status === 'on' ? '◷ ' : ''}{ac.reason}</div>{/if}
   {#if open}
     <ul>
       {#each detail.todos as t, i (t.id)}

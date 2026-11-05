@@ -195,10 +195,13 @@
   .bar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: flex-end; padding: 4px 8px 0; height: 0; overflow: visible; }
   .bar .btn { background: var(--bg2); font-family: var(--mono); }
   .row { padding: 7px 0; }
+  /* A quiet run is only a small gap between turns. */
+  .row:has(:global(.run.bare)) { padding: 0; }
   .placeholder { display: flex; flex-direction: column; }
   .preview { color: var(--fg); margin: 0; }
   .trimmed { text-align: center; padding: 6px; }
   .fresh { display: flex; align-items: center; gap: 10px; margin: 6px 0 12px; font-size: 12px; color: var(--muted); }
   .fresh::before, .fresh::after { content: ''; flex: 1; border-top: 1px dashed var(--line); }
-  @media (max-width: 760px) { .body { padding: 4px 16px 12px; } }
+  /* The right padding is the gutter for the items' details buttons. */
+  @media (max-width: 760px) { .body { padding: 4px 22px 12px 16px; } }
 </style>

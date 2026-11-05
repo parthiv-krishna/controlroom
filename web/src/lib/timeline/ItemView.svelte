@@ -72,7 +72,7 @@
   .item:global(.flash) { background: color-mix(in srgb, var(--warn) 18%, transparent); }
   /* In the right gutter (the timeline's side padding), never over the item's text. */
   .more {
-    position: absolute; top: 0; left: 100%; margin-left: 2px; width: 14px; opacity: 0; background: none; border: none; padding: 0;
+    position: absolute; top: 0; left: 100%; margin-left: 2px; width: 18px; text-align: center; opacity: 0; background: none; border: none; padding: 0;
     font-size: 13px; line-height: 1.4; color: var(--muted); cursor: pointer; z-index: 1;
   }
   /* The innermost hovered item only (a nested tool call, not also its parent). */

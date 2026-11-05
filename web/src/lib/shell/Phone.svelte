@@ -5,7 +5,6 @@
   import SessionList from '../list/SessionList.svelte';
   import { notes } from '../model/notifications';
   import { UNASSIGNED, needsYouElsewhere, projectCode, scopeName } from '../model/projects';
-  import { statusLabel } from '../model/status';
   import NotificationsPanel from '../notifications/NotificationsPanel.svelte';
   import SessionPane from '../session/SessionPane.svelte';
   import TasksPane from '../tasks/TasksPane.svelte';
@@ -40,7 +39,7 @@
     {#if view.page === 'tasks'}
       <TasksPane />
     {:else if detail && cur}
-      <div class="back"><button onclick={() => (view.phoneDetail = false)}>‹ Sessions</button><span class="small muted">{statusLabel(cur)}</span></div>
+      <div class="back"><button onclick={() => (view.phoneDetail = false)}>‹ Sessions</button></div>
       <div class="conv"><SessionPane s={cur} header /></div>
     {:else}
       <SessionList title={false} />
@@ -71,7 +70,6 @@
   .main > :global(.list) { flex: 1; }
   .back { display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 8px) 18px 0 8px; }
   .back button { background: none; border: none; color: var(--fg); font: inherit; font-size: 16px; padding: 8px 10px; cursor: pointer; }
-  .back span { margin-left: auto; }
   .conv { flex: 1; min-height: 0; }
   .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px 10px calc(env(safe-area-inset-bottom) + 6px); border-top: 1px solid var(--line); background: var(--bg2); }
   .tabs button { height: 44px; border-radius: 12px; border: none; background: none; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; }
