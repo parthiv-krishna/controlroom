@@ -165,7 +165,7 @@
       {#if timeline.trimmed}<div class="muted small trimmed">{timeline.trimmed} earlier items not kept</div>{/if}
       {#if !rows.length}
         <div class="placeholder">
-          {#if s.preview}<p class="preview">{s.preview}</p>{/if}
+          {#if s.preview && !orphans.length}<p class="preview">{s.preview}</p>{/if}
           {#if s.state === 'starting'}<p class="muted"><span class="spin"></span> starting agent…</p>{/if}
         </div>
       {/if}

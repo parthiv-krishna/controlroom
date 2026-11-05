@@ -28,9 +28,9 @@
     </span>
   {/each}
   {#each shared as o (o.where)}
-    <span class="overlap" role="note" data-overlap>
-      ⚠ <span class="mono">{o.where}</span> is also used by
-      {#each o.others as other, i (other.id)}{i ? ', ' : ' '}<button class="linkish" onclick={() => app.open(other)}>{displayName(other)}</button>{/each}: edits can collide
+    <span class="overlap" role="note" data-overlap title="{o.where}: edits can collide">
+      ⚠ shared with
+      {#each o.others as other, i (other.id)}{i ? ', ' : ' '}<button class="linkish" onclick={() => app.open(other)}>{displayName(other)}</button>{/each}
     </span>
   {/each}
 </span>
@@ -42,5 +42,4 @@
   .ws.away { background: color-mix(in srgb, var(--warn) 13%, var(--bg2)); }
   .st { font: 11.5px var(--sans, inherit); color: var(--warn); margin-left: 6px; }
   .overlap { font-size: 12px; color: var(--warn); }
-  .mono { font: 12px var(--mono); }
 </style>

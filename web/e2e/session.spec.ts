@@ -141,7 +141,8 @@ test('session header: every workspace with its availability, and the overlap war
   const workspaces = header.getByLabel('Workspaces');
   await expect(workspaces.locator('[data-workspace]')).toHaveText([/buildbox:~\/src\/acme-api/, /devbox:~\/src\/acme-web/]);
   // Another open session works in the same directory: a warning, with a link to it.
-  await expect(workspaces.locator('[data-overlap]')).toContainText('buildbox:~/src/acme-api is also used by');
+  await expect(workspaces.locator('[data-overlap]')).toContainText('shared with');
+  await expect(workspaces.locator('[data-overlap]')).toHaveAttribute('title', /^buildbox:~\/src\/acme-api/);
   await workspaces.locator('[data-overlap]').getByRole('button', { name: 'upgrade tokio to 1.47' }).click();
   await expect(page.getByRole('option', { name: /upgrade tokio to 1.47/ })).toHaveAttribute('aria-selected', 'true');
 

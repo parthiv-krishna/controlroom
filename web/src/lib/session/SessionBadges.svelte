@@ -31,7 +31,7 @@
   async function revoke(g: SandboxGrant) {
     if (g.scope === 'standing') {
       pop = null;
-      const ok = await app.dialogs.confirm({ title: `Remove the standing grant ${g.value}?`, body: 'The agent restarts with the new sandbox and resumes the conversation. A running turn is stopped.', ok: 'Remove and restart', danger: true });
+      const ok = await app.dialogs.confirm({ title: `Remove the standing grant ${g.value}?`, body: 'The agent restarts; a running turn stops.', ok: 'Remove and restart', danger: true });
       if (!ok) return;
     }
     await app.client.call('sandbox.revoke', { ...onSession(s), grant_id: g.id });
