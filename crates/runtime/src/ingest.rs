@@ -198,6 +198,7 @@ impl Core {
             | DriverEvent::RequestOpened(_)
             | DriverEvent::RequestClosed { .. }
             | DriverEvent::Context(_)
+            | DriverEvent::Usage { .. }
             | DriverEvent::Options(_)
             | DriverEvent::Title(_) => {}
         }
@@ -271,6 +272,11 @@ fn observe(session: &mut Session, event: &DriverEvent) {
             live.written.retain(|t| !is_send_now_cancel(t));
         }
         DriverEvent::Context(context) => derived.context = Some(*context),
+        DriverEvent::Usage {
+            tokens,
+            cost,
+            reply,
+        } => crate::usage::add(&mut derived.usage, tokens, *cost, *reply),
         DriverEvent::Title(title) => derived.title = Some(title.clone()),
         DriverEvent::Exited { during_run, .. } => {
             derived.process.live = false;

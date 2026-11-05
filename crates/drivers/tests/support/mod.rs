@@ -206,6 +206,11 @@ pub fn event_json(event: &DriverEvent) -> Value {
         }
         DriverEvent::RequestClosed { id } => json!({"event": "request_closed", "id": id}),
         DriverEvent::Context(context) => json!({"event": "context", "context": context}),
+        DriverEvent::Usage {
+            tokens,
+            cost,
+            reply,
+        } => json!({"event": "usage", "tokens": tokens, "cost": cost, "reply": reply}),
         DriverEvent::Options(options) => json!({"event": "options", "options": options}),
         DriverEvent::Title(title) => json!({"event": "title", "title": title}),
         DriverEvent::Exited {

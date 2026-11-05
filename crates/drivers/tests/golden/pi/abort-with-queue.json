@@ -56,6 +56,11 @@
      {"id":"msg-11.0","op":"end","seq_from":18,"seq_to":18}
    ],
    "events": []},
+  {"seq": 19,
+   "ops": [],
+   "events": [
+     {"cost":0.0,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":0,"output":0}}
+   ]},
   {"seq": 22,
    "ops": [
      {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"cancelled","seq_from":5,"seq_to":22,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000320},"op":"upsert"}
@@ -133,6 +138,7 @@
      {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-39","kind":"usage","scope":"turn","seq_from":39,"seq_to":39,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000363},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00012399999999999998,"size":128000,"used":112},"event":"context"}
    ]},
   {"seq": 43,
@@ -175,6 +181,7 @@
      {"item":{"actor":"root","context":{"cost":0.00024799999999999996,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-52","kind":"usage","scope":"turn","seq_from":52,"seq_to":52,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000367},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00024799999999999996,"size":128000,"used":112},"event":"context"}
    ]},
   {"seq": 55,

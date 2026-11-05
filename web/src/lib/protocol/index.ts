@@ -196,6 +196,7 @@ export type * from "./SessionSubscribeParams";
 export type * from "./SessionSubscribeResult";
 export type * from "./SessionSummary";
 export type * from "./SessionUpdateParams";
+export type * from "./SessionUsage";
 export type * from "./SettingsSetParams";
 export type * from "./Shell";
 export type * from "./ShellState";

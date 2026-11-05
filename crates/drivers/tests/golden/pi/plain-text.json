@@ -59,6 +59,7 @@
      {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-18","kind":"usage","scope":"turn","seq_from":18,"seq_to":18,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000365},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 21,

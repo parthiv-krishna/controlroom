@@ -44,6 +44,11 @@
      {"id":"msg-11.0","op":"end","seq_from":15,"seq_to":15}
    ],
    "events": []},
+  {"seq": 16,
+   "ops": [],
+   "events": [
+     {"cost":0.0,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":0,"output":0}}
+   ]},
   {"seq": 19,
    "ops": [
      {"item":{"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"cancelled","seq_from":5,"seq_to":19,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000318},"op":"upsert"}

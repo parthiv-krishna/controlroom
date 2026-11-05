@@ -38,7 +38,7 @@ use controlroom_transcript::{Body, Line, Record};
 use self::items::{At, Items, Life, item_id};
 use self::options::Options;
 use self::state::Process;
-use self::wire::{InLine, Out};
+use self::wire::{Entry, InLine, Out};
 use crate::{
     AgentView, Capabilities, Driver, DriverEvent, EncodeError, FoldOut, Intent, LineTag, StartMode,
 };
@@ -141,7 +141,11 @@ impl PiDriver {
                 );
             }
             Out::BashExecutionUpdate { id, delta } => self.on_bash_update(at, &id, &delta, out),
-            Out::Unknown => {}
+            Out::EntryAppended {
+                entry:
+                    Entry::Usage { usage: Some(usage) } | Entry::BranchSummary { usage: Some(usage) },
+            } => stream::report_usage(&usage, false, out),
+            Out::EntryAppended { .. } | Out::Unknown => {}
         }
     }
 

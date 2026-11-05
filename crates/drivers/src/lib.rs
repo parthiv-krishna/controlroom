@@ -36,7 +36,7 @@ use controlroom_protocol::ids::{OpId, QueueId, RequestId};
 use controlroom_protocol::session::{
     ContentPart, ContextUsage, DriverKind, Request, Response, RunOutcome, SessionOption,
 };
-use controlroom_protocol::timeline::{InjectOrigin, TimelineOp};
+use controlroom_protocol::timeline::{InjectOrigin, TimelineOp, TokenUsage};
 use controlroom_protocol::{Seq, UnixMillis};
 use controlroom_transcript::Record;
 
@@ -203,6 +203,16 @@ pub enum DriverEvent {
     },
     /// Context usage changed.
     Context(ContextUsage),
+    /// A model call's usage, reported once each: an agent reply, or a model call made for a
+    /// tool, a compaction or a summary. The runtime sums them into the session's usage.
+    Usage {
+        /// Its tokens.
+        tokens: TokenUsage,
+        /// Its cost in USD, when reported.
+        cost: Option<f64>,
+        /// An agent reply: its cache hit rate becomes the session's latest.
+        reply: bool,
+    },
     /// The agent's options (model, thinking level, ...) changed.
     Options(Vec<SessionOption>),
     /// The agent's session title changed.

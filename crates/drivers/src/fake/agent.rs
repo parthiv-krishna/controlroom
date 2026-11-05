@@ -6,6 +6,7 @@ use controlroom_protocol::agentd::OptionValue;
 use controlroom_protocol::session::{
     OptionControl, RequestKind, RequestOption, Response, RunOutcome, SessionOption,
 };
+use controlroom_protocol::timeline::TokenUsage;
 
 use super::wire::{self, Command, Input, Output, WireNative, WireTag};
 
@@ -40,6 +41,15 @@ pub enum FakeStep {
         used: u64,
         /// The window size.
         size: u64,
+    },
+    /// Report one model call's usage.
+    Usage {
+        /// Its tokens.
+        tokens: TokenUsage,
+        /// Its cost.
+        cost: Option<f64>,
+        /// An agent reply (not a tool's or a summary's model call).
+        reply: bool,
     },
     /// Report a new session title.
     Title(String),
@@ -414,6 +424,18 @@ impl FakeAgent {
                         used,
                         size: Some(size),
                         cost: None,
+                    },
+                ),
+                Step::Script(FakeStep::Usage {
+                    tokens,
+                    cost,
+                    reply,
+                }) => emit(
+                    out,
+                    &Output::Usage {
+                        tokens,
+                        cost,
+                        reply,
                     },
                 ),
                 Step::Script(FakeStep::Title(title)) => emit(out, &Output::Title { title }),

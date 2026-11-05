@@ -281,4 +281,15 @@ async fn two_workspaces_on_two_machines() {
             (json!("devbox"), json!("devbox-2")),
         ]
     );
+
+    // The replies' usage reaches the UI as the session's totals (no cache: a 0 % hit rate).
+    let summary = world
+        .wait_session(&id, "usage", |s| {
+            s["usage"]["tokens"]["input"].as_u64() > Some(0)
+        })
+        .await;
+    let usage = &summary["usage"];
+    assert!(usage["tokens"]["output"].as_u64() > Some(0), "{usage}");
+    assert!(usage["cost"].as_f64() > Some(0.0), "{usage}");
+    assert_eq!(usage["latest_cache_hit"], json!(0.0), "{usage}");
 }

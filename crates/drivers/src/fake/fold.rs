@@ -349,6 +349,15 @@ impl FakeDriver {
                 out.events
                     .push(DriverEvent::Context(ContextUsage { used, size, cost }));
             }
+            Output::Usage {
+                tokens,
+                cost,
+                reply,
+            } => out.events.push(DriverEvent::Usage {
+                tokens,
+                cost,
+                reply,
+            }),
             Output::Title { title } => out.events.push(DriverEvent::Title(title)),
         }
     }

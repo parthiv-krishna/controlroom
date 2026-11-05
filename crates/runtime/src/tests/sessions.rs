@@ -9,9 +9,9 @@ use controlroom_protocol::agentd::{
 use controlroom_protocol::ids::{OpId, RemotePath, Rev, Seq, SessionId};
 use controlroom_protocol::session::{
     ContextUsage, OptionChoice, OptionControl, PromptOrigin, RunOutcome, SessionOption,
-    SessionState, StartedBy,
+    SessionState, SessionUsage, StartedBy,
 };
-use controlroom_protocol::timeline::{ItemBody, MessageRole, RunTrigger, TimelineOp};
+use controlroom_protocol::timeline::{ItemBody, MessageRole, RunTrigger, TimelineOp, TokenUsage};
 use controlroom_protocol::{ErrorData, Resource, RpcError};
 
 use super::{Harness, text};
@@ -403,6 +403,60 @@ async fn context_usage_is_on_the_summary_and_survives_a_restart() {
     );
     let h = h.restart().await;
     assert_eq!(h.summary(id).context.unwrap().used, 120);
+}
+
+/// A turn that reports a reply (with cache reads) and a tool's own model call.
+pub(super) fn usage_turn() -> Vec<FakeStep> {
+    vec![
+        FakeStep::Usage {
+            tokens: TokenUsage {
+                input: 10,
+                output: 5,
+                cache_read: 30,
+                cache_write: 0,
+            },
+            cost: Some(0.5),
+            reply: true,
+        },
+        FakeStep::Usage {
+            tokens: TokenUsage {
+                input: 100,
+                output: 1,
+                cache_read: 0,
+                cache_write: 0,
+            },
+            cost: Some(0.25),
+            reply: false,
+        },
+        FakeStep::Text("ok".into()),
+    ]
+}
+
+#[tokio::test]
+async fn usage_adds_up_on_the_summary_and_survives_a_restart() {
+    let mut h = Harness::new(FakeScript::default().default_turn(usage_turn())).await;
+    let id = h.create().await;
+    assert_eq!(h.summary(id).usage, SessionUsage::default());
+    for (n, prompt) in ["one", "two"].into_iter().enumerate() {
+        h.prompt(id, prompt).await;
+        h.wait(id, "usage", |s| {
+            s.usage.tokens.input == 110 * (n as u64 + 1)
+        })
+        .await;
+    }
+    let expected = SessionUsage {
+        tokens: TokenUsage {
+            input: 220,
+            output: 12,
+            cache_read: 60,
+            cache_write: 0,
+        },
+        cost: 1.5,
+        latest_cache_hit: Some(0.75),
+    };
+    assert_eq!(h.summary(id).usage, expected);
+    let h = h.restart().await;
+    assert_eq!(h.summary(id).usage, expected, "rebuilt once by the re-fold");
 }
 
 #[tokio::test]

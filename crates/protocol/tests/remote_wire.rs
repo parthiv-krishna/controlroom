@@ -18,7 +18,7 @@ use controlroom_protocol::ids::{
 use controlroom_protocol::session::{
     Attention, AttentionRollup, Availability, ContentPart, LiveWork, PromptOrigin, QueueStatus,
     RequestBody, RequestKind, RequestState, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec,
-    SessionState, SessionSummary, Shell, ShellState, Workspace, WorkspaceSpec,
+    SessionState, SessionSummary, SessionUsage, Shell, ShellState, Workspace, WorkspaceSpec,
 };
 use controlroom_protocol::timeline::InjectOrigin;
 use controlroom_protocol::ui::{self, Connectivity, StateCursor};
@@ -140,6 +140,7 @@ fn summary() -> SessionSummary {
         attention: Some(Attention::Unread),
         rollup: AttentionRollup::default(),
         context: None,
+        usage: SessionUsage::default(),
         queue: QueueStatus::default(),
         requests: vec![],
         todo: None,
@@ -181,6 +182,11 @@ fn summary_json() -> Value {
         "attention": "unread",
         "rollup": {"approvals": 0, "questions": 0, "problems": 0, "unread": 0},
         "context": null,
+        "usage": {
+            "tokens": {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0},
+            "cost": 0.0,
+            "latest_cache_hit": null
+        },
         "queue": {"len": 0, "paused": false, "auto_send": false, "send_now_pending": false},
         "requests": [],
         "todo": null,

@@ -12,6 +12,7 @@ import type { Seq } from "./Seq";
 import type { SessionId } from "./SessionId";
 import type { SessionOption } from "./SessionOption";
 import type { SessionState } from "./SessionState";
+import type { SessionUsage } from "./SessionUsage";
 import type { Shell } from "./Shell";
 import type { TodoRollup } from "./TodoRollup";
 import type { UnixMillis } from "./UnixMillis";
@@ -104,6 +105,10 @@ rollup: AttentionRollup,
  * Context usage, once reported.
  */
 context: ContextUsage | null, 
+/**
+ * Cumulative token usage and cost (zero until the first report).
+ */
+usage: SessionUsage, 
 /**
  * Queue state.
  */

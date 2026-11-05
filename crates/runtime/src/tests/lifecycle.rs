@@ -101,6 +101,28 @@ async fn start_fresh_with_history() {
     assert_eq!(h.host.prompts(id).pop().unwrap(), "more");
 }
 
+/// Usage counts the whole controlroom session: a new agent process and native session keep
+/// adding to it.
+#[tokio::test]
+async fn usage_keeps_counting_across_a_start_fresh() {
+    let mut h =
+        Harness::new(FakeScript::default().default_turn(super::sessions::usage_turn())).await;
+    let id = h.create().await;
+    h.prompt(id, "before").await;
+    h.wait(id, "usage", |s| s.usage.tokens.input == 110).await;
+    h.wait(id, "run end", |s| {
+        s.last_outcome == Some(RunOutcome::Completed)
+    })
+    .await;
+    h.rt.start_fresh(fresh(id, false)).await.unwrap();
+    h.wait(id, "the fresh agent", |s| s.state == SessionState::Idle)
+        .await;
+    h.prompt(id, "after").await;
+    let s = h.wait(id, "usage", |s| s.usage.tokens.input == 220).await;
+    assert_eq!(s.usage.cost, 1.5);
+    assert_eq!(agent_sessions(&h, id).await.len(), 2);
+}
+
 #[tokio::test]
 async fn start_fresh_in_process_when_the_driver_can() {
     let caps = Capabilities {

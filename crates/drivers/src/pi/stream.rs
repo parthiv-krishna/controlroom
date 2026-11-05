@@ -1,9 +1,7 @@
 //! Messages (user echoes, streamed assistant blocks, usage) and tool calls.
 
 use controlroom_protocol::session::{ContentPart, ContextUsage};
-use controlroom_protocol::timeline::{
-    ItemBody, MessageRole, TokenUsage, ToolOutput, ToolStatus, UsageScope,
-};
+use controlroom_protocol::timeline::{ItemBody, MessageRole, ToolOutput, ToolStatus, UsageScope};
 use serde_json::Value;
 
 use super::items::{At, Life, item_id, text_of};
@@ -50,7 +48,7 @@ impl PiDriver {
                     blocks: Default::default(),
                 });
             }
-            Message::Custom { .. } | Message::Other => {}
+            Message::Custom { .. } | Message::ToolResult { .. } | Message::Other => {}
         }
     }
 
@@ -125,6 +123,9 @@ impl PiDriver {
     /// `message_end`: the authoritative assistant message. Fills in blocks that never
     /// streamed, finishes the rest, records the stop reason and reports usage.
     pub(super) fn on_message_end(&mut self, at: At, message: Message, out: &mut FoldOut) {
+        if let Message::ToolResult { usage: Some(usage) } = &message {
+            report_usage(usage, false, out);
+        }
         let Message::Assistant {
             content,
             stop_reason,
@@ -476,7 +477,8 @@ impl PiDriver {
         self.count_tools();
     }
 
-    /// Reports one assistant message's usage as a turn usage item and the new context.
+    /// Reports one assistant message's usage (also when zero, like pi, so the session's latest
+    /// cache hit rate follows it) and, when it has tokens, a turn usage item and the new context.
     fn turn_usage(
         &mut self,
         at: At,
@@ -485,6 +487,7 @@ impl PiDriver {
         model: Option<&str>,
         out: &mut FoldOut,
     ) {
+        report_usage(usage, true, out);
         let total = if usage.total_tokens > 0 {
             usage.total_tokens
         } else {
@@ -507,12 +510,7 @@ impl PiDriver {
             at.seq,
             ItemBody::Usage {
                 scope: UsageScope::Turn,
-                tokens: TokenUsage {
-                    input: usage.input,
-                    output: usage.output,
-                    cache_read: usage.cache_read,
-                    cache_write: usage.cache_write,
-                },
+                tokens: usage.tokens(),
                 cost,
                 context: Some(context),
             },
@@ -520,6 +518,15 @@ impl PiDriver {
         );
         out.events.push(DriverEvent::Context(context));
     }
+}
+
+/// Reports one model call's usage to the runtime (`reply`: an agent reply).
+pub(super) fn report_usage(usage: &Usage, reply: bool, out: &mut FoldOut) {
+    out.events.push(DriverEvent::Usage {
+        tokens: usage.tokens(),
+        cost: usage.cost.as_ref().map(|cost| cost.total),
+        reply,
+    });
 }
 
 fn text_kind(event: &str) -> TextKind {

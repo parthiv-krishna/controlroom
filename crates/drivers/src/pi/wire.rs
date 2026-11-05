@@ -1,6 +1,7 @@
 //! pi 1.2.0's RPC JSON, as far as the fold reads it. Tolerant: unknown fields are ignored,
 //! unknown event types and content blocks decode to `Unknown`, and missing fields default.
 
+use controlroom_protocol::timeline::TokenUsage;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -82,8 +83,11 @@ pub(crate) enum Out {
         #[serde(default)]
         delta: String,
     },
-    /// Everything else (`turn_start`, `turn_end`, `agent_end`, `queue_update`,
-    /// `entry_appended`, and types this build doesn't know): no timeline effect.
+    EntryAppended {
+        entry: Entry,
+    },
+    /// Everything else (`turn_start`, `turn_end`, `agent_end`, `queue_update`, and types this
+    /// build doesn't know): no timeline effect.
     #[serde(other)]
     Unknown,
 }
@@ -136,7 +140,31 @@ pub(crate) enum Message {
         #[serde(default)]
         display: bool,
     },
-    /// `system` (obs. 3), `toolResult`, `bashExecution`, summaries and unknown roles.
+    /// A tool's result; `usage` when the tool made model calls of its own.
+    ToolResult {
+        #[serde(default)]
+        usage: Option<Usage>,
+    },
+    /// `system` (obs. 3), `bashExecution`, summaries and unknown roles.
+    #[serde(other)]
+    Other,
+}
+
+/// `entry_appended.entry`: a session entry pi appended outside the message stream.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum Entry {
+    /// Model usage outside the context (e.g. a cache warm-up).
+    Usage {
+        #[serde(default)]
+        usage: Option<Usage>,
+    },
+    /// A branch summary, with the usage of the model call that wrote it.
+    BranchSummary {
+        #[serde(default)]
+        usage: Option<Usage>,
+    },
+    /// Custom entries, context edits and entry types this build doesn't know.
     #[serde(other)]
     Other,
 }
@@ -221,6 +249,18 @@ pub(crate) struct Usage {
     pub cost: Option<Cost>,
 }
 
+impl Usage {
+    /// The token counts, agent-neutral.
+    pub fn tokens(&self) -> TokenUsage {
+        TokenUsage {
+            input: self.input,
+            output: self.output,
+            cache_read: self.cache_read,
+            cache_write: self.cache_write,
+        }
+    }
+}
+
 /// Cost in USD.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
@@ -287,6 +327,8 @@ pub(crate) struct ToolResult {
 pub(crate) struct CompactionResult {
     pub tokens_before: Option<u64>,
     pub estimated_tokens_after: Option<u64>,
+    /// The usage of the model call that wrote the summary.
+    pub usage: Option<Usage>,
 }
 
 /// `extension_ui_request`: a dialog (`select`, `confirm`, `input`, `editor`) or a

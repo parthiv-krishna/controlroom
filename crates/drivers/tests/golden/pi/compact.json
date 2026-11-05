@@ -78,6 +78,7 @@
      {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-22","kind":"usage","scope":"turn","seq_from":22,"seq_to":22,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000369},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 25,
@@ -130,6 +131,7 @@
      {"item":{"actor":"root","context":{"cost":0.00024799999999999996,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-37","kind":"usage","scope":"turn","seq_from":37,"seq_to":37,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000419},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00024799999999999996,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 40,
@@ -154,6 +156,7 @@
      {"item":{"actor":"root","error":null,"id":"compaction-42","kind":"compaction","phase":"done","reason":"manual","seq_from":42,"seq_to":43,"streaming":false,"tokens_after":1539,"tokens_before":112,"ts":1700000000420},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00024799999999999996,"size":null,"used":1539},"event":"context"}
    ]},
   {"seq": 44,

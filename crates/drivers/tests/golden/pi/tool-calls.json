@@ -39,6 +39,7 @@
      {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-16","kind":"usage","scope":"turn","seq_from":16,"seq_to":16,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000361},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 17,
@@ -71,6 +72,7 @@
      {"item":{"actor":"root","context":{"cost":0.00024799999999999996,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-30","kind":"usage","scope":"turn","seq_from":30,"seq_to":30,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000420},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00024799999999999996,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 31,
@@ -98,6 +100,7 @@
      {"item":{"actor":"root","context":{"cost":0.00037199999999999993,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-42","kind":"usage","scope":"turn","seq_from":42,"seq_to":42,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000468},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00037199999999999993,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 43,
@@ -125,6 +128,7 @@
      {"item":{"actor":"root","context":{"cost":0.0004959999999999999,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-54","kind":"usage","scope":"turn","seq_from":54,"seq_to":54,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000516},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.0004959999999999999,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 55,
@@ -167,6 +171,7 @@
      {"item":{"actor":"root","context":{"cost":0.0006199999999999999,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-67","kind":"usage","scope":"turn","seq_from":67,"seq_to":67,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000565},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.0006199999999999999,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 70,

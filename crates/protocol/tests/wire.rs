@@ -117,6 +117,16 @@ fn summary() -> SessionSummary {
             size: Some(200_000),
             cost: Some(0.25),
         }),
+        usage: SessionUsage {
+            tokens: TokenUsage {
+                input: 430_000,
+                output: 378_000,
+                cache_read: 303_000_000,
+                cache_write: 54_000_000,
+            },
+            cost: 337.7,
+            latest_cache_hit: Some(0.993),
+        },
         queue: QueueStatus {
             len: 1,
             paused: false,
@@ -194,6 +204,11 @@ fn summary_json() -> Value {
         "attention": "approval",
         "rollup": {"approvals": 0, "questions": 0, "problems": 0, "unread": 0},
         "context": {"used": 41000, "size": 200000, "cost": 0.25},
+        "usage": {
+            "tokens": {"input": 430000, "output": 378000, "cache_read": 303000000, "cache_write": 54000000},
+            "cost": 337.7,
+            "latest_cache_hit": 0.993
+        },
         "queue": {"len": 1, "paused": false, "auto_send": true, "send_now_pending": false},
         "requests": [{
             "id": "r1",
@@ -673,6 +688,14 @@ fn unknown_enum_values_decode_as_unknown() {
     assert_eq!(decoded.requests[0].options[0].style, OptionStyle::Unknown);
     assert_eq!(decoded.options[0].control, OptionControl::Unknown);
     assert_eq!(decoded.sandbox.level, SandboxLevel::Unknown);
+}
+
+#[test]
+fn a_summary_without_usage_decodes_with_zero_usage() {
+    let mut older = summary_json();
+    older.as_object_mut().unwrap().remove("usage");
+    let decoded: SessionSummary = serde_json::from_value(older).unwrap();
+    assert_eq!(decoded.usage, SessionUsage::default());
 }
 
 #[test]

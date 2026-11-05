@@ -4,7 +4,8 @@
 //! `set_option`, `new_session` and `state`, each with the writer's [`WireTag`] in `tag`.
 //!
 //! From the agent ([`Output`]): a `response` to every input line, plus `state`, `run_start`,
-//! `run_end`, `text`, `tool_start`, `tool_end`, `request`, `request_closed` and `context`.
+//! `run_end`, `text`, `tool_start`, `tool_end`, `request`, `request_closed`, `context` and
+//! `usage`.
 
 use std::str::FromStr;
 
@@ -13,6 +14,7 @@ use controlroom_protocol::ids::{OpId, QueueId};
 use controlroom_protocol::session::{
     Question, RequestKind, RequestOption, Response, RunOutcome, SessionOption,
 };
+use controlroom_protocol::timeline::TokenUsage;
 use serde::{Deserialize, Serialize};
 
 use crate::{LineTag, NativeRef};
@@ -222,6 +224,15 @@ pub enum Output {
         size: Option<u64>,
         /// Cost so far.
         cost: Option<f64>,
+    },
+    /// One model call's usage.
+    Usage {
+        /// Its tokens.
+        tokens: TokenUsage,
+        /// Its cost.
+        cost: Option<f64>,
+        /// An agent reply (not a tool's or a summary's model call).
+        reply: bool,
     },
     /// The session title changed.
     Title {

@@ -24,6 +24,11 @@
      {"cause":{"op":"fixture-1","part":0},"event":"run_started"},
      {"event":"accepted","tag":{"op":"fixture-1","part":0}}
    ]},
+  {"seq": 12,
+   "ops": [],
+   "events": [
+     {"cost":0.0,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":0,"output":0}}
+   ]},
   {"seq": 15,
    "ops": [
      {"item":{"actor":"root","error":"400: {\"code\":400,\"message\":\"invalid request: mock rejects this prompt\",\"type\":\"mock_error\"}","id":"run-5","kind":"run","outcome":"failed","seq_from":5,"seq_to":15,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000314},"op":"upsert"}

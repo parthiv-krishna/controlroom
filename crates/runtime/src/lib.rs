@@ -62,6 +62,7 @@ mod store;
 mod timeline;
 mod todos;
 mod triggers;
+mod usage;
 
 #[cfg(test)]
 mod tests;

@@ -24,6 +24,11 @@
      {"cause":{"op":"fixture-1","part":0},"event":"run_started"},
      {"event":"accepted","tag":{"op":"fixture-1","part":0}}
    ]},
+  {"seq": 12,
+   "ops": [],
+   "events": [
+     {"cost":0.0,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":0,"output":0}}
+   ]},
   {"seq": 15,
    "ops": [
      {"item":{"actor":"root","attempt":1,"delay_ms":20,"error":"503: {\"code\":503,\"message\":\"service unavailable\",\"type\":\"mock_error\"}","id":"retry-15","kind":"retry","max_attempts":2,"phase":"waiting","seq_from":15,"seq_to":15,"streaming":false,"ts":1700000000361},"op":"upsert"}
@@ -64,6 +69,7 @@
      {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-25","kind":"usage","scope":"turn","seq_from":25,"seq_to":25,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000432},"op":"upsert"}
    ],
    "events": [
+     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 26,

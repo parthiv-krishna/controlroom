@@ -372,6 +372,7 @@ impl Core {
                 let mut without_preview = summary.clone();
                 without_preview.preview.clone_from(&last.preview);
                 without_preview.context = last.context;
+                without_preview.usage = last.usage;
                 force || without_preview != *last || now.0 - emitted.at.0 >= PREVIEW_THROTTLE_MS
             }
         };
@@ -586,6 +587,7 @@ impl Core {
             attention: session.attention(state),
             rollup,
             context: session.derived.context,
+            usage: session.derived.usage,
             queue: controlroom_protocol::session::QueueStatus {
                 len: u32::try_from(data.queue.len()).unwrap_or(u32::MAX),
                 paused: data.queue_paused,

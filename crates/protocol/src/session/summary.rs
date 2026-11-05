@@ -7,6 +7,7 @@ use ts_rs::TS;
 
 use crate::ids::{Seq, SessionId, UnixMillis};
 use crate::session::{AutoContinueStatus, Request, SandboxInfo, Shell, Workspace};
+use crate::timeline::TokenUsage;
 
 /// A session's state. `working` means a run is active, whoever started it (user, queue, steer,
 /// job completion, message, auto-continue).
@@ -123,6 +124,21 @@ pub struct ContextUsage {
     pub cost: Option<f64>,
 }
 
+/// A session's cumulative token usage and cost: every model call its agents reported (replies,
+/// tools' own model calls, compactions and other summaries), across agent processes and native
+/// sessions (a `start_fresh` keeps counting).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS)]
+pub struct SessionUsage {
+    /// Token totals.
+    pub tokens: TokenUsage,
+    /// Total cost in USD; 0 while no provider reported one.
+    pub cost: f64,
+    /// The latest agent reply's cache hit rate, from 0 to 1: its cache reads over its prompt
+    /// tokens (input, cache reads and cache writes). `null` before the first reply and when the
+    /// latest reply reported no prompt tokens.
+    pub latest_cache_hit: Option<f64>,
+}
+
 /// The queue's state in the summary; the items themselves are in the session detail.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct QueueStatus {
@@ -222,6 +238,9 @@ pub struct SessionSummary {
     pub rollup: AttentionRollup,
     /// Context usage, once reported.
     pub context: Option<ContextUsage>,
+    /// Cumulative token usage and cost (zero until the first report).
+    #[serde(default)]
+    pub usage: SessionUsage,
     /// Queue state.
     pub queue: QueueStatus,
     /// Pending requests, including descendants' (with `origin_child`).
