@@ -2,7 +2,8 @@
 //! `controlroomd` binary's subcommands: the host daemon of an execution machine (workspaces,
 //! shells, tool calls, jobs). Sessions and pi run on the server (`controlroom-agentd`).
 //!
-//! - [`dirs`], [`config`], [`version`], [`shell`]: paths, configuration and host helpers;
+//! - [`dirs`], [`config`], [`version`], [`shell`], [`nono`]: paths, configuration, host helpers
+//!   and which nono sandboxes workspaces;
 //! - [`instance`], [`serve`], [`connect`]: the single daemon instance, starting it, and the
 //!   stdio bridge the controller runs over SSH;
 //! - [`host`]: the host API (workspaces, shells, the tool journal, jobs, approvals), the fs
@@ -16,6 +17,7 @@ pub mod dirs;
 pub mod doctor;
 pub mod host;
 pub mod instance;
+pub mod nono;
 pub mod serve;
 pub mod shell;
 pub mod supervise;

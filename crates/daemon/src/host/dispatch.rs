@@ -86,8 +86,8 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
             json(blocking(move || fs_list::list(&home, &p)).await)
         }
         HostRequest::DoctorReportMethod(_) => {
-            let dirs = host.dirs.clone();
-            json(blocking(move || Ok(doctor::diagnose(&dirs).report)).await)
+            let (dirs, exe) = (host.dirs.clone(), host.exe.clone());
+            json(blocking(move || Ok(doctor::diagnose(&dirs, &exe).report)).await)
         }
     };
     conn.respond(id, result).await;

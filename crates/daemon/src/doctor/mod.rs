@@ -4,7 +4,8 @@
 //!   cgroup this process runs in;
 //! - start at boot: linger plus a systemd user unit, else `crontab @reboot`, else lazily on the
 //!   next connection;
-//! - the sandbox: nono available and pinned to 0.80.0, the kernel's Landlock ABI;
+//! - the sandbox: which nono is used (bundled with controlroomd or configured), whether it
+//!   runs and is the validated 0.80.0, the kernel's Landlock ABI;
 //! - sftp availability (a placeholder for file browsing).
 //!
 //! The default output is the protocol's [`DoctorReport`] as JSON (what `doctor.report`
@@ -25,9 +26,10 @@ use controlroom_protocol::host::{CheckStatus, DoctorCheck, DoctorReport};
 
 pub use render::render_human;
 
+use controlroom_sandbox::AbsPath;
+
 use crate::config::sandbox as sandbox_config;
 use crate::dirs::Dirs;
-use crate::shell::login_shell;
 use crate::version::VERSION;
 
 /// Arguments of `controlroomd doctor`.
@@ -58,9 +60,8 @@ pub struct Diagnosis {
     pub sandbox_config_error: Option<String>,
 }
 
-/// Runs every check.
-pub fn diagnose(dirs: &Dirs) -> Diagnosis {
-    let shell = login_shell();
+/// Runs every check for the daemon at `exe` (canonical; its bundled nono is next to it).
+pub fn diagnose(dirs: &Dirs, exe: &AbsPath) -> Diagnosis {
     let id = persistence::identity();
     let persistence = persistence::persistence(&id);
     let boot = persistence::boot_start(&persistence);
@@ -73,7 +74,7 @@ pub fn diagnose(dirs: &Dirs) -> Diagnosis {
             persistence: persistence.summary(),
             boot_start: boot.method,
             boot_start_check: boot.summary,
-            nono: sandbox::nono(dirs, &shell, &sandbox.value.nono),
+            nono: sandbox::nono(dirs, exe, sandbox.value.nono.as_deref()),
             landlock_abi,
             agents_config: None,
             agents_config_error: None,
@@ -97,7 +98,14 @@ pub fn run(args: Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let diagnosis = diagnose(&dirs);
+    let exe = match current_exe() {
+        Ok(exe) => exe,
+        Err(e) => {
+            eprintln!("controlroomd doctor: resolving the controlroomd path: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let diagnosis = diagnose(&dirs, &exe);
     if args.human {
         print!("{}", render_human(&diagnosis));
     } else {
@@ -110,6 +118,12 @@ pub fn run(args: Args) -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+/// This `controlroomd`, canonical (`versions/<ver>/controlroomd` when installed).
+fn current_exe() -> anyhow::Result<AbsPath> {
+    let exe = std::fs::canonicalize(std::env::current_exe()?)?;
+    Ok(AbsPath::from_path(&exe)?)
 }
 
 /// A check with an observed value.
@@ -139,8 +153,10 @@ mod tests {
     #[test]
     fn diagnose_never_fails() {
         let t = tempfile::tempdir().unwrap();
-        let dirs = Dirs::under_home(controlroom_sandbox::AbsPath::from_path(t.path()).unwrap());
-        let diagnosis = diagnose(&dirs);
+        let home = AbsPath::from_path(t.path()).unwrap();
+        let dirs = Dirs::under_home(home.clone());
+        let diagnosis = diagnose(&dirs, &home.join("versions/0.1.0/controlroomd"));
+        assert_eq!(diagnosis.report.nono.status, CheckStatus::Fail);
         let json = serde_json::to_value(&diagnosis.report).unwrap();
         let back: DoctorReport = serde_json::from_value(json).unwrap();
         assert_eq!(back, diagnosis.report);

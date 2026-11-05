@@ -5,6 +5,8 @@
 //! nix build .#nono -o /tmp/cr-nono
 //! CR_TEST_NONO=/tmp/cr-nono/bin/nono cargo test -p controlroomd --test host nono -- --ignored
 //! ```
+//!
+//! `nix build .#nono-x86_64-linux` (the static build bundled for the hosts) works as well.
 
 use controlroom_protocol::ErrorData;
 use std::sync::Arc;
@@ -53,7 +55,13 @@ async fn deny_everything(env: &HostEnv) -> Arc<std::sync::atomic::AtomicUsize> {
 /// A scratch home under `/var/tmp` whose `sandbox.toml` points at the test's nono.
 async fn env() -> HostEnv {
     let nono = std::env::var("CR_TEST_NONO").unwrap_or_else(|_| "nono".into());
+    env_with(&format!("nono = {nono:?}\n"), |_| {}).await
+}
+
+/// A scratch home under `/var/tmp` with `sandbox_toml` (plus `nono_tmp`), set up by `prepare`.
+async fn env_with(sandbox_toml: &str, prepare: impl FnOnce(&mut HostEnv)) -> HostEnv {
     let mut env = HostEnv::new_in("/var/tmp");
+    prepare(&mut env);
     let config = env.home().join(".config/controlroom");
     std::fs::create_dir_all(&config).unwrap();
     // nono's own temp dirs go into the scratch dir, so the harness can clean what a killed
@@ -62,7 +70,7 @@ async fn env() -> HostEnv {
     std::fs::create_dir(&nono_tmp).unwrap();
     std::fs::write(
         config.join("sandbox.toml"),
-        format!("nono = {nono:?}\nnono_tmp = {nono_tmp:?}\n"),
+        format!("{sandbox_toml}nono_tmp = {nono_tmp:?}\n"),
     )
     .unwrap();
     std::fs::write(env.home().join("secret.txt"), "outside the workspace\n").unwrap();
@@ -70,6 +78,35 @@ async fn env() -> HostEnv {
     env.login_shell = crate::harness::bash();
     env.start_daemon().await;
     env
+}
+
+/// The nono the controller installs next to the daemon (no `nono` in `sandbox.toml`) confines
+/// shells: CR_TEST_NONO stands in for the bundled static build.
+#[tokio::test]
+#[ignore = "needs nono 0.80 and Landlock (CR_TEST_NONO)"]
+async fn the_bundled_nono_confines_shells() {
+    let nono = std::path::PathBuf::from(std::env::var("CR_TEST_NONO").unwrap());
+    let mut installed = None;
+    let env = env_with("", |env| installed = Some(env.install(&nono, "0.80.0"))).await;
+    let installed = std::fs::canonicalize(installed.unwrap()).unwrap();
+    let denied = deny_everything(&env).await;
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let session = Session::open(&env, &client, SandboxLevel::Strict).await;
+    session.shell(&client, "s").await;
+    let (exit, output, _) = session.bash(&client, "c1", "s", "echo ok").await;
+    assert_eq!((exit, output.as_str()), (Some(0), "ok"), "{}", env.log());
+    let (exit, _, _) = session.bash(&client, "c2", "s", "cat ~/secret.txt").await;
+    assert_ne!(exit, Some(0), "the shell read outside the workspace");
+    assert!(denied.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+    // The shell runs under the installed nono (by its command line: nono makes itself
+    // non-dumpable, so its `/proc/<pid>/exe` is unreadable).
+    let run = format!("{}\0run\0", installed.display());
+    let under_bundled = std::fs::read_dir("/proc").unwrap().flatten().any(|p| {
+        std::fs::read(p.path().join("cmdline")).is_ok_and(|c| c.starts_with(run.as_bytes()))
+    });
+    assert!(under_bundled, "no process runs {}", installed.display());
 }
 
 #[tokio::test]

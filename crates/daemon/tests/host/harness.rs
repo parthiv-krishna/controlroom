@@ -34,6 +34,8 @@ pub struct HostEnv {
     pub dir: tempfile::TempDir,
     /// The daemon's `$SHELL` (jobs run in it): a stand-in by default.
     pub login_shell: PathBuf,
+    /// The `controlroomd` that runs: the build, or its installed copy.
+    bin: PathBuf,
     daemon: Option<Child>,
 }
 
@@ -56,8 +58,37 @@ impl HostEnv {
         Self {
             dir,
             login_shell,
+            bin: PathBuf::from(BIN),
             daemon: None,
         }
+    }
+
+    /// Installs the built daemon and `nono` (a file) as the controller does, and runs the
+    /// installed daemon from now on:
+    /// `versions/<ver>/{controlroomd, nono -> ../../nono/<nono_version>/nono}`.
+    pub fn install(&mut self, nono: &Path, nono_version: &str) -> PathBuf {
+        let base = self.home().join(".local/share/controlroom");
+        let version = base.join(concat!("versions/", env!("CARGO_PKG_VERSION")));
+        let installed_nono = base.join("nono").join(nono_version).join("nono");
+        // Copied by a child: writing an executable from this process could race with
+        // concurrent forks (ETXTBSY).
+        let status = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(
+                r#"mkdir -p "$3" "${4%/nono}" && cp "$1" "$3/controlroomd" && cp "$2" "$4" \
+                && chmod 755 "$3/controlroomd" "$4" && ln -s "../../nono/$5/nono" "$3/nono""#,
+            )
+            .arg("sh")
+            .arg(BIN)
+            .arg(nono)
+            .arg(&version)
+            .arg(&installed_nono)
+            .arg(nono_version)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        self.bin = version.join("controlroomd");
+        installed_nono
     }
 
     /// A scratch home with a running daemon.
@@ -85,7 +116,7 @@ impl HostEnv {
 
     /// `controlroomd` with the scratch home.
     pub fn command(&self) -> Command {
-        let mut cmd = Command::new(BIN);
+        let mut cmd = Command::new(&self.bin);
         cmd.env("HOME", self.home())
             .env("SHELL", &self.login_shell)
             .env("CONTROLROOMD_LOG", "debug")
@@ -176,7 +207,7 @@ const LOGIN_SHELL: &str = "#!/bin/sh\n[ \"$1\" = -lc ] || { echo \"bad shell arg
 
 /// Writes an executable script from a child shell (written from this process, a concurrently
 /// forked child could inherit the open fd and make executing it fail with ETXTBSY).
-fn write_executable(path: &Path, content: &str) {
+pub fn write_executable(path: &Path, content: &str) {
     let status = Command::new("/bin/sh")
         .arg("-c")
         .arg(r#"printf '%s' "$1" > "$2" && chmod 755 "$2""#)

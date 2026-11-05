@@ -5,7 +5,8 @@
 //! knows. Every key is optional:
 //!
 //! ```toml
-//! nono = "nono"                     # program found by the login shell, or an absolute path
+//! nono = "nono"                     # default: the nono controlroom installs with controlroomd;
+//!                                   # else a program found by the login shell, or a path
 //! read_only = ["/nix/store"]        # readable system paths
 //! exec_dirs = ["/usr/bin", "/bin"]  # besides PATH, where sandboxed programs may run from
 //! relaxed_reads = [{ path = "~/.gitconfig", kind = "file" }]  # level relaxed only
@@ -31,8 +32,9 @@ use crate::dirs::{Dirs, expand_home};
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SandboxConfig {
-    /// nono: a program name resolved by the login shell, or an absolute (or `~/`) path.
-    pub nono: String,
+    /// nono: a program name resolved by the login shell, or an absolute (or `~/`) path;
+    /// unset, the nono installed with this `controlroomd` (see [`crate::nono`]).
+    pub nono: Option<String>,
     /// Readable system paths.
     pub read_only: Vec<String>,
     /// Directories, besides `PATH`'s, whose programs sandboxed processes may run.
@@ -48,7 +50,7 @@ pub struct SandboxConfig {
 impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
-            nono: "nono".to_owned(),
+            nono: None,
             read_only: vec!["/nix/store".to_owned()],
             exec_dirs: vec!["/usr/bin".to_owned(), "/bin".to_owned()],
             relaxed_reads: Vec::new(),
@@ -71,8 +73,8 @@ pub struct RelaxedRead {
 /// [`SandboxConfig`] with paths expanded and every value validated.
 #[derive(Debug, Clone)]
 pub struct SandboxSettings {
-    /// How to find nono.
-    pub nono: String,
+    /// How to find nono; `None` for the bundled one.
+    pub nono: Option<String>,
     /// Readable system paths.
     pub read_only: Vec<AbsPath>,
     /// Directories, besides `PATH`'s, whose programs sandboxed processes may run (as
@@ -156,7 +158,7 @@ mod tests {
         let config: SandboxConfig = toml::from_str("").unwrap();
         assert_eq!(config, SandboxConfig::default());
         let s = config.resolve(&home()).unwrap();
-        assert_eq!(s.nono, "nono");
+        assert_eq!(s.nono, None);
         assert_eq!(s.read_only, [AbsPath::new("/nix/store").unwrap()]);
         assert_eq!(
             s.exec_dirs,
@@ -181,6 +183,10 @@ approval_timeout_secs = 30
         )
         .unwrap();
         let s = config.resolve(&home()).unwrap();
+        assert_eq!(
+            s.nono.as_deref(),
+            Some("/nix/store/aaaa-nono-0.80.0/bin/nono")
+        );
         assert_eq!(s.read_only[1].as_str(), "/home/alice/datasets");
         assert_eq!(s.relaxed_reads[0].path.as_str(), "/home/alice/.gitconfig");
         assert_eq!(s.relaxed_reads[0].access, Access::Read);

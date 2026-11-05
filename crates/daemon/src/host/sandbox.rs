@@ -29,7 +29,7 @@ use controlroom_sandbox::{
 use crate::config::sandbox::{self as sandbox_config, SandboxSettings};
 use crate::dirs::write_private_file;
 use crate::dirs::{Dirs, WorkspacePaths};
-use crate::shell::{find_program, login_shell};
+use crate::nono::{Nono, NonoMissing, NonoOrigin};
 
 /// A `sandbox_unavailable` error.
 pub fn unavailable(detail: impl Into<String>) -> RpcError {
@@ -42,13 +42,25 @@ pub fn unavailable(detail: impl Into<String>) -> RpcError {
     )
 }
 
+/// The `sandbox_unavailable` error for a workspace that needs nono when there is none.
+fn nono_unavailable(missing: &NonoMissing) -> RpcError {
+    let fix = match missing.origin {
+        NonoOrigin::Bundled => "reinstall controlroomd from controlroom",
+        NonoOrigin::Configured => "fix or remove `nono` in sandbox.toml",
+    };
+    unavailable(format!(
+        "nono: {}; {fix}, or use sandbox level off",
+        missing.detail
+    ))
+}
+
 /// What the host needs to sandbox processes, resolved once at startup.
 #[derive(Debug, Clone)]
 pub struct SandboxEnv {
     /// `sandbox.toml`, resolved (its defaults if the file is unusable).
     pub settings: SandboxSettings,
-    /// The nono binary, if found.
-    pub nono: Option<AbsPath>,
+    /// The nono binary, or why there is none.
+    pub nono: Result<Nono, NonoMissing>,
     /// The daemon's `PATH`, which mediated commands are pinned against.
     pub path_var: String,
     /// This `controlroomd`: the fs worker runs it inside the sandbox, so profiles may read it.
@@ -56,7 +68,7 @@ pub struct SandboxEnv {
 }
 
 impl SandboxEnv {
-    /// Reads `sandbox.toml` and looks for nono through the login shell.
+    /// Reads `sandbox.toml` and locates nono (see [`crate::nono`]).
     pub fn load(dirs: &Dirs, exe: AbsPath) -> Self {
         let loaded = sandbox_config::load(dirs);
         if let Some(e) = &loaded.error {
@@ -70,9 +82,9 @@ impl SandboxEnv {
                 sandbox_config::SandboxConfig::default().resolve(dirs.home())
             })
             .expect("the default sandbox settings resolve");
-        let nono = find_program(&login_shell(), &settings.nono, dirs.home())
-            .inspect_err(|e| tracing::warn!("nono: {e}; only level off workspaces can run"))
-            .ok();
+        let nono = crate::nono::locate(settings.nono.as_deref(), &exe, dirs.home())
+            .inspect(|n| tracing::info!(path = %n.path, source = %n.origin, "nono"))
+            .inspect_err(|e| tracing::warn!("nono: {e}; only level off workspaces can run"));
         Self {
             settings,
             nono,
@@ -181,11 +193,8 @@ pub fn write_profile(
         let _ = std::fs::remove_file(profile.as_path());
         return Ok(None);
     }
-    if env.nono.is_none() {
-        return Err(unavailable(format!(
-            "nono ({}) was not found on this host; install it or use sandbox level off",
-            env.settings.nono
-        )));
+    if let Err(missing) = &env.nono {
+        return Err(nono_unavailable(missing));
     }
     let mut policy = input.policy;
     if input.hook.is_none() {
@@ -276,10 +285,7 @@ pub fn wrap(
             key.to_string_lossy()
         )));
     }
-    let nono = env
-        .nono
-        .as_ref()
-        .ok_or_else(|| unavailable("nono was not found on this host"))?;
+    let nono = &env.nono.as_ref().map_err(nono_unavailable)?.path;
     let mut wrapped = vec![
         nono.to_string(),
         "run".to_owned(),
@@ -389,7 +395,10 @@ mod tests {
             settings: sandbox_config::SandboxConfig::default()
                 .resolve(&home)
                 .unwrap(),
-            nono: Some(AbsPath::new("/run/current-system/sw/bin/nono").unwrap()),
+            nono: Ok(Nono {
+                path: AbsPath::new("/run/current-system/sw/bin/nono").unwrap(),
+                origin: NonoOrigin::Bundled,
+            }),
             path_var: bin.to_string(),
             exe: exe.clone(),
         };

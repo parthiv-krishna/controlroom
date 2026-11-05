@@ -1,5 +1,6 @@
-//! Sandbox prerequisites (spec §11.5): nono, pinned to 0.80.0, and the kernel's Landlock ABI;
-//! plus the sftp placeholder for future file browsing.
+//! Sandbox prerequisites (spec §11.5): which nono sandboxes workspaces (the one installed with
+//! controlroomd, or `sandbox.toml`'s) and its version against the validated 0.80.0, and the
+//! kernel's Landlock ABI; plus the sftp placeholder for future file browsing.
 
 use controlroom_protocol::host::{CheckStatus, DoctorCheck};
 use controlroom_sandbox::AbsPath;
@@ -8,43 +9,53 @@ use controlroom_sandbox::probe::{self, Landlock, NonoStatus, PINNED_NONO_VERSION
 
 use super::{check, unknown};
 use crate::dirs::Dirs;
-use crate::shell::find_program;
+use crate::nono::{Nono, NonoMissing, NonoOrigin, locate};
 
 /// Landlock ABI that filters TCP (nono's network confinement needs it).
 const NETWORK_ABI: u32 = 4;
 
-/// Finds nono (see [`find_program`]) and checks its version against the pin.
-pub fn nono(dirs: &Dirs, shell: &AbsPath, setting: &str) -> DoctorCheck {
-    let path = match find_program(shell, setting, dirs.home()) {
-        Ok(path) => path,
-        Err(e) => {
-            return check(
-                CheckStatus::Fail,
-                "missing",
-                format!("{e}; sandboxed sessions can't start"),
-            );
+/// Locates nono (see [`crate::nono`]) for the daemon at `exe` and checks it runs and its
+/// version against the validated one.
+pub fn nono(dirs: &Dirs, exe: &AbsPath, setting: Option<&str>) -> DoctorCheck {
+    match locate(setting, exe, dirs.home()) {
+        Ok(nono) => {
+            let status = probe::nono(&nono.path, &NonoDirs::under(dirs.state()));
+            nono_status(&nono, status)
         }
-    };
-    nono_status(&path, probe::nono(&path, &NonoDirs::under(dirs.state())))
+        Err(missing) => nono_missing(&missing),
+    }
 }
 
-fn nono_status(path: &AbsPath, status: NonoStatus) -> DoctorCheck {
+fn nono_missing(missing: &NonoMissing) -> DoctorCheck {
+    let fix = match missing.origin {
+        NonoOrigin::Bundled => "reinstall controlroomd from controlroom",
+        NonoOrigin::Configured => "fix or remove `nono` in sandbox.toml (to use the bundled one)",
+    };
+    check(
+        CheckStatus::Fail,
+        "missing",
+        format!("{missing}; sandboxed sessions can't start: {fix}"),
+    )
+}
+
+fn nono_status(nono: &Nono, status: NonoStatus) -> DoctorCheck {
+    let Nono { path, origin } = nono;
     match status {
         NonoStatus::Available {
             version,
             pinned: true,
-        } => check(CheckStatus::Ok, &version, format!("{path}")),
+        } => check(CheckStatus::Ok, &version, format!("{origin}: {path}")),
         NonoStatus::Available { version, .. } => check(
-            CheckStatus::Fail,
+            CheckStatus::Warn,
             &version,
             format!(
-                "{path}: controlroom's sandbox profiles are validated against nono {PINNED_NONO_VERSION}; install that version"
+                "{origin}: {path}; controlroom's sandbox profiles are validated against nono {PINNED_NONO_VERSION}"
             ),
         ),
         NonoStatus::Unavailable(why) => check(
             CheckStatus::Fail,
             "unusable",
-            format!("{why}; sandboxed sessions can't start"),
+            format!("{origin}: {why}; sandboxed sessions can't start"),
         ),
     }
 }
@@ -127,9 +138,12 @@ mod tests {
 
     #[test]
     fn nono_statuses() {
-        let path = AbsPath::new("/nix/store/aaaa-nono-0.80.0/bin/nono").unwrap();
+        let nono = |origin| Nono {
+            path: AbsPath::new("/home/alice/.local/share/controlroom/nono/0.80.0/nono").unwrap(),
+            origin,
+        };
         let ok = nono_status(
-            &path,
+            &nono(NonoOrigin::Bundled),
             NonoStatus::Available {
                 version: "0.80.0".into(),
                 pinned: true,
@@ -139,17 +153,45 @@ mod tests {
             (ok.status, ok.value.as_deref()),
             (CheckStatus::Ok, Some("0.80.0"))
         );
+        assert_eq!(
+            ok.detail,
+            "bundled: /home/alice/.local/share/controlroom/nono/0.80.0/nono"
+        );
+        // Another version still runs, with a warning.
         let old = nono_status(
-            &path,
+            &nono(NonoOrigin::Configured),
             NonoStatus::Available {
                 version: "0.79.0".into(),
                 pinned: false,
             },
         );
-        assert_eq!(old.status, CheckStatus::Fail);
-        assert!(old.detail.contains("0.80.0"));
-        let broken = nono_status(&path, NonoStatus::Unavailable("exec failed".into()));
+        assert_eq!(old.status, CheckStatus::Warn);
+        assert!(old.detail.starts_with("configured in sandbox.toml: "));
+        assert!(old.detail.contains("validated against nono 0.80.0"));
+        let broken = nono_status(
+            &nono(NonoOrigin::Bundled),
+            NonoStatus::Unavailable("exec failed".into()),
+        );
         assert_eq!(broken.status, CheckStatus::Fail);
+    }
+
+    #[test]
+    fn missing_nono_advice() {
+        let bundled = nono_missing(&NonoMissing {
+            origin: NonoOrigin::Bundled,
+            detail: "the bundled nono … is missing".into(),
+        });
+        assert_eq!(
+            (bundled.status, bundled.value.as_deref()),
+            (CheckStatus::Fail, Some("missing"))
+        );
+        assert!(bundled.detail.contains("reinstall controlroomd"));
+        assert!(!bundled.detail.contains("install nono"));
+        let configured = nono_missing(&NonoMissing {
+            origin: NonoOrigin::Configured,
+            detail: "`nono` not found by the login shell".into(),
+        });
+        assert!(configured.detail.contains("sandbox.toml"));
     }
 
     #[test]

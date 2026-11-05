@@ -5,16 +5,16 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 
 use controlroom_protocol::agentd::{ClientRole, HelloParams};
-use controlroom_protocol::host::FsListParams;
 use controlroom_protocol::host::{
     ApprovalRespondParams, HostApproval, ShellListParams, WorkspaceCloseParams, methods,
 };
+use controlroom_protocol::host::{CheckStatus, FsListParams};
 use controlroom_protocol::jsonrpc::NoParams;
 use controlroom_protocol::session::{RequestBody, SandboxLevel};
 use controlroom_protocol::{Capability, ErrorData, ProtocolVersion};
 use serde_json::{Value, json};
 
-use crate::harness::{HostEnv, RpcClient, Session, bash_op, controller_id};
+use crate::harness::{HostEnv, RpcClient, Session, bash_op, controller_id, write_executable};
 
 #[tokio::test]
 async fn hello_and_one_controller() {
@@ -169,6 +169,55 @@ async fn fs_list_and_doctor() {
         .await
         .unwrap();
     assert!(report.agents.is_empty());
+}
+
+/// An installed daemon uses the nono installed next to it; `sandbox.toml` overrides it. The
+/// doctor says which one, with its version.
+#[tokio::test]
+async fn the_host_uses_the_bundled_nono_unless_configured() {
+    let mut env = HostEnv::new();
+    let fake = |version: &str| {
+        let path = env.dir.path().join(format!("nono-{version}"));
+        write_executable(
+            &path,
+            &format!("#!/bin/sh\n[ \"$1\" = --version ] && echo 'nono {version}'\n"),
+        );
+        path
+    };
+    let (bundled, other) = (fake("0.80.0"), fake("0.79.0"));
+    let installed = env.install(&bundled, "0.80.0");
+    let installed = std::fs::canonicalize(installed).unwrap();
+    env.start_daemon().await;
+    let client = env.controller().await;
+    let report = client
+        .call::<methods::DoctorReportMethod>(NoParams {})
+        .await
+        .unwrap();
+    assert_eq!(report.nono.status, CheckStatus::Ok, "{:?}", report.nono);
+    assert_eq!(report.nono.value.as_deref(), Some("0.80.0"));
+    assert_eq!(
+        report.nono.detail,
+        format!("bundled: {}", installed.display())
+    );
+
+    // An explicit `nono` wins; another version is a warning, not a failure.
+    let config = env.home().join(".config/controlroom");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(config.join("sandbox.toml"), format!("nono = {other:?}\n")).unwrap();
+    let report = client
+        .call::<methods::DoctorReportMethod>(NoParams {})
+        .await
+        .unwrap();
+    assert_eq!(report.nono.status, CheckStatus::Warn, "{:?}", report.nono);
+    assert_eq!(report.nono.value.as_deref(), Some("0.79.0"));
+    assert!(
+        report.nono.detail.starts_with(&format!(
+            "configured in sandbox.toml: {}",
+            std::fs::canonicalize(&other).unwrap().display()
+        )),
+        "{}",
+        report.nono.detail
+    );
 }
 
 /// The webhook's port and a workspace's secret, from the host's state dir.
