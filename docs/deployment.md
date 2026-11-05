@@ -8,7 +8,8 @@ controlroom has two parts:
   (`controlroom-agentd`), which runs every pi session (under nono) with the model credentials.
 - **Execution hosts** are the machines the agents work on: their files, shells and jobs. The
   server connects to them over SSH and installs its daemon (`controlroomd`) into
-  `~/.local/share/controlroom`. They need only bash and nono: no pi, bundle or model credentials.
+  `~/.local/share/controlroom`, with the nono it sandboxes their work with. They need only bash
+  and a Landlock-capable kernel: no nono, pi, bundle or model credentials.
 
 The examples use `controlroom.example.com` for the app, `id.example.com` for the identity
 provider (Authelia here) and `alice` for the user. Adapt them.
@@ -185,16 +186,32 @@ sign-in. The `groups` scope is requested whenever `allowedGroups` is set.
 
 ## 5. Execution hosts
 
-On each host, through home-manager:
+Hosts need a Linux kernel with Landlock enabled (ABI 4 or later to confine TCP; the doctor
+reports it), bash, and SSH access. They need **no nono** of their own: the server uploads a
+static build of the pinned nono with the daemon, verifies it by running it, and the daemon uses
+it by default. On the host:
 
-- install nono (`inputs.controlroom.packages.<system>.nono`, the pinned version) on the user's
-  PATH; optionally `~/.config/controlroom/sandbox.toml` (`crates/daemon/src/config/sandbox.rs`);
+```text
+~/.local/share/controlroom/
+  versions/<version>/controlroomd       the daemon (one directory per version)
+  versions/<version>/nono -> ../../nono/<nono version>/nono
+  nono/<nono version>/nono              uploaded only when nono's version changes
+  current -> versions/<version>
+```
+
+Optionally, through home-manager:
+
+- `~/.config/controlroom/sandbox.toml` (`crates/daemon/src/config/sandbox.rs`); `nono = "…"`
+  there overrides the bundled nono with a program on the login shell's PATH or a path (the
+  doctor warns if its version isn't the validated one);
 - persist `~/.local/state/controlroom` and `~/.local/share/controlroom` on an impermanent home.
 
 Then, in the UI, open **Settings › Machines › Add machine**: enter the SSH target, trust the host
 key after comparing it with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the host, and
 install controlroom's public key into the host's `~/.ssh/authorized_keys` with the command the
-dialog shows. The server installs the daemon and runs `controlroomd doctor`.
+dialog shows. The server installs nono and the daemon and runs `controlroomd doctor`, which shows
+the nono in use ("bundled" or "configured in sandbox.toml", with its version) and the Landlock
+ABI.
 
 ## 6. Phone: the installed app and push
 
@@ -220,7 +237,9 @@ journalctl -u controlroom -u controlroom-agent -e
 
 - The server is upgraded with the system. When it bundles a newer `controlroomd`, it upgrades
   each machine's daemon automatically once the machine is idle. It runs the new binary first and
-  rolls back if the daemon doesn't answer; running agents are not interrupted.
+  rolls back if the daemon doesn't answer; running agents are not interrupted. nono is uploaded
+  only when its version changes; each daemon version keeps the nono it came with, so a rollback
+  restores both.
 - To roll the server back: `nixos-rebuild switch --rollback` (or boot the previous generation).
   Daemons are never downgraded: hosts that were already upgraded keep the newer daemon (the
   previous ones stay under `~/.local/share/controlroom/versions/`).
