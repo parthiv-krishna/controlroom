@@ -12,28 +12,57 @@ use std::time::Duration;
 
 use controlroom_client_core::SshPrivateKey;
 use controlroom_client_core::bootstrap::{
-    BootstrapError, DaemonBinarySource, InMemoryBinaries, InstallDecision, RemoteShell,
-    UpgradeOutcome, Version, add_authorized_key, daemon_command, install, probe, prune_versions,
-    read_current_link, remove_authorized_key, rollback, rotate_key, stop_daemon, upgrade,
+    BootstrapError, DaemonBinarySource, InMemoryBinaries, InMemoryProgram, InstallDecision,
+    InstallStep, Program, RemoteShell, UpgradeOutcome, Version, add_authorized_key, daemon_command,
+    install, probe, prune_versions, read_current_link, remove_authorized_key, rollback, rotate_key,
+    stop_daemon, upgrade,
 };
 use controlroom_client_core::ssh::{
     CommandOutput, ConnectOptions, SshError, SshErrorKind, connect,
 };
-use support::{Fake, LocalShell, Reaper, TestServer, base, fake_daemon, start_daemon_command};
+use support::{
+    Fake, LocalShell, Reaper, TestServer, base, fake_daemon, fake_nono, start_daemon_command,
+};
 
 const STOP_WAIT: Duration = Duration::from_secs(10);
 
-fn source(fake: &Fake) -> InMemoryBinaries {
-    let binary = fake.binary();
-    InMemoryBinaries {
-        version: Version::parse(fake.version).unwrap(),
+/// The nono every source bundles unless a test says otherwise.
+const NONO: &str = "0.80.0";
+
+/// A progress callback that ignores progress.
+fn quiet(_: InstallStep<'_>) {}
+
+/// The same binary for both architectures.
+fn program(version: &str, binary: Vec<u8>) -> InMemoryProgram {
+    InMemoryProgram {
+        version: Version::parse(version).unwrap(),
         x86_64: Some(binary.clone()),
         aarch64: Some(binary),
     }
 }
 
+/// A well-behaved nono `version`.
+fn nono(version: &str) -> InMemoryProgram {
+    program(version, fake_nono(Some(&format!("nono {version}"))))
+}
+
+fn source(fake: &Fake) -> InMemoryBinaries {
+    InMemoryBinaries {
+        daemon: program(fake.version, fake.binary()),
+        nono: nono(NONO),
+    }
+}
+
 fn good(version: &str) -> InMemoryBinaries {
     source(&Fake::good(version))
+}
+
+/// A good daemon `version` bundled with nono `nono_version`.
+fn with_nono(version: &str, nono_version: &str) -> InMemoryBinaries {
+    InMemoryBinaries {
+        nono: nono(nono_version),
+        ..good(version)
+    }
 }
 
 fn local(home: &Path) -> LocalShell {
@@ -88,9 +117,12 @@ async fn probe_install_upgrade_and_never_downgrade() {
     assert_eq!(p.home, home.path().to_str().unwrap());
     assert_eq!(p.daemon_version_output, None);
     let v1 = good("0.1.0");
-    assert_eq!(p.decide(v1.version()), InstallDecision::Install);
+    assert_eq!(
+        p.decide(v1.version(Program::Controlroomd)),
+        InstallDecision::Install
+    );
 
-    let installed = install(&shell, &v1, &p).await.unwrap();
+    let installed = install(&shell, &v1, &p, &quiet).await.unwrap();
     assert_eq!(installed.hashed_with, "sha256sum");
     assert_eq!(installed.previous, None);
     assert_eq!(installed.target(), "versions/0.1.0");
@@ -104,18 +136,21 @@ async fn probe_install_upgrade_and_never_downgrade() {
     let p = probe(&shell).await.unwrap();
     assert_eq!(p.installed_version(), Some(Version::new(0, 1, 0)));
     assert_eq!(p.current_link.as_deref(), Some("versions/0.1.0"));
-    assert_eq!(p.decide(v1.version()), InstallDecision::UpToDate);
+    assert_eq!(
+        p.decide(v1.version(Program::Controlroomd)),
+        InstallDecision::UpToDate
+    );
 
     // An upgrade keeps the old version (supervisors may run from it) and
     // reports it as the rollback target.
-    let installed = install(&shell, &good("0.2.0"), &p).await.unwrap();
+    let installed = install(&shell, &good("0.2.0"), &p, &quiet).await.unwrap();
     assert_eq!(installed.previous.as_deref(), Some("versions/0.1.0"));
     assert_eq!(current(&shell).await.as_deref(), Some("versions/0.2.0"));
     assert!(bin.exists());
 
     // Never downgrade.
     let p = probe(&shell).await.unwrap();
-    let err = install(&shell, &v1, &p).await.unwrap_err();
+    let err = install(&shell, &v1, &p, &quiet).await.unwrap_err();
     assert!(
         matches!(err, BootstrapError::WouldDowngrade { .. }),
         "{err}"
@@ -123,24 +158,191 @@ async fn probe_install_upgrade_and_never_downgrade() {
     assert_eq!(current(&shell).await.as_deref(), Some("versions/0.2.0"));
 
     // No temp files left behind.
-    assert_eq!(names(&base(home.path())), ["current", "versions"]);
+    assert_eq!(names(&base(home.path())), ["current", "nono", "versions"]);
     assert_eq!(
         names(&base(home.path()).join("versions")),
         ["0.1.0", "0.2.0"]
     );
     assert_eq!(
         names(&base(home.path()).join("versions/0.2.0")),
-        ["controlroomd"]
+        ["controlroomd", "nono"]
     );
+    assert_eq!(names(&base(home.path()).join("nono")), [NONO]);
+    assert_eq!(names(&base(home.path()).join("nono").join(NONO)), ["nono"]);
+}
+
+/// The nono a daemon version uses: where its `nono` link resolves, relative to the base.
+fn nono_of(home: &Path, target: &str) -> String {
+    let base = base(home).canonicalize().unwrap();
+    let link = base.join(target).join("nono");
+    let real = link.canonicalize().unwrap();
+    real.strip_prefix(&base)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Records every non-empty stdin (an upload) before running the command locally.
+struct Recording {
+    inner: LocalShell,
+    uploads: std::sync::Mutex<Vec<Vec<u8>>>,
+}
+
+impl Recording {
+    fn new(home: &Path) -> Self {
+        Self {
+            inner: local(home),
+            uploads: Default::default(),
+        }
+    }
+
+    /// The uploads since the last call.
+    fn take(&self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.uploads.lock().unwrap())
+    }
+}
+
+impl RemoteShell for Recording {
+    async fn run(&self, command: &str, stdin: &[u8]) -> Result<CommandOutput, SshError> {
+        if !stdin.is_empty() {
+            self.uploads.lock().unwrap().push(stdin.to_vec());
+        }
+        self.inner.run(command, stdin).await
+    }
+}
+
+#[tokio::test]
+async fn nono_is_uploaded_only_when_its_version_changes() {
+    let home = tempfile::tempdir().unwrap();
+    let shell = Recording::new(home.path());
+    let steps = std::sync::Mutex::new(Vec::new());
+    let record = |step: InstallStep<'_>| steps.lock().unwrap().push(step.to_string());
+    let install_ = |src: InMemoryBinaries| {
+        let (shell, record) = (&shell, &record);
+        async move {
+            let p = probe(&shell.inner).await.unwrap();
+            install(shell, &src, &p, record).await
+        }
+    };
+    let nono_bytes = |v: &str| fake_nono(Some(&format!("nono {v}")));
+
+    // A fresh install uploads nono, then the daemon, and links them.
+    let installed = install_(good("0.1.0")).await.unwrap();
+    assert_eq!(shell.take(), [nono_bytes(NONO), fake_daemon("0.1.0")]);
+    assert!(installed.nono.uploaded);
+    assert_eq!(installed.nono.version, Version::parse(NONO).unwrap());
+    let nono_path = base(home.path()).join("nono").join(NONO).join("nono");
+    assert_eq!(installed.nono.path, nono_path.to_str().unwrap());
+    assert_eq!(std::fs::read(&nono_path).unwrap(), nono_bytes(NONO));
+    let link = base(home.path()).join("versions/0.1.0/nono");
+    assert_eq!(
+        std::fs::read_link(&link).unwrap().to_str(),
+        Some("../../nono/0.80.0/nono")
+    );
+    assert_eq!(nono_of(home.path(), "current"), "nono/0.80.0/nono");
+    let arch = probe(&shell.inner).await.unwrap().arch;
+    assert_eq!(
+        steps.lock().unwrap().drain(..).collect::<Vec<_>>(),
+        [
+            format!("installing nono 0.80.0 ({arch})"),
+            format!("installing controlroomd 0.1.0 ({arch})")
+        ]
+    );
+
+    // A daemon upgrade with the same nono uploads only the daemon.
+    let installed = install_(good("0.2.0")).await.unwrap();
+    assert_eq!(shell.take(), [fake_daemon("0.2.0")]);
+    assert!(!installed.nono.uploaded);
+    assert_eq!(nono_of(home.path(), "current"), "nono/0.80.0/nono");
+    assert_eq!(
+        steps.lock().unwrap().drain(..).collect::<Vec<_>>(),
+        [format!("installing controlroomd 0.2.0 ({arch})")]
+    );
+
+    // A new nono version is uploaded next to the old one, which older versions still use.
+    let installed = install_(with_nono("0.3.0", "0.81.0")).await.unwrap();
+    assert_eq!(shell.take(), [nono_bytes("0.81.0"), fake_daemon("0.3.0")]);
+    assert!(installed.nono.uploaded);
+    assert_eq!(nono_of(home.path(), "current"), "nono/0.81.0/nono");
+    assert_eq!(nono_of(home.path(), "versions/0.2.0"), "nono/0.80.0/nono");
+    assert_eq!(names(&base(home.path()).join("nono")), ["0.80.0", "0.81.0"]);
+
+    // Rolling the daemon back rolls its nono back too.
+    rollback(&shell.inner, &installed).await.unwrap();
+    assert_eq!(
+        current(&shell.inner).await.as_deref(),
+        Some("versions/0.2.0")
+    );
+    assert_eq!(nono_of(home.path(), "current"), "nono/0.80.0/nono");
+
+    // An installed nono that no longer runs is uploaded again (it is verified before use).
+    std::fs::write(&nono_path, "#!/bin/sh\nexit 1\n").unwrap();
+    install_(good("0.4.0")).await.unwrap();
+    assert_eq!(shell.take(), [nono_bytes(NONO), fake_daemon("0.4.0")]);
+    assert_eq!(std::fs::read(&nono_path).unwrap(), nono_bytes(NONO));
+}
+
+#[tokio::test]
+async fn a_nono_that_fails_verification_installs_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    let shell = local(home.path());
+    install(
+        &shell,
+        &good("0.1.0"),
+        &probe(&shell).await.unwrap(),
+        &quiet,
+    )
+    .await
+    .unwrap();
+    let broken = |output: Option<&str>| InMemoryBinaries {
+        nono: program("0.81.0", fake_nono(output)),
+        ..good("0.2.0")
+    };
+    for (what, src) in [
+        ("crashing", broken(None)),
+        ("mislabeled", broken(Some("nono 0.80.0"))),
+    ] {
+        let p = probe(&shell).await.unwrap();
+        let err = install(&shell, &src, &p, &quiet).await.unwrap_err();
+        let BootstrapError::Verification { program, detail } = &err else {
+            panic!("{what}: {err:?}")
+        };
+        assert_eq!(*program, Program::Nono, "{what}");
+        assert!(detail.contains("verify-run"), "{what}: {detail}");
+        assert_eq!(current(&shell).await.as_deref(), Some("versions/0.1.0"));
+        // Neither the daemon nor any part of the new nono was installed.
+        assert_eq!(names(&base(home.path()).join("versions")), ["0.1.0"]);
+        assert_eq!(names(&base(home.path()).join("nono")), [NONO]);
+    }
+
+    // No nono for the machine's architecture: nothing is uploaded.
+    let arch = probe(&shell).await.unwrap().arch;
+    let mut missing = with_nono("0.2.0", "0.81.0");
+    missing.nono.x86_64 = None;
+    missing.nono.aarch64 = None;
+    let err = install(&shell, &missing, &probe(&shell).await.unwrap(), &quiet)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, BootstrapError::MissingBinary { program: Program::Nono, arch: a, .. } if a == arch),
+        "{err:?}"
+    );
+    assert_eq!(names(&base(home.path()).join("versions")), ["0.1.0"]);
 }
 
 #[tokio::test]
 async fn a_binary_that_fails_its_verify_run_never_becomes_current() {
     let home = tempfile::tempdir().unwrap();
     let shell = local(home.path());
-    install(&shell, &good("0.1.0"), &probe(&shell).await.unwrap())
-        .await
-        .unwrap();
+    install(
+        &shell,
+        &good("0.1.0"),
+        &probe(&shell).await.unwrap(),
+        &quiet,
+    )
+    .await
+    .unwrap();
 
     let crashing = Fake {
         version_output: None,
@@ -151,9 +353,8 @@ async fn a_binary_that_fails_its_verify_run_never_becomes_current() {
         ..Fake::good("0.2.0")
     };
     let wrong_arch = InMemoryBinaries {
-        version: Version::new(0, 2, 0),
-        x86_64: Some(b"\x7fELF not really an executable".to_vec()),
-        aarch64: None,
+        daemon: program("0.2.0", b"\x7fELF not really an executable".to_vec()),
+        nono: nono(NONO),
     };
     let cases = [
         ("crashing", source(&crashing)),
@@ -162,8 +363,12 @@ async fn a_binary_that_fails_its_verify_run_never_becomes_current() {
     ];
     for (what, src) in cases {
         let p = probe(&shell).await.unwrap();
-        let err = install(&shell, &src, &p).await.unwrap_err();
-        let BootstrapError::Verification(msg) = &err else {
+        let err = install(&shell, &src, &p, &quiet).await.unwrap_err();
+        let BootstrapError::Verification {
+            program: Program::Controlroomd,
+            detail: msg,
+        } = &err
+        else {
             panic!("{what}: {err:?}")
         };
         assert!(msg.contains("verify-run"), "{what}: {msg}");
@@ -208,13 +413,17 @@ async fn corrupted_uploads_are_rejected() {
             truncate,
         };
         let p = probe(&shell.inner).await.unwrap();
-        let err = install(&shell, &good("0.1.0"), &p).await.unwrap_err();
+        let err = install(&shell, &good("0.1.0"), &p, &quiet)
+            .await
+            .unwrap_err();
+        // nono goes first; nothing of it or the daemon remains.
         assert!(
-            matches!(&err, BootstrapError::Verification(m) if m.contains(expected)),
+            matches!(&err, BootstrapError::Verification { program: Program::Nono, detail } if detail.contains(expected)),
             "{err:?}"
         );
         assert_eq!(current(&shell.inner).await, None);
         assert!(!base(home.path()).join("versions/0.1.0").exists());
+        assert!(!base(home.path()).join("nono").join(NONO).exists());
     }
 }
 
@@ -238,7 +447,7 @@ async fn install_without_a_hash_tool_still_verify_runs() {
         path: Some(path_without_sha256(bin.path())),
     };
     let p = probe(&shell).await.unwrap();
-    let installed = install(&shell, &good("0.3.0"), &p).await.unwrap();
+    let installed = install(&shell, &good("0.3.0"), &p, &quiet).await.unwrap();
     assert_eq!(installed.hashed_with, "none");
 
     let mislabeled = Fake {
@@ -246,8 +455,10 @@ async fn install_without_a_hash_tool_still_verify_runs() {
         ..Fake::good("0.4.0")
     };
     let p = probe(&shell).await.unwrap();
-    let err = install(&shell, &source(&mislabeled), &p).await.unwrap_err();
-    assert!(matches!(err, BootstrapError::Verification(_)), "{err}");
+    let err = install(&shell, &source(&mislabeled), &p, &quiet)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, BootstrapError::Verification { .. }), "{err}");
     assert_eq!(current(&shell).await.as_deref(), Some("versions/0.3.0"));
 }
 
@@ -255,12 +466,22 @@ async fn install_without_a_hash_tool_still_verify_runs() {
 async fn rollback_restores_the_previous_target() {
     let home = tempfile::tempdir().unwrap();
     let shell = local(home.path());
-    let first = install(&shell, &good("0.1.0"), &probe(&shell).await.unwrap())
-        .await
-        .unwrap();
-    let second = install(&shell, &good("0.2.0"), &probe(&shell).await.unwrap())
-        .await
-        .unwrap();
+    let first = install(
+        &shell,
+        &good("0.1.0"),
+        &probe(&shell).await.unwrap(),
+        &quiet,
+    )
+    .await
+    .unwrap();
+    let second = install(
+        &shell,
+        &good("0.2.0"),
+        &probe(&shell).await.unwrap(),
+        &quiet,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         rollback(&shell, &second).await.unwrap().as_deref(),
         Some("versions/0.1.0")
@@ -280,7 +501,7 @@ async fn upgrade_swaps_stops_the_old_daemon_and_checks_the_new_one() {
     let reaper = Reaper(home.path().to_owned());
     let shell = local(home.path());
 
-    let outcome = upgrade(&shell, &good("0.1.0"), STOP_WAIT, || {
+    let outcome = upgrade(&shell, &good("0.1.0"), &quiet, STOP_WAIT, || {
         start_and_hello(&shell)
     })
     .await
@@ -299,7 +520,7 @@ async fn upgrade_swaps_stops_the_old_daemon_and_checks_the_new_one() {
     let serve = |p: &str| format!("{}/{p}/controlroomd serve", base.display());
     assert!(reaper.running(&serve("current")));
 
-    let outcome = upgrade(&shell, &good("0.2.0"), STOP_WAIT, || {
+    let outcome = upgrade(&shell, &good("0.2.0"), &quiet, STOP_WAIT, || {
         start_and_hello(&shell)
     })
     .await
@@ -315,7 +536,7 @@ async fn upgrade_swaps_stops_the_old_daemon_and_checks_the_new_one() {
     assert_eq!(reaper.pids().len(), 1, "only the new daemon runs");
     assert_eq!(current(&shell).await.as_deref(), Some("versions/0.2.0"));
 
-    let outcome = upgrade(&shell, &good("0.2.0"), STOP_WAIT, || async {
+    let outcome = upgrade(&shell, &good("0.2.0"), &quiet, STOP_WAIT, || async {
         Err::<(), _>("must not run")
     })
     .await
@@ -329,7 +550,7 @@ async fn a_failed_hello_rolls_back_and_stops_the_new_daemon() {
     let home = tempfile::tempdir().unwrap();
     let reaper = Reaper(home.path().to_owned());
     let shell = local(home.path());
-    upgrade(&shell, &good("0.1.0"), STOP_WAIT, || {
+    upgrade(&shell, &good("0.1.0"), &quiet, STOP_WAIT, || {
         start_and_hello(&shell)
     })
     .await
@@ -339,17 +560,21 @@ async fn a_failed_hello_rolls_back_and_stops_the_new_daemon() {
         hello_ok: false,
         ..Fake::good("0.2.0")
     };
-    let err = upgrade(&shell, &source(&incompatible), STOP_WAIT, || {
-        start_and_hello(&shell)
-    })
-    .await
-    .unwrap_err();
+    // ... with a new nono, which the rollback must undo too.
+    let src = InMemoryBinaries {
+        nono: nono("0.81.0"),
+        ..source(&incompatible)
+    };
+    let err = upgrade(&shell, &src, &quiet, STOP_WAIT, || start_and_hello(&shell))
+        .await
+        .unwrap_err();
     let BootstrapError::RolledBack { reason, restored } = &err else {
         panic!("{err:?}")
     };
     assert_eq!(reason, "incompatible");
     assert_eq!(restored.as_deref(), Some("versions/0.1.0"));
     assert_eq!(current(&shell).await.as_deref(), Some("versions/0.1.0"));
+    assert_eq!(nono_of(home.path(), "current"), "nono/0.80.0/nono");
     assert!(reaper.pids().is_empty(), "the new daemon was stopped");
 
     // The next connect runs the old daemon again.
@@ -366,7 +591,7 @@ async fn an_old_daemon_that_does_not_stop_rolls_the_upgrade_back() {
         obeys_term: false,
         ..Fake::good("0.1.0")
     };
-    upgrade(&shell, &source(&stubborn), STOP_WAIT, || {
+    upgrade(&shell, &source(&stubborn), &quiet, STOP_WAIT, || {
         start_and_hello(&shell)
     })
     .await
@@ -376,6 +601,7 @@ async fn an_old_daemon_that_does_not_stop_rolls_the_upgrade_back() {
     let err = upgrade(
         &shell,
         &good("0.2.0"),
+        &quiet,
         Duration::from_millis(300),
         || async {
             checked.fetch_add(1, Ordering::Relaxed);
@@ -403,9 +629,14 @@ async fn stop_daemon_signals_only_serve_and_confirms_exit() {
     let home = tempfile::tempdir().unwrap();
     let reaper = Reaper(home.path().to_owned());
     let shell = local(home.path());
-    install(&shell, &good("0.1.0"), &probe(&shell).await.unwrap())
-        .await
-        .unwrap();
+    install(
+        &shell,
+        &good("0.1.0"),
+        &probe(&shell).await.unwrap(),
+        &quiet,
+    )
+    .await
+    .unwrap();
     let bin = ".local/share/controlroom/versions/0.1.0/controlroomd";
     for sub in ["serve", "supervise"] {
         let out = shell
@@ -428,9 +659,14 @@ async fn stop_daemon_signals_only_serve_and_confirms_exit() {
         obeys_term: false,
         ..Fake::good("0.2.0")
     };
-    install(&shell, &source(&stubborn), &probe(&shell).await.unwrap())
-        .await
-        .unwrap();
+    install(
+        &shell,
+        &source(&stubborn),
+        &probe(&shell).await.unwrap(),
+        &quiet,
+    )
+    .await
+    .unwrap();
     let new_bin = ".local/share/controlroom/versions/0.2.0/controlroomd";
     shell
         .run(&start_daemon_command(new_bin, "serve"), b"")
@@ -451,7 +687,7 @@ async fn prune_keeps_current_kept_and_running_versions() {
     let _reaper = Reaper(home.path().to_owned());
     let shell = local(home.path());
     for v in ["0.1.0", "0.2.0", "0.3.0", "0.4.0"] {
-        install(&shell, &good(v), &probe(&shell).await.unwrap())
+        install(&shell, &good(v), &probe(&shell).await.unwrap(), &quiet)
             .await
             .unwrap();
     }
@@ -471,11 +707,51 @@ async fn prune_keeps_current_kept_and_running_versions() {
     let removed = prune_versions(&shell, &[Version::new(0, 3, 0)])
         .await
         .unwrap();
-    assert_eq!(removed, ["0.2.0"]);
+    assert_eq!(removed.versions, ["0.2.0"]);
+    assert!(removed.nono.is_empty());
     assert_eq!(
         names(&base(home.path()).join("versions")),
         ["0.1.0", "0.3.0", "0.4.0"]
     );
+}
+
+#[tokio::test]
+async fn prune_removes_nono_versions_with_their_daemons() {
+    let home = tempfile::tempdir().unwrap();
+    let _reaper = Reaper(home.path().to_owned());
+    let shell = local(home.path());
+    for (v, nono) in [
+        ("0.1.0", "0.79.0"),
+        ("0.2.0", "0.80.0"),
+        ("0.3.0", "0.81.0"),
+    ] {
+        install(
+            &shell,
+            &with_nono(v, nono),
+            &probe(&shell).await.unwrap(),
+            &quiet,
+        )
+        .await
+        .unwrap();
+    }
+    // A sandbox started by 0.1.0 still runs from nono 0.79.0 (a stand-in that keeps running
+    // with that path as its `argv[0]`).
+    let running = base(home.path()).join("nono/0.79.0/nono");
+    std::fs::write(&running, fake_daemon("0.79.0")).unwrap();
+    let out = shell
+        .run(
+            &start_daemon_command(".local/share/controlroom/nono/0.79.0/nono", "supervise"),
+            b"",
+        )
+        .await
+        .unwrap();
+    assert!(out.status.success(), "{}", out.stderr_str());
+
+    let removed = prune_versions(&shell, &[]).await.unwrap();
+    assert_eq!(removed.versions, ["0.1.0", "0.2.0"]);
+    assert_eq!(removed.nono, ["0.80.0"]);
+    assert_eq!(names(&base(home.path()).join("versions")), ["0.3.0"]);
+    assert_eq!(names(&base(home.path()).join("nono")), ["0.79.0", "0.81.0"]);
 }
 
 #[tokio::test]
@@ -604,9 +880,11 @@ async fn upgrade_over_ssh() {
     )
     .await
     .unwrap();
-    let outcome = upgrade(&conn, &good("0.1.0"), STOP_WAIT, || start_and_hello(&conn))
-        .await
-        .unwrap();
+    let outcome = upgrade(&conn, &good("0.1.0"), &quiet, STOP_WAIT, || {
+        start_and_hello(&conn)
+    })
+    .await
+    .unwrap();
     assert!(
         matches!(outcome, UpgradeOutcome::Upgraded { .. }),
         "{outcome:?}"

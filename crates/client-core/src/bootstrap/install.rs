@@ -1,7 +1,12 @@
-//! Installing `controlroomd`, and rolling an install back.
+//! Installing `controlroomd` with its nono, and rolling an install back.
 //!
-//! The binary is streamed over an exec channel into a temp file inside
-//! `versions/<ver>/` and checked, in order:
+//! nono goes first, into `nono/<nono version>/`: a machine that already has that version
+//! (checked by running it) gets nothing uploaded, so a daemon upgrade with the same nono
+//! uploads only the daemon. Then the daemon goes into `versions/<version>/`, next to a
+//! `nono` link to its nono, and `current` is swapped to it.
+//!
+//! Each binary is streamed over an exec channel into a temp file in its directory and
+//! checked, in order:
 //! 1. the byte count (`wc -c`; catches truncated writes such as a full disk);
 //! 2. SHA-256 with the first tool found: `sha256sum`, `shasum -a 256`,
 //!    `openssl dgst -sha256` (skipped if none exists; SSH's MAC still
@@ -9,14 +14,17 @@
 //! 3. a verify-run: the new binary must run on this machine and print the
 //!    expected version for `--version`.
 //!
-//! Only then is it moved to `versions/<ver>/controlroomd` and `current`
-//! swapped to it atomically (`ln -s` to a temp name, then `mv -T`). The
-//! previous `current` target is returned so the caller can [`rollback`] if
-//! the new daemon doesn't come up. Nothing needs root.
+//! Only then is it renamed into place, so a failed upload never leaves a partial binary
+//! where anything runs it. `current` is swapped atomically (`ln -s` to a temp name, then
+//! `mv -T`). The previous `current` target is returned so the caller can [`rollback`] if
+//! the new daemon doesn't come up; that version's directory has its own `nono` link, so a
+//! rollback restores its nono too. Nothing needs root.
+
+use std::fmt;
 
 use sha2::{Digest, Sha256};
 
-use super::binaries::DaemonBinarySource;
+use super::binaries::{DaemonBinarySource, Program};
 use super::platform::{Arch, InstallDecision, Version};
 use super::probe::ProbeResult;
 use super::{BootstrapError, RemoteShell, field, run_script};
@@ -36,10 +44,42 @@ const SWAP_CURRENT: &str = r#"swap_current() {
 }
 "#;
 
-/// Exit codes the install script uses for verification failures.
+/// Exit codes the upload scripts use for verification failures.
 const EXIT_SIZE: u32 = 3;
 const EXIT_HASH: u32 = 4;
 const EXIT_VERIFY_RUN: u32 = 5;
+
+/// A binary [`install`] is about to upload, reported to its progress callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstallStep<'a> {
+    /// What is uploaded.
+    pub program: Program,
+    /// Its version.
+    pub version: &'a Version,
+    /// The machine's architecture.
+    pub arch: Arch,
+}
+
+impl fmt::Display for InstallStep<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "installing {} {} ({})",
+            self.program, self.version, self.arch
+        )
+    }
+}
+
+/// The nono an installed daemon uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstalledNono {
+    /// Its version.
+    pub version: Version,
+    /// Absolute POSIX path of the binary, `<base>/nono/<version>/nono`.
+    pub path: String,
+    /// Whether this install uploaded it (it wasn't on the machine yet).
+    pub uploaded: bool,
+}
 
 /// A daemon version installed and activated by [`install`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +96,8 @@ pub struct Installed {
     /// The `current` target before the swap (e.g. `versions/0.1.0`), for
     /// [`rollback`]; `None` on a fresh install.
     pub previous: Option<String>,
+    /// The daemon's nono.
+    pub nono: InstalledNono,
 }
 
 impl Installed {
@@ -65,16 +107,30 @@ impl Installed {
     }
 }
 
-fn install_script(version: &Version, sha256_hex: &str, size: usize) -> String {
+/// The directory of a nono version, relative to the data dir.
+fn nono_dir(version: &Version) -> String {
+    format!("nono/{version}")
+}
+
+/// A script that streams stdin into a temp file in `$base/<dir>`, verifies it (size, hash,
+/// verify-run) and then runs `finish`, which renames `$tmp` into place. On any failure the
+/// temp file (and the directory, if empty) is removed.
+fn upload_script(
+    dir: &str,
+    version: &Version,
+    sha256_hex: &str,
+    size: usize,
+    finish: &str,
+) -> String {
     format!(
         r#"set -eu
 {SWAP_CURRENT}ver={ver}
 want={sha}
 size={size}
-dir="$base/versions/$ver"
+dir="$base/"{dir}
 mkdir -p "$dir"
 tmp="$dir/.upload-$$"
-trap 'rm -f "$tmp" "$base/.current-$$"; rmdir "$dir" 2>/dev/null || true' EXIT
+trap 'rm -f "$tmp" "$dir/.nono-$$" "$base/.current-$$"; rmdir "$dir" 2>/dev/null || true' EXIT
 cat > "$tmp"
 got_size=$(wc -c < "$tmp" | tr -d ' ')
 if [ "$got_size" != "$size" ]; then
@@ -98,31 +154,121 @@ if ! out=$(version_of "$tmp" 2>&1); then
   echo "verify-run: --version failed: $out" >&2
   exit {EXIT_VERIFY_RUN}
 fi
-first=$(printf '%s\n' "$out" | head -n 1)
-case "$first" in
-  *" $ver"|*" v$ver") ;;
-  *) echo "verify-run: expected version $ver, got: $first" >&2; exit {EXIT_VERIFY_RUN} ;;
-esac
-mv -f "$tmp" "$dir/controlroomd"
-previous=$(readlink "$base/current" 2>/dev/null || true)
-swap_current "versions/$ver"
-printf 'path=%s\nhashed=%s\nprevious=%s\n' "$dir/controlroomd" "$how" "$previous""#,
+if ! reports_version "$out" "$ver"; then
+  echo "verify-run: expected version $ver, got: $(printf '%s\n' "$out" | head -n 1)" >&2
+  exit {EXIT_VERIFY_RUN}
+fi
+{finish}"#,
         ver = quote(&version.to_string()),
         sha = quote(sha256_hex),
+        dir = quote(dir),
     )
 }
 
-/// Uploads, verifies and activates the daemon from `source` on the machine
-/// `probe` describes.
+/// Uploads `program`'s binary with `script` and maps verification failures.
+async fn upload<S: RemoteShell>(
+    shell: &S,
+    program: Program,
+    script: &str,
+    binary: &[u8],
+) -> Result<String, BootstrapError> {
+    let what = match program {
+        Program::Controlroomd => "install controlroomd",
+        Program::Nono => "install nono",
+    };
+    match run_script(shell, what, script, binary).await {
+        Ok(out) => Ok(out.stdout_str()),
+        Err(BootstrapError::CommandFailed {
+            status: ExitStatus::Code(EXIT_SIZE | EXIT_HASH | EXIT_VERIFY_RUN),
+            stderr,
+            ..
+        }) => Err(BootstrapError::Verification {
+            program,
+            detail: stderr,
+        }),
+        Err(e) => Err(e),
+    }
+}
+
+/// The binary of `program` for `arch` and its SHA-256.
+fn binary<'a, B: DaemonBinarySource + ?Sized>(
+    source: &'a B,
+    program: Program,
+    arch: Arch,
+) -> Result<(std::borrow::Cow<'a, [u8]>, String), BootstrapError> {
+    let binary = source
+        .binary(program, arch)
+        .map_err(|source| BootstrapError::MissingBinary {
+            program,
+            arch,
+            source,
+        })?;
+    let sha = data_encoding::HEXLOWER.encode(&Sha256::digest(&binary));
+    Ok((binary, sha))
+}
+
+/// Makes sure the machine has the source's nono: keeps an installed copy that runs and
+/// reports the version, else uploads and verifies it.
+async fn ensure_nono<S: RemoteShell, B: DaemonBinarySource + ?Sized>(
+    shell: &S,
+    source: &B,
+    arch: Arch,
+    progress: &(dyn Fn(InstallStep<'_>) + Sync),
+) -> Result<InstalledNono, BootstrapError> {
+    let version = source.version(Program::Nono).clone();
+    let check = format!(
+        r#"f="$base/"{dir}/nono
+if [ -x "$f" ] && out=$(version_of "$f" 2>/dev/null) && reports_version "$out" {ver}; then
+  printf 'present=%s\n' "$f"
+fi"#,
+        dir = quote(&nono_dir(&version)),
+        ver = quote(&version.to_string()),
+    );
+    let out = run_script(shell, "check nono", &check, b"").await?;
+    if let Some(path) = field(&out.stdout_str(), "present") {
+        return Ok(InstalledNono {
+            version,
+            path: path.to_owned(),
+            uploaded: false,
+        });
+    }
+    // Only now read the (large) binary: most installs keep the machine's nono.
+    let (bytes, sha) = binary(source, Program::Nono, arch)?;
+    progress(InstallStep {
+        program: Program::Nono,
+        version: &version,
+        arch,
+    });
+    let script = upload_script(
+        &nono_dir(&version),
+        &version,
+        &sha,
+        bytes.len(),
+        r#"mv -f "$tmp" "$dir/nono"
+printf 'path=%s\n' "$dir/nono""#,
+    );
+    let stdout = upload(shell, Program::Nono, &script, &bytes).await?;
+    let path = field(&stdout, "path")
+        .ok_or_else(|| BootstrapError::Parse(format!("install nono: {stdout:?}")))?;
+    Ok(InstalledNono {
+        version,
+        path: path.to_owned(),
+        uploaded: true,
+    })
+}
+
+/// Uploads, verifies and activates the daemon from `source`, with its nono, on the machine
+/// `probe` describes. `progress` hears about each upload as it starts.
 ///
-/// Refuses to downgrade a newer installed daemon. If verification fails,
-/// `current` is untouched and the error is [`BootstrapError::Verification`].
+/// Refuses to downgrade a newer installed daemon. If verification fails, `current` is
+/// untouched and the error is [`BootstrapError::Verification`].
 pub async fn install<S: RemoteShell, B: DaemonBinarySource + ?Sized>(
     shell: &S,
     source: &B,
     probe: &ProbeResult,
+    progress: &(dyn Fn(InstallStep<'_>) + Sync),
 ) -> Result<Installed, BootstrapError> {
-    let version = source.version().clone();
+    let version = source.version(Program::Controlroomd).clone();
     if let InstallDecision::RemoteNewer { remote } = probe.decide(&version) {
         return Err(BootstrapError::WouldDowngrade {
             installed: remote,
@@ -130,20 +276,35 @@ pub async fn install<S: RemoteShell, B: DaemonBinarySource + ?Sized>(
         });
     }
     let arch = probe.arch;
-    let binary = source
-        .binary(arch)
-        .map_err(|source| BootstrapError::MissingBinary { arch, source })?;
-    let sha = data_encoding::HEXLOWER.encode(&Sha256::digest(&binary));
-    let script = install_script(&version, &sha, binary.len());
-    let out = match run_script(shell, "install", &script, &binary).await {
-        Err(BootstrapError::CommandFailed {
-            status: ExitStatus::Code(EXIT_SIZE | EXIT_HASH | EXIT_VERIFY_RUN),
-            stderr,
-            ..
-        }) => return Err(BootstrapError::Verification(stderr)),
-        other => other?,
-    };
-    let stdout = out.stdout_str();
+    let (daemon, sha) = binary(source, Program::Controlroomd, arch)?;
+    let nono = ensure_nono(shell, source, arch, progress).await?;
+    progress(InstallStep {
+        program: Program::Controlroomd,
+        version: &version,
+        arch,
+    });
+    let finish = format!(
+        r#"nono={nono}/nono
+if [ ! -x "$base/$nono" ]; then
+  echo "$base/$nono is missing" >&2
+  exit 7
+fi
+ln -s "../../$nono" "$dir/.nono-$$"
+mv -f "$dir/.nono-$$" "$dir/nono"
+mv -f "$tmp" "$dir/controlroomd"
+previous=$(readlink "$base/current" 2>/dev/null || true)
+swap_current "versions/$ver"
+printf 'path=%s\nhashed=%s\nprevious=%s\n' "$dir/controlroomd" "$how" "$previous""#,
+        nono = quote(&nono_dir(&nono.version)),
+    );
+    let script = upload_script(
+        &format!("versions/{version}"),
+        &version,
+        &sha,
+        daemon.len(),
+        &finish,
+    );
+    let stdout = upload(shell, Program::Controlroomd, &script, &daemon).await?;
     let (Some(path), Some(hashed_with)) = (field(&stdout, "path"), field(&stdout, "hashed")) else {
         return Err(BootstrapError::Parse(format!("install: {stdout:?}")));
     };
@@ -155,6 +316,7 @@ pub async fn install<S: RemoteShell, B: DaemonBinarySource + ?Sized>(
         previous: field(&stdout, "previous")
             .filter(|p| !p.is_empty())
             .map(str::to_owned),
+        nono,
     })
 }
 
@@ -204,9 +366,23 @@ mod tests {
 
     #[test]
     fn script_quotes_inputs() {
-        let s = install_script(&Version::parse("1.2.3-rc.1").unwrap(), "abc", 42);
+        let v = Version::parse("1.2.3-rc.1").unwrap();
+        let s = upload_script("versions/1.2.3-rc.1", &v, "abc", 42, "true");
         assert!(s.contains("ver='1.2.3-rc.1'\n"));
         assert!(s.contains("want='abc'\n"));
         assert!(s.contains("size=42\n"));
+        assert!(s.contains("dir=\"$base/\"'versions/1.2.3-rc.1'\n"));
+        assert!(s.ends_with("\ntrue"));
+    }
+
+    #[test]
+    fn steps_read_as_progress() {
+        let v = Version::new(0, 80, 0);
+        let step = InstallStep {
+            program: Program::Nono,
+            version: &v,
+            arch: Arch::Aarch64,
+        };
+        assert_eq!(step.to_string(), "installing nono 0.80.0 (aarch64)");
     }
 }

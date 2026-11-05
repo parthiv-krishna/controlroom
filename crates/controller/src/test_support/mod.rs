@@ -114,6 +114,24 @@ pub fn bundled_name() -> String {
     format!("controlroomd-{}-linux", std::env::consts::ARCH)
 }
 
+/// The nono version test bundles carry.
+pub const BUNDLED_NONO_VERSION: &str = "0.80.0";
+
+/// Adds a stand-in nono (it only answers `--version`; tests run no sandboxes) to a
+/// bundled-daemons directory.
+fn bundle_fake_nono(dir: &Path) {
+    write_executable(
+        &dir.join(format!("nono-{}-linux", std::env::consts::ARCH)),
+        format!("#!/bin/sh\n[ \"$1\" = --version ] && echo 'nono {BUNDLED_NONO_VERSION}'\n")
+            .as_bytes(),
+    );
+    std::fs::write(
+        dir.join("nono-version"),
+        format!("{BUNDLED_NONO_VERSION}\n"),
+    )
+    .unwrap();
+}
+
 /// Writes an executable file from a child shell (writing it from this process could race with
 /// concurrent forks and fail with ETXTBSY).
 pub fn write_executable(path: &Path, content: &[u8]) {
@@ -134,11 +152,12 @@ pub fn write_executable(path: &Path, content: &[u8]) {
     );
 }
 
-/// A bundled-daemons directory holding the built `controlroomd`.
+/// A bundled-daemons directory holding the built `controlroomd` and a stand-in nono.
 pub fn bundled_daemons() -> tempfile::TempDir {
     let dir = tempfile::Builder::new().prefix("crbin").tempdir().unwrap();
     copy_daemon(&dir.path().join(bundled_name()));
     std::fs::write(dir.path().join("version"), format!("{DAEMON_VERSION}\n")).unwrap();
+    bundle_fake_nono(dir.path());
     dir
 }
 
@@ -163,11 +182,13 @@ pub fn copy_daemon(dest: &Path) {
     );
 }
 
-/// A bundled-daemons directory whose "daemon" is `script`, claiming `version`.
+/// A bundled-daemons directory whose "daemon" is `script`, claiming `version`, with a
+/// stand-in nono.
 pub fn bundled_script(script: &str, version: &str) -> tempfile::TempDir {
     let dir = tempfile::Builder::new().prefix("crbin").tempdir().unwrap();
     write_executable(&dir.path().join(bundled_name()), script.as_bytes());
     std::fs::write(dir.path().join("version"), format!("{version}\n")).unwrap();
+    bundle_fake_nono(dir.path());
     dir
 }
 

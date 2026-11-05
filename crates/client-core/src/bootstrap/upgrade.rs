@@ -4,8 +4,8 @@ use std::fmt::Display;
 use std::future::Future;
 use std::time::Duration;
 
-use super::binaries::DaemonBinarySource;
-use super::install::{Installed, install, rollback};
+use super::binaries::{DaemonBinarySource, Program};
+use super::install::{InstallStep, Installed, install, rollback};
 use super::platform::InstallDecision;
 use super::probe::probe;
 use super::stop::stop_daemon;
@@ -30,7 +30,8 @@ pub enum UpgradeOutcome<T> {
 /// Installs or upgrades the daemon, then proves the new one works:
 ///
 /// 1. probe the machine; refuse to downgrade ([`BootstrapError::WouldDowngrade`]);
-/// 2. [`install`]: upload, verify (hash and verify-run), swap `current`;
+/// 2. [`install`]: upload (nono only if the machine lacks its version), verify (hash and
+///    verify-run), swap `current`; `progress` hears about each upload;
 /// 3. stop the old daemon and confirm it exited (within `stop_wait`);
 /// 4. run `check`, which should connect to the new daemon and complete `hello`.
 ///
@@ -41,6 +42,7 @@ pub enum UpgradeOutcome<T> {
 pub async fn upgrade<S, B, F, Fut, T, E>(
     shell: &S,
     source: &B,
+    progress: &(dyn Fn(InstallStep<'_>) + Sync),
     stop_wait: Duration,
     check: F,
 ) -> Result<UpgradeOutcome<T>, BootstrapError>
@@ -52,10 +54,10 @@ where
     E: Display,
 {
     let probe = probe(shell).await?;
-    if probe.decide(source.version()) == InstallDecision::UpToDate {
+    if probe.decide(source.version(Program::Controlroomd)) == InstallDecision::UpToDate {
         return Ok(UpgradeOutcome::UpToDate);
     }
-    let installed = install(shell, source, &probe).await?;
+    let installed = install(shell, source, &probe, progress).await?;
     let stopped = match stop_daemon(shell, stop_wait).await {
         Ok(stopped) => stopped,
         Err(e) => return Err(undo(shell, &installed, stop_wait, e.to_string()).await),

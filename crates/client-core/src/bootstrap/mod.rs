@@ -1,10 +1,13 @@
-//! Probe, install, upgrade and roll back `controlroomd` on a machine, and
-//! edit `authorized_keys` for key rotation.
+//! Probe, install, upgrade and roll back `controlroomd` (with the nono it sandboxes
+//! workspaces with) on a machine, and edit `authorized_keys` for key rotation.
 //!
 //! Remote layout, under `~/.local/share/controlroom`:
 //!
 //! ```text
 //! versions/<ver>/controlroomd   immutable; supervisors keep running from it
+//! versions/<ver>/nono -> ../../nono/<nono ver>/nono   the daemon's nono
+//! nono/<nono ver>/nono          immutable; keyed by nono's version, so daemon upgrades
+//!                               with the same nono upload nothing for it
 //! current -> versions/<ver>     swapped atomically on install and rollback
 //! ```
 //!
@@ -25,14 +28,17 @@ mod upgrade;
 use std::future::Future;
 
 pub use authorized_keys::{add_authorized_key, remove_authorized_key};
-pub use binaries::{DaemonBinarySource, DirBinaries, InMemoryBinaries, bundled_binary_name};
-pub use install::{Installed, install, read_current_link, rollback};
+pub use binaries::{
+    DaemonBinarySource, DirBinaries, InMemoryBinaries, InMemoryProgram, Program,
+    bundled_binary_name,
+};
+pub use install::{InstallStep, Installed, InstalledNono, install, read_current_link, rollback};
 pub use platform::{
     Arch, InstallDecision, UnsupportedPlatform, Version, decide_install, parse_uname,
     parse_version_output,
 };
 pub use probe::{ProbeResult, probe};
-pub use prune::prune_versions;
+pub use prune::{Pruned, prune_versions};
 pub use rotate::rotate_key;
 pub use stop::stop_daemon;
 pub use upgrade::{UpgradeOutcome, upgrade};
@@ -45,10 +51,17 @@ pub const REMOTE_DATA_DIR: &str = ".local/share/controlroom";
 /// The stable daemon path, relative to `$HOME`.
 pub const REMOTE_CURRENT_BINARY: &str = ".local/share/controlroom/current/controlroomd";
 
-/// Shell prelude shared by the scripts: `$base` and a bounded `--version` run.
+/// Shell prelude shared by the scripts: `$base`, a bounded `--version` run, and whether
+/// `--version` output (`controlroomd 0.1.0`, `nono 0.80.0`) reports a version.
 const PRELUDE: &str = r#"base="$HOME/.local/share/controlroom"
 version_of() {
   if command -v timeout >/dev/null 2>&1; then timeout 10 "$1" --version; else "$1" --version; fi
+}
+reports_version() {
+  case "$(printf '%s\n' "$1" | head -n 1)" in
+    *" $2"|*" v$2") return 0 ;;
+    *) return 1 ;;
+  esac
 }
 "#;
 
@@ -103,13 +116,20 @@ pub enum BootstrapError {
         /// Its stderr.
         stderr: String,
     },
-    /// The uploaded binary was truncated, corrupt, or failed its verify-run;
-    /// `current` was not touched.
-    #[error("the new daemon failed verification: {0}")]
-    Verification(String),
+    /// An uploaded binary was truncated, corrupt, or failed its verify-run; it was removed
+    /// and `current` was not touched.
+    #[error("the new {program} failed verification: {detail}")]
+    Verification {
+        /// Which binary.
+        program: Program,
+        /// What failed.
+        detail: String,
+    },
     /// No binary is available for the machine's architecture.
-    #[error("no controlroomd binary for {arch}: {source}")]
+    #[error("no {program} binary for {arch}: {source}")]
     MissingBinary {
+        /// Which program.
+        program: Program,
         /// The machine's architecture.
         arch: Arch,
         /// Why the source couldn't provide it.

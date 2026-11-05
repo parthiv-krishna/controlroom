@@ -75,6 +75,19 @@ pub fn fake_daemon(version: &str) -> Vec<u8> {
     Fake::good(version).binary()
 }
 
+/// A fake nono that prints `version_output` for `--version` (fails without one).
+pub fn fake_nono(version_output: Option<&str>) -> Vec<u8> {
+    let version = match version_output {
+        Some(out) => format!("echo '{out}'"),
+        None => "echo 'Illegal instruction' >&2; exit 132".into(),
+    };
+    format!(
+        "#!{bash}\n[ \"$1\" = --version ] || exit 2\n{version}\n",
+        bash = bash().display()
+    )
+    .into_bytes()
+}
+
 /// The absolute path of `name` on `PATH`.
 pub fn which(name: &str) -> PathBuf {
     let path = std::env::var_os("PATH").unwrap();

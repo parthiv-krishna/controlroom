@@ -7,13 +7,14 @@
 
 mod support;
 
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::time::Duration;
 
 use controlroom_controller::Controller;
 use controlroom_controller::test_support::{
-    DAEMON_VERSION, FakeAgentd, FakeHost, RemoteHost, UiDriver, bundled_daemons, bundled_script,
-    copy_daemon,
+    BUNDLED_NONO_VERSION, DAEMON_VERSION, FakeAgentd, FakeHost, RemoteHost, UiDriver,
+    bundled_daemons, bundled_script, copy_daemon,
 };
 use controlroom_protocol::RpcOutcome;
 use controlroom_protocol::agentd::HostOpRequest;
@@ -68,6 +69,11 @@ async fn auto_upgrade_waits_for_host_calls() {
     let mut old_ui = ui(&old, "laptop").await;
     let id = add_machine(&mut old_ui, &host, "devbox").await;
     assert_eq!(host.current_daemon().as_deref(), Some("versions/0.0.0"));
+    // nono came with it, into a directory keyed by its own version.
+    let nono = host.home().join(format!(
+        ".local/share/controlroom/nono/{BUNDLED_NONO_VERSION}/nono"
+    ));
+    let uploaded = std::fs::metadata(&nono).unwrap().ino();
     drop(old_ui);
     old.shutdown().await;
 
@@ -106,6 +112,15 @@ async fn auto_upgrade_waits_for_host_calls() {
         Some(format!("versions/{DAEMON_VERSION}").as_str())
     );
     assert_eq!(fake.received("tool.run").len(), 1, "c1 was sent once");
+    // The same nono version: the upgrade uploaded no nono and links the one there.
+    assert_eq!(std::fs::metadata(&nono).unwrap().ino(), uploaded);
+    let linked = host.home().join(format!(
+        ".local/share/controlroom/versions/{DAEMON_VERSION}/nono"
+    ));
+    assert_eq!(
+        std::fs::canonicalize(linked).unwrap(),
+        std::fs::canonicalize(&nono).unwrap()
+    );
 
     // Host calls go through the new daemon.
     agentd.request(bash(machine_id, "c2", "true"));
