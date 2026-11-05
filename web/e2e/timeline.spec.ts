@@ -53,7 +53,10 @@ test('nested tool calls render inside their parent, live and from the backlog', 
 
   await start(page, sweep);
   await advance(page, sweep, 36);
-  await expect(item(page, 'c2.msg-11.0').locator('[data-item="c2.tool-18"]')).toContainText('completed');
+  // A finished call shows no status (it's in its title and its expanded detail).
+  const nested = item(page, 'c2.msg-11.0').locator('[data-item="c2.tool-18"]');
+  await expect(nested.locator('.head')).toHaveAttribute('title', /^completed/);
+  await expect(nested.locator('.st')).toHaveCount(0);
 });
 
 test('a dialog streamed into the timeline is answered from the timeline', async ({ page }) => {
@@ -75,7 +78,7 @@ test('raw view: an item opens its records, and a record links back to its item',
   await timeline(page).evaluate((el) => (el.scrollTop = 0));
   const tool = item(page, 'tool-18');
   await tool.hover();
-  await tool.getByRole('button', { name: /^#\d+/ }).last().click();
+  await tool.getByRole('button', { name: /^Raw records #\d+/ }).last().click();
   const raw = page.getByLabel('Raw transcript');
   await expect(raw).toBeVisible();
   const subs = await calls(page, 'session.subscribe');

@@ -1,5 +1,6 @@
 <script lang="ts">
-  // A tool call: title (remote files as `machine:path`), status, exit and duration; expanded, its
+  // A tool call: title (remote files as `machine:path`) and, while it runs or when it didn't succeed,
+  // its status and exit code; the duration is in its title and in the expanded detail, with the
   // input and output. Nested calls (`parent_tool_call_id`) are shown inside their parent.
   import { elapsed } from '../../model/format';
   import type { ItemOf } from '../../state/timeline.svelte';
@@ -13,23 +14,27 @@
   const running = $derived(item.status === 'running' || item.status === 'pending');
   const open = $derived(ctx.isOpen(item.id, running));
   const children = $derived(ctx.timeline.children.get(item.tool_call_id) ?? []);
+  const took = $derived(item.duration_ms !== null ? elapsed(item.duration_ms) : null);
+  const failedExit = $derived(item.exit !== null && item.exit !== 0 ? `exit ${item.exit}` : null);
+  /** Shown only while running and when the call didn't succeed. */
   const status = $derived(
-    [item.status, item.exit !== null && item.exit !== 0 ? `exit ${item.exit}` : null, item.duration_ms !== null ? elapsed(item.duration_ms) : null].filter(Boolean).join(' · '),
+    running ? 'running' : item.status === 'completed' ? failedExit : [item.status === 'unknown' ? null : item.status, failedExit].filter(Boolean).join(' · ') || null,
   );
   const GLYPH = { read: '◰', edit: '✎', execute: '$', search: '⌕', fetch: '⇣', other: '◇', unknown: '◇' } as const;
 </script>
 
 <div class="tool s-{item.status}" class:nested={depth > 0}>
-  <button class="head" aria-expanded={open} onclick={() => ctx.toggle(item.id, running)}>
+  <button class="head" aria-expanded={open} title={[item.status, failedExit, took].filter(Boolean).join(' · ')} onclick={() => ctx.toggle(item.id, running)}>
     <span class="glyph" aria-hidden="true">{GLYPH[item.tool_kind]}</span>
     <span class="title"><MachinePaths text={item.title || item.name} /></span>
     {#if children.length}<span class="kids">{children.length} sub-call{children.length === 1 ? '' : 's'}</span>{/if}
-    <span class="st">{#if running}<span class="spin"></span>{/if}{status}</span>
+    {#if status}<span class="st">{#if running}<span class="spin"></span>{/if}{status}</span>{/if}
   </button>
   {#if open}
     <div class="detail">
       {#if item.input}<pre class="input">{item.input}</pre>{/if}
       {#if item.output}<ToolOutputView output={item.output} />{/if}
+      <div class="meta">{item.status}{#if failedExit} · {failedExit}{/if}{#if took} · {took}{/if}</div>
     </div>
   {/if}
   {#if children.length && (open || running || depth === 0)}
@@ -46,11 +51,11 @@
   .glyph { font-family: var(--mono); color: var(--muted); width: 14px; text-align: center; flex: none; }
   .title { font-family: var(--mono); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .kids { font-size: 11px; color: var(--muted); flex: none; }
-  .st { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; flex: none; padding-right: 36px; }
-  .s-completed .st { color: var(--ok); }
+  .st { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; flex: none; }
   .s-failed .st { color: var(--bad); }
   .s-cancelled .st { color: var(--warn); }
   .detail { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .meta { font-size: 11.5px; color: var(--muted); }
   .input { color: var(--muted); font-size: 12px; max-height: 160px; overflow: auto; }
   .children { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 2px 12px; }
 </style>
