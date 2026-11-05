@@ -95,10 +95,11 @@ test('a long timeline is windowed and opens at the bottom', async ({ page }) => 
   await start(page, blog);
   const rows = timeline(page).locator('.row[data-row]');
   await expect(rows.first()).toBeVisible();
-  const total = 300;
+  const total = 220; // about that many rows: 310 items, less the turns' usage and nested calls
   expect(await rows.count()).toBeLessThan(total / 3);
-  // The latest item is in view; the first one isn't in the DOM.
-  await expect(timeline(page).locator('[data-item="c39.usage-31"]')).toBeInViewport();
+  // The latest shown item (the last reply; its turn's usage is hidden) is in view; the first one
+  // isn't in the DOM.
+  await expect(item(page, 'c39.msg-25.0')).toBeInViewport();
   await expect(item(page, 'user-2')).toHaveCount(0);
   // Scrolling to the top renders the first rows instead.
   await timeline(page).evaluate((el) => (el.scrollTop = 0));

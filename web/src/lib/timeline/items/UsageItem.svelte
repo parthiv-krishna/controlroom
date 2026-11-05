@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Token usage of a turn (or the session), with cost and context fill when known.
+  // Token usage of the session (or a turn, though the timeline hides those: the header has the
+  // totals), with cost and context fill when known.
   import { compact } from '../../model/format';
   import type { ItemOf } from '../../state/timeline.svelte';
 

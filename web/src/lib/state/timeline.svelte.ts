@@ -36,12 +36,18 @@ export class ItemCell {
 const before = (a: ItemCell, seqFrom: number, arrival: number): boolean =>
   a.item.seq_from < seqFrom || (a.item.seq_from === seqFrom && a.arrival < arrival);
 
+/**
+ * Items kept but not shown in the reading view: a turn's usage (the header's statusline has the
+ * session's totals; the raw view still has each turn's).
+ */
+export const hiddenInTimeline = (item: TimelineItem): boolean => item.kind === 'usage' && item.scope === 'turn';
+
 /** The nested-tool parent of an item, if it has one. */
 const parentOf = (item: TimelineItem): string | null =>
   item.kind === 'tool_call' && item.parent_tool_call_id && item.parent_tool_call_id !== item.tool_call_id ? item.parent_tool_call_id : null;
 
 export class Timeline {
-  /** Top-level items in display order (nested tool calls are under their parent). */
+  /** Top-level items in display order (nested tool calls are under their parent; hidden items left out). */
   rows = $state.raw<readonly ItemCell[]>([]);
   /** Nested tool calls by their parent's `tool_call_id`, in order. */
   children = $state.raw<ReadonlyMap<string, readonly ItemCell[]>>(new Map());
@@ -180,7 +186,7 @@ export class Timeline {
         const list = children.get(parent);
         if (list) list.push(cell);
         else children.set(parent, [cell]);
-      } else rows.push(cell);
+      } else if (!hiddenInTimeline(cell.item)) rows.push(cell);
     }
     this.tools = tools;
     this.rows = rows;

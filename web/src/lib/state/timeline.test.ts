@@ -82,6 +82,17 @@ describe('Timeline', () => {
     expect(t.children.get('parent')!.map((c) => c.item.id)).toEqual(['child']);
   });
 
+  it("keeps a turn's usage but leaves it out of the rows; a session's usage stays", () => {
+    const usage = (id: string, seq: number, scope: 'turn' | 'session'): TimelineItem => ({
+      ...base, id, seq_from: seq, seq_to: seq, kind: 'usage', scope, tokens: { input: 1, output: 1, cache_read: 0, cache_write: 0 }, cost: null, context: null,
+    });
+    const t = new Timeline();
+    t.apply([up(msg('a', 1)), up(usage('u1', 2, 'turn')), up(msg('b', 3)), up(usage('u2', 4, 'session'))], 0);
+    expect(ids(t)).toEqual(['a', 'b', 'u2']);
+    expect(t.get('u1')?.item.kind).toBe('usage');
+    expect(t.size).toBe(4);
+  });
+
   it('ignores ops for unknown items', () => {
     const t = new Timeline();
     t.apply([append('nope', 'x', 1), { op: 'end', id: 'nope', seq_from: 1, seq_to: 1 }, { op: 'unknown' }], 0);
