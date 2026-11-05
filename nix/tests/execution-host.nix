@@ -1,8 +1,8 @@
 # An execution host for the VM end-to-end test (devbox, buildbox): sshd, a user `alice` with a
-# bash login shell, git and the pinned nono, nothing else. No pi, Node, bundle or model
-# credentials: pi runs on the server, and the server bootstraps controlroomd over SSH (as users
-# would), which runs the agent's shells, tools and jobs here under nono.
-{ pkgs, nono }:
+# bash login shell and git, nothing else. No nono, pi, Node, bundle or model credentials: pi runs
+# on the server, and the server bootstraps controlroomd over SSH (as users would), with the nono
+# bundled with it, which runs the agent's shells, tools and jobs here.
+{ pkgs }:
 {
   virtualisation = {
     memorySize = 1536;
@@ -22,8 +22,5 @@
     shell = pkgs.bashInteractive;
   };
 
-  environment.systemPackages = [
-    nono
-    pkgs.git
-  ];
+  environment.systemPackages = [ pkgs.git ];
 }

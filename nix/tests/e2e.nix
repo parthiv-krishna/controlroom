@@ -7,8 +7,9 @@
 #   under nono, against the fixture tool's mock model, whose API key is a systemd credential of
 #   the agent daemon. A mock push service stands in for Web Push. Headless Chromium drives the
 #   UI (web/e2e-vm).
-# - `devbox` and `buildbox` (./execution-host.nix) carry only sshd, bash, git and nono; the
-#   server bootstraps controlroomd over SSH, as users would, and the agent's tools run there.
+# - `devbox` and `buildbox` (./execution-host.nix) carry only sshd, bash and git: no nono. The
+#   server bootstraps controlroomd over SSH, as users would, with the nono bundled with it, and
+#   the agent's tools run there under that nono.
 #
 # The test script (./e2e.py) runs one Playwright spec per scenario and does what a user (or the
 # network, or a power button) would do in between: install the key, cut a link, reboot a host.
@@ -29,22 +30,28 @@
   module,
   rust,
   web,
-  nono,
   # services.controlroom.agent's packages: {package, piBundle, nono}.
   agent,
 }:
 let
   inherit (pkgs) lib;
   version = (lib.importTOML ../../Cargo.toml).workspace.package.version;
+  # The static nono every bundle carries for the hosts.
+  nono = rust.nonoStatic.x86_64;
+  bundleNono = ''
+    install -m 755 ${nono}/bin/nono $out/nono-x86_64-linux
+    echo ${nono.version} > $out/nono-version
+  '';
 
   # The bundled daemons the server deploys: the real ones, an older build (auto-upgrade), and
-  # a "newer" one that can't serve (rollback).
+  # a "newer" one that can't serve (rollback); all with the same nono.
   bundles = {
     current = "${rust.controlroomWeb}/share/controlroom/daemons";
     old = pkgs.runCommand "controlroomd-old-bundle" { } ''
       mkdir $out
       install -m 755 ${rust.controlroomdStaticOld}/bin/controlroomd $out/controlroomd-x86_64-linux
       echo ${version}-old > $out/version
+      ${bundleNono}
     '';
     broken = pkgs.runCommand "controlroomd-broken-bundle" { } ''
       mkdir $out
@@ -56,6 +63,7 @@ let
       EOF
       chmod 755 $out/controlroomd-x86_64-linux
       echo 99.0.0 > $out/version
+      ${bundleNono}
     '';
   };
 
@@ -123,7 +131,7 @@ let
         print(f"TLS handshake for {server_name}: {outcome}", flush=True)
   '';
 
-  host = import ./execution-host.nix { inherit pkgs nono; };
+  host = import ./execution-host.nix { inherit pkgs; };
 
   secretsUnit = [ "controlroom-e2e-secrets.service" ];
 
@@ -266,6 +274,7 @@ let
       OLD_BUNDLE = "${bundles.old}"
       BROKEN_BUNDLE = "${bundles.broken}"
       VERSION = "${version}"
+      NONO_VERSION = "${nono.version}"
       RUNNER = "${web.e2eVm}/bin/controlroom-e2e-vm"
     ''
     + builtins.readFile ./e2e.py;

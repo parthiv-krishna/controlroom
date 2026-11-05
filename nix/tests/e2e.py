@@ -1,7 +1,7 @@
 # pyright: reportUndefinedVariable=false
 # The VM end-to-end test script (see ./e2e.nix, which prepends CURRENT_BUNDLE, OLD_BUNDLE,
-# BROKEN_BUNDLE, VERSION and RUNNER). The NixOS test driver defines the machines (server,
-# devbox, buildbox) and start_all, and type-checks the script with them.
+# BROKEN_BUNDLE, VERSION, NONO_VERSION and RUNNER). The NixOS test driver defines the machines
+# (server, devbox, buildbox) and start_all, and type-checks the script with them.
 #
 # Each scenario runs one Playwright spec (web/e2e-vm/<name>.spec.ts) on `server` in the
 # background. When a spec needs something done outside the browser it reaches a *step*: it
@@ -26,6 +26,8 @@ MOCK = "http://127.0.0.1:4000/control"
 API = "/home/alice/work/api"
 WEB = "/home/alice/work/web"
 BUILD = "/home/alice/build"
+# The nono the server uploads with controlroomd (the hosts have none of their own).
+NONO = f"/home/alice/.local/share/controlroom/nono/{NONO_VERSION}/nono"
 
 # ------------------------------------------------------------------------------- helpers
 
@@ -167,6 +169,15 @@ def current_daemon(machine: Any) -> str:
     return as_alice(machine, "readlink ~/.local/share/controlroom/current").strip()
 
 
+def uploaded_nono(machine: Any) -> int:
+    """The inode of the nono uploaded to `machine`, after checking the current daemon uses it and
+    it runs."""
+    used = as_alice(machine, "readlink -f ~/.local/share/controlroom/current/nono").strip()
+    assert used == NONO, used
+    assert as_alice(machine, f"{NONO} --version").strip() == f"nono {NONO_VERSION}"
+    return int(as_alice(machine, f"stat -c %i {NONO}").strip())
+
+
 def collect_logs() -> None:
     """Copies the Playwright results, the server's and agent daemon's journals and state, the
     mock model's requests and each host's daemon state to $out."""
@@ -205,8 +216,9 @@ def boot() -> None:
     server.fail("grep -rq sk-e2e- /var/lib/controlroom-agent/agent")
     for machine in (devbox, buildbox):
         machine.wait_for_unit("sshd.service")
-        # Hosts carry no pi.
+        # Hosts carry no pi and no nono: the server uploads its own.
         machine.fail("su - alice -c 'command -v pi'")
+        machine.fail("su - alice -c 'command -v nono'")
     # The workspaces' contents, as alice would have them.
     as_alice(
         devbox,
@@ -249,6 +261,7 @@ def auto_upgrade() -> None:
     spec.step("restart")
     buildbox.wait_until_succeeds(f"test -s {BUILD}/ran.txt")
     supervisors = buildbox.succeed("pgrep -u alice -f 'controlroomd supervise'").split()
+    nono = uploaded_nono(buildbox)
     use_bundle(CURRENT_BUNDLE)
     spec.release("restart")
 
@@ -264,6 +277,7 @@ def auto_upgrade() -> None:
     assert current_daemon(buildbox) == f"versions/{VERSION}"
     buildbox.fail(f"pgrep -u alice -f 'versions/{VERSION}-old/controlroomd serve'")
     assert buildbox.succeed("pgrep -u alice -f 'controlroomd supervise'").split() == supervisors, "the shell kept running"
+    assert uploaded_nono(buildbox) == nono, "the upgrade kept nono (the same version): no upload"
     spec.release("upgraded")
     spec.finish()
     mock_done()
@@ -289,10 +303,10 @@ def workspaces() -> None:
     spec = Spec("workspaces")
     spec.finish()
     mock_done()
-    # pi ran on the server under nono; the shells ran on the hosts under nono.
+    # pi ran on the server under nono; the shells ran on the hosts under the uploaded nono.
     server.succeed("pgrep -u controlroom-agent -f '^[^ ]*nono run'")
     for machine in (devbox, buildbox):
-        machine.succeed("pgrep -u alice -f '^[^ ]*nono run'")
+        machine.succeed(f"pgrep -u alice -f '^{NONO} run'")
     first = mock_request(
         "first(.[] | select(.messages | tostring | contains($prompt)))",
         prompt="Look around both machines",
@@ -490,9 +504,11 @@ try:
     boot()
     add_machine(devbox, key_first=False)
     assert current_daemon(devbox) == f"versions/{VERSION}"
+    uploaded_nono(devbox)
     use_bundle(OLD_BUNDLE)
     add_machine(buildbox, key_first=True)
     assert current_daemon(buildbox) == f"versions/{VERSION}-old"
+    uploaded_nono(buildbox)
     auto_upgrade()
     workspaces()
     overlap()

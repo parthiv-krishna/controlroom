@@ -50,7 +50,6 @@
           module = ./nix/module.nix;
           rust = rustFor pkgs;
           web = webFor pkgs;
-          nono = nonoFor pkgs;
           agent = agentFor pkgs;
         };
       rustFor =
@@ -147,7 +146,7 @@
         # The browser end-to-end test in NixOS VMs (needs KVM): x86_64 only.
         // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
           # The browser end-to-end test: web server and agent daemon on the server VM, two
-          # execution hosts with only controlroomd and nono.
+          # execution hosts with only controlroomd and the nono it uploads with it.
           vm-e2e = (e2eFor pkgs).check;
           # services.controlroom in a VM: secrets, OIDC rendering, sandbox, exposure.
           vm-module = import ./nix/tests/module.nix {

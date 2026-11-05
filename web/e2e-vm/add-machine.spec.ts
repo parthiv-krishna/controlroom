@@ -3,7 +3,8 @@ import { env, login, machineCard, openMachines, step } from './helpers';
 
 // Add a machine through Settings › Machines: confirm its host key, install the controlroom key
 // (after "permission denied", or up front when E2E_KEY_FIRST is set), then the server installs
-// the host daemon and shows the doctor results: the host runs only controlroomd and nono.
+// the host daemon and shows the doctor results: the host runs only controlroomd and the nono
+// uploaded with it (the doctor says it is the bundled one).
 //   E2E_HOST: the host (also its display name); E2E_HOST_KEY: its ed25519 fingerprint.
 test('add a machine', async ({ page }) => {
   const host = env('E2E_HOST');
@@ -39,6 +40,7 @@ test('add a machine', async ({ page }) => {
   await expect(settings.getByText(/installing controlroomd/)).toBeVisible();
   const doctor = settings.locator('.doctor');
   await expect(doctor.locator('.r', { hasText: 'Sandbox (nono)' })).toHaveClass(/\bok\b/, { timeout: 120_000 });
+  await expect(doctor.locator('.r', { hasText: 'Sandbox (nono)' })).toContainText(/bundled: \S+\/nono\/\d+\.\d+\.\d+\/nono/);
   await expect(doctor.locator('.r', { hasText: 'Landlock' })).toContainText(/ABI \d+/);
   await settings.getByRole('button', { name: 'Done' }).click();
 
