@@ -12,6 +12,9 @@ export interface TimelineContext {
   toggle(id: string, fallback: boolean): void;
   /** Opens the raw view at an item's records. */
   showRaw(item: TimelineItem): void;
+  /** The item tapped last on a touch screen (its details button shows), if any. */
+  readonly active: string | null;
+  activate(id: string | null): void;
 }
 
 const KEY = Symbol('timeline');

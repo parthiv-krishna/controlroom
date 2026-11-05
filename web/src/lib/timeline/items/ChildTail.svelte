@@ -31,6 +31,11 @@
     isOpen: (id, fallback) => parent.isOpen(`${child.id}/${id}`, fallback),
     toggle: (id, fallback) => parent.toggle(`${child.id}/${id}`, fallback),
     showRaw: () => app.open(child),
+    get active() {
+      const prefix = `${child.id}/`;
+      return parent.active?.startsWith(prefix) ? parent.active.slice(prefix.length) : null;
+    },
+    activate: (id) => parent.activate(id && `${child.id}/${id}`),
   });
 </script>
 

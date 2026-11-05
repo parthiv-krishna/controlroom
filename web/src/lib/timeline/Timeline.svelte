@@ -23,6 +23,7 @@
   const timeline = $derived(feed?.timeline ?? new Timeline());
   const rows = $derived(timeline.rows);
   const raw = $derived(app.view.raw[key] ?? null);
+  let active = $state<string | null>(null);
 
   provideTimeline({
     get s() {
@@ -37,6 +38,10 @@
       app.view.expanded[k] = !(app.view.expanded[k] ?? fallback);
     },
     showRaw: (item: TimelineItem) => (app.view.raw[key] = { from: item.seq_from, to: item.seq_to, item: item.id }),
+    get active() {
+      return active;
+    },
+    activate: (id) => (active = id),
   });
 
   // A raw view belongs to the pane that opened it.
