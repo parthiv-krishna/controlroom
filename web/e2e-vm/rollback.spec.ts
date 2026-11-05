@@ -15,9 +15,9 @@ test('a failed automatic upgrade is rolled back', async ({ page }) => {
     await expect(card.locator('.chip')).toHaveText('connected');
     await expect(card).toContainText(`controlroomd ${version} ·`);
     await expect(card).toContainText('update available');
-    await expect(card.getByRole('button', { name: 'Upgrade now' })).toBeVisible();
-    await card.getByLabel('Auto-upgrade the daemon while idle').uncheck();
-    await expect(card.getByLabel('Auto-upgrade the daemon while idle')).not.toBeChecked();
+    await expect(card.getByRole('button', { name: /^Upgrade the daemon/ })).toBeVisible();
+    await card.getByLabel('Auto-upgrade').uncheck();
+    await expect(card.getByLabel('Auto-upgrade')).not.toBeChecked();
   }
   await closeSettings(page);
 

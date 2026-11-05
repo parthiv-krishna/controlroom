@@ -27,7 +27,6 @@
 </script>
 
 {#if tab === 'contacts'}
-  <div class="small muted">Sessions on the same task, and a parent with its subagents, can always contact each other. Pairs you allowed beyond that are listed here.</div>
   {#each feed.grantList as g (g.id)}
     <div class="row">
       <div class="pair"><button class="linkish" onclick={() => open(g.from)}>{nameOf(g.from)}</button> <span class="muted">⇄</span> <button class="linkish" onclick={() => open(g.to)}>{nameOf(g.to)}</button></div>
@@ -39,7 +38,7 @@
     <div class="none">No contact grants</div>
   {/each}
 {:else if tab === 'schedules'}
-  <div class="small muted">Schedules wake a session's agent with a message. Add or edit them on the session.</div>
+  <div class="small muted">Edit schedules on their session.</div>
   {#each schedules as x (x.id)}
     {@const last = x.recent_runs[0]}
     <div class="row" class:off={!x.enabled} data-schedule={x.id}>
@@ -57,13 +56,13 @@
     <div class="none">No schedules</div>
   {/each}
 {:else if tab === 'keyboard'}
-  <label class="check"><input type="checkbox" bind:checked={app.prefs.keyboard.navigator} /> <span><b>Pane navigator</b>: Ctrl-h/j/k/l moves focus between panes, from text fields too</span></label>
-  <label class="check"><input type="checkbox" bind:checked={app.prefs.keyboard.listVim} /> <span><b>Vim keys in lists</b>: gg/G, h/l, n/N, y, gr, : commands</span></label>
+  <label class="check"><input type="checkbox" bind:checked={app.prefs.keyboard.navigator} /> <span><b>Pane navigation</b> <span class="muted">Ctrl-h/j/k/l</span></span></label>
+  <label class="check"><input type="checkbox" bind:checked={app.prefs.keyboard.listVim} /> <span><b>Vim keys in lists</b></span></label>
   <div class="sec-h">Shortcuts</div>
   <table class="small"><tbody>{#each SHORTCUTS as [k, what] (k)}<tr><td class="key">{k}</td><td>{what}</td></tr>{/each}</tbody></table>
 {:else}
   <div class="row">
-    <div class="pair"><b>Theme</b><div class="small muted">System follows the OS setting</div></div>
+    <div class="pair"><b>Theme</b></div>
     <div class="seg" role="radiogroup" aria-label="Theme">
       {#each THEMES as [t, label] (t)}<button role="radio" aria-checked={app.prefs.theme === t} class:on={app.prefs.theme === t} onclick={() => (app.prefs.theme = t)}>{label}</button>{/each}
     </div>

@@ -18,7 +18,7 @@ test('push is enabled on a device', async ({ browser }) => {
   await page.getByRole('button', { name: 'Settings' }).click();
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await settings.getByRole('tab', { name: 'Notifications' }).click();
-  await settings.getByRole('button', { name: 'Enable on this device' }).click();
+  await settings.getByRole('button', { name: 'Enable', exact: true }).click();
   await expect(settings).toContainText('Push is on for iPhone');
   await expect(settings.getByRole('button', { name: 'Turn off' })).toBeVisible();
   await context.close();

@@ -1,6 +1,6 @@
 <script lang="ts">
   // SSH keys: the controlroom key (fingerprint, public key, install command, rotate) and the
-  // additional keys under Advanced (generate, import, delete).
+  // additional keys under Other keys (generate, import, delete).
   import { useApp } from '../app/app.svelte';
   import type { KeysListResult } from '../protocol';
 
@@ -59,9 +59,8 @@
     <div class="ib"><div class="small muted">Run this once on each host:</div><div class="line"><code>{k.install_command}</code><button class="btn xs" onclick={() => app.copy(k.install_command)}>Copy</button></div></div>
     {#if k.retiring_machines}<div class="small warn-t">The previous key stays until {k.retiring_machines} offline machine(s) reconnect.</div>{/if}
   </div>
-  <button class="adv" aria-expanded={advanced} onclick={() => (advanced = !advanced)}>{advanced ? '▾' : '▸'} Advanced: additional keys{keys.additional.length ? ` (${keys.additional.length})` : ''}</button>
+  <button class="adv" aria-expanded={advanced} onclick={() => (advanced = !advanced)}>{advanced ? '▾' : '▸'} Other keys{keys.additional.length ? ` (${keys.additional.length})` : ''}</button>
   {#if advanced}
-    <div class="small muted">Only for hosts that can't accept the controlroom key; pick one per machine in Machines.</div>
     {#each keys.additional as x (x.id)}
       <div class="key">
         <b>{x.name}</b> <span class="muted small">{x.imported ? 'imported' : 'generated'} · {x.fingerprint} · used by {usedBy(x.id)}</span>

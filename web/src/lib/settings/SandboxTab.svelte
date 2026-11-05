@@ -39,7 +39,7 @@
     if (r) profiles = r.profiles;
   }
   async function setLevel(row: Row, v: string) {
-    if (v === 'off' && !(await app.dialogs.confirm({ title: `Turn the sandbox off for ${row.name}?`, body: 'New sessions there run unconfined. Running sessions keep their sandbox.', ok: 'Turn off', danger: true }))) return;
+    if (v === 'off' && !(await app.dialogs.confirm({ title: `Turn the sandbox off for ${row.name}?`, body: 'New sessions there run unconfined; running ones keep their sandbox.', ok: 'Turn off', danger: true }))) return;
     await change(row.scope, v === 'none' ? { kind: 'clear_level' } : { kind: 'set_level', level: v as SandboxProfile['level'] & string });
   }
   function onEnter(e: KeyboardEvent, run: () => void) {
@@ -62,7 +62,7 @@
   }
 </script>
 
-<div class="small muted">Defaults for new sessions: the strictest level of the machine and its projects, and the union of their grants and domains. Running sessions keep theirs until restarted.</div>
+<div class="small muted">Defaults for new sessions: the strictest level wins, grants add up.</div>
 {#each [['Machines', rows.machines], ['Projects', rows.projects]] as [label, list] (label)}
   <div class="sec-h">{label}</div>
   {#each list as Row[] as row (row.key)}
@@ -74,7 +74,7 @@
       </div>
       {#if p?.level === 'off'}<div class="off">New sessions here run without a sandbox.</div>{/if}
       <div class="r">
-        <span class="l">Standing grants</span>
+        <span class="l">Grants</span>
         <div class="v">
           {#each p?.grants ?? [] as g (g.id)}
             <span class="chip-s"><span class="gk">{g.kind}</span><code>{g.value}</code>{#if g.access}<span class="muted small">{g.access.replace('_', ' ')}</span>{/if}<button aria-label="Remove {g.value}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
@@ -82,18 +82,18 @@
         </div>
       </div>
       <div class="r">
-        <span class="l">Allowed domains</span>
+        <span class="l">Domains</span>
         <div class="v">
           {#each p?.domains ?? [] as d (d)}<span class="chip-s"><code>{d}</code><button aria-label="Remove {d}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_domain', domain: d })}>×</button></span>{/each}
-          <input class="in" placeholder="+ domain (Enter)" aria-label="Add allowed domain for {row.name}" disabled={!online} bind:value={domain[row.key]} onkeydown={(e) => onEnter(e, () => addDomain(row))} />
+          <input class="in" placeholder="+ domain" aria-label="Add allowed domain for {row.name}" disabled={!online} bind:value={domain[row.key]} onkeydown={(e) => onEnter(e, () => addDomain(row))} />
         </div>
       </div>
       <div class="r">
-        <span class="l">Mediated commands</span>
+        <span class="l">Commands</span>
         <div class="v">
-          {#each p?.mediated ?? [] as m (m.command)}<span class="chip-s"><code>{m.command}</code><span class="small">→ {m.action === 'deny' ? 'deny' : 'ask each time'}</span><button aria-label="Remove {m.command}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_mediated', command: m.command })}>×</button></span>{/each}
-          <input class="in" placeholder="+ command, e.g. kubectl apply" aria-label="Add mediated command for {row.name}" disabled={!online} bind:value={command[row.key]} onkeydown={(e) => onEnter(e, () => addCommand(row))} />
-          <Dropdown small label="Action for {row.name}" value={action[row.key] ?? 'approve'} options={[{ value: 'approve', label: 'ask each time' }, { value: 'deny', label: 'deny' }]} onchange={(v) => (action[row.key] = v as MediationAction)} />
+          {#each p?.mediated ?? [] as m (m.command)}<span class="chip-s"><code>{m.command}</code><span class="small">→ {m.action === 'deny' ? 'deny' : 'ask'}</span><button aria-label="Remove {m.command}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_mediated', command: m.command })}>×</button></span>{/each}
+          <input class="in" placeholder="+ command" aria-label="Add mediated command for {row.name}" disabled={!online} bind:value={command[row.key]} onkeydown={(e) => onEnter(e, () => addCommand(row))} />
+          <Dropdown small label="Action for {row.name}" value={action[row.key] ?? 'approve'} options={[{ value: 'approve', label: 'ask' }, { value: 'deny', label: 'deny' }]} onchange={(v) => (action[row.key] = v as MediationAction)} />
         </div>
       </div>
     </div>

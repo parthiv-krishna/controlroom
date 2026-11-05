@@ -25,7 +25,6 @@
   }
 </script>
 
-<div class="small muted">Browsers you use controlroom from. Their names appear wherever a device acted.</div>
 {#each devices as d (d.device_id)}
   <div class="row" data-device={d.device_id}>
     <div class="main">

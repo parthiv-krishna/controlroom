@@ -36,20 +36,21 @@
 
 {#if prefs}
   {@const p = prefs}
-  <label class="check"><input type="checkbox" checked={p.attention} disabled={!online} onchange={(e) => set({ attention: e.currentTarget.checked })} /> Push when a session needs a decision, failed or was interrupted</label>
-  <label class="check"><input type="checkbox" checked={p.questions} disabled={!online} onchange={(e) => set({ questions: e.currentTarget.checked })} /> Push non-blocking questions too <span class="muted small">(otherwise they only show in the app)</span></label>
-  <label class="check"><input type="checkbox" checked={p.turn_end} disabled={!online} onchange={(e) => set({ turn_end: e.currentTarget.checked })} /> Push when a run finishes</label>
+  <div class="sec-h">Push</div>
+  <label class="check"><input type="checkbox" checked={p.attention} disabled={!online} onchange={(e) => set({ attention: e.currentTarget.checked })} /> Needs you, failed or interrupted</label>
+  <label class="check"><input type="checkbox" checked={p.questions} disabled={!online} onchange={(e) => set({ questions: e.currentTarget.checked })} /> Questions</label>
+  <label class="check"><input type="checkbox" checked={p.turn_end} disabled={!online} onchange={(e) => set({ turn_end: e.currentTarget.checked })} /> Finished runs</label>
 {/if}
 {#if push}
   <div class="row">
     <div>
-      <b>Push on this device</b>
-      <div class="small muted">{thisDevice?.push ? 'On' : permission === 'denied' ? 'Blocked: allow notifications in the browser settings' : 'Get notified while controlroom is closed'}</div>
+      <b>This device</b>
+      <div class="small muted">{thisDevice?.push ? 'On' : permission === 'denied' ? 'Blocked: allow notifications in the browser settings' : 'Off'}</div>
     </div>
     {#if thisDevice?.push}
       <button class="btn" disabled={!online} onclick={() => app.client.call('notifications.unsubscribe', { device_id: app.client.device.id })}>Turn off</button>
     {:else if permission !== 'denied' && permission !== 'unsupported'}
-      <button class="btn primary" disabled={!online} onclick={enable}>Enable on this device</button>
+      <button class="btn primary" disabled={!online} onclick={enable}>Enable</button>
     {/if}
   </div>
   <div class="small muted">Push is on for {pushOn.length ? pushOn.map((d) => d.label).join(', ') : 'no devices'} · <button class="linkish" onclick={() => app.openSettings('devices')}>Devices…</button></div>

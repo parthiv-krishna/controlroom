@@ -14,7 +14,7 @@
     if (c.reason === 'host_key_changed') {
       const ok = await app.dialogs.confirm({
         title: `Trust the new host key for ${m.name}?`,
-        body: `Only if you expected the change (e.g. the host was reinstalled). New key: ${hk.algorithm} ${hk.fingerprint}`,
+        body: `New key: ${hk.algorithm} ${hk.fingerprint}. Trust it only if you expected the change.`,
         ok: 'Trust new key',
         danger: true,
       });
@@ -27,14 +27,14 @@
 {#if c.state === 'action_required'}
   <div class="fix">
     {#if c.reason === 'auth_failed'}
-      <div><b>{m.user}@{m.host}</b> no longer accepts the {m.key_id ? 'selected' : 'controlroom'} key. Install it again (Settings › SSH keys), then retry.</div>
+      <div><b>{m.user}@{m.host}</b> rejects the {m.key_id ? 'selected' : 'controlroom'} key. Reinstall it (SSH keys), then retry.</div>
       <div class="acts"><button class="btn sm primary" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: m.id })}>Retry</button></div>
     {:else if c.reason === 'controller_conflict'}
-      <div>Another controlroom server is connected to <b>{m.name}</b>. A machine serves one server at a time: stop the other one, then retry.</div>
+      <div>Another controlroom server holds <b>{m.name}</b>. Stop it, then retry.</div>
       <div class="acts"><button class="btn sm primary" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: m.id })}>Retry</button></div>
     {:else}
       <div>
-        {#if c.reason === 'host_key_changed'}<b>{m.name}</b>'s host key changed. controlroom won't connect until you confirm it.{:else}Confirm <b>{m.name}</b>'s host key to connect.{/if}
+        {#if c.reason === 'host_key_changed'}<b>{m.name}</b>: host key changed.{:else}Confirm <b>{m.name}</b>'s host key to connect.{/if}
       </div>
       {#if !compact}
         {#if m.host_key && c.reason === 'host_key_changed'}<div class="small muted">was <code>{m.host_key.fingerprint}</code></div>{/if}

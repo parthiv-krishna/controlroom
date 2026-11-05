@@ -36,7 +36,7 @@
   }
 
   async function remove(m: Machine) {
-    const body = 'Sessions keep running; their workspaces there become unavailable.';
+    const body = 'Its workspaces become unavailable.';
     if (await app.dialogs.confirm({ title: `Remove ${m.name}?`, body, ok: 'Remove', danger: true })) await app.client.call('machines.remove', { machine_id: m.id });
   }
 </script>
@@ -47,9 +47,9 @@
   {#if server}
     {@const ds = server}
     <div class="card" data-server>
-      <div class="h"><b>Agents</b><span class="muted small">on the server</span></div>
+      <div class="h"><b>Server agents</b></div>
       <div class="settings small">
-        <span>Idle stop after</span><Dropdown small label="Idle stop" value={String(ds.idle_timeout_h)} disabled={!online} options={[...new Set([...IDLE, ds.idle_timeout_h])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: `${h} h` }))} onchange={(v) => setServer({ idle_timeout_h: Number(v) })} />
+        <span>Idle stop</span><Dropdown small label="Idle stop" value={String(ds.idle_timeout_h)} disabled={!online} options={[...new Set([...IDLE, ds.idle_timeout_h])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: `${h} h` }))} onchange={(v) => setServer({ idle_timeout_h: Number(v) })} />
         <span>Keep archived</span><Dropdown small label="Retention" value={String(ds.retention.delete_closed_after_days)} disabled={!online} options={RETENTION.map(([label, d]) => ({ value: String(d), label }))} onchange={(v) => setServer({ retention: { delete_closed_after_days: v === 'null' ? null : Number(v) } })} />
       </div>
     </div>
@@ -71,17 +71,17 @@
           <span>Key</span><Dropdown small label="SSH key" value={m.key_id ?? ''} disabled={!online} options={[{ value: '', label: 'controlroom key' }, ...keys.additional.map((k) => ({ value: k.id, label: k.name }))]} onchange={(v) => app.client.call('machines.set_settings', { machine_id: m.id, key: { key_id: v || null } })} />
         {/if}
       </div>
-      <label class="check small"><input type="checkbox" checked={m.auto_upgrade} disabled={!online} onchange={(e) => app.client.call('machines.set_settings', { machine_id: m.id, auto_upgrade: e.currentTarget.checked })} /> Auto-upgrade the daemon while idle</label>
+      <label class="check small"><input type="checkbox" checked={m.auto_upgrade} disabled={!online} onchange={(e) => app.client.call('machines.set_settings', { machine_id: m.id, auto_upgrade: e.currentTarget.checked })} /> Auto-upgrade</label>
       <div class="acts">
-        {#if st === 'unreachable'}<button class="btn sm" disabled={!online} onclick={() => app.client.call('machines.reconnect', { machine_id: m.id })}>Retry connection</button>{/if}
-        {#if st === 'incompatible'}<button class="btn sm primary" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade daemon</button>
-        {:else if st === 'connected' && m.update_available}<button class="btn sm" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade now</button>{/if}
+        {#if st === 'unreachable'}<button class="btn sm" aria-label="Retry connecting to {m.name}" disabled={!online} onclick={() => app.client.call('machines.reconnect', { machine_id: m.id })}>Retry</button>{/if}
+        {#if st === 'incompatible'}<button class="btn sm primary" aria-label="Upgrade the daemon on {m.name}" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade</button>
+        {:else if st === 'connected' && m.update_available}<button class="btn sm" aria-label="Upgrade the daemon on {m.name}" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade</button>{/if}
         {#if st === 'connected'}<button class="btn sm" onclick={() => { app.view.settings = null; app.newSession({ workspaces: [{ machine_id: m.id, path: '~' }] }); }}>+ Session here</button>{/if}
         <button class="btn sm ghost bad-t" disabled={!online} onclick={() => remove(m)}>Remove</button>
       </div>
     </div>
   {/each}
-  <button class="btn primary add" disabled={!online} onclick={() => (adding = true)}>+ Add machine</button>
+  <button class="btn primary add" disabled={!online} onclick={() => (adding = true)}>+ Machine</button>
 {/if}
 
 <style>

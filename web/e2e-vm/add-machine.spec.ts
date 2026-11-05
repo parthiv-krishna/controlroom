@@ -10,7 +10,7 @@ test('add a machine', async ({ page }) => {
   const keyFirst = env('E2E_KEY_FIRST') !== '';
   await login(page, 'Laptop');
   const settings = await openMachines(page);
-  await settings.getByRole('button', { name: '+ Add machine' }).click();
+  await settings.getByRole('button', { name: '+ Machine' }).click();
   await settings.getByLabel('Host').fill(host);
   await settings.getByLabel('User').fill('alice');
   await settings.getByLabel('Display name').fill(host);
