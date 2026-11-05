@@ -1,0 +1,76 @@
+nono 0.80 for musl: open Landlock rule paths with O_PATH.
+
+landlock's `PathFd::new` opens with `OpenOptions::custom_flags(O_PATH)`. On musl, O_ACCMODE
+includes O_PATH, so Rust's standard library masks the flag off and the open becomes an ordinary
+read, which the already-applied first Landlock layer denies: an approved mediated command (git
+push) then fails with "cannot open / for Refer grant: Permission denied". nono already opens its
+main rule paths with `nix::fcntl::open(O_PATH)` for this reason (`open_path_rule`); this does the
+same for the execute-restriction layers. `PathBeneath::new` takes any `AsFd`.
+
+--- a/crates/nono/src/sandbox/linux.rs
++++ b/crates/nono/src/sandbox/linux.rs
+@@ -7,7 +7,7 @@
+ use crate::sandbox::SupportInfo;
+ use landlock::{
+     ABI, Access, AccessFs, AccessNet, BitFlags, CompatLevel, Compatible, NetPort, PathBeneath,
+-    PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr, Scope,
++    Ruleset, RulesetAttr, RulesetCreatedAttr, Scope,
+ };
+ use nix::fcntl::{OFlag, open};
+ use nix::sys::stat::Mode;
+@@ -1444,7 +1444,7 @@
+ 
+     for path in paths {
+         let p = path.as_ref();
+-        let fd = PathFd::new(p).map_err(|e| {
++        let fd = nix::fcntl::open(p, nix::fcntl::OFlag::O_PATH | nix::fcntl::OFlag::O_CLOEXEC, nix::sys::stat::Mode::empty()).map_err(|e| {
+             NonoError::SandboxInit(format!(
+                 "Command sandbox execute restriction: cannot open {}: {e}",
+                 p.display()
+@@ -1461,7 +1461,7 @@
+     }
+ 
+     if abi.has_refer() {
+-        let root_fd = PathFd::new("/").map_err(|e| {
++        let root_fd = nix::fcntl::open("/", nix::fcntl::OFlag::O_PATH | nix::fcntl::OFlag::O_CLOEXEC, nix::sys::stat::Mode::empty()).map_err(|e| {
+             NonoError::SandboxInit(format!(
+                 "Command sandbox execute restriction: cannot open / for Refer grant: {e}"
+             ))
+--- a/crates/nono-cli/src/tool-sandbox/platform/linux.rs
++++ b/crates/nono-cli/src/tool-sandbox/platform/linux.rs
+@@ -28,7 +28,7 @@
+     write_frame, write_response,
+ };
+ use landlock::{
+-    AccessFs, CompatLevel, Compatible, PathBeneath, PathFd, Ruleset, RulesetAttr,
++    AccessFs, CompatLevel, Compatible, PathBeneath, Ruleset, RulesetAttr,
+     RulesetCreatedAttr,
+ };
+ use nix::libc;
+@@ -3365,7 +3365,7 @@
+         })?;
+ 
+     for path in paths {
+-        let fd = PathFd::new(path).map_err(|err| {
++        let fd = nix::fcntl::open(path, nix::fcntl::OFlag::O_PATH | nix::fcntl::OFlag::O_CLOEXEC, nix::sys::stat::Mode::empty()).map_err(|err| {
+             NonoError::SandboxInit(format!(
+                 "session sandbox execute gate cannot open {}: {err}",
+                 path.display()
+@@ -3383,7 +3383,7 @@
+ 
+     // Subtree grant: files written into these dirs after setup must still run.
+     for dir in writable_dirs {
+-        let fd = PathFd::new(dir).map_err(|err| {
++        let fd = nix::fcntl::open(dir, nix::fcntl::OFlag::O_PATH | nix::fcntl::OFlag::O_CLOEXEC, nix::sys::stat::Mode::empty()).map_err(|err| {
+             NonoError::SandboxInit(format!(
+                 "session sandbox execute gate cannot open {}: {err}",
+                 dir.display()
+@@ -3400,7 +3400,7 @@
+     }
+ 
+     if abi.has_refer() {
+-        let root_fd = PathFd::new("/").map_err(|err| {
++        let root_fd = nix::fcntl::open("/", nix::fcntl::OFlag::O_PATH | nix::fcntl::OFlag::O_CLOEXEC, nix::sys::stat::Mode::empty()).map_err(|err| {
+             NonoError::SandboxInit(format!(
+                 "session sandbox execute gate cannot open / for Refer grant: {err}"
+             ))

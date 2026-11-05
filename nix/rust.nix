@@ -175,6 +175,8 @@ let
       args
       // {
         cargoArtifacts = craneLib.buildDepsOnly args;
+        # A musl-only bug: approved mediated commands couldn't start (see the patch).
+        patches = [ ./nono-musl-o-path.patch ];
         doInstallCheck = true;
         nativeInstallCheckInputs = [ pkgs.file ];
         installCheckPhase = ''

@@ -22,13 +22,19 @@ use crate::harness::{HostEnv, RpcClient, Session};
 /// Denies every sandbox approval (nono asks before reaching outside the profile); returns how
 /// many it denied so far.
 async fn deny_everything(env: &HostEnv) -> Arc<std::sync::atomic::AtomicUsize> {
+    answer_everything(env, "deny").await
+}
+
+/// Answers every sandbox approval with `option_id`; returns how many it answered so far.
+async fn answer_everything(env: &HostEnv, option_id: &str) -> Arc<std::sync::atomic::AtomicUsize> {
     let approver = env.controller().await;
     approver
         .call::<methods::ApprovalsSubscribe>(NoParams {})
         .await
         .unwrap();
-    let denied = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let count = denied.clone();
+    let answered = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = answered.clone();
+    let option_id = option_id.to_owned();
     tokio::spawn(async move {
         let approver: RpcClient = approver;
         loop {
@@ -42,14 +48,14 @@ async fn deny_everything(env: &HostEnv) -> Arc<std::sync::atomic::AtomicUsize> {
             let _ = approver
                 .call::<methods::ApprovalRespond>(ApprovalRespondParams {
                     approval_id: approval.id,
-                    option_id: "deny".into(),
+                    option_id: option_id.clone(),
                     reason: Some("outside the workspace".into()),
                 })
                 .await;
             count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
     });
-    denied
+    answered
 }
 
 /// A scratch home under `/var/tmp` whose `sandbox.toml` points at the test's nono.
@@ -107,6 +113,58 @@ async fn the_bundled_nono_confines_shells() {
         std::fs::read(p.path().join("cmdline")).is_ok_and(|c| c.starts_with(run.as_bytes()))
     });
     assert!(under_bundled, "no process runs {}", installed.display());
+}
+
+/// An approved `git push` (a mediated command, which nono runs in its own sandbox) works under
+/// the bundled nono, installed in the daemon's data dir.
+#[tokio::test]
+#[ignore = "needs nono 0.80 and Landlock (CR_TEST_NONO)"]
+async fn an_approved_git_push_runs_under_the_bundled_nono() {
+    let nono = std::path::PathBuf::from(std::env::var("CR_TEST_NONO").unwrap());
+    let env = env_with("", |env| {
+        env.install(&nono, "0.80.0");
+    })
+    .await;
+    let git = |dir: &std::path::Path, args: &str| {
+        let out = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("git {args}"))
+            .current_dir(dir)
+            .env("HOME", env.home())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args}: {out:?}");
+    };
+    // A repository and its remote in the workspace.
+    let push = env.project();
+    std::fs::create_dir_all(push.join("repo")).unwrap();
+    git(&push, "init -q --bare remote.git");
+    git(&push.join("repo"), "init -q");
+    git(
+        &push.join("repo"),
+        "-c user.email=alice@example.com -c user.name=alice commit -q --allow-empty -m init",
+    );
+    git(&push.join("repo"), "remote add origin ../remote.git");
+    let allowed = answer_everything(&env, "allow-once").await;
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let session = Session::open(&env, &client, SandboxLevel::Strict).await;
+    session.shell(&client, "s").await;
+    let (exit, output, _) = session
+        .bash(
+            &client,
+            "p1",
+            "s",
+            "cd repo && git push origin HEAD:allowed 2>&1",
+        )
+        .await;
+    assert_eq!(exit, Some(0), "{output}\n{}", env.log());
+    assert!(allowed.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+    git(
+        &push.join("remote.git"),
+        "rev-parse -q --verify refs/heads/allowed",
+    );
 }
 
 #[tokio::test]
