@@ -77,6 +77,33 @@ State lives in `/var/lib/private/controlroom` (`$STATE_DIRECTORY`): the database
 Enabled with `services.controlroom` (`agent.enable`, default on). Sessions run pi through the
 `controlroom-pi` bundle on this machine; its tools act on the workspaces' hosts.
 
+Sessions need a model provider. There are two ways to configure them, and they combine.
+
+**In the UI: Settings › Models** (recommended to start with):
+
+- **API keys** for Anthropic, OpenAI, Google (Gemini) and OpenRouter: *Add key*. The key goes
+  from the browser to the agent daemon once and is never shown again (only its last four
+  characters, when and from which device it was added).
+- **Subscriptions** (Anthropic Claude Pro/Max, ChatGPT/Codex): *Sign in*. pi's own sign-in runs
+  on the server; open the sign-in page, then paste the URL your browser ends on (it can't reach
+  the server's callback listener) or enter the device code if the provider offers one. *Sign out*
+  removes it.
+- **Custom gateways** (OpenAI-compatible): a name, the base URL (`https://…/v1`), its model ids,
+  the key header (`Authorization: Bearer`, `x-api-key` or `api-key`) and the key.
+- **Test** sends one cheap request (e.g. the model list) with the key, through the provider's
+  route, and shows *ok* or the HTTP status.
+- **Defaults**: the provider, model and thinking level of new sessions, from the models pi
+  offers with what is configured.
+
+Changes apply to new sessions and to restarts of existing ones; running agents keep what they
+started with. They are stored in `/var/lib/controlroom-agent/models/` (`keys.json` is mode
+0600, readable by the agent user only) and logged by both services with the device that made
+them, never with a key. Only the presets and gateways you add get network routes from the UI, so
+the sandbox's allow-list stays deliberate. Sessions at sandbox level *off* use the server's own
+config only (sign-ins included, UI keys, gateways and defaults not).
+
+**Declaratively, in Nix** (the alternative, or for what the UI shouldn't change):
+
 ```nix
 services.controlroom.agent = {
   # sandbox.toml: one credential route per model provider.
@@ -107,9 +134,18 @@ services.controlroom.agent = {
 | `credentials` | Model API keys: name → a root-only file outside the store, loaded with `LoadCredential=`. `models.json` names them as `"!cat $CREDENTIALS_DIRECTORY/<name>"`; only nono's credential helper (`controlroom-agentd credential`, outside the sandbox) reads them, and pi only ever sees a placeholder. |
 | `sandbox` | `sandbox.toml` (`crates/agentd/src/config/sandbox.rs`): `routes`, `keep`, `oauth_claims`, …; `nono`, `oauth_helper` and `nono_tmp` default to the module's. |
 | `agents` | `agents.toml`; by default sessions run the bundle's `controlroom-pi` (add a keep-list with `agents.agents.pi.command = "controlroom-pi --keep …"`). |
-| `pi.models`, `pi.settings` | pi's `models.json` and `settings.json`, installed into the agent dir at every start (`null`: left alone). |
+| `pi.models`, `pi.settings` | pi's `models.json` and `settings.json`, installed into the agent dir at every start (`null`: left alone). Settings › Models keeps its own files, so these copies never wipe it. |
 | `extraPackages` | More programs on the agent user's PATH. |
 | `package`, `piBundle`, `nono` | Default to the flake's `controlroom-agentd`, `controlroom-pi` and pinned `nono`. |
+
+How the two combine: a provider is the **server's** when `sandbox.routes` routes it,
+`pi.models` defines it or pi's `auth.json` holds a key for it. The UI shows server providers
+read-only ("from server config"), refuses keys and gateways under their names, and if one was
+added before the server took the name, the server's wins and the UI shows the clash. The defaults
+set in the UI win over `pi.settings`' `defaultProvider`, `defaultModel` and
+`defaultThinkingLevel` (each new session gets them; the file itself is never rewritten). A
+subscription signed in from the UI can use a route declared in `sandbox.routes` (for a provider
+pi can sign in to that isn't a preset).
 
 It runs as the static user `controlroom-agent` with its state in `/var/lib/controlroom-agent`
 (sessions, transcripts and pi's agent dir, including `auth.json`; persist and back it up with
@@ -120,13 +156,17 @@ pi with Landlock to its scratch directory, its agent socket and the model routes
 socket `/run/controlroom-agent/agentd.sock` is shared with the web server through the
 `controlroom-agent` group, and `services.controlroom` points `agentd_socket` at it.
 
-For an OAuth subscription instead of an API key, sign in once on the server (pi asks for
-`/login <provider>`):
+To sign in to a subscription from a terminal instead of the UI (pi asks for `/login <provider>`):
 
 ```sh
-sudo -u controlroom-agent -i controlroom-agentd login \
-  --state-dir /var/lib/controlroom-agent --config-dir /etc/controlroom-agent <provider>
+sudo -u controlroom-agent -i controlroom-agentd login <provider>
 ```
+
+The agent daemon's CLI (`login`, `doctor`, `ctl`) run as `controlroom-agent` finds the daemon's
+directories through `/etc/controlroom-agent/agentd.toml`, which the module installs; flags
+(`--state-dir`, `--config-dir`, `--socket`) still override it. An unreadable or invalid file, or
+one that disagrees with the service's directories, is an error rather than a fallback to
+`~/.local/state`.
 
 ## 2. Secrets
 
