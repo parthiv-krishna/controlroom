@@ -275,6 +275,8 @@ fn merges_managed_providers_and_the_user_config_wins() {
         json!({"type": "api_key", "key": PLACEHOLDER})
     );
     assert_eq!(auth["gateway"]["key"], PLACEHOLDER);
+    // The gateway's placeholder is in its models.json entry.
+    assert!(auth.get("ui-gw").is_none());
     let models = read_json(agent.join("models.json"));
     assert_eq!(
         models["providers"]["ui-gw"]["models"],

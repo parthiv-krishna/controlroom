@@ -201,13 +201,16 @@ pub fn build_agent_config(
     api_key_providers.extend(fake.api_key_providers.iter().cloned());
     api_key_providers.sort();
     api_key_providers.dedup();
-    // Stored keys, unless the user's config already has a credential for the provider.
+    // Stored keys, unless the user's config already has a credential for the provider. A
+    // managed `models.json` entry (a gateway) carries its placeholder key itself.
     let mut stored_key_providers = Vec::new();
     for provider in &managed.key_providers {
         let configured =
             api_key_providers.contains(provider) || fake.oauth_providers.contains(provider);
         if !configured {
-            fake.auth.insert(provider.clone(), placeholder_key());
+            if !managed.models.contains_key(provider) {
+                fake.auth.insert(provider.clone(), placeholder_key());
+            }
             stored_key_providers.push(provider.clone());
         }
     }

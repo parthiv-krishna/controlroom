@@ -17,7 +17,8 @@
   let { page }: { page: boolean } = $props();
   const app = useApp();
   const TABS: [SettingsTab, string][] = [
-    ['machines', 'Machines'], ['keys', 'SSH keys'], ['models', 'Models'], ['notifications', 'Notifications'], ['devices', 'Devices'], ['sandbox', 'Sandbox'],
+    ['machines', 'Machines'], ['keys', 'SSH keys'], ['models', 'Models'], ['notifications', 'Notifications'],
+    ['devices', 'Devices'], ['sandbox', 'Sandbox'],
     ['contacts', 'Contacts'], ['schedules', 'Schedules'], ['keyboard', 'Keyboard'], ['appearance', 'Appearance'],
   ];
   const tab = $derived(app.view.settings ?? 'machines');

@@ -8,7 +8,8 @@
 //!
 //! [`MockModel::serve`] adds an HTTP control API ([`control`]) for tests that
 //! script the model from another process, and can require an API key, so a
-//! test sees that the credential reached the model (answers 401 otherwise).
+//! test sees that the credential reached the model (answers 401 otherwise). `GET /v1/models`
+//! lists the one model, with the same key check (a cheap request for provider tests).
 
 pub mod control;
 mod script;
@@ -25,7 +26,7 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
-use axum::routing::post;
+use axum::routing::{get, post};
 use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 
@@ -77,7 +78,9 @@ impl MockModel {
             reached: watch::Sender::new(BTreeSet::new()),
             api_key,
         });
-        let mut app = Router::new().route("/v1/chat/completions", post(completions));
+        let mut app = Router::new()
+            .route("/v1/chat/completions", post(completions))
+            .route("/v1/models", get(models));
         if with_control {
             app = app.merge(control::routes());
         }
@@ -160,18 +163,36 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Whether `headers` carry the API key, when one is required.
+fn authorized(shared: &Shared, headers: &HeaderMap) -> bool {
+    let Some(key) = &shared.api_key else {
+        return true;
+    };
+    let sent = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    sent == Some(format!("Bearer {key}").as_str())
+}
+
+async fn models(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> Response {
+    if !authorized(&shared, &headers) {
+        return error_response(401, "invalid API key");
+    }
+    let body =
+        serde_json::json!({"object": "list", "data": [{"id": "mock-model", "object": "model"}]});
+    Response::builder()
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap_or_default()
+}
+
 async fn completions(
     State(shared): State<Arc<Shared>>,
     headers: HeaderMap,
     body: String,
 ) -> Response {
-    if let Some(key) = &shared.api_key {
-        let sent = headers
-            .get(header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok());
-        if sent != Some(format!("Bearer {key}").as_str()) {
-            return error_response(401, "invalid API key");
-        }
+    if !authorized(&shared, &headers) {
+        return error_response(401, "invalid API key");
     }
     let request: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
     let model = request

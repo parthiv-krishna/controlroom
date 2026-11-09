@@ -78,15 +78,21 @@ let
   placeholder = "controlroom-placeholder";
 
   # The agent command. A loopback upstream is reachable from pi's sandbox only through the
-  # credential route's reverse proxy ($CR_MOCK_BASE_URL, authenticated by the phantom token
-  # $CR_MOCK_PHANTOM, which pi resolves from its environment), so the session's models.json is
-  # pointed there first, as in the agent daemon's acceptance test. Real providers are HTTPS and
-  # need none of this.
+  # credential route's reverse proxy ($CR_<PROVIDER>_BASE_URL, authenticated by the phantom
+  # token $CR_<PROVIDER>_PHANTOM, which pi resolves from its environment), so every mock
+  # provider in the session's models.json (the server's `mock`, and the `mock-ui` gateway added
+  # in Settings › Models) is pointed there first, as in the agent daemon's acceptance test. Real
+  # providers are HTTPS and need none of this.
   piMock = pkgs.writeShellScriptBin "pi-mock" ''
-    if [ -n "''${CR_MOCK_BASE_URL:-}" ]; then
-      m="$PI_CODING_AGENT_DIR/models.json"
-      ${pkgs.gnused}/bin/sed -e "s#${mockOrigin}#$CR_MOCK_BASE_URL#" \
-        -e 's#"${placeholder}"#"$CR_MOCK_PHANTOM"#' "$m" > "$m.tmp" \
+    m="$PI_CODING_AGENT_DIR/models.json"
+    if [ -f "$m" ]; then
+      ${pkgs.jq}/bin/jq --arg origin ${mockOrigin} --arg placeholder ${placeholder} '
+        .providers |= with_entries(
+          ("CR_" + (.key | ascii_upcase | gsub("[^A-Z0-9]"; "_"))) as $v
+          | if ((.value.baseUrl // "") | startswith($origin)) and env[$v + "_BASE_URL"] != null
+            then .value.baseUrl = env[$v + "_BASE_URL"] + (.value.baseUrl | ltrimstr($origin))
+              | if .value.apiKey == $placeholder then .value.apiKey = ("$" + $v + "_PHANTOM") else . end
+            else . end)' "$m" > "$m.tmp" \
         && ${pkgs.coreutils}/bin/mv "$m.tmp" "$m" || exit 1
     fi
     export PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0

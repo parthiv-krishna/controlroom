@@ -23,6 +23,7 @@ GATES = f"{E2E}/gates"
 BASE_URL = "http://127.0.0.1:8080"
 SPEC_TIMEOUT = timedelta(minutes=15)
 MOCK = "http://127.0.0.1:4000/control"
+SECRETS = "/var/lib/controlroom-e2e"
 API = "/home/alice/work/api"
 WEB = "/home/alice/work/web"
 BUILD = "/home/alice/build"
@@ -388,6 +389,24 @@ def schedules() -> None:
     assert "Check inbox/ and report" in conversation()[-1]
 
 
+def models() -> None:
+    """A gateway added in Settings › Models (its key typed in the UI, no Nix credential) runs a
+    new session; the server's Nix-declared `mock` stays the default of every other scenario."""
+    mock(say("Answered through the UI key."))
+    Spec("models", E2E_MODEL_KEY_FILE=f"{SECRETS}/model-key").finish()
+    mock_done()
+    assert "Which key?" in conversation()[-1]
+    # The key is stored by the agent daemon only, 0600, and never in a session's files.
+    key = server.succeed(f"cat {SECRETS}/model-key").strip()
+    stat = server.succeed("stat -c '%a %U' /var/lib/controlroom-agent/models/keys.json").strip()
+    assert stat == "600 controlroom-agent", stat
+    server.fail(f"grep -rqF {shlex.quote(key)} /var/lib/controlroom-agent/sessions /var/lib/controlroom-agent/models/providers.json")
+    # Every change is logged with the device that made it, never with the key.
+    server.succeed("journalctl -u controlroom-agent | grep 'models: gateway saved' | grep -q Laptop")
+    server.succeed("journalctl -u controlroom | grep 'Settings › Models change' | grep -q Laptop")
+    server.fail(f"journalctl -u controlroom -u controlroom-agent | grep -qF {shlex.quote(key)}")
+
+
 def blip() -> None:
     """devbox's network goes away mid-command (within the grace) and comes back."""
     mock(
@@ -517,6 +536,7 @@ try:
     web_push()
     terminal_input()
     schedules()
+    models()
     blip()
     grace()
     reboot()
