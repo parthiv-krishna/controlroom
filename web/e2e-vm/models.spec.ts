@@ -34,7 +34,7 @@ test('a gateway added in Settings › Models runs a session', async ({ page }) =
   await choose(defaults, 'Default model', 'mock-model');
   await closeSettings(page);
 
-  await newSession(page, { workspaces: [{ machine: 'devbox', path: '~/work/api' }], name: 'ui-key', level: 'Strict', prompt: 'Which key?' });
+  await newSession(page, { workspaces: [{ machine: 'devbox', path: '~/work/models' }], name: 'ui-key', level: 'Strict', prompt: 'Which key?' });
   await expect(lastReply(page)).toHaveText('Answered through the UI key.');
   await settled(page);
   await expect(header(page).getByRole('button', { name: 'Model', exact: true })).toHaveText(/mock-model/);

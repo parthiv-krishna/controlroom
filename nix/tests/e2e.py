@@ -393,6 +393,7 @@ def models() -> None:
     """A gateway added in Settings › Models (its key typed in the UI, no Nix credential) runs a
     new session; the server's Nix-declared `mock` stays the default of every other scenario."""
     mock(say("Answered through the UI key."))
+    as_alice(devbox, "mkdir -p ~/work/models")
     Spec("models", E2E_MODEL_KEY_FILE=f"{SECRETS}/model-key").finish()
     mock_done()
     assert "Which key?" in conversation()[-1]
