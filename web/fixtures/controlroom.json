@@ -5055,6 +5055,1319 @@
     }
    ],
    "created_at": 1765872000000
+  },
+  "models.list": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.set_key": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.set_gateway": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.remove": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.sign_out": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.test": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.set_defaults": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "can_sign_in": false,
+     "key": {
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.login_start": {
+   "login_id": "01JAL000000000000000000001",
+   "provider": "anthropic",
+   "seq": 2,
+   "step": {
+    "kind": "choose",
+    "message": "Select Anthropic login method:",
+    "options": [
+     {
+      "id": "browser",
+      "label": "Browser login (default)"
+     },
+     {
+      "id": "copy_code",
+      "label": "Copy code login (headless)"
+     }
+    ]
+   }
+  },
+  "models.login_input": {
+   "login_id": "01JAL000000000000000000001",
+   "provider": "anthropic",
+   "seq": 2,
+   "step": {
+    "kind": "choose",
+    "message": "Select Anthropic login method:",
+    "options": [
+     {
+      "id": "browser",
+      "label": "Browser login (default)"
+     },
+     {
+      "id": "copy_code",
+      "label": "Copy code login (headless)"
+     }
+    ]
+   }
+  },
+  "models.login_cancel": {
+   "login_id": "01JAL000000000000000000001",
+   "provider": "anthropic",
+   "seq": 3,
+   "step": {
+    "kind": "cancelled"
+   }
   }
  },
  "script": [
@@ -5450,5 +6763,8 @@
     ]
    }
   }
+ ],
+ "held": [
+  "models.login_wait"
  ]
 }

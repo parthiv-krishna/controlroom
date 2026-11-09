@@ -2,7 +2,8 @@
 // session details, canned query results and scripted feed events from a JSON fixture
 // (web/fixtures/), plus recorded session timelines (see fixture-timelines.ts). It holds no backend
 // logic: mutations are only recorded (and answered with an ack, or a canned result when the
-// fixture has one), and the feeds change only by script.
+// fixture has one), and the feeds change only by script. Tests can queue the next result of a
+// method (`reply`); calls of `held` methods (long polls) wait for one.
 import type {
   SessionDetail,
   SessionEventsParams,
@@ -46,6 +47,8 @@ export interface Fixture {
   script: FixtureStep[];
   /** Recorded timelines by session id (web/fixtures/timelines.json). */
   timelines?: Record<string, FixtureTimeline>;
+  /** Methods whose calls wait for a result queued with `reply` (long polls). */
+  held?: UiMethod[];
 }
 
 export interface RecordedCall {
@@ -89,6 +92,9 @@ export class FixtureTransport implements Transport {
   private readonly replays: Map<string, TimelineReplay>;
   private readonly liveTimers = new Map<string, ReturnType<typeof setTimeout> | null>();
   private stateSub: string | null = null;
+  /** Results queued by `reply`, and calls of held methods waiting for one. */
+  private readonly replies = new Map<UiMethod, unknown[]>();
+  private readonly waiting = new Map<UiMethod, ((result: unknown) => void)[]>();
   private next = 0;
   private played = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -105,6 +111,11 @@ export class FixtureTransport implements Transport {
   request<M extends UiMethod>(method: M, params: Params<M>): Promise<Result<M>> {
     if (this.state !== 'open') return Promise.reject(new ConnectionError('offline'));
     this.calls.push({ method, params });
+    const queued = this.replies.get(method)?.shift();
+    if (queued !== undefined) return Promise.resolve(queued as Result<M>);
+    if (this.fixture.held?.includes(method)) {
+      return new Promise((resolve) => this.waiting.set(method, [...(this.waiting.get(method) ?? []), resolve as (r: unknown) => void]));
+    }
     return Promise.resolve().then(() => this.answer(method, params));
   }
 
@@ -142,6 +153,13 @@ export class FixtureTransport implements Transport {
       if (sub) this.hub.emit('session.events', { ...step.params, subscription_id: sub.id });
     }
     return true;
+  }
+
+  /** Answers the oldest waiting call of `method` with `result`, or queues it for the next call. */
+  reply<M extends UiMethod>(method: M, result: Result<M>): void {
+    const waiter = this.waiting.get(method)?.shift();
+    if (waiter) waiter(result);
+    else this.replies.set(method, [...(this.replies.get(method) ?? []), result]);
   }
 
   /** Plays a session's next `n` live timeline steps now; returns how many there were. */

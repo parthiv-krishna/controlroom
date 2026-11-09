@@ -9,6 +9,7 @@
   import DevicesTab from './DevicesTab.svelte';
   import KeysTab from './KeysTab.svelte';
   import MachinesTab from './MachinesTab.svelte';
+  import ModelsTab from './ModelsTab.svelte';
   import NotificationsTab from './NotificationsTab.svelte';
   import OtherTabs from './OtherTabs.svelte';
   import SandboxTab from './SandboxTab.svelte';
@@ -16,7 +17,7 @@
   let { page }: { page: boolean } = $props();
   const app = useApp();
   const TABS: [SettingsTab, string][] = [
-    ['machines', 'Machines'], ['keys', 'SSH keys'], ['notifications', 'Notifications'], ['devices', 'Devices'], ['sandbox', 'Sandbox'],
+    ['machines', 'Machines'], ['keys', 'SSH keys'], ['models', 'Models'], ['notifications', 'Notifications'], ['devices', 'Devices'], ['sandbox', 'Sandbox'],
     ['contacts', 'Contacts'], ['schedules', 'Schedules'], ['keyboard', 'Keyboard'], ['appearance', 'Appearance'],
   ];
   const tab = $derived(app.view.settings ?? 'machines');
@@ -47,6 +48,7 @@
   <div class="body" role="tabpanel">
     {#if tab === 'machines'}<MachinesTab bind:adding bind:wizard />
     {:else if tab === 'keys'}<KeysTab />
+    {:else if tab === 'models'}<ModelsTab />
     {:else if tab === 'notifications'}<NotificationsTab />
     {:else if tab === 'devices'}<DevicesTab />
     {:else if tab === 'sandbox'}<SandboxTab />

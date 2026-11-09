@@ -35,7 +35,17 @@ export interface RawFocus {
   item: string | null;
 }
 
-export type SettingsTab = 'machines' | 'keys' | 'notifications' | 'devices' | 'sandbox' | 'contacts' | 'schedules' | 'keyboard' | 'appearance';
+export type SettingsTab =
+  | 'machines'
+  | 'keys'
+  | 'models'
+  | 'notifications'
+  | 'devices'
+  | 'sandbox'
+  | 'contacts'
+  | 'schedules'
+  | 'keyboard'
+  | 'appearance';
 
 export class View {
   /** The rail's scope: a project, Unassigned, or everything (null). */
