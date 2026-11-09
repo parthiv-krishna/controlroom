@@ -237,6 +237,19 @@ async fn mock_model_control_api() {
     assert!(response.contains(r#""content":" world""#), "{response}");
     let requests = state(&http(port, "GET", "/control/requests", "").await);
     assert!(requests.starts_with(r#"[{"messages":[]"#), "{requests}");
+
+    // The model list (provider tests) checks the key too.
+    let refused = http(port, "GET", "/v1/models", "").await;
+    assert!(refused.starts_with("HTTP/1.1 401"), "{refused}");
+    let listed = http_with(
+        port,
+        "GET",
+        "/v1/models",
+        "authorization: Bearer sk-test\r\n",
+        "",
+    )
+    .await;
+    assert!(listed.contains(r#""id":"mock-model""#), "{listed}");
 }
 
 /// Records every scenario with the real pi on PATH (or `$CONTROLROOM_PI`),
