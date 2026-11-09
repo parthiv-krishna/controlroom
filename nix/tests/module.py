@@ -152,15 +152,14 @@ with subtest("the agent daemon runs as its own user and serves the web server"):
     for setting in ("KillMode=process", "MemoryDenyWriteExecute=no", "ProtectSystem=strict", "ProtectHome=yes"):
         server.succeed(f"systemctl show controlroom-agent | grep -qx {setting}")
     # The daemon's CLI, the bundle and nono are on the agent user's login PATH; its doctor
-    # (as an admin would run it) finds nono and Landlock.
-    print(server.succeed("su -l controlroom-agent -c 'command -v controlroom-agentd controlroom-pi nono'"))
-    doctor = server.succeed(
-        "su -l controlroom-agent -c 'controlroom-agentd doctor --state-dir /var/lib/controlroom-agent"
-        " --config-dir /etc/controlroom-agent'"
-    )
+    # (as an admin would run it, without flags) finds the daemon's directories through
+    # /etc/controlroom-agent/agentd.toml, nono and Landlock.
+    print(server.succeed("su -l controlroom-agent -c 'command -v controlroom-agentd controlroom-pi controlroom-pi-models nono'"))
+    doctor = server.succeed("su -l controlroom-agent -c 'controlroom-agentd doctor'")
     report = json.loads(doctor)
     assert report["nono"]["status"] == "ok" and report["landlock_abi"], doctor
     assert [a["status"] for a in report["agents"]] == ["ok"], doctor
+    assert report["agents_config"] == "/etc/controlroom-agent/agents.toml", doctor
     print(server.succeed("systemd-analyze security --no-pager controlroom-agent.service | tail -n 1"))
     server.succeed("test -d /var/lib/controlroom-agent -a -d /var/tmp/controlroom-agent")
     # A restart of the agent daemon: the web server reconnects.

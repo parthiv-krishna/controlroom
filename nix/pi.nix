@@ -7,6 +7,8 @@
 #                                  refuses overlapping extensions and pi-lens)
 #   bin/controlroom-pi-oauth       prints a fresh OAuth access token, refreshed by pi under the
 #                                  auth.json lock (nix/pi/oauth-token.mjs); controlroomd runs it
+#   bin/controlroom-pi-models      Settings › Models: pi's providers and models, sign-in and
+#                                  sign-out with pi's own flows (nix/pi/models.mjs)
 #   libexec/controlroom-pi/tools   fd and rg as pi's wrapper uses them, for sandbox.toml's
 #                                  `exec_dirs` (nono only executes PATH and listed programs)
 #   share/controlroom-pi/extension @controlroom/pi (extensions/pi), when present
@@ -38,10 +40,11 @@ let
     ln -s ${pkgs.fd}/bin/fd ${pkgs.ripgrep}/bin/rg $out/libexec/controlroom-pi/tools/
   '';
 
-  # The helper script next to links to pi's own packages, which it imports.
-  oauthScript = pkgs.runCommand "controlroom-pi-oauth-script" { } ''
+  # The helper scripts next to links to pi's own packages, which they import.
+  helperScripts = pkgs.runCommand "controlroom-pi-helper-scripts" { } ''
     mkdir -p $out/node_modules/@earendil-works
     cp ${./pi/oauth-token.mjs} $out/oauth-token.mjs
+    cp ${./pi/models.mjs} $out/models.mjs
     ln -s ${piPackage} $out/node_modules/@earendil-works/pi-coding-agent
     ln -s ${piPackage}/node_modules/@earendil-works/pi-ai $out/node_modules/@earendil-works/pi-ai
   '';
@@ -49,7 +52,14 @@ let
   oauthHelper = pkgs.writeShellApplication {
     name = "controlroom-pi-oauth";
     text = ''
-      PI_OFFLINE=1 PI_TELEMETRY=0 exec ${nodejs}/bin/node ${oauthScript}/oauth-token.mjs "$@"
+      PI_OFFLINE=1 PI_TELEMETRY=0 exec ${nodejs}/bin/node ${helperScripts}/oauth-token.mjs "$@"
+    '';
+  };
+
+  modelsHelper = pkgs.writeShellApplication {
+    name = "controlroom-pi-models";
+    text = ''
+      PI_OFFLINE=1 PI_TELEMETRY=0 exec ${nodejs}/bin/node ${helperScripts}/models.mjs "$@"
     '';
   };
 
@@ -78,6 +88,7 @@ let
       paths = [
         (launcher extension)
         oauthHelper
+        modelsHelper
         tools
       ]
       ++ lib.optional (extension != null) (
@@ -136,5 +147,6 @@ in
   checks = {
     controlroom-pi-launcher = check "launcher" ./pi/tests/launcher.sh;
     controlroom-pi-oauth = check "oauth" ./pi/tests/oauth.sh;
+    controlroom-pi-models = check "models" ./pi/tests/models.sh;
   };
 }

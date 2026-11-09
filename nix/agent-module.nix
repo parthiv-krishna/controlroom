@@ -13,7 +13,12 @@
 # - Model credentials as systemd credentials (`LoadCredential=`, e.g. sops-nix outputs): pi's
 #   `models.json` names them as `"apiKey": "!cat $CREDENTIALS_DIRECTORY/<name>"`, which only
 #   `controlroom-agentd credential` (nono's credential helper, outside the sandbox) resolves.
-# - Its configuration (agents.toml, sandbox.toml) in /etc/controlroom-agent.
+# - Its configuration (agents.toml, sandbox.toml) in /etc/controlroom-agent, with agentd.toml naming
+#   the daemon's directories, so the CLI run as the agent user (`sudo -u controlroom-agent -i
+#   controlroom-agentd login|doctor|ctl`) works on the daemon's files without flags.
+# - Model providers can also be managed in the UI (Settings › Models): they live in
+#   /var/lib/controlroom-agent/models (keys 0600), never in the files below, and are merged in
+#   at each session launch; what is declared here wins on a name clash.
 # - The API socket /run/controlroom-agent/agentd.sock (mode 0660) is reachable by the web
 #   unit through the shared group; services.controlroom points `agentd_socket` at it.
 {
@@ -37,6 +42,12 @@ let
   configFiles = {
     agents = tomlFormat.generate "agents.toml" cfg.agents;
     sandbox = tomlFormat.generate "sandbox.toml" cfg.sandbox;
+  };
+  # The daemon's directories, for its CLI (crates/agentd/src/dirs.rs).
+  dirsFile = tomlFormat.generate "agentd.toml" {
+    state_dir = stateDir;
+    config_dir = "/etc/controlroom-agent";
+    socket = cfg.socket;
   };
   piFiles = lib.filterAttrs (_: v: v != null) {
     "models.json" = cfg.pi.models;
@@ -120,7 +131,9 @@ in
         description = ''
           pi's `models.json` in the agent dir, installed at every start (null: managed by
           hand). Keys belong in `credentials`, named by `"apiKey": "!cat
-          $CREDENTIALS_DIRECTORY/<name>"`; sessions only ever see placeholders.
+          $CREDENTIALS_DIRECTORY/<name>"`; sessions only ever see placeholders. Gateways added
+          in Settings › Models are stored apart and merged into each session's copy; a provider
+          defined here wins over one of the same name there.
         '';
       };
 
@@ -131,7 +144,11 @@ in
           defaultProvider = "gateway";
           defaultModel = "some-model";
         };
-        description = "pi's `settings.json` in the agent dir, installed at every start (null: managed by hand).";
+        description = ''
+          pi's `settings.json` in the agent dir, installed at every start (null: managed by
+          hand). The defaults set in Settings › Models (provider, model, thinking level) win over
+          `defaultProvider`, `defaultModel` and `defaultThinkingLevel` here.
+        '';
       };
     };
 
@@ -161,6 +178,7 @@ in
       sandbox = {
         nono = lib.mkDefault (lib.getExe cfg.nono);
         oauth_helper = lib.mkDefault "${cfg.piBundle}/bin/controlroom-pi-oauth";
+        models_helper = lib.mkDefault "${cfg.piBundle}/bin/controlroom-pi-models";
         nono_tmp = lib.mkDefault nonoTmp;
       };
     };
@@ -186,6 +204,7 @@ in
     environment.etc = {
       "controlroom-agent/agents.toml".source = configFiles.agents;
       "controlroom-agent/sandbox.toml".source = configFiles.sandbox;
+      "controlroom-agent/agentd.toml".source = dirsFile;
     };
 
     systemd.tmpfiles.settings.controlroom-agent.${nonoTmp}.d = {
@@ -199,7 +218,7 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
       # Restarting is harmless: running sessions outlive it.
-      restartTriggers = lib.attrValues configFiles;
+      restartTriggers = lib.attrValues configFiles ++ [ dirsFile ];
       path = [
         cfg.piBundle
         cfg.nono
