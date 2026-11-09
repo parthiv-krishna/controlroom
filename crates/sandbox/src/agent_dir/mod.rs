@@ -9,6 +9,10 @@
 //! - `npm` → the pinned extension bundle;
 //! - `sessions/`: pi's session store, preserved across rebuilds.
 //!
+//! Providers managed in Settings › Models ([`ManagedProviders`]) are merged in: stored API keys
+//! get placeholder `auth.json` entries, custom gateways `models.json` entries, the defaults of
+//! new sessions override `settings.json`. The user's own config wins on a name clash.
+//!
 //! It also writes `credentials.json` next to (not inside) `agent/`, telling
 //! `controlroomd credential` where the real keys live. Rebuilding (on restart) regenerates
 //! the files and keeps pi's sessions, `home/` and `tmp/`.
@@ -28,7 +32,7 @@ pub use auth::{FAR_FUTURE_MS, FakeAuth, fake_auth, unsigned_jwt};
 pub use models::sanitize_models;
 pub use settings::session_settings;
 
-use crate::credential::{CredentialManifest, models_api_key_providers};
+use crate::credential::{CredentialManifest, StoredKeys, models_api_key_providers};
 use crate::fsutil::{PathIoError, at, copy_tree, create_private_dir, write_atomic};
 use crate::layout::SessionLayout;
 use crate::paths::AbsPath;
@@ -58,16 +62,32 @@ pub struct AgentDirSpec {
     pub tmp_seed: Option<AbsPath>,
     /// The OAuth helper `controlroomd credential` runs for OAuth providers.
     pub oauth_helper: Option<AbsPath>,
+    /// Providers managed outside the user's agent dir (Settings › Models).
+    pub managed: ManagedProviders,
 }
 
-/// What the build found in the user's auth.
+/// Providers managed outside the user's agent dir, merged into the session's config.
+#[derive(Debug, Clone, Default)]
+pub struct ManagedProviders {
+    /// Providers whose API key is in [`Self::key_store`].
+    pub key_providers: Vec<String>,
+    /// The key store `controlroomd credential` reads their keys from.
+    pub key_store: Option<AbsPath>,
+    /// `models.json` provider entries (custom gateways), without real keys.
+    pub models: Map<String, Value>,
+    /// `settings.json` values that override the user's (the defaults of new sessions).
+    pub settings: Map<String, Value>,
+}
+
+/// What the build found: which providers have which credential.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuiltAgentDir {
-    /// Providers configured with API keys in `auth.json` or `models.json` (eligible for
-    /// credential routes).
+    /// Providers configured with API keys in the user's `auth.json` or `models.json`.
     pub api_key_providers: Vec<String>,
     /// Providers configured with OAuth tokens.
     pub oauth_providers: Vec<String>,
+    /// Providers whose key comes from the key store.
+    pub stored_key_providers: Vec<String>,
 }
 
 /// Errors building the session directories.
@@ -107,37 +127,9 @@ pub fn build_session_dirs(
     }
     let agent = layout.agent();
     create_private_dir(agent.join("sessions").as_path())?;
+    let built = build_agent_config(&agent, spec)?;
 
     let user = spec.user_agent_dir.as_ref();
-    let read = |name: &str| match user {
-        Some(dir) => read_json_object(&dir.join(name)),
-        None => Ok(None),
-    };
-
-    let user_settings = read("settings.json")?.unwrap_or_default();
-    write_json(
-        &agent.join("settings.json"),
-        &session_settings(&user_settings, &spec.keep),
-    )?;
-
-    let models_path = agent.join("models.json");
-    let mut api_key_providers = Vec::new();
-    match read("models.json")? {
-        Some(models) => {
-            api_key_providers = models_api_key_providers(&models);
-            let mut models = Value::Object(models);
-            sanitize_models(&mut models);
-            write_json_value(&models_path, &models)?;
-        }
-        None => remove_if_exists(&models_path)?,
-    }
-
-    let fake = fake_auth(&read("auth.json")?.unwrap_or_default(), &spec.oauth_claims);
-    write_json(&agent.join("auth.json"), &fake.auth)?;
-    api_key_providers.extend(fake.api_key_providers.iter().cloned());
-    api_key_providers.sort();
-    api_key_providers.dedup();
-
     if let Some(target) = &spec.npm {
         replace_symlink(target, &agent.join("npm"))?;
     }
@@ -157,17 +149,102 @@ pub fn build_session_dirs(
     if let Some(dir) = user {
         let manifest = CredentialManifest {
             agent_dir: dir.clone(),
-            api_key_providers: api_key_providers.clone(),
-            oauth_providers: fake.oauth_providers.clone(),
+            api_key_providers: built.api_key_providers.clone(),
+            oauth_providers: built.oauth_providers.clone(),
             oauth_helper: spec.oauth_helper.clone(),
+            stored_keys: spec.managed.key_store.clone().map(|path| StoredKeys {
+                path,
+                providers: built.stored_key_providers.clone(),
+            }),
         };
         let bytes = serde_json::to_vec_pretty(&manifest).expect("manifest serializes");
         write_atomic(layout.credential_manifest().as_path(), &bytes, 0o600)?;
     }
+    Ok(built)
+}
+
+/// Writes pi's configuration into `agent` (created if missing): `settings.json`, `models.json`
+/// and `auth.json` from the user's agent dir merged with [`AgentDirSpec::managed`], with fake
+/// credentials only. Sessions get it through [`build_session_dirs`]; the agent daemon also
+/// writes it elsewhere to ask pi which models these providers offer.
+pub fn build_agent_config(
+    agent: &AbsPath,
+    spec: &AgentDirSpec,
+) -> Result<BuiltAgentDir, AgentDirError> {
+    create_private_dir(agent.as_path())?;
+    let read = |name: &str| match &spec.user_agent_dir {
+        Some(dir) => read_json_object(&dir.join(name)),
+        None => Ok(None),
+    };
+    let managed = &spec.managed;
+
+    let mut settings = session_settings(&read("settings.json")?.unwrap_or_default(), &spec.keep);
+    settings.extend(managed.settings.clone());
+    write_json(&agent.join("settings.json"), &settings)?;
+
+    let models_path = agent.join("models.json");
+    let user_models = read("models.json")?;
+    let mut api_key_providers = user_models
+        .as_ref()
+        .map(models_api_key_providers)
+        .unwrap_or_default();
+    match merge_models(user_models, &managed.models) {
+        Some(models) => {
+            let mut models = Value::Object(models);
+            sanitize_models(&mut models);
+            write_json_value(&models_path, &models)?;
+        }
+        None => remove_if_exists(&models_path)?,
+    }
+
+    let mut fake = fake_auth(&read("auth.json")?.unwrap_or_default(), &spec.oauth_claims);
+    api_key_providers.extend(fake.api_key_providers.iter().cloned());
+    api_key_providers.sort();
+    api_key_providers.dedup();
+    // Stored keys, unless the user's config already has a credential for the provider.
+    let mut stored_key_providers = Vec::new();
+    for provider in &managed.key_providers {
+        let configured =
+            api_key_providers.contains(provider) || fake.oauth_providers.contains(provider);
+        if !configured {
+            fake.auth.insert(provider.clone(), placeholder_key());
+            stored_key_providers.push(provider.clone());
+        }
+    }
+    write_json(&agent.join("auth.json"), &fake.auth)?;
     Ok(BuiltAgentDir {
         api_key_providers,
         oauth_providers: fake.oauth_providers,
+        stored_key_providers,
     })
+}
+
+/// The user's `models.json` with the managed providers added (the user's win on a name
+/// clash); `None` when there is neither.
+fn merge_models(
+    user: Option<Map<String, Value>>,
+    managed: &Map<String, Value>,
+) -> Option<Map<String, Value>> {
+    if managed.is_empty() {
+        return user;
+    }
+    let mut models = user.unwrap_or_default();
+    let providers = models
+        .entry("providers")
+        .or_insert_with(|| Value::Object(Map::new()));
+    if let Value::Object(providers) = providers {
+        for (name, provider) in managed {
+            providers
+                .entry(name.clone())
+                .or_insert_with(|| provider.clone());
+        }
+    }
+    Some(models)
+}
+
+/// An `auth.json` API-key entry holding the placeholder.
+fn placeholder_key() -> Value {
+    serde_json::json!({"type": "api_key", "key": PLACEHOLDER})
 }
 
 /// Checks `profile` with [`check_profile_json`] and writes it to `profile.json`.

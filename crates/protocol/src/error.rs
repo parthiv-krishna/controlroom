@@ -116,6 +116,10 @@ pub enum Resource {
     Call,
     /// A host sandbox approval.
     Approval,
+    /// A model provider (`models.*`).
+    Provider,
+    /// A subscription sign-in (`models.login_*`).
+    SignIn,
     /// A resource kind this build doesn't know.
     #[serde(other)]
     Unknown,

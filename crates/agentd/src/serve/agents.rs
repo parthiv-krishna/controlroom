@@ -68,10 +68,12 @@ impl ServerAgents {
         if let Some(e) = &loaded.error {
             tracing::warn!("{e}");
         }
-        let sandbox = loaded
+        let mut sandbox = loaded
             .value
             .resolve(home().as_ref(), &self.dirs.pi_agent_dir())
             .map_err(|e| sandbox_unavailable(e.to_string()))?;
+        // Settings › Models, re-read so changes apply to the next start.
+        crate::models::merge::apply(&self.dirs, &mut sandbox);
         let shell = login_shell();
         let (nono, oauth_helper) = if sandboxed {
             let nono = cached(&self.nono, &shell, &sandbox.nono)

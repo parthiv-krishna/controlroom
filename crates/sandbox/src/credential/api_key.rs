@@ -219,6 +219,7 @@ mod tests {
             api_key_providers: providers,
             oauth_providers: Vec::new(),
             oauth_helper: None,
+            stored_keys: None,
         };
         (t, m)
     }

@@ -3,7 +3,7 @@
 //! Session, workspace, queue, request, todo, job and settings commands go to the runtime (a
 //! `job.kill` here is the user's). The host bridge (`hostops.*`) is the controller's only;
 //! debug clients get `unsupported`. `agents.list` and `doctor.report` run here on blocking
-//! threads. `sandbox.revoke` (session grants) answers `unsupported` until grants land.
+//! threads. `models.*` go to Settings › Models ([`crate::models`]). `sandbox.revoke` (session grants) answers `unsupported` until grants land.
 
 use std::sync::Arc;
 
@@ -54,6 +54,7 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         return conn.respond(id, Err(error)).await;
     }
     let runtime = &conn.shared.runtime;
+    let models = &conn.shared.models;
     let result = match call {
         AgentdRequest::Hello(_) => Err(RpcError::new(
             ErrorData::InvalidRequest,
@@ -139,6 +140,18 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         }
         AgentdRequest::SettingsGet(_) => json(Ok(runtime.settings())),
         AgentdRequest::SettingsSet(p) => json(runtime.set_settings(p).await),
+
+        AgentdRequest::ModelsList(_) => json(models.list().await),
+        AgentdRequest::ModelsSetKey(p) => json(models.set_key(p).await),
+        AgentdRequest::ModelsSetGateway(p) => json(models.set_gateway(p).await),
+        AgentdRequest::ModelsRemove(p) => json(models.remove(p).await),
+        AgentdRequest::ModelsSignOut(p) => json(models.sign_out(p).await),
+        AgentdRequest::ModelsTest(p) => json(models.test(p).await),
+        AgentdRequest::ModelsSetDefaults(p) => json(models.set_defaults(p).await),
+        AgentdRequest::ModelsLoginStart(p) => json(models.login_start(p).await),
+        AgentdRequest::ModelsLoginInput(p) => json(models.login_input(p).await),
+        AgentdRequest::ModelsLoginWait(p) => json(models.login_wait(p).await),
+        AgentdRequest::ModelsLoginCancel(p) => json(models.login_cancel(p).await),
 
         AgentdRequest::HostOpsRespond(p) => {
             runtime.hostops_respond(&p.id, p.outcome);

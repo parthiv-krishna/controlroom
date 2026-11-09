@@ -85,6 +85,8 @@ pub struct Shared {
     pub dirs: Dirs,
     /// The connected controller.
     pub controllers: controller::Controllers,
+    /// Settings › Models.
+    pub models: crate::models::Models,
     /// Optional features this daemon serves (`hello.capabilities`).
     pub capabilities: Vec<Capability>,
 }
@@ -172,8 +174,9 @@ async fn serve_async(dirs: Dirs, instance: instance::Instance) -> anyhow::Result
 
     let shared = Arc::new(Shared {
         runtime: runtime.clone(),
-        dirs,
+        dirs: dirs.clone(),
         controllers: controller::Controllers::default(),
+        models: crate::models::Models::new(dirs.clone()),
         capabilities: vec![
             Capability::TODOS,
             Capability::JOBS,

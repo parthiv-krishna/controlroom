@@ -89,6 +89,7 @@ mod tests {
             api_key_providers: vec!["gateway".into()],
             oauth_providers: vec!["sub".into()],
             oauth_helper: Some(AbsPath::from_path(&helper).unwrap()),
+            stored_keys: None,
         };
         (t, manifest)
     }

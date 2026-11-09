@@ -10,6 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+# Decoding sign-in tokens' claims (the account shown in Settings › Models).
+base64 = "0.22"
 clap.workspace = true
 controlroom-drivers.workspace = true
 controlroom-protocol.workspace = true
@@ -18,6 +20,8 @@ controlroom-sandbox.workspace = true
 controlroom-supervisor.workspace = true
 controlroom-transcript.workspace = true
 futures.workspace = true
+# Provider tests (Settings › Models): one request to the provider over rustls.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 # flock() without unsafe.
 rustix = { version = "1.1", features = ["fs", "process"] }
 serde.workspace = true

@@ -594,6 +594,7 @@ name = "controlroom-agentd"
 version = "0.0.18"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "controlroom-drivers",
  "controlroom-fixture-tool",
@@ -603,6 +604,7 @@ dependencies = [
  "controlroom-supervisor",
  "controlroom-transcript",
  "futures",
+ "reqwest",
  "rustix",
  "serde",
  "serde_json",
@@ -659,6 +661,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "web-push-native",
 ]
 

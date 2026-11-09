@@ -138,3 +138,89 @@ fn a_failing_oauth_helper_fails_closed_with_its_message() {
     let out = controlroomd(&state, &[SESSION, "sub"]);
     assert!(String::from_utf8_lossy(&out.stderr).contains("invalid_grant"));
 }
+
+/// Keys added in Settings › Models: the launch merge gives each preset its route (origin and
+/// header as pi sends the key) and the session's manifest points the helper at the key store.
+#[test]
+fn stored_keys_resolve_per_preset_route() {
+    use controlroom_agentd::config::sandbox as sandbox_config;
+    use controlroom_agentd::dirs::Dirs;
+    use controlroom_agentd::models::merge;
+    use controlroom_sandbox::credential::KeyStore;
+
+    let t = tempfile::tempdir().expect("tempdir");
+    let root = AbsPath::from_path(t.path()).expect("utf-8 tempdir");
+    let dirs = Dirs::under(root.join("state"));
+    std::fs::create_dir_all(dirs.models().as_path()).expect("mkdir");
+    let mut keys = KeyStore::default();
+    for (provider, key) in [
+        ("anthropic", "sk-ant-stored"),
+        ("openai", "sk-openai-stored"),
+        ("google", "google-stored"),
+        ("openrouter", "sk-or-stored"),
+    ] {
+        keys.insert(provider, key);
+    }
+    keys.save(&dirs.models().join("keys.json"))
+        .expect("save keys");
+
+    let mut sandbox = sandbox_config::SandboxConfig::default()
+        .resolve(None, &dirs.pi_agent_dir())
+        .expect("sandbox");
+    merge::apply(&dirs, &mut sandbox);
+    let routes: Vec<_> = sandbox
+        .routes
+        .iter()
+        .map(|r| {
+            (
+                r.provider.as_str().to_owned(),
+                r.upstream.as_str().to_owned(),
+                r.inject_header.clone().unwrap_or_default(),
+                r.credential_format.clone().unwrap_or_default(),
+            )
+        })
+        .collect();
+    let route = |p: &str, u: &str, h: &str, f: &str| {
+        (p.to_owned(), u.to_owned(), h.to_owned(), f.to_owned())
+    };
+    assert_eq!(
+        routes,
+        [
+            route("anthropic", "https://api.anthropic.com", "x-api-key", "{}"),
+            route(
+                "openai",
+                "https://api.openai.com",
+                "Authorization",
+                "Bearer {}"
+            ),
+            route(
+                "google",
+                "https://generativelanguage.googleapis.com",
+                "x-goog-api-key",
+                "{}"
+            ),
+            route(
+                "openrouter",
+                "https://openrouter.ai",
+                "Authorization",
+                "Bearer {}"
+            ),
+        ]
+    );
+
+    let layout = SessionLayout::new(dirs.state(), &SessionId::new(SESSION).expect("id"));
+    build_session_dirs(&layout, &sandbox.agent_dir).expect("build session dirs");
+    for (provider, key) in [("anthropic", "sk-ant-stored"), ("google", "google-stored")] {
+        let out = controlroomd(dirs.state(), &[SESSION, provider]);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(out.stdout, key.as_bytes());
+    }
+    // The session's agent dir holds placeholders only.
+    let auth = std::fs::read_to_string(layout.agent().join("auth.json").as_path()).expect("auth");
+    assert!(!auth.contains("stored"), "{auth}");
+    assert_fails_closed(dirs.state(), &[SESSION, "openai-codex"]);
+}

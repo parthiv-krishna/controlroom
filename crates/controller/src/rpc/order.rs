@@ -6,8 +6,9 @@
 //!
 //! - a session-scoped command (`id`): that session;
 //! - any other machine-scoped command: that machine;
-//! - the handshake, heartbeat and the slow SSH flows (`machines.add`, `machines.add_confirm`,
-//!   `keys.rotate`), and calls that name neither a machine nor a session (`schedules.run_now`,
+//! - the handshake, heartbeat, the slow SSH flows (`machines.add`, `machines.add_confirm`,
+//!   `keys.rotate`), a sign-in's long poll (`models.login_wait`) and a provider test
+//!   (`models.test`), and calls that name neither a machine nor a session (`schedules.run_now`,
 //!   `session.create` and the server's `doctor.report`): none;
 //! - everything else (controller data, subscriptions, focus): one shared key.
 //!
@@ -40,6 +41,8 @@ pub(crate) fn order_key(method: &str, params: &Value) -> Option<OrderKey> {
             | "machines.add_confirm"
             | "keys.rotate"
             | "schedules.run_now"
+            | "models.login_wait"
+            | "models.test"
     ) {
         return None;
     }

@@ -35,6 +35,8 @@ web-push-native = "0.5"
 [dev-dependencies]
 controlroom-controller = { path = ".", features = ["test-support"] }
 tempfile.workspace = true
+# Capturing the log in `tests/models.rs` (keys never reach it).
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

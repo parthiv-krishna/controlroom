@@ -19,6 +19,7 @@ pub mod doctor;
 pub mod instance;
 pub mod launch;
 pub mod login;
+pub mod models;
 pub mod serve;
 pub mod shell;
 pub mod supervise;

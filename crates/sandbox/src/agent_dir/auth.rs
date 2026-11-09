@@ -4,7 +4,8 @@
 //!   host-side by `controlroomd credential`.
 //! - OAuth subscriptions get a synthetic unsigned JWT carrying only the non-secret claims pi
 //!   needs (e.g. an account id), a placeholder refresh token and a far-future expiry, so the
-//!   sandbox never attempts a refresh (an attempt would fail closed at the proxy).
+//!   sandbox never attempts a refresh (an attempt would fail closed at the proxy). Opaque tokens
+//!   that pi tells apart by a marker keep it (see [`OPAQUE_MARKERS`]).
 
 use std::collections::BTreeMap;
 
@@ -16,6 +17,12 @@ use super::PLACEHOLDER;
 
 /// `expires` of synthetic OAuth entries: 2100-01-01T00:00:00Z in unix ms.
 pub const FAR_FUTURE_MS: i64 = 4_102_444_800_000;
+
+/// Markers of opaque OAuth access tokens that pi reads: pi's Anthropic API sends a token as a
+/// subscription (`Authorization: Bearer` and Claude Code headers) only when it contains
+/// `sk-ant-oat`, and as an API key (`x-api-key`) otherwise. The synthetic token keeps the
+/// real one's type prefix (`sk-ant-oat01-`), which is no secret.
+const OPAQUE_MARKERS: [&str; 1] = ["sk-ant-oat"];
 
 /// The sandbox auth document plus what the credential helper needs to know.
 #[derive(Debug, Clone, PartialEq)]
@@ -109,11 +116,29 @@ fn fake_oauth(entry: &Value, claims: &[String]) -> Map<String, Value> {
             }
         }
     }
+    let access = entry.get("access").and_then(Value::as_str);
+    let synthetic = access
+        .and_then(marked_placeholder)
+        .unwrap_or_else(|| unsigned_jwt(&payload));
     fake.insert("type".into(), "oauth".into());
-    fake.insert("access".into(), unsigned_jwt(&payload).into());
+    fake.insert("access".into(), synthetic.into());
     fake.insert("refresh".into(), PLACEHOLDER.into());
     fake.insert("expires".into(), json!(FAR_FUTURE_MS));
     fake
+}
+
+/// For an opaque token with one of [`OPAQUE_MARKERS`], the placeholder behind its type prefix
+/// (the dash-separated segments up to the one holding the marker).
+fn marked_placeholder(token: &str) -> Option<String> {
+    let marker = OPAQUE_MARKERS.iter().find(|m| token.starts_with(*m))?;
+    let segments = marker.matches('-').count() + 1;
+    // The prefix and at least one more segment (the token proper).
+    let mut parts: Vec<&str> = token.splitn(segments + 1, '-').collect();
+    if parts.len() <= segments {
+        return None;
+    }
+    parts.truncate(segments);
+    Some(format!("{}-{PLACEHOLDER}", parts.join("-")))
 }
 
 /// Decodes the payload of a JWT without verifying it.
@@ -196,6 +221,18 @@ mod tests {
             !text.contains("rt-real") && !text.contains("alice@") && !text.contains("id-secret")
         );
         assert_eq!(out.oauth_providers, ["sub"]);
+    }
+
+    #[test]
+    fn marked_opaque_tokens_keep_their_type_prefix() {
+        let real = json!({"anthropic": {"type": "oauth", "access": "sk-ant-oat01-real-secret",
+                                       "refresh": "sk-ant-ort01-also-secret", "expires": 1}});
+        let out = fake_auth(real.as_object().unwrap(), &BTreeMap::new());
+        let access = out.auth["anthropic"]["access"].as_str().unwrap();
+        assert_eq!(access, format!("sk-ant-oat01-{PLACEHOLDER}"));
+        assert!(!serde_json::to_string(&out.auth).unwrap().contains("secret"));
+        assert_eq!(marked_placeholder("sk-ant-oat"), None);
+        assert_eq!(marked_placeholder("opaque"), None);
     }
 
     #[test]

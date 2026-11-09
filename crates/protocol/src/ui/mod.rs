@@ -234,6 +234,28 @@ pub mod methods {
         SettingsGet = "settings.get" (NoParams) -> DaemonSettings;
         /// Pass-through: change the agent daemon's settings.
         SettingsSet = "settings.set" (SettingsSetParams) -> DaemonSettings;
+        /// Pass-through: Settings › Models.
+        ModelsList = "models.list" (NoParams) -> ModelsState;
+        /// Pass-through: add or replace an API key.
+        ModelsSetKey = "models.set_key" (ModelsSetKeyParams) -> ModelsState;
+        /// Pass-through: add or edit a custom gateway.
+        ModelsSetGateway = "models.set_gateway" (ModelsSetGatewayParams) -> ModelsState;
+        /// Pass-through: remove an API key or a gateway.
+        ModelsRemove = "models.remove" (ModelsProviderParams) -> ModelsState;
+        /// Pass-through: sign out of a subscription.
+        ModelsSignOut = "models.sign_out" (ModelsProviderParams) -> ModelsState;
+        /// Pass-through: test a provider.
+        ModelsTest = "models.test" (ModelsProviderParams) -> ModelsState;
+        /// Pass-through: set the defaults of new sessions.
+        ModelsSetDefaults = "models.set_defaults" (ModelsSetDefaultsParams) -> ModelsState;
+        /// Pass-through: start signing in to a subscription.
+        ModelsLoginStart = "models.login_start" (LoginStartParams) -> LoginState;
+        /// Pass-through: answer a sign-in step.
+        ModelsLoginInput = "models.login_input" (LoginInputParams) -> LoginState;
+        /// Pass-through: wait for a sign-in's next step.
+        ModelsLoginWait = "models.login_wait" (LoginWaitParams) -> LoginState;
+        /// Pass-through: cancel a sign-in.
+        ModelsLoginCancel = "models.login_cancel" (LoginCancelParams) -> LoginState;
         /// List a directory on a machine (its host daemon, with the user's own access).
         FsList = "fs.list" (OnMachine<FsListParams>) -> FsListResult;
         /// Re-run a machine's or the server's doctor checks.

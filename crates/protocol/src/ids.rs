@@ -136,6 +136,10 @@ ulid_id! {
     GrantId
 }
 ulid_id! {
+    /// A subscription sign-in running on the agent daemon (`models.login_start`).
+    LoginId
+}
+ulid_id! {
     /// A mailbox message, shared by the sender's outbox item and the receiver's inbox delivery
     /// so replies can refer to it.
     MessageId

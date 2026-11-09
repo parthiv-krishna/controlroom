@@ -3,8 +3,9 @@
 //! ```text
 //! <state>/                                   the state dir ($STATE_DIRECTORY under systemd)
 //!     agent.sqlite                           sessions, queue, timeline, job cursors, ...
-//!     agent/                                 pi's agent dir: auth.json (from `login`),
+//!     agent/                                 pi's agent dir: auth.json (sign-ins),
 //!                                            models.json, settings.json, npm/
+//!     models/                                Settings › Models: providers.json, keys.json (0600)
 //!     run/agentd.lock                        the instance lock
 //!     run/<id>.sock                          supervisor sockets
 //!     run/<id>.agent.sock                    agent sockets (@controlroom/pi)
@@ -16,14 +17,26 @@
 //! <socket>                                   the agent daemon API ($RUNTIME_DIRECTORY/agentd.sock)
 //! ```
 //!
-//! Without the systemd variables (development, tests) everything derives from `$HOME`:
-//! `~/.local/state/controlroom-agent`, `~/.config/controlroom-agent`, and the socket at
-//! `<state>/run/agentd.sock`. Socket paths stay short (`run/<id>.sock`) because of the 107-byte
-//! `sun_path` limit.
+//! Each location comes from, in order: its flag (`--state-dir`, `--config-dir`, `--socket`),
+//! the systemd variable of the service, the installed locations file
+//! [`INSTALLED`] (`/etc/controlroom-agent/agentd.toml`, written by the NixOS module, so the CLI
+//! run as the service user finds the daemon's files), and only then `$HOME`
+//! (`~/.local/state/controlroom-agent`, `~/.config/controlroom-agent`, the socket at
+//! `<state>/run/agentd.sock`; development and tests). An unreadable or invalid locations file,
+//! or one that contradicts the systemd variables, is an error: a CLI never silently works on
+//! other files than the daemon's. Socket paths stay short (`run/<id>.sock`) because of the
+//! 107-byte `sun_path` limit.
 
 use std::path::Path;
 
 use controlroom_sandbox::AbsPath;
+use serde::Deserialize;
+
+/// The installed locations file. `CONTROLROOM_AGENTD_DIRS` names another one (tests).
+pub const INSTALLED: &str = "/etc/controlroom-agent/agentd.toml";
+
+/// The variable naming another installed locations file.
+pub const INSTALLED_VAR: &str = "CONTROLROOM_AGENTD_DIRS";
 
 /// The agent daemon's directories.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +58,26 @@ pub enum DirsError {
     /// A path is not absolute UTF-8.
     #[error(transparent)]
     Path(#[from] controlroom_sandbox::paths::PathError),
+    /// The installed locations file can't be used.
+    #[error("{path}: {problem}")]
+    Installed {
+        /// The file.
+        path: String,
+        /// What is wrong with it.
+        problem: String,
+    },
+    /// The systemd variables and the installed locations file disagree.
+    #[error("{var}={from_env}, but {file} says {from_file}; fix the file or the service")]
+    Contradiction {
+        /// The variable.
+        var: &'static str,
+        /// Its value.
+        from_env: String,
+        /// The installed locations file.
+        file: String,
+        /// Its value.
+        from_file: String,
+    },
 }
 
 /// Explicit locations (command-line flags); `None` picks the default.
@@ -58,34 +91,140 @@ pub struct Overrides<'a> {
     pub socket: Option<&'a Path>,
 }
 
+/// The installed locations file's contents.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Installed {
+    /// The state dir.
+    pub state_dir: String,
+    /// The configuration dir.
+    pub config_dir: String,
+    /// The agent daemon API socket.
+    pub socket: String,
+}
+
+/// What [`Dirs::resolve`] reads from the environment.
+#[derive(Debug, Clone, Default)]
+pub struct Env {
+    /// `$STATE_DIRECTORY`.
+    pub state: Option<String>,
+    /// `$CONFIGURATION_DIRECTORY`.
+    pub config: Option<String>,
+    /// `$RUNTIME_DIRECTORY`.
+    pub runtime: Option<String>,
+    /// `$HOME`.
+    pub home: Option<String>,
+    /// The installed locations file, read: its path and contents (`None` when absent).
+    pub installed: Option<(String, Result<String, String>)>,
+}
+
+impl Env {
+    /// This process's environment and installed locations file.
+    pub fn current() -> Self {
+        let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+        let path = var(INSTALLED_VAR).unwrap_or_else(|| INSTALLED.to_owned());
+        let installed = match std::fs::read_to_string(&path) {
+            Ok(text) => Some((path, Ok(text))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => Some((path, Err(e.to_string()))),
+        };
+        Self {
+            state: var("STATE_DIRECTORY"),
+            config: var("CONFIGURATION_DIRECTORY"),
+            runtime: var("RUNTIME_DIRECTORY"),
+            home: var("HOME"),
+            installed,
+        }
+    }
+}
+
 impl Dirs {
     /// The directories for this process (see the module docs).
     pub fn from_env(overrides: Overrides<'_>) -> Result<Self, DirsError> {
-        let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
-        let home = var("HOME");
+        Self::resolve(overrides, &Env::current())
+    }
+
+    /// The directories for `overrides` in `env` (see the module docs).
+    pub fn resolve(overrides: Overrides<'_>, env: &Env) -> Result<Self, DirsError> {
         let absolute = |what: &'static str, path: &Path| -> Result<AbsPath, DirsError> {
             let path = std::path::absolute(path).map_err(|e| DirsError::Override(what, e))?;
             Ok(AbsPath::from_path(&path)?)
         };
         let from_home = |rest: &str| -> Result<AbsPath, DirsError> {
-            let home = home.as_deref().ok_or(DirsError::NoHome)?;
+            let home = env.home.as_deref().ok_or(DirsError::NoHome)?;
             Ok(AbsPath::new(home)?.join(rest))
         };
-        let state = match (overrides.state, var("STATE_DIRECTORY")) {
+        let installed = match &env.installed {
+            None => None,
+            Some((path, text)) => Some((path.as_str(), parse_installed(path, text)?)),
+        };
+        let systemd =
+            |var: &'static str, value: &Option<String>, suffix: &str, file: Option<&str>| {
+                let Some(value) = value else { return Ok(None) };
+                let dir = AbsPath::new(first(value))?;
+                let path = if suffix.is_empty() {
+                    dir
+                } else {
+                    dir.join(suffix)
+                };
+                if let (Some((name, _)), Some(from_file)) = (installed.as_ref(), file)
+                    && path.as_str() != from_file
+                {
+                    return Err(DirsError::Contradiction {
+                        var,
+                        from_env: path.to_string(),
+                        file: (*name).to_owned(),
+                        from_file: from_file.to_owned(),
+                    });
+                }
+                Ok(Some(path))
+            };
+        let from_file = |pick: fn(&Installed) -> &str| -> Result<Option<AbsPath>, DirsError> {
+            installed
+                .as_ref()
+                .map(|(_, i)| AbsPath::new(pick(i)).map_err(DirsError::from))
+                .transpose()
+        };
+        let file = |pick: fn(&Installed) -> &str| installed.as_ref().map(|(_, i)| pick(i));
+
+        let state_env = systemd("STATE_DIRECTORY", &env.state, "", file(|i| &i.state_dir))?;
+        let state = match (overrides.state, state_env) {
             (Some(dir), _) => absolute("--state-dir", dir)?,
-            (None, Some(dir)) => AbsPath::new(first(&dir))?,
-            (None, None) => from_home(".local/state/controlroom-agent")?,
+            (None, Some(dir)) => dir,
+            (None, None) => match from_file(|i| &i.state_dir)? {
+                Some(dir) => dir,
+                None => from_home(".local/state/controlroom-agent")?,
+            },
         };
-        let config = match (overrides.config, var("CONFIGURATION_DIRECTORY")) {
+        let config_env = systemd(
+            "CONFIGURATION_DIRECTORY",
+            &env.config,
+            "",
+            file(|i| &i.config_dir),
+        )?;
+        let config = match (overrides.config, config_env) {
             (Some(dir), _) => absolute("--config-dir", dir)?,
-            (None, Some(dir)) => AbsPath::new(first(&dir))?,
+            (None, Some(dir)) => dir,
             (None, None) if overrides.state.is_some() => state.join("config"),
-            (None, None) => from_home(".config/controlroom-agent")?,
+            (None, None) => match from_file(|i| &i.config_dir)? {
+                Some(dir) => dir,
+                None => from_home(".config/controlroom-agent")?,
+            },
         };
-        let socket = match (overrides.socket, var("RUNTIME_DIRECTORY")) {
+        let socket_env = systemd(
+            "RUNTIME_DIRECTORY",
+            &env.runtime,
+            "agentd.sock",
+            file(|i| &i.socket),
+        )?;
+        let socket = match (overrides.socket, socket_env) {
             (Some(path), _) => absolute("--socket", path)?,
-            (None, Some(dir)) => AbsPath::new(first(&dir))?.join("agentd.sock"),
-            (None, None) => state.join("run/agentd.sock"),
+            (None, Some(path)) => path,
+            (None, None) if overrides.state.is_some() => state.join("run/agentd.sock"),
+            (None, None) => match from_file(|i| &i.socket)? {
+                Some(path) => path,
+                None => state.join("run/agentd.sock"),
+            },
         };
         Ok(Self {
             state,
@@ -133,6 +272,11 @@ impl Dirs {
         self.state.join("agent")
     }
 
+    /// `<state>/models`: what Settings › Models manages (providers, keys).
+    pub fn models(&self) -> AbsPath {
+        self.state.join("models")
+    }
+
     /// `<state>/agent.sqlite`.
     pub fn database(&self) -> AbsPath {
         self.state.join("agent.sqlite")
@@ -167,6 +311,24 @@ impl Dirs {
     pub fn workdir(&self, id: &str) -> AbsPath {
         self.state.join("sessions").join(id).join("work")
     }
+}
+
+/// Parses the installed locations file; every path must be absolute.
+fn parse_installed(path: &str, text: &Result<String, String>) -> Result<Installed, DirsError> {
+    let problem = |problem: String| DirsError::Installed {
+        path: path.to_owned(),
+        problem,
+    };
+    let text = text.as_ref().map_err(|e| problem(e.clone()))?;
+    let installed: Installed = toml::from_str(text).map_err(|e| problem(e.message().to_owned()))?;
+    for value in [
+        &installed.state_dir,
+        &installed.config_dir,
+        &installed.socket,
+    ] {
+        AbsPath::new(value).map_err(|e| problem(e.to_string()))?;
+    }
+    Ok(installed)
 }
 
 /// systemd joins several directories with `:`; the first one is ours.
@@ -253,6 +415,81 @@ mod tests {
             format!("/var/lib/controlroom-agent/sessions/{id}/work")
         );
         assert_eq!(first("/a:/b"), "/a");
+    }
+
+    fn env(installed: Option<&str>) -> Env {
+        Env {
+            home: Some("/var/lib/controlroom-agent".into()),
+            installed: installed
+                .map(|t| ("/etc/controlroom-agent/agentd.toml".into(), Ok(t.into()))),
+            ..Env::default()
+        }
+    }
+
+    const INSTALLED_TOML: &str = "state_dir = \"/var/lib/controlroom-agent\"\nconfig_dir = \"/etc/controlroom-agent\"\nsocket = \"/run/controlroom-agent/agentd.sock\"\n";
+
+    #[test]
+    fn the_cli_finds_the_installed_locations() {
+        // `sudo -u controlroom-agent -i controlroom-agentd login`: no systemd variables, HOME
+        // is the service user's, and the installed file names the daemon's directories.
+        let d = Dirs::resolve(Overrides::default(), &env(Some(INSTALLED_TOML))).unwrap();
+        assert_eq!(d.state().as_str(), "/var/lib/controlroom-agent");
+        assert_eq!(d.config().as_str(), "/etc/controlroom-agent");
+        assert_eq!(d.socket().as_str(), "/run/controlroom-agent/agentd.sock");
+        assert_eq!(
+            d.pi_agent_dir().as_str(),
+            "/var/lib/controlroom-agent/agent"
+        );
+
+        // Without it, HOME (development).
+        let d = Dirs::resolve(Overrides::default(), &env(None)).unwrap();
+        assert_eq!(
+            d.state().as_str(),
+            "/var/lib/controlroom-agent/.local/state/controlroom-agent"
+        );
+
+        // Flags still win.
+        let state = Path::new("/srv/agentd");
+        let d = Dirs::resolve(
+            Overrides {
+                state: Some(state),
+                ..Overrides::default()
+            },
+            &env(Some(INSTALLED_TOML)),
+        )
+        .unwrap();
+        assert_eq!(d.config().as_str(), "/srv/agentd/config");
+        assert_eq!(d.socket().as_str(), "/srv/agentd/run/agentd.sock");
+    }
+
+    #[test]
+    fn a_wrong_location_is_rejected() {
+        let bad = |text: &str| Dirs::resolve(Overrides::default(), &env(Some(text))).unwrap_err();
+        assert!(matches!(bad("state_dir = 1"), DirsError::Installed { .. }));
+        assert!(matches!(
+            bad(&INSTALLED_TOML.replace("/var/lib", "var/lib")),
+            DirsError::Installed { .. }
+        ));
+        let unreadable = Env {
+            installed: Some(("/etc/x.toml".into(), Err("permission denied".into()))),
+            ..env(None)
+        };
+        assert!(Dirs::resolve(Overrides::default(), &unreadable).is_err());
+
+        // The service and the file must agree.
+        let service = Env {
+            state: Some("/var/lib/controlroom-agent".into()),
+            config: Some("/etc/controlroom-agent".into()),
+            runtime: Some("/run/controlroom-agent".into()),
+            ..env(Some(INSTALLED_TOML))
+        };
+        assert!(Dirs::resolve(Overrides::default(), &service).is_ok());
+        let moved = Env {
+            state: Some("/var/lib/elsewhere".into()),
+            ..service
+        };
+        let err = Dirs::resolve(Overrides::default(), &moved).unwrap_err();
+        assert!(err.to_string().contains("STATE_DIRECTORY"), "{err}");
     }
 
     #[test]

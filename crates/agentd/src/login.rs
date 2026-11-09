@@ -1,12 +1,14 @@
 //! `controlroom-agentd login <provider>`: a one-time sign-in to an OAuth subscription on the
-//! server (design §9). It runs the session agent's pi interactively on the agent daemon's own
-//! agent dir (`<state>/agent`, `PI_CODING_AGENT_DIR`), where the user signs in with pi's
+//! server from a terminal (design §9); Settings › Models does the same from the UI. It runs the
+//! session agent's pi interactively on the agent daemon's own agent dir (`sandbox.toml`'s
+//! `pi_agent_dir`, by default `<state>/agent`; `PI_CODING_AGENT_DIR`), where the user signs in with pi's
 //! `/login <provider>`; pi stores the credential in that dir's `auth.json`. Afterwards it
 //! checks that an OAuth credential for the provider is there. From then on the agent daemon is
 //! the only refresher (sessions get synthetic tokens, `credential` serves real ones).
 //!
-//! Run it as the agent daemon's user, e.g. `sudo -u controlroom-agent controlroom-agentd login
-//! <provider>`. No credential is ever printed.
+//! Run it as the agent daemon's user, e.g. `sudo -u controlroom-agent -i controlroom-agentd login
+//! <provider>`: it finds the daemon's directories like every subcommand (see [`crate::dirs`]).
+//! No credential is ever printed.
 
 use std::process::{Command, ExitCode};
 
@@ -14,7 +16,8 @@ use anyhow::{Context, bail};
 use serde_json::Value;
 
 use crate::config::agents::{self as agents_config, SESSION_AGENT};
-use crate::dirs::{Dirs, create_private_dir};
+use crate::config::sandbox as sandbox_config;
+use crate::dirs::{Dirs, create_private_dir, home};
 use crate::serve::Location;
 use crate::shell::login_shell;
 
@@ -45,7 +48,16 @@ pub fn run(args: Args) -> ExitCode {
 }
 
 fn login(dirs: &Dirs, provider: &str) -> anyhow::Result<()> {
-    let agent_dir = dirs.pi_agent_dir();
+    let sandbox = sandbox_config::load(dirs);
+    if let Some(e) = &sandbox.error {
+        bail!("{e}");
+    }
+    let agent_dir = sandbox
+        .value
+        .resolve(home().as_ref(), &dirs.pi_agent_dir())?
+        .agent_dir
+        .user_agent_dir
+        .unwrap_or_else(|| dirs.pi_agent_dir());
     create_private_dir(&agent_dir).with_context(|| format!("creating {agent_dir}"))?;
     let scratch = dirs.state().join("login");
     create_private_dir(&scratch).with_context(|| format!("creating {scratch}"))?;

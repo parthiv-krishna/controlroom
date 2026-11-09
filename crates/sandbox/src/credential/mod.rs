@@ -9,6 +9,7 @@
 //! - [`oauth`]: OAuth access tokens, refreshed by pi itself through the bundle's helper.
 
 mod api_key;
+mod key_store;
 mod oauth;
 mod process;
 
@@ -17,6 +18,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 pub use api_key::{models_api_key_providers, resolve_api_key, resolve_config_value};
+pub use key_store::{KeyStore, StoredKeys, resolve_stored_key};
 pub use oauth::fresh_oauth_token;
 
 use crate::layout::SessionLayout;
@@ -36,6 +38,9 @@ pub struct CredentialManifest {
     /// The OAuth helper (`controlroom-pi-oauth`), when one is configured.
     #[serde(default)]
     pub oauth_helper: Option<AbsPath>,
+    /// API keys added in Settings › Models (the user's own config wins on a clash).
+    #[serde(default)]
+    pub stored_keys: Option<StoredKeys>,
 }
 
 /// A resolved credential. `Debug` does not print it.
@@ -103,7 +108,7 @@ pub fn load_manifest(layout: &SessionLayout) -> Result<CredentialManifest, Crede
 
 /// `provider`'s credential: a fresh OAuth access token, valid for at least `valid_for_secs`, if
 /// the user's `auth.json` stores OAuth for it (pi prefers a stored credential), else its API
-/// key.
+/// key from the user's config, else its key from the key store.
 pub fn resolve_credential(
     manifest: &CredentialManifest,
     provider: &Name,
@@ -115,8 +120,16 @@ pub fn resolve_credential(
         .any(|p| p == provider.as_str())
     {
         fresh_oauth_token(manifest, provider, valid_for_secs)
-    } else {
+    } else if manifest
+        .api_key_providers
+        .iter()
+        .any(|p| p == provider.as_str())
+    {
         resolve_api_key(manifest, provider)
+    } else if let Some(stored) = &manifest.stored_keys {
+        resolve_stored_key(stored, provider.as_str())
+    } else {
+        Err(CredentialError::UnknownProvider(provider.to_string()))
     }
 }
 
@@ -145,6 +158,7 @@ mod tests {
             oauth_helper: Some(
                 AbsPath::new("/nix/store/aaaa-controlroom-pi/bin/controlroom-pi-oauth").unwrap(),
             ),
+            stored_keys: None,
         };
         std::fs::write(
             layout.credential_manifest().as_path(),
@@ -162,11 +176,44 @@ mod tests {
             api_key_providers: vec!["sub".into()],
             oauth_providers: vec!["sub".into()],
             oauth_helper: None,
+            stored_keys: None,
         };
         let sub = Name::new("sub").unwrap();
         assert!(matches!(
             resolve_credential(&m, &sub, 600),
             Err(CredentialError::NoOAuthHelper(_))
+        ));
+    }
+
+    #[test]
+    fn the_user_config_wins_over_stored_keys() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = AbsPath::from_path(t.path()).unwrap();
+        std::fs::write(
+            t.path().join("models.json"),
+            r#"{"providers": {"gateway": {"apiKey": "from-models"}}}"#,
+        )
+        .unwrap();
+        let mut store = KeyStore::default();
+        store.insert("gateway", "from-store");
+        store.insert("anthropic", "stored-key");
+        store.save(&dir.join("keys.json")).unwrap();
+        let m = CredentialManifest {
+            agent_dir: dir.clone(),
+            api_key_providers: vec!["gateway".into()],
+            oauth_providers: Vec::new(),
+            oauth_helper: None,
+            stored_keys: Some(StoredKeys {
+                path: dir.join("keys.json"),
+                providers: vec!["anthropic".into()],
+            }),
+        };
+        let get = |p: &str| resolve_credential(&m, &Name::new(p).unwrap(), 600);
+        assert_eq!(get("gateway").unwrap().expose(), "from-models");
+        assert_eq!(get("anthropic").unwrap().expose(), "stored-key");
+        assert!(matches!(
+            get("openai"),
+            Err(CredentialError::UnknownProvider(_))
         ));
     }
 

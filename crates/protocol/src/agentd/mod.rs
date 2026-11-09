@@ -23,6 +23,7 @@ mod create;
 mod feeds;
 mod handshake;
 mod hostops;
+mod models;
 mod runtime;
 mod sessions;
 mod settings;
@@ -32,6 +33,7 @@ pub use create::*;
 pub use feeds::*;
 pub use handshake::*;
 pub use hostops::*;
+pub use models::*;
 pub use runtime::*;
 pub use sessions::*;
 pub use settings::*;
@@ -132,6 +134,29 @@ pub mod methods {
         SettingsGet = "settings.get" (NoParams) -> DaemonSettings;
         /// Change the settings.
         SettingsSet = "settings.set" (SettingsSetParams) -> DaemonSettings;
+
+        /// Settings › Models: every provider, the models and the defaults.
+        ModelsList = "models.list" (NoParams) -> ModelsState;
+        /// Add or replace a provider's API key.
+        ModelsSetKey = "models.set_key" (ModelsSetKeyParams) -> ModelsState;
+        /// Add or edit a custom gateway.
+        ModelsSetGateway = "models.set_gateway" (ModelsSetGatewayParams) -> ModelsState;
+        /// Remove a provider's API key, or a gateway.
+        ModelsRemove = "models.remove" (ModelsProviderParams) -> ModelsState;
+        /// Sign out of a subscription.
+        ModelsSignOut = "models.sign_out" (ModelsProviderParams) -> ModelsState;
+        /// Test a provider with one cheap request.
+        ModelsTest = "models.test" (ModelsProviderParams) -> ModelsState;
+        /// Set the defaults of new sessions.
+        ModelsSetDefaults = "models.set_defaults" (ModelsSetDefaultsParams) -> ModelsState;
+        /// Start signing in to a subscription.
+        ModelsLoginStart = "models.login_start" (LoginStartParams) -> LoginState;
+        /// Answer a sign-in step.
+        ModelsLoginInput = "models.login_input" (LoginInputParams) -> LoginState;
+        /// Wait for a sign-in's next step.
+        ModelsLoginWait = "models.login_wait" (LoginWaitParams) -> LoginState;
+        /// Cancel a sign-in.
+        ModelsLoginCancel = "models.login_cancel" (LoginCancelParams) -> LoginState;
 
         /// Start carrying host requests (controller only).
         HostOpsSubscribe = "hostops.subscribe" (NoParams) -> HostOpsSubscribeResult;

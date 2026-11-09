@@ -899,3 +899,61 @@ fn request_and_job_items_round_trip() {
         assert_eq!(back, original);
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Settings › Models
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn models_wire_shapes() {
+    let login_id: LoginId = "01HZY3K6W8Q9X2V4N7B5C1D3EB".parse().unwrap();
+    golden(
+        &LoginState {
+            login_id,
+            provider: "anthropic".into(),
+            seq: 3,
+            step: LoginStep::OpenUrl {
+                url: "https://id.example.com/authorize".into(),
+                instructions: None,
+            },
+        },
+        json!({
+            "login_id": "01HZY3K6W8Q9X2V4N7B5C1D3EB",
+            "provider": "anthropic",
+            "seq": 3,
+            "step": {"kind": "open_url", "url": "https://id.example.com/authorize", "instructions": null}
+        }),
+    );
+    golden(
+        &ModelsSetGatewayParams {
+            provider: "gw".into(),
+            gateway: Gateway {
+                base_url: "https://llm.example.com/v1".into(),
+                models: vec!["m1".into()],
+                auth_header: AuthHeader::XApiKey,
+            },
+            key: None,
+            by: None,
+        },
+        json!({
+            "provider": "gw",
+            "gateway": {"base_url": "https://llm.example.com/v1", "models": ["m1"], "auth_header": "x_api_key"}
+        }),
+    );
+    // Newer steps, sources and header styles decode as unknown.
+    let step: LoginStep = serde_json::from_value(json!({"kind": "passkey"})).unwrap();
+    assert_eq!(step, LoginStep::Unknown);
+    assert!(!step.is_final() && LoginStep::TimedOut.is_final());
+    let source: ProviderSource = serde_json::from_value(json!("vault")).unwrap();
+    assert_eq!(source, ProviderSource::Unknown);
+    // The UI API passes every models.* method through to the agent daemon with the same params.
+    for method in AgentdRequest::METHODS
+        .iter()
+        .filter(|m| m.starts_with("models."))
+    {
+        assert!(UiRequest::METHODS.contains(method), "{method}");
+    }
+    let call =
+        UiRequest::from_parts("models.set_key", json!({"provider": "openai", "key": "k"})).unwrap();
+    assert_eq!(call.method(), "models.set_key");
+}

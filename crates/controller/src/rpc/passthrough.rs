@@ -4,10 +4,14 @@
 //! (per [`Fill`]) and forwards the call unchanged otherwise: `op_id`s pass through as they
 //! are, and results and errors come back unchanged. While the agent daemon can't be reached
 //! the call fails with `timeout`; nothing is queued.
+//!
+//! Settings › Models changes (`models.*`) are logged here with the device that made them,
+//! never with their params: those can hold an API key, which passes through once and is
+//! never stored or logged by the controller.
 
 use std::sync::Arc;
 
-use controlroom_client_core::daemon::CallError;
+use controlroom_client_core::daemon::{CallError, CallOptions, CallTimeout};
 use controlroom_protocol::ids::SessionId;
 use controlroom_protocol::session::PromptOrigin;
 use controlroom_protocol::{ErrorData, RpcError};
@@ -38,6 +42,10 @@ struct Entry {
     /// Needs the agent daemon to know the machines as the UI shows them (it refuses a machine
     /// it doesn't see connected): waits for the queued machine reports first.
     machines: bool,
+    /// May take long on the agent daemon (a provider test, pi's sign-in): the slow timeout.
+    slow: bool,
+    /// A change to log with the device that made it (and the `provider` param, nothing else).
+    audit: bool,
 }
 
 const fn plain(method: &'static str) -> Entry {
@@ -45,12 +53,24 @@ const fn plain(method: &'static str) -> Entry {
         method,
         fill: Fill::None,
         machines: false,
+        slow: false,
+        audit: false,
     }
 }
 
 const fn fill(method: &'static str, fill: Fill) -> Entry {
     Entry {
         fill,
+        ..plain(method)
+    }
+}
+
+/// A Settings › Models change: the device fills `by`, and it is logged.
+const fn models_change(method: &'static str, slow: bool) -> Entry {
+    Entry {
+        fill: Fill::Responder,
+        slow,
+        audit: true,
         ..plain(method)
     }
 }
@@ -92,6 +112,17 @@ const TABLE: &[Entry] = &[
     plain("agents.list"),
     plain("settings.get"),
     plain("settings.set"),
+    plain("models.list"),
+    models_change("models.set_key", false),
+    models_change("models.set_gateway", false),
+    models_change("models.remove", false),
+    models_change("models.sign_out", true),
+    models_change("models.test", true),
+    models_change("models.set_defaults", false),
+    models_change("models.login_start", true),
+    models_change("models.login_input", false),
+    plain("models.login_wait"),
+    models_change("models.login_cancel", false),
 ];
 
 /// Whether `method` is passed through to the agent daemon.
@@ -135,13 +166,37 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
     if entry.machines {
         conn.hub.outbound.barrier().await;
     }
+    if entry.audit {
+        audit(conn, method, &params);
+    }
+    let options = CallOptions {
+        timeout: if entry.slow {
+            CallTimeout::After(conn.hub.services.tuning.slow_call_timeout)
+        } else {
+            CallTimeout::Default
+        },
+        ..CallOptions::default()
+    };
     let value = conn
         .hub
         .agentd()?
-        .call_raw(method, Value::Object(params))
+        .call_raw_with(method, Value::Object(params), options)
         .await
         .map_err(agentd_error)?;
     Ok(Reply { value, after: None })
+}
+
+/// Logs a change with its device and provider; never the other params (an API key).
+fn audit(conn: &Conn, method: &str, params: &Map<String, Value>) {
+    let device = conn.device_ref().map_or_else(
+        || "an unregistered device".to_owned(),
+        |d| format!("{} ({})", d.label, d.device_id),
+    );
+    let provider = params
+        .get("provider")
+        .and_then(Value::as_str)
+        .unwrap_or("-");
+    tracing::info!(%method, %provider, %device, "Settings › Models change");
 }
 
 /// Fills `params` per `fill`.

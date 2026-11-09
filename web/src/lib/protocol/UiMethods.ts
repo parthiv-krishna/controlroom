@@ -28,6 +28,11 @@ import type { KeysGenerateParams } from "./KeysGenerateParams";
 import type { KeysImportParams } from "./KeysImportParams";
 import type { KeysListResult } from "./KeysListResult";
 import type { KeysRotateResult } from "./KeysRotateResult";
+import type { LoginCancelParams } from "./LoginCancelParams";
+import type { LoginInputParams } from "./LoginInputParams";
+import type { LoginStartParams } from "./LoginStartParams";
+import type { LoginState } from "./LoginState";
+import type { LoginWaitParams } from "./LoginWaitParams";
 import type { Machine } from "./Machine";
 import type { MachineRef } from "./MachineRef";
 import type { MachinesAddConfirmParams } from "./MachinesAddConfirmParams";
@@ -35,6 +40,11 @@ import type { MachinesAddConfirmResult } from "./MachinesAddConfirmResult";
 import type { MachinesAddResult } from "./MachinesAddResult";
 import type { MachinesConfirmHostKeyParams } from "./MachinesConfirmHostKeyParams";
 import type { MachinesSetSettingsParams } from "./MachinesSetSettingsParams";
+import type { ModelsProviderParams } from "./ModelsProviderParams";
+import type { ModelsSetDefaultsParams } from "./ModelsSetDefaultsParams";
+import type { ModelsSetGatewayParams } from "./ModelsSetGatewayParams";
+import type { ModelsSetKeyParams } from "./ModelsSetKeyParams";
+import type { ModelsState } from "./ModelsState";
 import type { NewMachine } from "./NewMachine";
 import type { NoParams } from "./NoParams";
 import type { NotificationPreferences } from "./NotificationPreferences";
@@ -409,6 +419,50 @@ export type UiMethods = {
    * Pass-through: change the agent daemon's settings.
    */
   "settings.set": { params: SettingsSetParams, result: DaemonSettings },
+  /**
+   * Pass-through: Settings › Models.
+   */
+  "models.list": { params: NoParams, result: ModelsState },
+  /**
+   * Pass-through: add or replace an API key.
+   */
+  "models.set_key": { params: ModelsSetKeyParams, result: ModelsState },
+  /**
+   * Pass-through: add or edit a custom gateway.
+   */
+  "models.set_gateway": { params: ModelsSetGatewayParams, result: ModelsState },
+  /**
+   * Pass-through: remove an API key or a gateway.
+   */
+  "models.remove": { params: ModelsProviderParams, result: ModelsState },
+  /**
+   * Pass-through: sign out of a subscription.
+   */
+  "models.sign_out": { params: ModelsProviderParams, result: ModelsState },
+  /**
+   * Pass-through: test a provider.
+   */
+  "models.test": { params: ModelsProviderParams, result: ModelsState },
+  /**
+   * Pass-through: set the defaults of new sessions.
+   */
+  "models.set_defaults": { params: ModelsSetDefaultsParams, result: ModelsState },
+  /**
+   * Pass-through: start signing in to a subscription.
+   */
+  "models.login_start": { params: LoginStartParams, result: LoginState },
+  /**
+   * Pass-through: answer a sign-in step.
+   */
+  "models.login_input": { params: LoginInputParams, result: LoginState },
+  /**
+   * Pass-through: wait for a sign-in's next step.
+   */
+  "models.login_wait": { params: LoginWaitParams, result: LoginState },
+  /**
+   * Pass-through: cancel a sign-in.
+   */
+  "models.login_cancel": { params: LoginCancelParams, result: LoginState },
   /**
    * List a directory on a machine (its host daemon, with the user's own access).
    */

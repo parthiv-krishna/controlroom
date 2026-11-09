@@ -102,6 +102,7 @@ fn spec(f: &Fixture) -> AgentDirSpec {
         oauth_claims: BTreeMap::new(),
         tmp_seed: None,
         oauth_helper: None,
+        managed: ManagedProviders::default(),
     }
 }
 
@@ -241,4 +242,71 @@ fn works_without_a_user_agent_dir() {
         json!({"transport": "sse"})
     );
     assert!(!f.layout.credential_manifest().as_path().exists());
+}
+
+#[test]
+fn merges_managed_providers_and_the_user_config_wins() {
+    let f = fixture();
+    let store = f.bundle.join("keys.json");
+    let spec = AgentDirSpec {
+        managed: ManagedProviders {
+            // `gateway` has a key in the user's auth.json: theirs wins.
+            key_providers: vec!["anthropic".into(), "gateway".into(), "ui-gw".into()],
+            key_store: Some(store.clone()),
+            models: serde_json::from_value(json!({
+                "ui-gw": {"baseUrl": "https://gw.example.com/v1", "api": "openai-completions",
+                          "apiKey": PLACEHOLDER, "models": [{"id": "m1"}]},
+                "local": {"baseUrl": "https://shadowed.example.com"}
+            }))
+            .unwrap(),
+            settings: serde_json::from_value(
+                json!({"defaultProvider": "ui-gw", "defaultModel": "m1"}),
+            )
+            .unwrap(),
+        },
+        ..spec(&f)
+    };
+    let built = build_session_dirs(&f.layout, &spec).unwrap();
+    assert_eq!(built.stored_key_providers, ["anthropic", "ui-gw"]);
+    let agent = f.layout.agent();
+    let auth = read_json(agent.join("auth.json"));
+    assert_eq!(
+        auth["anthropic"],
+        json!({"type": "api_key", "key": PLACEHOLDER})
+    );
+    assert_eq!(auth["gateway"]["key"], PLACEHOLDER);
+    let models = read_json(agent.join("models.json"));
+    assert_eq!(
+        models["providers"]["ui-gw"]["models"],
+        json!([{"id": "m1"}])
+    );
+    assert_eq!(
+        models["providers"]["local"]["baseUrl"],
+        "https://llm.example.com"
+    );
+    let settings = read_json(agent.join("settings.json"));
+    assert_eq!(settings["defaultProvider"], "ui-gw");
+    assert_eq!(settings["defaultModel"], "m1");
+
+    let manifest = crate::credential::load_manifest(&f.layout).unwrap();
+    assert_eq!(
+        manifest.stored_keys,
+        Some(crate::credential::StoredKeys {
+            path: store,
+            providers: vec!["anthropic".into(), "ui-gw".into()],
+        })
+    );
+}
+
+#[test]
+fn agent_config_alone() {
+    let f = fixture();
+    let dir = f.bundle.join("catalog");
+    let built = build_agent_config(&dir, &spec(&f)).unwrap();
+    assert_eq!(built.api_key_providers, ["gateway", "local"]);
+    assert_eq!(
+        read_json(dir.join("auth.json"))["gateway"]["key"],
+        PLACEHOLDER
+    );
+    assert!(!dir.join("sessions").as_path().exists());
 }

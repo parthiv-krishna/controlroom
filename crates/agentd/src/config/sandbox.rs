@@ -6,6 +6,7 @@
 //! ```toml
 //! nono = "nono"                     # program found by the login shell, or an absolute path
 //! oauth_helper = "controlroom-pi-oauth"  # likewise; refreshes OAuth tokens (controlroom-pi bundle)
+//! models_helper = "controlroom-pi-models"  # likewise; lists models, signs in (Settings › Models)
 //! pi_agent_dir = "/var/lib/controlroom-agent/agent"  # default: <state>/agent
 //! keep = ["npm:@controlroom/pi"]    # pi resources (packages, extensions, ...) kept in sessions
 //! copy = ["AGENTS.md"]              # extra files copied from the real agent dir
@@ -54,6 +55,8 @@ pub struct SandboxConfig {
     pub nono: String,
     /// The OAuth helper (`controlroom-pi-oauth`), found like `nono`.
     pub oauth_helper: String,
+    /// The models helper (`controlroom-pi-models`), found like `nono`.
+    pub models_helper: String,
     /// pi's agent dir (credentials, models, settings).
     pub pi_agent_dir: Option<String>,
     /// Resource sources to keep in session settings.
@@ -81,6 +84,7 @@ impl Default for SandboxConfig {
         Self {
             nono: "nono".to_owned(),
             oauth_helper: "controlroom-pi-oauth".to_owned(),
+            models_helper: "controlroom-pi-models".to_owned(),
             pi_agent_dir: None,
             keep: Vec::new(),
             copy: Vec::new(),
@@ -120,8 +124,11 @@ pub struct RouteConfig {
     pub cache_ttl_secs: u32,
 }
 
+/// How long nono caches a credential unless a route says otherwise.
+pub const DEFAULT_CACHE_TTL_SECS: u32 = 300;
+
 fn default_ttl() -> u32 {
-    300
+    DEFAULT_CACHE_TTL_SECS
 }
 
 /// [`SandboxConfig`] with paths expanded and every value validated.
@@ -131,6 +138,8 @@ pub struct SandboxSettings {
     pub nono: String,
     /// How to find the OAuth helper.
     pub oauth_helper: String,
+    /// How to find the models helper.
+    pub models_helper: String,
     /// Inputs of `build_session_dirs`.
     pub agent_dir: AgentDirSpec,
     /// Readable system paths.
@@ -139,6 +148,8 @@ pub struct SandboxSettings {
     pub nono_tmp: AbsPath,
     /// Configured credential routes (used for providers that have an API key).
     pub routes: Vec<CredentialRoute>,
+    /// Whether loopback upstreams are accepted (tests with a local mock model).
+    pub allow_loopback_upstreams: bool,
 }
 
 /// Why `sandbox.toml` can't be used.
@@ -166,6 +177,7 @@ impl SandboxConfig {
         Ok(SandboxSettings {
             nono: self.nono.clone(),
             oauth_helper: self.oauth_helper.clone(),
+            models_helper: self.models_helper.clone(),
             agent_dir: AgentDirSpec {
                 user_agent_dir: Some(user_agent_dir),
                 keep: self.keep.clone(),
@@ -175,6 +187,8 @@ impl SandboxConfig {
                 tmp_seed: optional("tmp_seed", &self.tmp_seed)?,
                 // Found at launch time (see `launch::Host`).
                 oauth_helper: None,
+                // Merged in from Settings › Models (see `crate::models`).
+                managed: Default::default(),
             },
             read_only: self
                 .read_only
@@ -187,12 +201,14 @@ impl SandboxConfig {
                 .iter()
                 .map(|r| r.resolve(self.allow_loopback_upstreams))
                 .collect::<Result<_, _>>()?,
+            allow_loopback_upstreams: self.allow_loopback_upstreams,
         })
     }
 }
 
 impl RouteConfig {
-    fn resolve(&self, allow_loopback: bool) -> Result<CredentialRoute, SettingsError> {
+    /// Validates the route (see the module docs on loopback upstreams).
+    pub fn resolve(&self, allow_loopback: bool) -> Result<CredentialRoute, SettingsError> {
         let err =
             |e: &dyn std::fmt::Display| SettingsError(format!("route {:?}: {e}", self.provider));
         let rules = |rules: &[String]| -> Result<Vec<Endpoint>, SettingsError> {
