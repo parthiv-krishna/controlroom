@@ -66,7 +66,10 @@ pub enum CredentialError {
     #[error("no credential manifest for this session: {0}")]
     NoManifest(String),
     /// The provider has no credential in this session.
-    #[error("provider {0} has no API key or OAuth credential in this session")]
+    #[error(
+        "provider {0} has no API key or sign-in in this session (Settings › Models, or the \
+         server's config)"
+    )]
     UnknownProvider(String),
     /// The configured value could not be resolved (missing env var, failing command).
     #[error("the API key of provider {0} could not be resolved")]
