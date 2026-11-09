@@ -229,3 +229,24 @@ allow = ["POST /v1/responses"]
     let read = with["filesystem"]["read"].as_array().unwrap();
     assert!(read.contains(&Value::String("/srv/pi-packages".into())));
 }
+
+#[test]
+fn stored_keys_and_gateways_get_routes() {
+    use controlroom_sandbox::agent_dir::ManagedProviders;
+    let mut f = fixture(LOOPBACK_ROUTE);
+    let store = f.host.dirs.models().join("keys.json");
+    f.host.sandbox.agent_dir.managed = ManagedProviders {
+        key_providers: vec!["unused".into()],
+        key_store: Some(store.clone()),
+        ..ManagedProviders::default()
+    };
+    prepare(&f.host, &launch(SandboxLevel::Strict)).unwrap();
+    let profile = profile(&f);
+    let routes = profile["network"]["custom_credentials"]
+        .as_object()
+        .unwrap();
+    assert_eq!(routes.keys().collect::<Vec<_>>(), ["cr_mock", "cr_unused"]);
+    let layout = SessionLayout::new(f.host.dirs.state(), &SessionId::new(SESSION).unwrap());
+    let manifest = controlroom_sandbox::credential::load_manifest(&layout).unwrap();
+    assert_eq!(manifest.stored_keys.unwrap().path, store);
+}

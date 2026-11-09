@@ -309,11 +309,12 @@ fn read_only(host: &Host) -> Vec<AbsPath> {
     read_only
 }
 
-/// Whether `provider` has a credential `controlroom-agentd credential` can serve: an API key,
-/// or an OAuth token given the helper.
+/// Whether `provider` has a credential `controlroom-agentd credential` can serve: an API key
+/// (the server's, or one stored in Settings › Models), or an OAuth token given the helper.
 fn has_credential(host: &Host, built: &BuiltAgentDir, provider: &str) -> bool {
     let listed = |providers: &[String]| providers.iter().any(|p| p == provider);
     listed(&built.api_key_providers)
+        || listed(&built.stored_key_providers)
         || (host.oauth_helper.is_some() && listed(&built.oauth_providers))
 }
 
