@@ -40,6 +40,7 @@ test('a gateway added in Settings › Models runs a session', async ({ page }) =
   await expect(header(page).getByRole('button', { name: 'Model', exact: true })).toHaveText(/mock-model/);
 
   await page.getByRole('button', { name: 'Settings' }).click();
+  await settings.getByRole('tab', { name: 'Models' }).click();
   await choose(defaults, 'Default provider', /^Server \(mock/);
   await expect(defaults.getByRole('button', { name: 'Default provider', exact: true })).toContainText('Server (mock/mock-model)');
   await closeSettings(page);
