@@ -1,6 +1,8 @@
 //! Sandbox prerequisites (spec §11.5): which nono sandboxes workspaces (the one installed with
-//! controlroomd, or `sandbox.toml`'s) and its version against the validated 0.80.0, and the
-//! kernel's Landlock ABI; plus the sftp placeholder for future file browsing.
+//! controlroomd, or `sandbox.toml`'s), its version against the validated 0.80.0 and its build
+//! (the first digits of its SHA-256, as in the installed `nono/<version>-<sha>/` directory, which
+//! tells a patched rebuild of a version from the original), and the kernel's Landlock ABI; plus
+//! the sftp placeholder for future file browsing.
 
 use controlroom_protocol::host::{CheckStatus, DoctorCheck};
 use controlroom_sandbox::AbsPath;
@@ -9,6 +11,7 @@ use controlroom_sandbox::probe::{self, Landlock, NonoStatus, PINNED_NONO_VERSION
 
 use super::{check, unknown};
 use crate::dirs::Dirs;
+use crate::host::fsops::sha256_hex;
 use crate::nono::{Nono, NonoMissing, NonoOrigin, locate};
 
 /// Landlock ABI that filters TCP (nono's network confinement needs it).
@@ -20,7 +23,10 @@ pub fn nono(dirs: &Dirs, exe: &AbsPath, setting: Option<&str>) -> DoctorCheck {
     match locate(setting, exe, dirs.home()) {
         Ok(nono) => {
             let status = probe::nono(&nono.path, &NonoDirs::under(dirs.state()));
-            nono_status(&nono, status)
+            let build = std::fs::read(nono.path.as_path())
+                .ok()
+                .map(|binary| sha256_hex(&binary)[..BUILD_DIGITS].to_owned());
+            nono_status(&nono, status, build.as_deref())
         }
         Err(missing) => nono_missing(&missing),
     }
@@ -38,16 +44,28 @@ fn nono_missing(missing: &NonoMissing) -> DoctorCheck {
     )
 }
 
-fn nono_status(nono: &Nono, status: NonoStatus) -> DoctorCheck {
+/// Hex digits of the SHA-256 shown for the nono build.
+const BUILD_DIGITS: usize = 12;
+
+/// The check for `nono` as `status` found it; `build` is its short SHA-256, if readable.
+fn nono_status(nono: &Nono, status: NonoStatus, build: Option<&str>) -> DoctorCheck {
     let Nono { path, origin } = nono;
+    let shown = |version: &str| match build {
+        Some(build) => format!("{version} ({build})"),
+        None => version.to_owned(),
+    };
     match status {
         NonoStatus::Available {
             version,
             pinned: true,
-        } => check(CheckStatus::Ok, &version, format!("{origin}: {path}")),
+        } => check(
+            CheckStatus::Ok,
+            &shown(&version),
+            format!("{origin}: {path}"),
+        ),
         NonoStatus::Available { version, .. } => check(
             CheckStatus::Warn,
-            &version,
+            &shown(&version),
             format!(
                 "{origin}: {path}; controlroom's sandbox profiles are validated against nono {PINNED_NONO_VERSION}"
             ),
@@ -139,7 +157,10 @@ mod tests {
     #[test]
     fn nono_statuses() {
         let nono = |origin| Nono {
-            path: AbsPath::new("/home/alice/.local/share/controlroom/nono/0.80.0/nono").unwrap(),
+            path: AbsPath::new(
+                "/home/alice/.local/share/controlroom/nono/0.80.0-0123456789ab/nono",
+            )
+            .unwrap(),
             origin,
         };
         let ok = nono_status(
@@ -148,14 +169,15 @@ mod tests {
                 version: "0.80.0".into(),
                 pinned: true,
             },
+            Some("0123456789ab"),
         );
         assert_eq!(
             (ok.status, ok.value.as_deref()),
-            (CheckStatus::Ok, Some("0.80.0"))
+            (CheckStatus::Ok, Some("0.80.0 (0123456789ab)"))
         );
         assert_eq!(
             ok.detail,
-            "bundled: /home/alice/.local/share/controlroom/nono/0.80.0/nono"
+            "bundled: /home/alice/.local/share/controlroom/nono/0.80.0-0123456789ab/nono"
         );
         // Another version still runs, with a warning.
         let old = nono_status(
@@ -164,13 +186,18 @@ mod tests {
                 version: "0.79.0".into(),
                 pinned: false,
             },
+            None,
         );
-        assert_eq!(old.status, CheckStatus::Warn);
+        assert_eq!(
+            (old.status, old.value.as_deref()),
+            (CheckStatus::Warn, Some("0.79.0"))
+        );
         assert!(old.detail.starts_with("configured in sandbox.toml: "));
         assert!(old.detail.contains("validated against nono 0.80.0"));
         let broken = nono_status(
             &nono(NonoOrigin::Bundled),
             NonoStatus::Unavailable("exec failed".into()),
+            None,
         );
         assert_eq!(broken.status, CheckStatus::Fail);
     }

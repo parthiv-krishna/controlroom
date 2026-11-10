@@ -242,8 +242,9 @@ it by default. On the host:
 ```text
 ~/.local/share/controlroom/
   versions/<version>/controlroomd       the daemon (one directory per version)
-  versions/<version>/nono -> ../../nono/<nono version>/nono
-  nono/<nono version>/nono              uploaded only when nono's version changes
+  versions/<version>/nono -> ../../nono/<nono version>-<sha>/nono
+  nono/<nono version>-<sha>/nono        keyed by version and content (12 hex digits of its
+                                        SHA-256): uploaded only when the host lacks that build
   current -> versions/<version>
 ```
 
@@ -298,11 +299,10 @@ journalctl -u controlroom -u controlroom-agent -e
 - The server is upgraded with the system. When it bundles a newer `controlroomd`, it upgrades
   each machine's daemon automatically once the machine is idle. It runs the new binary first and
   rolls back if the daemon doesn't answer; running agents are not interrupted. nono is uploaded
-  only when its version changes; each daemon version keeps the nono it came with, so a rollback
-  restores both. A nono rebuilt with the same version (a new patch in `nix/`) is not
-  uploaded to hosts that already have that version: remove
-  `~/.local/share/controlroom/nono/<version>/nono` on the host before the next daemon
-  upgrade, which then uploads the new build.
+  only when the host lacks that build (checked by version and SHA-256), so a nono rebuilt with
+  the same version (a new patch in `nix/`) reaches each host with its next daemon upgrade, by
+  itself; each daemon version keeps the nono it came with, so a rollback restores both, and
+  builds no remaining daemon version uses are pruned.
 - To roll the server back: `nixos-rebuild switch --rollback` (or boot the previous generation).
   Daemons are never downgraded: hosts that were already upgraded keep the newer daemon (the
   previous ones stay under `~/.local/share/controlroom/versions/`).

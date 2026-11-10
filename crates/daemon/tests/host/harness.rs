@@ -67,7 +67,8 @@ impl HostEnv {
 
     /// Installs the built daemon and `nono` (a file) as the controller does, and runs the
     /// installed daemon from now on:
-    /// `versions/<ver>/{controlroomd, nono -> ../../nono/<nono_version>/nono}`.
+    /// `versions/<ver>/{controlroomd, nono -> ../../nono/<nono build>/nono}` (the controller names
+    /// the build `<version>-<sha>`; any name works here).
     pub fn install(&mut self, nono: &Path, nono_version: &str) -> PathBuf {
         let base = self.home().join(".local/share/controlroom");
         let version = base.join(concat!("versions/", env!("CARGO_PKG_VERSION")));

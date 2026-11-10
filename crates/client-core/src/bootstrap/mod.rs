@@ -5,9 +5,11 @@
 //!
 //! ```text
 //! versions/<ver>/controlroomd   immutable; supervisors keep running from it
-//! versions/<ver>/nono -> ../../nono/<nono ver>/nono   the daemon's nono
-//! nono/<nono ver>/nono          immutable; keyed by nono's version, so daemon upgrades
-//!                               with the same nono upload nothing for it
+//! versions/<ver>/nono -> ../../nono/<nono ver>-<sha>/nono   the daemon's nono
+//! nono/<nono ver>-<sha>/nono    immutable; keyed by nono's version and content (the first
+//!                               12 hex digits of its SHA-256), so a daemon upgrade with the
+//!                               same nono uploads nothing for it, and a rebuilt nono of the
+//!                               same version (a new patch) is uploaded next to the old one
 //! current -> versions/<ver>     swapped atomically on install and rollback
 //! ```
 //!
@@ -51,8 +53,10 @@ pub const REMOTE_DATA_DIR: &str = ".local/share/controlroom";
 /// The stable daemon path, relative to `$HOME`.
 pub const REMOTE_CURRENT_BINARY: &str = ".local/share/controlroom/current/controlroomd";
 
-/// Shell prelude shared by the scripts: `$base`, a bounded `--version` run, and whether
-/// `--version` output (`controlroomd 0.1.0`, `nono 0.80.0`) reports a version.
+/// Shell prelude shared by the scripts: `$base`, a bounded `--version` run, whether
+/// `--version` output (`controlroomd 0.1.0`, `nono 0.80.0`) reports a version, and
+/// `sha256_of <file>`: the file's SHA-256 in `$got` with the first tool found (`sha256sum`,
+/// `shasum -a 256`, `openssl`) in `$how`, which is `none` (and `$got` empty) without one.
 const PRELUDE: &str = r#"base="$HOME/.local/share/controlroom"
 version_of() {
   if command -v timeout >/dev/null 2>&1; then timeout 10 "$1" --version; else "$1" --version; fi
@@ -62,6 +66,16 @@ reports_version() {
     *" $2"|*" v$2") return 0 ;;
     *) return 1 ;;
   esac
+}
+sha256_of() {
+  how=none got=
+  if command -v sha256sum >/dev/null 2>&1; then
+    how=sha256sum; got=$(sha256sum "$1" | cut -d ' ' -f 1)
+  elif command -v shasum >/dev/null 2>&1; then
+    how=shasum; got=$(shasum -a 256 "$1" | cut -d ' ' -f 1)
+  elif command -v openssl >/dev/null 2>&1; then
+    how=openssl; got=$(openssl dgst -sha256 -r "$1" | cut -d ' ' -f 1)
+  fi
 }
 "#;
 

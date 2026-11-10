@@ -18,8 +18,8 @@ pub enum UpgradeOutcome<T> {
     UpToDate,
     /// The new version is installed, current, and passed the check.
     Upgraded {
-        /// The install, including the previous `current` target.
-        installed: Installed,
+        /// The install, including the previous `current` target (boxed: it is large).
+        installed: Box<Installed>,
         /// How many old daemons were stopped.
         stopped: u32,
         /// The check's result (e.g. the new daemon's `hello`).
@@ -64,7 +64,7 @@ where
     };
     match check().await {
         Ok(checked) => Ok(UpgradeOutcome::Upgraded {
-            installed,
+            installed: Box::new(installed),
             stopped,
             checked,
         }),

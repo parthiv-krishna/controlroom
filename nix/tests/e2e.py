@@ -27,8 +27,6 @@ SECRETS = "/var/lib/controlroom-e2e"
 API = "/home/alice/work/api"
 WEB = "/home/alice/work/web"
 BUILD = "/home/alice/build"
-# The nono the server uploads with controlroomd (the hosts have none of their own).
-NONO = f"/home/alice/.local/share/controlroom/nono/{NONO_VERSION}/nono"
 
 # ------------------------------------------------------------------------------- helpers
 
@@ -170,13 +168,21 @@ def current_daemon(machine: Any) -> str:
     return as_alice(machine, "readlink ~/.local/share/controlroom/current").strip()
 
 
+def bundled_nono() -> str:
+    """Where hosts get the nono the server uploads with controlroomd (they have none of their
+    own): a directory keyed by its version and the first 12 hex digits of its SHA-256."""
+    sha = server.succeed(f"sha256sum {CURRENT_BUNDLE}/nono-x86_64-linux").split()[0]
+    return f"/home/alice/.local/share/controlroom/nono/{NONO_VERSION}-{sha[:12]}/nono"
+
+
 def uploaded_nono(machine: Any) -> int:
     """The inode of the nono uploaded to `machine`, after checking the current daemon uses it and
     it runs."""
+    nono = bundled_nono()
     used = as_alice(machine, "readlink -f ~/.local/share/controlroom/current/nono").strip()
-    assert used == NONO, used
-    assert as_alice(machine, f"{NONO} --version").strip() == f"nono {NONO_VERSION}"
-    return int(as_alice(machine, f"stat -c %i {NONO}").strip())
+    assert used == nono, used
+    assert as_alice(machine, f"{nono} --version").strip() == f"nono {NONO_VERSION}"
+    return int(as_alice(machine, f"stat -c %i {nono}").strip())
 
 
 def collect_logs() -> None:
@@ -278,7 +284,7 @@ def auto_upgrade() -> None:
     assert current_daemon(buildbox) == f"versions/{VERSION}"
     buildbox.fail(f"pgrep -u alice -f 'versions/{VERSION}-old/controlroomd serve'")
     assert buildbox.succeed("pgrep -u alice -f 'controlroomd supervise'").split() == supervisors, "the shell kept running"
-    assert uploaded_nono(buildbox) == nono, "the upgrade kept nono (the same version): no upload"
+    assert uploaded_nono(buildbox) == nono, "the upgrade kept nono (the same build): no upload"
     spec.release("upgraded")
     spec.finish()
     mock_done()
@@ -307,7 +313,7 @@ def workspaces() -> None:
     # pi ran on the server under nono; the shells ran on the hosts under the uploaded nono.
     server.succeed("pgrep -u controlroom-agent -f '^[^ ]*nono run'")
     for machine in (devbox, buildbox):
-        machine.succeed(f"pgrep -u alice -f '^{NONO} run'")
+        machine.succeed(f"pgrep -u alice -f '^{bundled_nono()} run'")
     first = mock_request(
         "first(.[] | select(.messages | tostring | contains($prompt)))",
         prompt="Look around both machines",

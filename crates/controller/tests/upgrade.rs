@@ -69,10 +69,26 @@ async fn auto_upgrade_waits_for_host_calls() {
     let mut old_ui = ui(&old, "laptop").await;
     let id = add_machine(&mut old_ui, &host, "devbox").await;
     assert_eq!(host.current_daemon().as_deref(), Some("versions/0.0.0"));
-    // nono came with it, into a directory keyed by its own version.
-    let nono = host.home().join(format!(
-        ".local/share/controlroom/nono/{BUNDLED_NONO_VERSION}/nono"
-    ));
+    // nono came with it, into a directory keyed by its version and content.
+    let nono = std::fs::canonicalize(
+        host.home()
+            .join(".local/share/controlroom/versions/0.0.0/nono"),
+    )
+    .unwrap();
+    let build = nono
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let key = build
+        .strip_prefix(&format!("{BUNDLED_NONO_VERSION}-"))
+        .unwrap_or_else(|| panic!("{build}"));
+    assert!(
+        key.len() == 12 && key.bytes().all(|b| b.is_ascii_hexdigit()),
+        "{build}"
+    );
     let uploaded = std::fs::metadata(&nono).unwrap().ino();
     drop(old_ui);
     old.shutdown().await;
@@ -112,7 +128,7 @@ async fn auto_upgrade_waits_for_host_calls() {
         Some(format!("versions/{DAEMON_VERSION}").as_str())
     );
     assert_eq!(fake.received("tool.run").len(), 1, "c1 was sent once");
-    // The same nono version: the upgrade uploaded no nono and links the one there.
+    // The same nono build: the upgrade uploaded no nono and links the one there.
     assert_eq!(std::fs::metadata(&nono).unwrap().ino(), uploaded);
     let linked = host.home().join(format!(
         ".local/share/controlroom/versions/{DAEMON_VERSION}/nono"

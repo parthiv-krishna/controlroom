@@ -1,9 +1,12 @@
 //! Installing `controlroomd` with its nono, and rolling an install back.
 //!
-//! nono goes first, into `nono/<nono version>/`: a machine that already has that version
-//! (checked by running it) gets nothing uploaded, so a daemon upgrade with the same nono
-//! uploads only the daemon. Then the daemon goes into `versions/<version>/`, next to a
-//! `nono` link to its nono, and `current` is swapped to it.
+//! nono goes first, into `nono/<nono version>-<sha>/`, keyed by its content (the first 12 hex
+//! digits of the bundled binary's SHA-256): a machine that already has that build (checked by
+//! running it and, with a hash tool, by its hash) gets nothing uploaded, so a daemon upgrade
+//! with the same nono uploads only the daemon, while a rebuilt nono of the same version (a new
+//! patch) is uploaded next to the old one. Then the daemon goes into `versions/<version>/`, next
+//! to a `nono` link to its nono, and `current` is swapped to it. Old nono builds stay for the
+//! daemon versions that link them, until [`super::prune_versions`] removes them.
 //!
 //! Each binary is streamed over an exec channel into a temp file in its directory and
 //! checked, in order:
@@ -75,7 +78,9 @@ impl fmt::Display for InstallStep<'_> {
 pub struct InstalledNono {
     /// Its version.
     pub version: Version,
-    /// Absolute POSIX path of the binary, `<base>/nono/<version>/nono`.
+    /// The SHA-256 of the binary (hex).
+    pub sha256: String,
+    /// Absolute POSIX path of the binary, `<base>/nono/<version>-<sha>/nono`.
     pub path: String,
     /// Whether this install uploaded it (it wasn't on the machine yet).
     pub uploaded: bool,
@@ -107,9 +112,13 @@ impl Installed {
     }
 }
 
-/// The directory of a nono version, relative to the data dir.
-fn nono_dir(version: &Version) -> String {
-    format!("nono/{version}")
+/// Hex digits of a nono's SHA-256 in its directory name.
+const NONO_KEY_DIGITS: usize = 12;
+
+/// The directory of a nono build, relative to the data dir: `nono/<version>-<sha prefix>`.
+fn nono_dir(version: &Version, sha256_hex: &str) -> String {
+    let key = &sha256_hex[..NONO_KEY_DIGITS.min(sha256_hex.len())];
+    format!("nono/{version}-{key}")
 }
 
 /// A script that streams stdin into a temp file in `$base/<dir>`, verifies it (size, hash,
@@ -137,14 +146,7 @@ if [ "$got_size" != "$size" ]; then
   echo "size mismatch: expected $size bytes, got $got_size" >&2
   exit {EXIT_SIZE}
 fi
-how=none
-if command -v sha256sum >/dev/null 2>&1; then
-  got=$(sha256sum "$tmp" | cut -d ' ' -f 1); how=sha256sum
-elif command -v shasum >/dev/null 2>&1; then
-  got=$(shasum -a 256 "$tmp" | cut -d ' ' -f 1); how=shasum
-elif command -v openssl >/dev/null 2>&1; then
-  got=$(openssl dgst -sha256 -r "$tmp" | cut -d ' ' -f 1); how=openssl
-fi
+sha256_of "$tmp"
 if [ "$how" != none ] && [ "$got" != "$want" ]; then
   echo "sha256 mismatch ($how): expected $want, got $got" >&2
   exit {EXIT_HASH}
@@ -207,8 +209,9 @@ fn binary<'a, B: DaemonBinarySource + ?Sized>(
     Ok((binary, sha))
 }
 
-/// Makes sure the machine has the source's nono: keeps an installed copy that runs and
-/// reports the version, else uploads and verifies it.
+/// Makes sure the machine has the source's nono build: keeps an installed copy that runs,
+/// reports the version and (with a hash tool) has the same SHA-256, else uploads and verifies
+/// it.
 async fn ensure_nono<S: RemoteShell, B: DaemonBinarySource + ?Sized>(
     shell: &S,
     source: &B,
@@ -216,31 +219,35 @@ async fn ensure_nono<S: RemoteShell, B: DaemonBinarySource + ?Sized>(
     progress: &(dyn Fn(InstallStep<'_>) + Sync),
 ) -> Result<InstalledNono, BootstrapError> {
     let version = source.version(Program::Nono).clone();
+    // The content key: the binary is read (and hashed) even when the machine has it.
+    let (bytes, sha) = binary(source, Program::Nono, arch)?;
+    let dir = nono_dir(&version, &sha);
     let check = format!(
         r#"f="$base/"{dir}/nono
 if [ -x "$f" ] && out=$(version_of "$f" 2>/dev/null) && reports_version "$out" {ver}; then
-  printf 'present=%s\n' "$f"
+  sha256_of "$f"
+  if [ "$how" = none ] || [ "$got" = {sha} ]; then printf 'present=%s\n' "$f"; fi
 fi"#,
-        dir = quote(&nono_dir(&version)),
+        dir = quote(&dir),
         ver = quote(&version.to_string()),
+        sha = quote(&sha),
     );
     let out = run_script(shell, "check nono", &check, b"").await?;
     if let Some(path) = field(&out.stdout_str(), "present") {
         return Ok(InstalledNono {
             version,
+            sha256: sha,
             path: path.to_owned(),
             uploaded: false,
         });
     }
-    // Only now read the (large) binary: most installs keep the machine's nono.
-    let (bytes, sha) = binary(source, Program::Nono, arch)?;
     progress(InstallStep {
         program: Program::Nono,
         version: &version,
         arch,
     });
     let script = upload_script(
-        &nono_dir(&version),
+        &dir,
         &version,
         &sha,
         bytes.len(),
@@ -252,6 +259,7 @@ printf 'path=%s\n' "$dir/nono""#,
         .ok_or_else(|| BootstrapError::Parse(format!("install nono: {stdout:?}")))?;
     Ok(InstalledNono {
         version,
+        sha256: sha,
         path: path.to_owned(),
         uploaded: true,
     })
@@ -295,7 +303,7 @@ mv -f "$tmp" "$dir/controlroomd"
 previous=$(readlink "$base/current" 2>/dev/null || true)
 swap_current "versions/$ver"
 printf 'path=%s\nhashed=%s\nprevious=%s\n' "$dir/controlroomd" "$how" "$previous""#,
-        nono = quote(&nono_dir(&nono.version)),
+        nono = quote(&nono_dir(&nono.version, &nono.sha256)),
     );
     let script = upload_script(
         &format!("versions/{version}"),
@@ -373,6 +381,13 @@ mod tests {
         assert!(s.contains("size=42\n"));
         assert!(s.contains("dir=\"$base/\"'versions/1.2.3-rc.1'\n"));
         assert!(s.ends_with("\ntrue"));
+    }
+
+    #[test]
+    fn nono_dirs_are_keyed_by_version_and_content() {
+        let v = Version::new(0, 80, 0);
+        let sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert_eq!(nono_dir(&v, sha), "nono/0.80.0-0123456789ab");
     }
 
     #[test]

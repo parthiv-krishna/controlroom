@@ -9,7 +9,7 @@ use crate::shell::quote;
 pub struct Pruned {
     /// The removed daemon versions.
     pub versions: Vec<String>,
-    /// The removed nono versions.
+    /// The removed nono builds (directory names).
     pub nono: Vec<String>,
 }
 
@@ -18,8 +18,9 @@ pub struct Pruned {
 /// from (by `/proc/<pid>/exe` or `argv[0]`): detached supervisors keep
 /// running from the version that started them.
 ///
-/// Then removes every `nono/<ver>` directory that no remaining daemon version links to and
-/// no process of this user runs from (a sandbox started by a since-pruned daemon).
+/// Then removes every `nono/<build>` directory (`<version>-<sha>`, or `<version>` as installed
+/// before nono was keyed by content) that no remaining daemon version links to and no process
+/// of this user runs from (a sandbox started by a since-pruned daemon).
 pub async fn prune_versions<S: RemoteShell>(
     shell: &S,
     keep: &[Version],

@@ -40,7 +40,7 @@ test('add a machine', async ({ page }) => {
   await expect(settings.getByText(/installing controlroomd/)).toBeVisible();
   const doctor = settings.locator('.doctor');
   await expect(doctor.locator('.r', { hasText: 'Sandbox (nono)' })).toHaveClass(/\bok\b/, { timeout: 120_000 });
-  await expect(doctor.locator('.r', { hasText: 'Sandbox (nono)' })).toContainText(/bundled: \S+\/nono\/\d+\.\d+\.\d+\/nono/);
+  await expect(doctor.locator('.r', { hasText: 'Sandbox (nono)' })).toContainText(/bundled: \S+\/nono\/\d+\.\d+\.\d+-[0-9a-f]{12}\/nono/);
   await expect(doctor.locator('.r', { hasText: 'Landlock' })).toContainText(/ABI \d+/);
   await settings.getByRole('button', { name: 'Done' }).click();
 

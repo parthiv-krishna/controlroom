@@ -1,8 +1,8 @@
 //! Which nono the host sandboxes workspaces with (spec §11.5).
 //!
 //! By default the one the controller installed with this `controlroomd`: `versions/<ver>/nono`
-//! next to the binary, a link to `nono/<nono version>/nono` (see client-core's bootstrap). Each
-//! daemon version keeps the nono it was installed with, so a rollback restores both. A `nono`
+//! next to the binary, a link to `nono/<nono version>-<sha>/nono` (see client-core's bootstrap).
+//! Each daemon version keeps the nono it was installed with, so a rollback restores both. A `nono`
 //! key in `sandbox.toml` overrides it with a program found by the login shell or a path.
 //!
 //! The result is canonical (the versioned binary, not the link), so the process nono runs as

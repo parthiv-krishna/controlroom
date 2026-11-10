@@ -194,7 +194,11 @@ async fn the_host_uses_the_bundled_nono_unless_configured() {
         .await
         .unwrap();
     assert_eq!(report.nono.status, CheckStatus::Ok, "{:?}", report.nono);
-    assert_eq!(report.nono.value.as_deref(), Some("0.80.0"));
+    // The version and the build: the first 12 hex digits of the binary's SHA-256.
+    assert_eq!(
+        report.nono.value.as_deref(),
+        Some(format!("0.80.0 ({})", build(&installed)).as_str())
+    );
     assert_eq!(
         report.nono.detail,
         format!("bundled: {}", installed.display())
@@ -209,7 +213,10 @@ async fn the_host_uses_the_bundled_nono_unless_configured() {
         .await
         .unwrap();
     assert_eq!(report.nono.status, CheckStatus::Warn, "{:?}", report.nono);
-    assert_eq!(report.nono.value.as_deref(), Some("0.79.0"));
+    assert_eq!(
+        report.nono.value.as_deref(),
+        Some(format!("0.79.0 ({})", build(&other)).as_str())
+    );
     assert!(
         report.nono.detail.starts_with(&format!(
             "configured in sandbox.toml: {}",
@@ -218,6 +225,13 @@ async fn the_host_uses_the_bundled_nono_unless_configured() {
         "{}",
         report.nono.detail
     );
+}
+
+/// The first 12 hex digits of the SHA-256 of the file at `path`.
+fn build(path: &std::path::Path) -> String {
+    use sha2::Digest;
+    let sha = sha2::Sha256::digest(std::fs::read(path).unwrap());
+    sha.iter().take(6).map(|b| format!("{b:02x}")).collect()
 }
 
 /// The webhook's port and a workspace's secret, from the host's state dir.

@@ -46,6 +46,24 @@ fn nono(version: &str) -> InMemoryProgram {
     program(version, fake_nono(Some(&format!("nono {version}"))))
 }
 
+/// The directory name of a nono build on the machine: `<version>-<sha prefix>`.
+fn nono_key(version: &str, binary: &[u8]) -> String {
+    use sha2::Digest;
+    let sha = data_encoding::HEXLOWER.encode(&sha2::Sha256::digest(binary));
+    format!("{version}-{}", &sha[..12])
+}
+
+/// The directory name of the well-behaved nono `version`.
+fn nono_dir(version: &str) -> String {
+    nono_key(version, &fake_nono(Some(&format!("nono {version}"))))
+}
+
+/// Where a daemon's `nono` link resolves for the well-behaved nono `version`, relative to the
+/// base.
+fn nono_link(version: &str) -> String {
+    format!("nono/{}/nono", nono_dir(version))
+}
+
 fn source(fake: &Fake) -> InMemoryBinaries {
     InMemoryBinaries {
         daemon: program(fake.version, fake.binary()),
@@ -167,8 +185,11 @@ async fn probe_install_upgrade_and_never_downgrade() {
         names(&base(home.path()).join("versions/0.2.0")),
         ["controlroomd", "nono"]
     );
-    assert_eq!(names(&base(home.path()).join("nono")), [NONO]);
-    assert_eq!(names(&base(home.path()).join("nono").join(NONO)), ["nono"]);
+    assert_eq!(names(&base(home.path()).join("nono")), [nono_dir(NONO)]);
+    assert_eq!(
+        names(&base(home.path()).join("nono").join(nono_dir(NONO))),
+        ["nono"]
+    );
 }
 
 /// The nono a daemon version uses: where its `nono` link resolves, relative to the base.
@@ -213,7 +234,7 @@ impl RemoteShell for Recording {
 }
 
 #[tokio::test]
-async fn nono_is_uploaded_only_when_its_version_changes() {
+async fn nono_is_uploaded_only_when_its_build_changes() {
     let home = tempfile::tempdir().unwrap();
     let shell = Recording::new(home.path());
     let steps = std::sync::Mutex::new(Vec::new());
@@ -232,15 +253,18 @@ async fn nono_is_uploaded_only_when_its_version_changes() {
     assert_eq!(shell.take(), [nono_bytes(NONO), fake_daemon("0.1.0")]);
     assert!(installed.nono.uploaded);
     assert_eq!(installed.nono.version, Version::parse(NONO).unwrap());
-    let nono_path = base(home.path()).join("nono").join(NONO).join("nono");
+    let nono_path = base(home.path())
+        .join("nono")
+        .join(nono_dir(NONO))
+        .join("nono");
     assert_eq!(installed.nono.path, nono_path.to_str().unwrap());
     assert_eq!(std::fs::read(&nono_path).unwrap(), nono_bytes(NONO));
     let link = base(home.path()).join("versions/0.1.0/nono");
     assert_eq!(
         std::fs::read_link(&link).unwrap().to_str(),
-        Some("../../nono/0.80.0/nono")
+        Some(format!("../../nono/{}/nono", nono_dir(NONO)).as_str())
     );
-    assert_eq!(nono_of(home.path(), "current"), "nono/0.80.0/nono");
+    assert_eq!(nono_of(home.path(), "current"), nono_link(NONO));
     let arch = probe(&shell.inner).await.unwrap().arch;
     assert_eq!(
         steps.lock().unwrap().drain(..).collect::<Vec<_>>(),
@@ -254,7 +278,7 @@ async fn nono_is_uploaded_only_when_its_version_changes() {
     let installed = install_(good("0.2.0")).await.unwrap();
     assert_eq!(shell.take(), [fake_daemon("0.2.0")]);
     assert!(!installed.nono.uploaded);
-    assert_eq!(nono_of(home.path(), "current"), "nono/0.80.0/nono");
+    assert_eq!(nono_of(home.path(), "current"), nono_link(NONO));
     assert_eq!(
         steps.lock().unwrap().drain(..).collect::<Vec<_>>(),
         [format!("installing controlroomd 0.2.0 ({arch})")]
@@ -264,9 +288,12 @@ async fn nono_is_uploaded_only_when_its_version_changes() {
     let installed = install_(with_nono("0.3.0", "0.81.0")).await.unwrap();
     assert_eq!(shell.take(), [nono_bytes("0.81.0"), fake_daemon("0.3.0")]);
     assert!(installed.nono.uploaded);
-    assert_eq!(nono_of(home.path(), "current"), "nono/0.81.0/nono");
-    assert_eq!(nono_of(home.path(), "versions/0.2.0"), "nono/0.80.0/nono");
-    assert_eq!(names(&base(home.path()).join("nono")), ["0.80.0", "0.81.0"]);
+    assert_eq!(nono_of(home.path(), "current"), nono_link("0.81.0"));
+    assert_eq!(nono_of(home.path(), "versions/0.2.0"), nono_link(NONO));
+    assert_eq!(
+        names(&base(home.path()).join("nono")),
+        [nono_dir(NONO), nono_dir("0.81.0")]
+    );
 
     // Rolling the daemon back rolls its nono back too.
     rollback(&shell.inner, &installed).await.unwrap();
@@ -274,12 +301,21 @@ async fn nono_is_uploaded_only_when_its_version_changes() {
         current(&shell.inner).await.as_deref(),
         Some("versions/0.2.0")
     );
-    assert_eq!(nono_of(home.path(), "current"), "nono/0.80.0/nono");
+    assert_eq!(nono_of(home.path(), "current"), nono_link(NONO));
 
     // An installed nono that no longer runs is uploaded again (it is verified before use).
     std::fs::write(&nono_path, "#!/bin/sh\nexit 1\n").unwrap();
     install_(good("0.4.0")).await.unwrap();
     assert_eq!(shell.take(), [nono_bytes(NONO), fake_daemon("0.4.0")]);
+    assert_eq!(std::fs::read(&nono_path).unwrap(), nono_bytes(NONO));
+
+    // So is one whose content changed although it still reports the version: its hash is
+    // checked, not only `--version`.
+    let mut tampered = nono_bytes(NONO);
+    tampered.extend_from_slice(b"# changed\n");
+    std::fs::write(&nono_path, &tampered).unwrap();
+    install_(good("0.5.0")).await.unwrap();
+    assert_eq!(shell.take(), [nono_bytes(NONO), fake_daemon("0.5.0")]);
     assert_eq!(std::fs::read(&nono_path).unwrap(), nono_bytes(NONO));
 }
 
@@ -313,7 +349,7 @@ async fn a_nono_that_fails_verification_installs_nothing() {
         assert_eq!(current(&shell).await.as_deref(), Some("versions/0.1.0"));
         // Neither the daemon nor any part of the new nono was installed.
         assert_eq!(names(&base(home.path()).join("versions")), ["0.1.0"]);
-        assert_eq!(names(&base(home.path()).join("nono")), [NONO]);
+        assert_eq!(names(&base(home.path()).join("nono")), [nono_dir(NONO)]);
     }
 
     // No nono for the machine's architecture: nothing is uploaded.
@@ -423,7 +459,7 @@ async fn corrupted_uploads_are_rejected() {
         );
         assert_eq!(current(&shell.inner).await, None);
         assert!(!base(home.path()).join("versions/0.1.0").exists());
-        assert!(!base(home.path()).join("nono").join(NONO).exists());
+        assert!(!base(home.path()).join("nono").join(nono_dir(NONO)).exists());
     }
 }
 
@@ -574,7 +610,7 @@ async fn a_failed_hello_rolls_back_and_stops_the_new_daemon() {
     assert_eq!(reason, "incompatible");
     assert_eq!(restored.as_deref(), Some("versions/0.1.0"));
     assert_eq!(current(&shell).await.as_deref(), Some("versions/0.1.0"));
-    assert_eq!(nono_of(home.path(), "current"), "nono/0.80.0/nono");
+    assert_eq!(nono_of(home.path(), "current"), nono_link(NONO));
     assert!(reaper.pids().is_empty(), "the new daemon was stopped");
 
     // The next connect runs the old daemon again.
@@ -736,11 +772,17 @@ async fn prune_removes_nono_versions_with_their_daemons() {
     }
     // A sandbox started by 0.1.0 still runs from nono 0.79.0 (a stand-in that keeps running
     // with that path as its `argv[0]`).
-    let running = base(home.path()).join("nono/0.79.0/nono");
+    let running = base(home.path())
+        .join("nono")
+        .join(nono_dir("0.79.0"))
+        .join("nono");
     std::fs::write(&running, fake_daemon("0.79.0")).unwrap();
     let out = shell
         .run(
-            &start_daemon_command(".local/share/controlroom/nono/0.79.0/nono", "supervise"),
+            &start_daemon_command(
+                &format!(".local/share/controlroom/nono/{}/nono", nono_dir("0.79.0")),
+                "supervise",
+            ),
             b"",
         )
         .await
@@ -749,9 +791,12 @@ async fn prune_removes_nono_versions_with_their_daemons() {
 
     let removed = prune_versions(&shell, &[]).await.unwrap();
     assert_eq!(removed.versions, ["0.1.0", "0.2.0"]);
-    assert_eq!(removed.nono, ["0.80.0"]);
+    assert_eq!(removed.nono, [nono_dir("0.80.0")]);
     assert_eq!(names(&base(home.path()).join("versions")), ["0.3.0"]);
-    assert_eq!(names(&base(home.path()).join("nono")), ["0.79.0", "0.81.0"]);
+    assert_eq!(
+        names(&base(home.path()).join("nono")),
+        [nono_dir("0.79.0"), nono_dir("0.81.0")]
+    );
 }
 
 #[tokio::test]
@@ -926,4 +971,71 @@ async fn rotate_key_over_ssh() {
     connect(&server.target(), &new, Some(&server.host_key), &options)
         .await
         .unwrap();
+}
+
+/// A nono rebuilt with the same version (a new patch) is uploaded on the next install, next to
+/// the old build, which the older daemon versions keep; so is the bundled nono on a machine
+/// installed before nono was keyed by content (`nono/<version>/`). Prune then removes the old
+/// builds with the daemons that used them.
+#[tokio::test]
+async fn a_rebuilt_nono_of_the_same_version_is_uploaded_and_old_builds_are_pruned() {
+    let home = tempfile::tempdir().unwrap();
+    let _reaper = Reaper(home.path().to_owned());
+    let shell = local(home.path());
+    let base = base(home.path());
+    let install_ = |src: InMemoryBinaries| {
+        let shell = &shell;
+        async move {
+            let p = probe(shell).await.unwrap();
+            install(shell, &src, &p, &quiet).await.unwrap()
+        }
+    };
+
+    // A machine installed with the old layout: `versions/0.1.0/nono -> ../../nono/0.80.0/nono`.
+    std::fs::create_dir_all(base.join("nono").join(NONO)).unwrap();
+    std::fs::create_dir_all(base.join("versions/0.1.0")).unwrap();
+    let legacy = base.join("nono").join(NONO).join("nono");
+    std::fs::write(&legacy, fake_nono(Some("nono 0.80.0"))).unwrap();
+    std::fs::set_permissions(&legacy, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(
+        format!("../../nono/{NONO}/nono"),
+        base.join("versions/0.1.0/nono"),
+    )
+    .unwrap();
+
+    // The next install uploads the bundled nono into its content-keyed directory.
+    let installed = install_(good("0.2.0")).await;
+    assert!(installed.nono.uploaded);
+    assert_eq!(nono_of(home.path(), "current"), nono_link(NONO));
+
+    // The same build again: nothing uploaded.
+    assert!(!install_(good("0.3.0")).await.nono.uploaded);
+
+    // A rebuild of the same version: uploaded next to the old build.
+    let mut patched = fake_nono(Some("nono 0.80.0"));
+    patched.extend_from_slice(b"# patched\n");
+    let rebuilt = InMemoryBinaries {
+        nono: program(NONO, patched.clone()),
+        ..good("0.4.0")
+    };
+    let installed = install_(rebuilt).await;
+    assert!(installed.nono.uploaded);
+    let patched_dir = nono_key(NONO, &patched);
+    assert_eq!(
+        nono_of(home.path(), "current"),
+        format!("nono/{patched_dir}/nono")
+    );
+    assert_eq!(nono_of(home.path(), "versions/0.3.0"), nono_link(NONO));
+    assert_eq!(installed.nono.sha256.len(), 64);
+    assert!(patched_dir.ends_with(&installed.nono.sha256[..12]));
+
+    // Pruning the older daemons removes the builds only they used.
+    let removed = prune_versions(&shell, &[]).await.unwrap();
+    assert_eq!(removed.versions, ["0.1.0", "0.2.0", "0.3.0"]);
+    let mut removed_nono = removed.nono;
+    removed_nono.sort();
+    let mut expected = vec![nono_dir(NONO), NONO.to_owned()];
+    expected.sort();
+    assert_eq!(removed_nono, expected);
+    assert_eq!(names(&base.join("nono")), [patched_dir]);
 }

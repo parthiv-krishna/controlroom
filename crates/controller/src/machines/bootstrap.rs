@@ -55,6 +55,7 @@ pub(crate) async fn probe_and_install(
         version = %installed.version,
         verified_with = %installed.hashed_with,
         nono = %installed.nono.version,
+        nono_sha256 = %installed.nono.sha256,
         nono_uploaded = installed.nono.uploaded,
         "installed controlroomd"
     );
