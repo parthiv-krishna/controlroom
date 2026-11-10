@@ -15,7 +15,7 @@ use controlroom_protocol::host::{
     ApprovalRespondParams, HostApproval, HostOp, HostResult, JobsSubscribeParams, methods,
 };
 use controlroom_protocol::jsonrpc::NoParams;
-use controlroom_protocol::session::SandboxLevel;
+use controlroom_protocol::session::{RequestBody, SandboxLevel, SandboxSpec};
 
 use crate::harness::{HostEnv, RpcClient, Session};
 
@@ -415,4 +415,169 @@ async fn user_terminals_are_confined_unless_unsandboxed() {
     let read = std::fs::read_to_string(env.project().join("out-read.txt")).unwrap();
     assert_eq!(read, "outside the workspace\n");
     assert!(env.home().join("out-planted.txt").exists());
+}
+
+/// Denies every sandbox approval and records it.
+async fn record_and_deny(env: &HostEnv) -> Arc<std::sync::Mutex<Vec<HostApproval>>> {
+    let approver = env.controller().await;
+    approver
+        .call::<methods::ApprovalsSubscribe>(NoParams {})
+        .await
+        .unwrap();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let record = seen.clone();
+    tokio::spawn(async move {
+        let approver: RpcClient = approver;
+        loop {
+            let Some((method, note)) = approver.notes.lock().await.recv().await else {
+                return;
+            };
+            if method != "approval.request" {
+                continue;
+            }
+            let approval: HostApproval = serde_json::from_value(note["approval"].clone()).unwrap();
+            let _ = approver
+                .call::<methods::ApprovalRespond>(ApprovalRespondParams {
+                    approval_id: approval.id,
+                    option_id: "deny".into(),
+                    reason: None,
+                })
+                .await;
+            record.lock().unwrap().push(approval);
+        }
+    });
+    seen
+}
+
+/// The paths approvals were raised for.
+fn asked(seen: &std::sync::Mutex<Vec<HostApproval>>) -> Vec<String> {
+    seen.lock()
+        .unwrap()
+        .iter()
+        .filter_map(|a| match &a.body {
+            RequestBody::Path { path, .. } => Some(path.as_str().to_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A strict shell reads the runtime probes (`/proc/sys`, transparent huge pages, its cgroup
+/// limits) without an approval.
+#[tokio::test]
+#[ignore = "needs nono 0.80 and Landlock (CR_TEST_NONO)"]
+async fn runtime_probes_are_readable_without_asking() {
+    let env = env().await;
+    let seen = record_and_deny(&env).await;
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let session = Session::open(&env, &client, SandboxLevel::Strict).await;
+    session.shell(&client, "s").await;
+    let probes = "cat /proc/sys/vm/nr_hugepages /proc/sys/vm/overcommit_memory \
+                  /sys/kernel/mm/transparent_hugepage/enabled >/dev/null && \
+                  cat /sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.max >/dev/null && \
+                  echo probed";
+    let (exit, output, _) = session.bash(&client, "c1", "s", probes).await;
+    assert_eq!(
+        (exit, output.as_str()),
+        (Some(0), "probed"),
+        "{}",
+        env.log()
+    );
+    let asked = asked(&seen);
+    assert!(
+        !asked
+            .iter()
+            .any(|p| p.starts_with("/proc/sys") || p.starts_with("/sys")),
+        "{asked:?}"
+    );
+    let (exit, _, _) = session
+        .bash(&client, "c2", "s", "echo 0 > /proc/sys/vm/nr_hugepages")
+        .await;
+    assert_ne!(exit, Some(0), "/proc/sys is read-only");
+}
+
+/// A never-path fails without an approval (nono denies a supervised open with EPERM, "Operation
+/// not permitted", whoever decides; Landlock's own denials are EACCES); a granted `~/.cache/x` is
+/// writable without one. Both hold in the agent's shell and in the user's sandboxed terminal.
+#[tokio::test]
+#[ignore = "needs nono 0.80 and Landlock (CR_TEST_NONO)"]
+async fn never_paths_are_denied_silently_and_grants_need_no_approval() {
+    use controlroom_protocol::ids::GrantId;
+    use controlroom_protocol::session::{GrantKind, GrantScope, PathAccess, SandboxGrant};
+
+    let env = env().await;
+    std::fs::create_dir_all(env.home().join(".cache/x")).unwrap();
+    let seen = record_and_deny(&env).await;
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let spec = SandboxSpec {
+        grants: vec![SandboxGrant {
+            id: GrantId::generate(),
+            kind: GrantKind::Path,
+            value: "~/.cache/x".into(),
+            access: Some(PathAccess::ReadWrite),
+            scope: GrantScope::Standing,
+            granted_at: controlroom_protocol::UnixMillis(1),
+            by: None,
+        }],
+        never: vec!["~/secret.txt".into()],
+        ..crate::harness::sandbox(SandboxLevel::Strict)
+    };
+    let session = Session::open_with(&env, &client, spec).await;
+    session.shell(&client, "s").await;
+    let (exit, output, _) = session
+        .bash(&client, "c1", "s", "cat ~/secret.txt 2>&1")
+        .await;
+    assert_ne!(exit, Some(0));
+    assert!(output.contains("Operation not permitted"), "{output}");
+    let (exit, output, _) = session
+        .bash(
+            &client,
+            "c2",
+            "s",
+            "echo cached > ~/.cache/x/f && cat ~/.cache/x/f",
+        )
+        .await;
+    assert_eq!(
+        (exit, output.as_str()),
+        (Some(0), "cached"),
+        "{}",
+        env.log()
+    );
+    // The user's sandboxed terminal runs under the workspace's user profile: the same grants,
+    // runtime reads and never-list.
+    let terminal = session
+        .user_shell(
+            &client,
+            "you@devbox",
+            controlroom_protocol::session::ShellSandbox::Workspace,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{e}\n{}", env.log()));
+    crate::harness::type_into(
+        &env,
+        terminal.shell_id.as_str(),
+        b"cat ~/secret.txt > u-read.txt 2>&1; echo mine > ~/.cache/x/g; \
+          cat /proc/sys/vm/nr_hugepages > u-probe.txt; echo $? > u-done.txt\r",
+    );
+    let done = env.project().join("u-done.txt");
+    crate::harness::wait_until("the terminal's probe ran", || done.exists()).await;
+    let read = std::fs::read_to_string(env.project().join("u-read.txt")).unwrap();
+    assert!(read.contains("Operation not permitted"), "{read}");
+    assert_eq!(
+        std::fs::read_to_string(env.home().join(".cache/x/g")).unwrap(),
+        "mine\n"
+    );
+    assert_eq!(std::fs::read_to_string(&done).unwrap(), "0\n");
+    let asked = asked(&seen);
+    let home = env.home().to_str().unwrap().to_owned();
+    assert!(
+        !asked
+            .iter()
+            .any(|p| p.starts_with(&format!("{home}/secret.txt"))
+                || p.starts_with(&format!("{home}/.cache/x"))),
+        "{asked:?}"
+    );
 }
