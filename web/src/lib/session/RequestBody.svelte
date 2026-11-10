@@ -1,7 +1,8 @@
 <script lang="ts">
   // The structured subject of a request: command, path, endpoint, diff, git push, contact, spawn,
   // a command waiting for terminal input (the user types in that shell's terminal; the agent
-  // can't), and a privileged command (it runs unsandboxed on the host).
+  // can't), and a privileged command (it runs unsandboxed on the host). A path shows its access,
+  // whether it is under the workspace, and the machine that asked.
   import type { RequestBody, SessionId } from '../protocol';
   import OpenTerminal from '../term/OpenTerminal.svelte';
   import Diff from '../ui/Diff.svelte';
@@ -25,7 +26,12 @@
   <pre class="code">$ {body.command}</pre>
   {#if body.cwd && !compact}<div class="small muted">in <code>{body.cwd}</code></div>{/if}
 {:else if body.kind === 'path'}
-  <div class="line"><span class="acc">{body.access.replace('_', ' ')}</span> <code>{body.path}</code></div>
+  <div class="line"><span class="acc">{body.access.replace('_', '-')}</span> <code>{body.path}</code></div>
+  {#if body.in_workspace !== null || body.machine}
+    <div class="small muted" data-where>
+      {#if body.in_workspace !== null}{body.in_workspace ? 'in the workspace' : 'outside the workspace'}{/if}{#if body.in_workspace !== null && body.machine}{' · '}{/if}{#if body.machine}on <b>{body.machine}</b>{/if}
+    </div>
+  {/if}
 {:else if body.kind === 'endpoint'}
   <div class="line"><span class="acc">{body.method}</span> <code>{body.url}</code></div>
 {:else if body.kind === 'diff'}

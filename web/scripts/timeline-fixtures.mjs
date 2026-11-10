@@ -250,6 +250,35 @@ const jobs = (s, ts) => {
   ];
 };
 
+/** File requests on devbox answered with "Always allow" and "Never" (made standing on the machine). */
+const fileDecisions = (s, ts) => {
+  const devbox = fixture.snapshot.machines.find((m) => m.name === 'devbox').id;
+  const request = (id, seq, at, path, access, option, label) => ({
+    ...base(id, seq, seq + 1, at),
+    kind: 'request',
+    request: {
+      id, kind: 'sandbox', blocking: true, state: 'answered', title: `${access === 'read' ? 'Read' : 'Write'} ${path}?`, detail: null,
+      body: { kind: 'path', path, access, in_workspace: false, machine_id: devbox, machine: 'devbox' },
+      options: [
+        { id: 'allow-session', label: 'Allow for this session', style: 'allow_always' },
+        { id: 'allow-always', label: 'Always allow (devbox)', style: 'allow_always' },
+        { id: 'deny', label: 'Deny', style: 'deny' },
+        { id: 'never', label: 'Never (devbox)', style: 'deny' },
+      ],
+      questions: [],
+      answer: { response: { kind: 'choice', option_id: option }, label, by: LAPTOP, at: at + 4000 },
+      origin_child: null, created_at: at,
+    },
+  });
+  return [
+    userMsg('f.user', s + 1, ts, 'Build the deploy bundle with nix.'),
+    run('f.run', s + 2, s + 9, ts + 300, { kind: 'user', device: LAPTOP }),
+    request('f.always', s + 3, ts + 900, '/home/alice/.cache/nix/fetcher-cache-v4.sqlite', 'read_write', 'allow-always', 'Always allow (devbox)'),
+    request('f.never', s + 5, ts + 1800, '/home/alice/.bash_history', 'read', 'never', 'Never (devbox)'),
+    agentMsg('f.reply', s + 8, ts + 2600, 'The bundle is built.'),
+  ];
+};
+
 // --------------------------------------------------------------------------------------- build
 
 const sessions = new Map(fixture.snapshot.sessions.map((x) => [x.id, x]));
@@ -274,6 +303,8 @@ const timelines = Object.fromEntries([
   build(2, ['abort-text', 'abort-tool', 'abort-then-prompt', { name: 'follow-up', trigger: { kind: 'queue', device: LAPTOP } }, 'steer-during-tool']),
   build(11, [{ synthetic: coordinator }, 'plain-text']),
   build(18, [{ name: 'plain-text', trigger: { kind: 'schedule', schedule_id: '01JAY000000000000000000001', name: 'Inbox triage' } }, 'sigterm-idle']),
+  // File requests answered "Always allow" and "Never".
+  build(15, [{ synthetic: fileDecisions }]),
   // A long timeline (windowing).
   build(6, Array.from({ length: 40 }, (_, i) => LONG[i % LONG.length]), false),
 ]);

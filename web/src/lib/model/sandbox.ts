@@ -25,3 +25,29 @@ export function defaultLevel(profiles: readonly SandboxProfile[], machines: read
   if (!levels.length) return 'strict';
   return levels.reduce((a, b) => (STRICTNESS[b] > STRICTNESS[a] ? b : a));
 }
+
+/** A path typed for a standing grant or the never list, checked as the server checks it. */
+export type ProfilePath = { ok: true; path: string; broad: boolean } | { ok: false; error: string };
+
+/** Paths so broad that granting them deserves a confirmation. */
+const BROAD = new Set(['/', '~', '/home']);
+
+/**
+ * Checks and normalizes a grant or never path: absolute (`/…`) or home-relative (`~`, `~/…`; each
+ * host expands `~`), no `.` or `..` components; repeated and trailing slashes are dropped. `broad`
+ * marks `/`, `~` and `/home`.
+ */
+export function checkProfilePath(value: string): ProfilePath {
+  const v = value.trim();
+  let prefix: string;
+  let rest: string;
+  if (v === '~') [prefix, rest] = ['~', ''];
+  else if (v.startsWith('~/')) [prefix, rest] = ['~', v.slice(2)];
+  else if (v.startsWith('/')) [prefix, rest] = ['', v.slice(1)];
+  else return { ok: false, error: 'Use an absolute path (/…) or one under your home (~/…)' };
+  if (/[\u0000-\u001f\u007f]/.test(v)) return { ok: false, error: 'A path can’t contain control characters' };
+  const parts = rest.split('/').filter((p) => p !== '');
+  if (parts.some((p) => p === '.' || p === '..')) return { ok: false, error: 'Remove the . and .. parts' };
+  const path = prefix + parts.map((p) => `/${p}`).join('') || '/';
+  return { ok: true, path, broad: BROAD.has(path) };
+}

@@ -2735,6 +2735,48 @@
       "answer": null,
       "origin_child": null,
       "created_at": 1767599800000
+     },
+     {
+      "id": "req-path-1",
+      "kind": "sandbox",
+      "blocking": true,
+      "state": "pending",
+      "title": "Write /home/alice/.cache/nix/fetcher-cache-v4.sqlite-shm?",
+      "detail": "Sandbox intercepted file operation (seccomp-notify)",
+      "body": {
+       "kind": "path",
+       "path": "/home/alice/.cache/nix/fetcher-cache-v4.sqlite-shm",
+       "access": "read_write",
+       "in_workspace": false,
+       "machine_id": "01JAM000000000000000000001",
+       "machine": "devbox"
+      },
+      "options": [
+       {
+        "id": "allow-session",
+        "label": "Allow for this session",
+        "style": "allow_always"
+       },
+       {
+        "id": "allow-always",
+        "label": "Always allow (devbox)",
+        "style": "allow_always"
+       },
+       {
+        "id": "deny",
+        "label": "Deny",
+        "style": "deny"
+       },
+       {
+        "id": "never",
+        "label": "Never (devbox)",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599900000
      }
     ],
     "todo": null,
@@ -4300,6 +4342,9 @@
        "command": "kubectl apply",
        "action": "approve"
       }
+     ],
+     "never": [
+      "~/.bash_history"
      ]
     },
     {
@@ -4323,7 +4368,8 @@
       }
      ],
      "domains": [],
-     "mediated": []
+     "mediated": [],
+     "never": []
     },
     {
      "scope": {
@@ -4335,7 +4381,8 @@
      "domains": [
       "crates.io"
      ],
-     "mediated": []
+     "mediated": [],
+     "never": []
     }
    ]
   },
@@ -4356,6 +4403,9 @@
        "command": "kubectl apply",
        "action": "approve"
       }
+     ],
+     "never": [
+      "~/.bash_history"
      ]
     },
     {
@@ -4379,7 +4429,8 @@
       }
      ],
      "domains": [],
-     "mediated": []
+     "mediated": [],
+     "never": []
     },
     {
      "scope": {
@@ -4391,7 +4442,8 @@
      "domains": [
       "crates.io"
      ],
-     "mediated": []
+     "mediated": [],
+     "never": []
     }
    ]
   },

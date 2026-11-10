@@ -1,10 +1,12 @@
 <script lang="ts">
-  // Sandbox defaults (spec §11.6) per machine and project: level, standing grants, allowed domains
-  // and mediated commands. A session gets the strictest level of its machine and projects and the
-  // union of their grants; edits apply to new sessions and restarts.
+  // Sandbox defaults (spec §11.6) per machine and project: level, standing path grants, the "never"
+  // list (paths denied without asking), allowed domains and mediated commands. A session gets the
+  // strictest level of its machine and projects and the union of the rest; edits apply to new
+  // sessions and restarts. A granted directory includes everything under it (Landlock grants are
+  // recursive), so there is no separate toggle for that.
   import { useApp } from '../app/app.svelte';
-  import { LEVELS } from '../model/sandbox';
-  import type { MediationAction, ProfileChange, ProfileScope, SandboxProfile } from '../protocol';
+  import { LEVELS, checkProfilePath } from '../model/sandbox';
+  import type { MediationAction, PathAccess, ProfileChange, ProfileScope, SandboxProfile } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
 
   const app = useApp();
@@ -33,6 +35,11 @@
   let domain = $state<Record<string, string>>({});
   let command = $state<Record<string, string>>({});
   let action = $state<Record<string, MediationAction>>({});
+  let grantPath = $state<Record<string, string>>({});
+  let grantAccess = $state<Record<string, PathAccess>>({});
+  let neverPath = $state<Record<string, string>>({});
+  /** Why the last path typed for a row (`<key>:grant` or `<key>:never`) was refused. */
+  let pathError = $state<Record<string, string>>({});
 
   async function change(scope: ProfileScope, c: ProfileChange) {
     const r = await app.client.call('sandbox.set_profile', { scope, change: c });
@@ -53,6 +60,41 @@
     if (!v) return;
     domain[row.key] = '';
     void change(row.scope, { kind: 'add_domain', domain: v });
+  }
+  /** A typed path, normalized; `null` (with the reason shown) when it is refused. */
+  function typedPath(row: Row, which: 'grant' | 'never', value: string): { path: string; broad: boolean } | null {
+    const key = `${row.key}:${which}`;
+    const checked = checkProfilePath(value);
+    if (!checked.ok) {
+      pathError[key] = checked.error;
+      return null;
+    }
+    delete pathError[key];
+    return checked;
+  }
+  async function addGrant(row: Row) {
+    const typed = typedPath(row, 'grant', grantPath[row.key] ?? '');
+    if (!typed) return;
+    const access = grantAccess[row.key] ?? 'read';
+    if (typed.path === '/' && access === 'read_write') {
+      pathError[`${row.key}:grant`] = '/ can’t be granted read-write';
+      return;
+    }
+    const broad = typed.broad && !(await app.dialogs.confirm({
+      title: `Grant ${access === 'read' ? 'read' : 'read-write'} access to ${typed.path} on ${row.name}?`,
+      body: `That is very broad: sessions there could ${access === 'read' ? 'read' : 'change'} everything under it. Hosts ignore a grant that covers controlroom’s own state (under ~/.local by default).`,
+      ok: 'Grant',
+      danger: true,
+    }));
+    if (broad) return;
+    grantPath[row.key] = '';
+    await change(row.scope, { kind: 'add_grant', grant: { kind: 'path', value: typed.path, access } });
+  }
+  function addNever(row: Row) {
+    const typed = typedPath(row, 'never', neverPath[row.key] ?? '');
+    if (!typed) return;
+    neverPath[row.key] = '';
+    void change(row.scope, { kind: 'add_never', path: typed.path });
   }
   function addCommand(row: Row) {
     const v = (command[row.key] ?? '').trim();
@@ -77,8 +119,19 @@
         <span class="l">Grants</span>
         <div class="v">
           {#each p?.grants ?? [] as g (g.id)}
-            <span class="chip-s"><span class="gk">{g.kind}</span><code>{g.value}</code>{#if g.access}<span class="muted small">{g.access.replace('_', ' ')}</span>{/if}<button aria-label="Remove {g.value}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
-          {:else}<span class="muted small">None</span>{/each}
+            <span class="chip-s" data-grant={g.value}><span class="gk">{g.kind}</span><code>{g.value}</code>{#if g.access}<span class="muted small">{g.access.replace('_', '-')}</span>{/if}<button aria-label="Remove grant {g.value} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
+          {/each}
+          <input class="in" placeholder="+ path" title="Absolute or ~/…; a directory includes everything under it" aria-label="Add path grant for {row.name}" aria-invalid={!!pathError[`${row.key}:grant`]} disabled={!online} bind:value={grantPath[row.key]} onkeydown={(e) => onEnter(e, () => void addGrant(row))} />
+          <Dropdown small label="Access for {row.name}" value={grantAccess[row.key] ?? 'read'} options={[{ value: 'read', label: 'read' }, { value: 'read_write', label: 'read-write' }]} onchange={(v) => (grantAccess[row.key] = v as PathAccess)} />
+          {#if pathError[`${row.key}:grant`]}<span class="err" role="alert">{pathError[`${row.key}:grant`]}</span>{/if}
+        </div>
+      </div>
+      <div class="r">
+        <span class="l" title="Denied without asking">Never</span>
+        <div class="v">
+          {#each p?.never ?? [] as n (n)}<span class="chip-s" data-never={n}><code>{n}</code><button aria-label="Remove never-path {n} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_never', path: n })}>×</button></span>{/each}
+          <input class="in" placeholder="+ path" title="Denied without asking; absolute or ~/…" aria-label="Add never-path for {row.name}" aria-invalid={!!pathError[`${row.key}:never`]} disabled={!online} bind:value={neverPath[row.key]} onkeydown={(e) => onEnter(e, () => addNever(row))} />
+          {#if pathError[`${row.key}:never`]}<span class="err" role="alert">{pathError[`${row.key}:never`]}</span>{/if}
         </div>
       </div>
       <div class="r">
@@ -112,6 +165,8 @@
   .chip-s button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1; }
   .chip-s button:hover { color: var(--bad); }
   .gk { font: 650 10.5px var(--mono); text-transform: uppercase; padding: 0 5px; border-radius: 5px; background: var(--bg3); }
-  .in { border: 1px dashed var(--line); border-radius: 6px; padding: 2px 6px; font-size: 12px; width: 190px; background: transparent; }
+  .in { border: 1px dashed var(--line); border-radius: 6px; padding: 2px 6px; font-size: 12px; width: 190px; max-width: 100%; background: transparent; }
+  .in[aria-invalid='true'] { border-color: var(--bad); }
+  .err { color: var(--bad); font-size: 12px; flex-basis: 100%; }
   @media (max-width: 760px) { .r { flex-direction: column; gap: 4px; } }
 </style>

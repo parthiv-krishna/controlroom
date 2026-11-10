@@ -6,7 +6,7 @@ import { groupSessions } from './grouping';
 import { contentText, deepLinkHash, guessDeviceName, lineDiff, parseDeepLink } from './misc';
 import { notes } from './notifications';
 import { UNASSIGNED, health, inScope, needsYouElsewhere, taskIn, type Ctx } from './projects';
-import { defaultLevel, looser } from './sandbox';
+import { checkProfilePath, defaultLevel, looser } from './sandbox';
 import { humanSchedule, inTime, parseCron, runText, runWhen } from './schedule';
 import { connKind, connLabel, statusKind, statusLabel, statusTitle } from './status';
 import { columnTasks, orderFor, rollup, suggestMove, taskPrompt } from './tasks';
@@ -301,5 +301,17 @@ describe('misc', () => {
 
   it('extracts prompt text', () => {
     expect(contentText([{ kind: 'text', text: 'hi' }, { kind: 'image', mime_type: 'image/png', data: '' }])).toBe('hi [image]');
+  });
+});
+
+describe('sandbox paths', () => {
+  it('accepts absolute and home paths, normalized, and flags broad ones', () => {
+    expect(checkProfilePath(' ~/.cache//nix/ ')).toEqual({ ok: true, path: '~/.cache/nix', broad: false });
+    expect(checkProfilePath('/srv/data')).toEqual({ ok: true, path: '/srv/data', broad: false });
+    for (const broad of ['/', '~', '~/', '/home/', '//']) expect(checkProfilePath(broad)).toMatchObject({ ok: true, broad: true });
+  });
+
+  it('refuses relative paths and . or ..', () => {
+    for (const bad of ['', 'rel/x', '~alice/x', './x', '/a/../b', '/a/./b', '~/..']) expect(checkProfilePath(bad).ok).toBe(false);
   });
 });

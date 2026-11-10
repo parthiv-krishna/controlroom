@@ -3,13 +3,15 @@
   // kinds stay answerable from title, detail and options). Approvals block (the solid flag tier);
   // questions never block (outlined tier): answer or Dismiss ("declined"). A permission request with
   // a deny option offers "Reject & steer…": deny, then send the text ahead of the queue. A sandbox
-  // request offers "Deny…" (with a reason): the agent's command fails with that reason.
+  // request offers "Deny…" (with a reason): the agent's command fails with that reason. A file
+  // request's options are terse ("Always allow (devbox)", "Never (devbox)"); their aria-labels say
+  // the access, the path and the machine in full.
   // Used in the session pane, the notifications panel and the task detail (compact).
   import { newOpId, useApp } from '../app/app.svelte';
   import { RpcError, describeError } from '../api/errors';
   import { displayName } from '../model/filters';
   import { textContent } from '../model/misc';
-  import type { FeedSession, Question, QuestionAnswer, Request, Response } from '../protocol';
+  import type { FeedSession, Question, QuestionAnswer, Request, RequestOption, Response } from '../protocol';
   import Icon from '../ui/Icon.svelte';
   import Markdown from '../ui/Markdown.svelte';
   import RequestBody from './RequestBody.svelte';
@@ -23,7 +25,8 @@
   const child = $derived(req.origin_child ? app.client.feed.sessions.get(req.origin_child) : undefined);
   const live = $derived(app.client.online);
   const pending = $derived(req.state === 'pending');
-  const deny = $derived(req.options.find((o) => o.style === 'deny'));
+  // The plain denial: a file request's "Never" is deny-styled too, but also denies from then on.
+  const deny = $derived(req.options.find((o) => o.id === 'deny') ?? req.options.find((o) => o.style === 'deny' && o.id !== 'never'));
   const questions = $derived(req.questions);
   /** One single-choice question: picking an option answers at once. */
   const quick = $derived(questions.length === 1 && !questions[0].multi);
@@ -59,6 +62,26 @@
     }
   }
   const choose = (option_id: string) => respond({ kind: 'choice', option_id });
+
+  /** The full name of a file request's option, for its aria-label (the label stays terse). */
+  function optionName(o: RequestOption): string | undefined {
+    const body = req.body;
+    if (body?.kind !== 'path') return undefined;
+    const access = body.access === 'read' ? 'read' : body.access === 'write' ? 'write' : 'read-write';
+    const on = body.machine ? ` on ${body.machine}` : '';
+    switch (o.id) {
+      case 'allow-session':
+        return `Allow ${access} access to ${body.path} for this session`;
+      case 'allow-always':
+        return `Always allow ${access} access to ${body.path}${on}, in new sessions too`;
+      case 'never':
+        return `Never allow ${body.path}${on}: deny it without asking from now on`;
+      case 'deny':
+        return `Deny ${access} access to ${body.path} this time`;
+      default:
+        return undefined;
+    }
+  }
 
   /** The answers given so far, one per question that has one. */
   const answers = $derived(
@@ -153,7 +176,7 @@
     {:else}
       <div class="acts">
         {#each req.options as o (o.id)}
-          <button class="btn" class:sm={compact} class:primary={o.style === 'allow'} class:danger={o.style === 'deny'} disabled={!live || busy} onclick={() => choose(o.id)}>{o.label}</button>
+          <button class="btn" class:sm={compact} class:primary={o.style === 'allow'} class:danger={o.style === 'deny'} aria-label={optionName(o)} disabled={!live || busy} onclick={() => choose(o.id)}>{o.label}</button>
         {/each}
         {#if req.kind === 'permission' && deny && live && !steering}<button class="btn danger" class:sm={compact} onclick={() => startSteer('steer')}>Reject &amp; steer…</button>{/if}
         {#if req.kind === 'sandbox' && deny && live && !steering}<button class="btn danger" class:sm={compact} aria-label="{deny.label} with reason" onclick={() => startSteer('reason')}>{deny.label}…</button>{/if}
