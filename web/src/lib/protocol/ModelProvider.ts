@@ -26,6 +26,11 @@ source: ProviderSource,
  */
 takes_key: boolean, 
 /**
+ * In place of an API key, it also takes a pasted subscription token with this prefix
+ * (`sk-ant-oat` for Anthropic).
+ */
+token_prefix: string | null, 
+/**
  * pi can sign in to it (a subscription).
  */
 can_sign_in: boolean, 

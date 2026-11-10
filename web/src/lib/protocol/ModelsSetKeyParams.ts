@@ -10,7 +10,8 @@ export type ModelsSetKeyParams = {
  */
 provider: string, 
 /**
- * The API key. Never returned.
+ * The API key, or a subscription token the provider takes ([`ModelProvider::token_prefix`]).
+ * Never returned.
  */
 key: string, 
 /**

@@ -19,6 +19,9 @@ pub struct ProbeRequest {
     pub format: String,
     /// Extra headers the API requires.
     pub extra: Vec<(String, String)>,
+    /// What a 401 means for this credential, when it says more than the status (e.g. that a
+    /// subscription token expired or was revoked).
+    pub unauthorized: Option<&'static str>,
 }
 
 /// Sends `request` with `secret`; `Ok` with a short description when the provider accepted it.
@@ -37,9 +40,12 @@ pub async fn probe(request: &ProbeRequest, secret: &str) -> Result<String, Strin
     }
     let response = builder.send().await.map_err(|e| redact(describe(&e)))?;
     let status = response.status();
-    let text = match status.canonical_reason() {
-        Some(reason) => format!("HTTP {} {reason}", status.as_u16()),
-        None => format!("HTTP {}", status.as_u16()),
+    let text = match (status.canonical_reason(), request.unauthorized) {
+        (_, Some(meaning)) if status == reqwest::StatusCode::UNAUTHORIZED => {
+            format!("HTTP 401: {meaning}")
+        }
+        (Some(reason), _) => format!("HTTP {} {reason}", status.as_u16()),
+        (None, _) => format!("HTTP {}", status.as_u16()),
     };
     if status.is_success() {
         Ok(text)
@@ -70,31 +76,13 @@ fn describe(error: &reqwest::Error) -> String {
 
 #[cfg(test)]
 mod tests {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
-
     use super::*;
+    use crate::models::test_support::one_request_server;
 
-    /// A one-request HTTP server: 200 when the request carries `x-api-key: good-key`.
+    /// The test server, accepting `x-api-key: good-key`; its model list URL.
     async fn server() -> (String, tokio::task::JoinHandle<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/v1/models", listener.local_addr().unwrap());
-        let task = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut buf = vec![0; 4096];
-            let n = stream.read(&mut buf).await.unwrap();
-            let request = String::from_utf8_lossy(&buf[..n]).to_lowercase();
-            let status = if request.contains("x-api-key: good-key") {
-                "200 OK"
-            } else {
-                "401 Unauthorized"
-            };
-            let response =
-                format!("HTTP/1.1 {status}\r\ncontent-length: 21\r\n\r\nkey good-key is wrong");
-            stream.write_all(response.as_bytes()).await.unwrap();
-            request
-        });
-        (url, task)
+        let (origin, task) = one_request_server("x-api-key: good-key").await;
+        (format!("{origin}/v1/models"), task)
     }
 
     fn request(url: String) -> ProbeRequest {
@@ -103,6 +91,7 @@ mod tests {
             header: "x-api-key".into(),
             format: "{}".into(),
             extra: vec![("anthropic-version".into(), "2023-06-01".into())],
+            unauthorized: None,
         }
     }
 

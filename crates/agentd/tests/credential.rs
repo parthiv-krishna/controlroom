@@ -224,3 +224,61 @@ fn stored_keys_resolve_per_preset_route() {
     assert!(!auth.contains("stored"), "{auth}");
     assert_fails_closed(dirs.state(), &[SESSION, "openai-codex"]);
 }
+
+/// A subscription token pasted for Anthropic in Settings › Models: the session gets the sign-in's
+/// Bearer route and a stand-in with the token's type prefix, and the helper prints the stored
+/// token as is (it is never refreshed).
+#[test]
+fn a_pasted_subscription_token_is_printed_as_is() {
+    use controlroom_agentd::config::sandbox as sandbox_config;
+    use controlroom_agentd::dirs::Dirs;
+    use controlroom_agentd::models::merge;
+    use controlroom_sandbox::agent_dir::PLACEHOLDER;
+    use controlroom_sandbox::credential::KeyStore;
+
+    let t = tempfile::tempdir().expect("tempdir");
+    let root = AbsPath::from_path(t.path()).expect("utf-8 tempdir");
+    let dirs = Dirs::under(root.join("state"));
+    std::fs::create_dir_all(dirs.models().as_path()).expect("mkdir");
+    let token = "sk-ant-oat01-test-secret-abcd";
+    let mut keys = KeyStore::default();
+    keys.insert("anthropic", token);
+    keys.save(&dirs.models().join("keys.json"))
+        .expect("save keys");
+
+    let mut sandbox = sandbox_config::SandboxConfig::default()
+        .resolve(None, &dirs.pi_agent_dir())
+        .expect("sandbox");
+    merge::apply(&dirs, &mut sandbox);
+    let route = &sandbox.routes[0];
+    assert_eq!(
+        (
+            route.provider.as_str(),
+            route.upstream.as_str(),
+            route.inject_header.as_deref(),
+            route.credential_format.as_deref(),
+        ),
+        (
+            "anthropic",
+            "https://api.anthropic.com",
+            Some("Authorization"),
+            Some("Bearer {}")
+        )
+    );
+
+    let layout = SessionLayout::new(dirs.state(), &SessionId::new(SESSION).expect("id"));
+    build_session_dirs(&layout, &sandbox.agent_dir).expect("build session dirs");
+    let auth = std::fs::read_to_string(layout.agent().join("auth.json").as_path()).expect("auth");
+    let auth: serde_json::Value = serde_json::from_str(&auth).expect("auth.json");
+    assert_eq!(
+        auth["anthropic"],
+        serde_json::json!({"type": "api_key", "key": format!("sk-ant-oat01-{PLACEHOLDER}")})
+    );
+    let out = controlroomd(dirs.state(), &[SESSION, "anthropic"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.stdout, token.as_bytes());
+}

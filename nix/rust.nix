@@ -275,4 +275,18 @@ in
   fmt = craneLib.cargoFmt { src = craneLib.cleanCargoSource ../.; };
 
   test = craneLib.cargoTest (commonArgs // { inherit cargoArtifacts; });
+
+  # The real pi request path of a pasted Anthropic subscription token: the agent daemon's
+  # ignored `pi_subscription_token` test, run against `piBundle` (controlroom-pi).
+  piSubscriptionToken =
+    piBundle:
+    craneLib.cargoTest (
+      commonArgs
+      // {
+        pname = "controlroom-pi-subscription-token";
+        inherit cargoArtifacts;
+        cargoTestExtraArgs = "-p controlroom-agentd --test pi_subscription_token -- --ignored";
+        CR_TEST_PI_BUNDLE = piBundle;
+      }
+    );
 }

@@ -2,7 +2,7 @@
 
 use controlroom_protocol::ErrorData;
 use controlroom_protocol::agentd::{
-    AuthHeader, Gateway, LoginStartParams, ModelDefaults, ModelsProviderParams,
+    AuthHeader, Gateway, KeyKind, LoginStartParams, ModelDefaults, ModelsProviderParams,
     ModelsSetDefaultsParams, ModelsSetGatewayParams, ModelsSetKeyParams, ProviderSource,
 };
 use controlroom_protocol::ids::DeviceId;
@@ -11,6 +11,7 @@ use controlroom_sandbox::AbsPath;
 use serde_json::json;
 
 use super::Models;
+use super::test_support::one_request_server;
 use crate::dirs::Dirs;
 
 struct Fixture {
@@ -301,4 +302,130 @@ async fn sign_in_needs_a_provider_pi_can_sign_in_to() {
         .unwrap();
     let err = f.models.login_start(start("anthropic")).await.unwrap_err();
     assert!(err.message.contains("remove it first"), "{}", err.message);
+}
+
+/// A pasted subscription token (`claude setup-token`) for Anthropic: stored as a key, marked as
+/// a token, tested with Bearer and pi's subscription headers, refused elsewhere, and exclusive
+/// with a sign-in.
+#[tokio::test]
+async fn anthropic_subscription_tokens() {
+    let f = fixture();
+    let token = "sk-ant-oat01-test-good-abcd";
+    let state = f.models.set_key(key("anthropic", token)).await.unwrap();
+    assert!(!serde_json::to_string(&state).unwrap().contains(token));
+    let row = state
+        .providers
+        .iter()
+        .find(|p| p.id == "anthropic")
+        .unwrap();
+    let stored = row.key.as_ref().unwrap();
+    assert_eq!(
+        (stored.kind, stored.last4.as_str()),
+        (KeyKind::SubscriptionToken, "abcd")
+    );
+    assert_eq!(row.token_prefix.as_deref(), Some("sk-ant-oat"));
+    let openai = state.providers.iter().find(|p| p.id == "openai").unwrap();
+    assert_eq!(openai.token_prefix, None);
+    // pi offers Anthropic's models with the token's stand-in.
+    assert!(state.models.iter().any(|m| m.provider == "anthropic"));
+
+    // The test: the model list, Bearer and the headers pi sends with subscription tokens.
+    let ctx = f.models.context().unwrap();
+    let mut request = super::probe_target(&ctx, "anthropic").unwrap().unwrap();
+    assert_eq!(request.url, "https://api.anthropic.com/v1/models");
+    let (origin, task) = one_request_server("authorization: bearer sk-ant-oat01-test-good").await;
+    request.url = format!("{origin}/v1/models");
+    assert_eq!(
+        super::probe::probe(&request, token).await.unwrap(),
+        "HTTP 200 OK"
+    );
+    let sent = task.await.unwrap();
+    for header in [
+        "anthropic-version: 2023-06-01",
+        "anthropic-beta: claude-code-20250219,oauth-2025-04-20",
+        "user-agent: claude-cli/",
+        "x-app: cli",
+    ] {
+        assert!(sent.contains(header), "{header}: {sent}");
+    }
+    assert!(!sent.contains("x-api-key"), "{sent}");
+    // An expired or revoked token says so.
+    let (origin, _task) = one_request_server("authorization: bearer sk-ant-oat01-test-good").await;
+    request.url = format!("{origin}/v1/models");
+    assert_eq!(
+        super::probe::probe(&request, "sk-ant-oat01-test-revoked")
+            .await
+            .unwrap_err(),
+        "HTTP 401: token rejected (expired or revoked?)"
+    );
+
+    // Elsewhere it's refused, naming where it goes.
+    let err = f.models.set_key(key("openai", token)).await.unwrap_err();
+    assert_eq!(err.data, Some(ErrorData::InvalidParams));
+    assert!(
+        err.message.contains("add it to Anthropic"),
+        "{}",
+        err.message
+    );
+    let gateway = ModelsSetGatewayParams {
+        provider: "gw".into(),
+        gateway: Gateway {
+            base_url: "https://gw.example.com/v1".into(),
+            models: vec!["m".into()],
+            auth_header: AuthHeader::XApiKey,
+        },
+        key: Some(token.into()),
+        by: laptop(),
+    };
+    let err = f.models.set_gateway(gateway).await.unwrap_err();
+    assert!(
+        err.message.contains("add it to Anthropic"),
+        "{}",
+        err.message
+    );
+
+    // A sign-in and a token exclude each other, as with keys.
+    let start = LoginStartParams {
+        provider: "anthropic".into(),
+        by: laptop(),
+    };
+    let err = f.models.login_start(start).await.unwrap_err();
+    assert!(err.message.contains("remove it first"), "{}", err.message);
+    f.models.remove(provider("anthropic")).await.unwrap();
+    std::fs::write(
+        f.dirs.pi_agent_dir().join("auth.json").as_path(),
+        json!({"anthropic": {"type": "oauth", "access": "sk-ant-oat01-x", "refresh": "r", "expires": 1}})
+            .to_string(),
+    )
+    .unwrap();
+    let err = f.models.set_key(key("anthropic", token)).await.unwrap_err();
+    assert!(err.message.contains("sign out first"), "{}", err.message);
+}
+
+/// A token stored before kinds existed is recognized from the key itself.
+#[tokio::test]
+async fn stored_tokens_are_reclassified() {
+    let f = fixture();
+    std::fs::create_dir_all(f.dirs.models().as_path()).unwrap();
+    std::fs::write(
+        f.dirs.models().join("keys.json").as_path(),
+        json!({"anthropic": "sk-ant-oat01-test-abcd"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        f.dirs.models().join("providers.json").as_path(),
+        json!({"providers": {"anthropic": {"key": {"last4": "abcd", "added_at": 1, "added_by": null}}}})
+            .to_string(),
+    )
+    .unwrap();
+    let state = f.models.list().await.unwrap();
+    let row = state
+        .providers
+        .iter()
+        .find(|p| p.id == "anthropic")
+        .unwrap();
+    assert_eq!(row.key.as_ref().unwrap().kind, KeyKind::SubscriptionToken);
+    let ctx = f.models.context().unwrap();
+    let request = super::probe_target(&ctx, "anthropic").unwrap().unwrap();
+    assert_eq!(request.header, "Authorization");
 }

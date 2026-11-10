@@ -1,17 +1,20 @@
 // Settings › Models: a provider's status chip and detail line, the defaults pickers' options,
 // and the gateway form's parsing.
-import type { AuthHeader, LoginStep, ModelChoice, ModelProvider } from '../protocol';
+import type { AuthHeader, LoginStep, ModelChoice, ModelProvider, StoredKey } from '../protocol';
 import { ago } from './status';
 
 export type Tone = 'ok' | 'bad' | 'warn' | 'muted';
 
-/** The status chip: ok · test failed · signed in · from server config · key set …4f2a · not signed in · no key. */
+/** A stored key is a pasted subscription token (e.g. Anthropic's `sk-ant-oat…`) rather than an API key. */
+export const isToken = (key: StoredKey | null): boolean => key?.kind === 'subscription_token';
+
+/** The status chip: ok · test failed · signed in · from server config · key/token set …4f2a · not signed in · no key. */
 export function providerStatus(p: ModelProvider): { text: string; tone: Tone } {
   if (p.test && !p.test.ok) return { text: 'test failed', tone: 'bad' };
   if (p.test?.ok) return { text: 'ok', tone: 'ok' };
   if (p.signed_in) return { text: 'signed in', tone: 'ok' };
   if (p.source === 'server') return { text: 'from server config', tone: 'muted' };
-  if (p.key) return { text: `key set …${p.key.last4}`, tone: 'ok' };
+  if (p.key) return { text: `${isToken(p.key) ? 'token' : 'key'} set …${p.key.last4}`, tone: 'ok' };
   if (p.can_sign_in && !p.takes_key) return { text: 'not signed in', tone: 'muted' };
   return { text: p.can_sign_in ? 'not set up' : 'no key', tone: 'muted' };
 }
@@ -23,7 +26,7 @@ export function providerDetail(p: ModelProvider, deviceLabel: (id: string, fallb
   if (p.signed_in) parts.push(p.signed_in.account ? `signed in as ${p.signed_in.account}` : 'signed in');
   if (p.key) {
     const by = p.key.added_by ? ` by ${deviceLabel(p.key.added_by.device_id, p.key.added_by.label)}` : '';
-    parts.push(`key …${p.key.last4} · added ${ago(p.key.added_at, now)}${by}`);
+    parts.push(`${isToken(p.key) ? 'subscription token' : 'key'} …${p.key.last4} · added ${ago(p.key.added_at, now)}${by}`);
   }
   if (p.gateway) parts.push(`${p.gateway.base_url} · ${p.gateway.models.join(', ')}`);
   if (p.test) parts.push(`${p.test.ok ? 'test ok' : 'test failed'}: ${p.test.message} · ${ago(p.test.at, now)}`);

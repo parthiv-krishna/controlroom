@@ -78,6 +78,7 @@ export type * from "./JobLogsParams";
 export type * from "./JobOpParams";
 export type * from "./JobStatus";
 export type * from "./KeyId";
+export type * from "./KeyKind";
 export type * from "./KeysDeleteParams";
 export type * from "./KeysGenerateParams";
 export type * from "./KeysImportParams";

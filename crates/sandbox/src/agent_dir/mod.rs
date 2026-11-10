@@ -28,7 +28,7 @@ use std::os::unix::fs::symlink;
 
 use serde_json::{Map, Value};
 
-pub use auth::{FAR_FUTURE_MS, FakeAuth, fake_auth, unsigned_jwt};
+pub use auth::{FAR_FUTURE_MS, FakeAuth, fake_auth, stand_in, unsigned_jwt};
 pub use models::sanitize_models;
 pub use settings::session_settings;
 
@@ -73,6 +73,9 @@ pub struct ManagedProviders {
     pub key_providers: Vec<String>,
     /// The key store `controlroomd credential` reads their keys from.
     pub key_store: Option<AbsPath>,
+    /// Stand-ins other than [`PLACEHOLDER`] for stored keys, by provider ([`stand_in`]): a
+    /// pasted subscription token's keeps its type prefix, so pi takes its subscription path.
+    pub stand_ins: BTreeMap<String, String>,
     /// `models.json` provider entries (custom gateways), without real keys.
     pub models: Map<String, Value>,
     /// `settings.json` values that override the user's (the defaults of new sessions).
@@ -209,7 +212,12 @@ pub fn build_agent_config(
             api_key_providers.contains(provider) || fake.oauth_providers.contains(provider);
         if !configured {
             if !managed.models.contains_key(provider) {
-                fake.auth.insert(provider.clone(), placeholder_key());
+                let stand_in = managed
+                    .stand_ins
+                    .get(provider)
+                    .map_or(PLACEHOLDER, String::as_str);
+                fake.auth
+                    .insert(provider.clone(), placeholder_key(stand_in));
             }
             stored_key_providers.push(provider.clone());
         }
@@ -245,9 +253,9 @@ fn merge_models(
     Some(models)
 }
 
-/// An `auth.json` API-key entry holding the placeholder.
-fn placeholder_key() -> Value {
-    serde_json::json!({"type": "api_key", "key": PLACEHOLDER})
+/// An `auth.json` API-key entry holding `stand_in`.
+fn placeholder_key(stand_in: &str) -> Value {
+    serde_json::json!({"type": "api_key", "key": stand_in})
 }
 
 /// Checks `profile` with [`check_profile_json`] and writes it to `profile.json`.

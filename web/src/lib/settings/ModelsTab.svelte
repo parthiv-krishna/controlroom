@@ -5,7 +5,7 @@
   // Defaults pick the model and thinking level of new sessions. Changes apply to new sessions and
   // restarts.
   import { useApp } from '../app/app.svelte';
-  import { AUTH_HEADERS, THINKING_LEVELS, defaultProviders, parseModels, providerDetail, providerStatus } from '../model/models';
+  import { AUTH_HEADERS, THINKING_LEVELS, defaultProviders, isToken, parseModels, providerDetail, providerStatus } from '../model/models';
   import type { AuthHeader, ModelDefaults, ModelProvider, ModelsState } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
   import SignIn from './SignIn.svelte';
@@ -60,7 +60,7 @@
     if (await run(p.id, () => app.client.call('models.set_key', { provider: p.id, key: value }))) keyFor = null;
   }
   async function remove(p: ModelProvider) {
-    const what = p.gateway ? `the gateway ${p.label}` : `the ${p.label} key`;
+    const what = p.gateway ? `the gateway ${p.label}` : `the ${p.label} ${isToken(p.key) ? 'subscription token' : 'key'}`;
     if (!(await app.dialogs.confirm({ title: `Remove ${what}?`, body: 'New sessions and restarts stop using it.', ok: 'Remove', danger: true }))) return;
     await run(p.id, () => app.client.call('models.remove', { provider: p.id }));
   }
@@ -113,6 +113,8 @@
 {#snippet row(p: ModelProvider)}
   {@const status = providerStatus(p)}
   {@const readOnly = p.source === 'server'}
+  {@const stored = isToken(p.key) ? 'subscription token' : 'API key'}
+  {@const accepts = p.token_prefix ? 'API key or subscription token' : 'API key'}
   <div class="card" data-provider={p.id}>
     <div class="h">
       <b>{p.label}</b>
@@ -120,17 +122,17 @@
       <span class="sp"></span>
       <div class="acts">
         {#if p.takes_key && !p.gateway}
-          <button class="btn xs" disabled={!online} aria-label="{p.key ? 'Replace' : 'Add'} API key for {p.label}" onclick={() => { closeForms(); keyFor = p.id; }}>{p.key ? 'Replace key' : 'Add key'}</button>
+          <button class="btn xs" disabled={!online} aria-label={p.key ? `Replace ${stored} for ${p.label}` : `Add ${accepts} for ${p.label}`} onclick={() => { closeForms(); keyFor = p.id; }}>{p.key ? `Replace ${isToken(p.key) ? 'token' : 'key'}` : 'Add key'}</button>
         {/if}
         {#if p.gateway}<button class="btn xs" disabled={!online} aria-label="Edit gateway {p.label}" onclick={() => editGateway(p)}>Edit</button>{/if}
         {#if p.can_sign_in && !p.signed_in}
-          <button class="btn xs" disabled={!online || !!p.key} title={p.key ? 'Remove the key first' : undefined} aria-label="Sign in to {p.label}" onclick={() => { closeForms(); signingIn = p; }}>Sign in</button>
+          <button class="btn xs" disabled={!online || !!p.key} title={p.key ? `Remove the ${isToken(p.key) ? 'token' : 'key'} first` : undefined} aria-label="Sign in to {p.label}" onclick={() => { closeForms(); signingIn = p; }}>Sign in</button>
         {/if}
         {#if p.signed_in}<button class="btn xs ghost" disabled={!online || busy === p.id} aria-label="Sign out of {p.label}" onclick={() => signOut(p)}>Sign out</button>{/if}
         {#if p.key || p.signed_in || readOnly}
           <button class="btn xs ghost" disabled={!online || busy === p.id} aria-label="Test {p.label}" onclick={() => test(p)}>{#if busy === p.id}<span class="spin"></span>{/if}Test</button>
         {/if}
-        {#if (p.key || p.gateway) && !readOnly}<button class="btn xs ghost bad-t" disabled={!online || busy === p.id} aria-label="Remove {p.gateway ? 'gateway' : 'API key for'} {p.label}" onclick={() => remove(p)}>Remove</button>{/if}
+        {#if (p.key || p.gateway) && !readOnly}<button class="btn xs ghost bad-t" disabled={!online || busy === p.id} aria-label={p.gateway ? `Remove gateway ${p.label}` : `Remove ${stored} for ${p.label}`} onclick={() => remove(p)}>Remove</button>{/if}
       </div>
     </div>
     {#if providerDetail(p, deviceLabel)}<div class="small muted detail">{providerDetail(p, deviceLabel)}</div>{/if}
@@ -138,7 +140,7 @@
     {#if keyFor === p.id}
       <div class="form row">
         <!-- svelte-ignore a11y_autofocus -->
-        <input type="password" autocomplete="off" spellcheck="false" autofocus aria-label="API key for {p.label}" placeholder="API key" bind:value={key} onkeydown={(e) => onEnter(e, () => saveKey(p))} />
+        <input type="password" autocomplete="off" spellcheck="false" autofocus aria-label="{accepts} for {p.label}" placeholder={p.token_prefix ? `API key or ${p.token_prefix}… token` : 'API key'} bind:value={key} onkeydown={(e) => onEnter(e, () => saveKey(p))} />
         <button class="btn sm primary" disabled={!online || !key.trim()} onclick={() => saveKey(p)}>Save</button>
         <button class="btn sm ghost" onclick={closeForms}>Cancel</button>
       </div>

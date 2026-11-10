@@ -127,6 +127,13 @@ fn fake_oauth(entry: &Value, claims: &[String]) -> Map<String, Value> {
     fake
 }
 
+/// What stands in for `credential` inside the sandbox: [`PLACEHOLDER`], behind the type prefix
+/// of a token pi tells apart by a marker (e.g. a pasted Anthropic subscription token), so pi
+/// takes the same code path as with the real one. The prefix is no secret.
+pub fn stand_in(credential: &str) -> String {
+    marked_placeholder(credential).unwrap_or_else(|| PLACEHOLDER.to_owned())
+}
+
 /// For an opaque token with one of [`OPAQUE_MARKERS`], the placeholder behind its type prefix
 /// (the dash-separated segments up to the one holding the marker).
 fn marked_placeholder(token: &str) -> Option<String> {
@@ -233,6 +240,11 @@ mod tests {
         assert!(!serde_json::to_string(&out.auth).unwrap().contains("secret"));
         assert_eq!(marked_placeholder("sk-ant-oat"), None);
         assert_eq!(marked_placeholder("opaque"), None);
+        assert_eq!(
+            stand_in("sk-ant-oat01-test-secret"),
+            format!("sk-ant-oat01-{PLACEHOLDER}")
+        );
+        assert_eq!(stand_in("sk-ant-api03-test-secret"), PLACEHOLDER);
     }
 
     #[test]

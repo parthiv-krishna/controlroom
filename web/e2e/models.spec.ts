@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { LoginState } from '../src/lib/protocol';
+import fixture from '../fixtures/controlroom.json' with { type: 'json' };
+import type { LoginState, ModelsState } from '../src/lib/protocol';
 import { calls, start } from './helpers';
 
 /** Opens Settings › Models (on a phone, through the projects drawer). */
@@ -31,9 +32,10 @@ test('models: statuses, add, replace and remove a key, test', async ({ page }) =
   await expect(row('litellm').getByRole('button', { name: /Remove|key/ })).toHaveCount(0);
 
   // Add: the key goes out once, and the form closes.
-  await row('anthropic').getByRole('button', { name: 'Add API key for Anthropic' }).click();
-  const input = row('anthropic').getByRole('textbox', { name: 'API key for Anthropic', exact: true });
+  await row('anthropic').getByRole('button', { name: 'Add API key or subscription token for Anthropic' }).click();
+  const input = row('anthropic').getByRole('textbox', { name: 'API key or subscription token for Anthropic', exact: true });
   await expect(input).toHaveAttribute('type', 'password');
+  await expect(input).toHaveAttribute('placeholder', 'API key or sk-ant-oat… token');
   await input.fill('sk-test-anthropic-1234');
   await input.press('Enter');
   await expect.poll(async () => (await calls(page, 'models.set_key')).map((c) => c.params)).toEqual([{ provider: 'anthropic', key: 'sk-test-anthropic-1234' }]);
@@ -41,7 +43,9 @@ test('models: statuses, add, replace and remove a key, test', async ({ page }) =
 
   // Replace, test, remove (confirmed).
   await row('openai').getByRole('button', { name: 'Replace API key for OpenAI' }).click();
-  await row('openai').getByRole('textbox', { name: 'API key for OpenAI', exact: true }).fill('sk-openai-test-9999');
+  const openaiInput = row('openai').getByRole('textbox', { name: 'API key for OpenAI', exact: true });
+  await expect(openaiInput).toHaveAttribute('placeholder', 'API key');
+  await openaiInput.fill('sk-openai-test-9999');
   await row('openai').getByRole('button', { name: 'Save' }).click();
   await expect.poll(async () => (await calls(page, 'models.set_key')).length).toBe(2);
   await row('google').getByRole('button', { name: 'Test Google (Gemini)' }).click();
@@ -49,6 +53,29 @@ test('models: statuses, add, replace and remove a key, test', async ({ page }) =
   await row('google').getByRole('button', { name: 'Remove API key for Google (Gemini)' }).click();
   await page.getByRole('alertdialog', { name: /Remove the Google/ }).getByRole('button', { name: 'Remove' }).click();
   await expect.poll(async () => (await calls(page, 'models.remove')).map((c) => c.params)).toEqual([{ provider: 'google' }]);
+});
+
+test('models: a pasted subscription token', async ({ page }) => {
+  await start(page);
+  const settings = await openModels(page);
+  const row = settings.locator('[data-provider="anthropic"]');
+  const token = 'sk-ant-oat01-test-abcd';
+  // The agent daemon's answer: Anthropic has a subscription token.
+  const state = structuredClone(fixture.responses['models.list']) as unknown as ModelsState;
+  const anthropic = state.providers.find((p) => p.id === 'anthropic')!;
+  anthropic.source = 'ui';
+  anthropic.key = { kind: 'subscription_token', last4: 'abcd', added_at: 1767592800000, added_by: null };
+  await page.evaluate((s) => window.__fixture!.reply('models.set_key', s), state);
+
+  await row.getByRole('button', { name: 'Add API key or subscription token for Anthropic' }).click();
+  await row.getByRole('textbox', { name: 'API key or subscription token for Anthropic', exact: true }).fill(token);
+  await row.getByRole('button', { name: 'Save' }).click();
+  await expect.poll(async () => (await calls(page, 'models.set_key')).map((c) => c.params)).toEqual([{ provider: 'anthropic', key: token }]);
+  await expect(row.locator('[data-status]')).toHaveText('token set …abcd');
+  await expect(row).toContainText('subscription token …abcd');
+  await expect(row.getByRole('button', { name: 'Replace subscription token for Anthropic' })).toHaveText('Replace token');
+  await expect(row.getByRole('button', { name: 'Remove subscription token for Anthropic' })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'Sign in to Anthropic' })).toBeDisabled();
 });
 
 test('models: a custom gateway and the defaults', async ({ page }) => {

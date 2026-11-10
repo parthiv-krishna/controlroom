@@ -51,9 +51,27 @@ pub enum AuthHeader {
     Unknown,
 }
 
+/// What a stored key is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyKind {
+    /// A provider API key.
+    #[default]
+    ApiKey,
+    /// A subscription token pasted in place of an API key (Anthropic's `sk-ant-oat…`, e.g. from
+    /// `claude setup-token`): it takes the subscription's route and is never refreshed.
+    SubscriptionToken,
+    /// A kind this build doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
 /// A stored API key, described without the key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct StoredKey {
+    /// What it is (`api_key` for keys stored before kinds existed).
+    #[serde(default)]
+    pub kind: KeyKind,
     /// Its last four characters.
     pub last4: String,
     /// When it was added or replaced.
@@ -102,6 +120,10 @@ pub struct ModelProvider {
     pub source: ProviderSource,
     /// It takes an API key here (a preset or a gateway).
     pub takes_key: bool,
+    /// In place of an API key, it also takes a pasted subscription token with this prefix
+    /// (`sk-ant-oat` for Anthropic).
+    #[serde(default)]
+    pub token_prefix: Option<String>,
     /// pi can sign in to it (a subscription).
     pub can_sign_in: bool,
     /// The API key stored here.
@@ -162,7 +184,8 @@ pub struct ModelsState {
 pub struct ModelsSetKeyParams {
     /// A preset provider or a gateway.
     pub provider: String,
-    /// The API key. Never returned.
+    /// The API key, or a subscription token the provider takes ([`ModelProvider::token_prefix`]).
+    /// Never returned.
     pub key: String,
     /// The device making the change; the controller fills it in (see
     /// [`super::RequestRespondParams::by`]).

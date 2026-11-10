@@ -46,6 +46,18 @@ pub struct Stored {
     pub defaults: ModelDefaults,
 }
 
+impl Stored {
+    /// Sets each stored key's kind from the key itself, so keys stored before kinds existed (or
+    /// before a provider took subscription tokens) are described as what they are.
+    pub fn classify_keys(&mut self, keys: &KeyStore) {
+        for (id, provider) in &mut self.providers {
+            if let (Some(described), Some(key)) = (&mut provider.key, keys.get(id)) {
+                described.kind = super::presets::key_kind(id, key.expose());
+            }
+        }
+    }
+}
+
 /// The files of `<state>/models/`.
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -111,8 +123,72 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use controlroom_protocol::UnixMillis;
+    use controlroom_protocol::agentd::KeyKind;
 
     use super::*;
+
+    fn described(kind: KeyKind, last4: &str) -> StoredProvider {
+        StoredProvider {
+            key: Some(StoredKey {
+                kind,
+                last4: last4.into(),
+                added_at: UnixMillis(1),
+                added_by: None,
+            }),
+            ..StoredProvider::default()
+        }
+    }
+
+    #[test]
+    fn subscription_tokens_are_marked_and_stay_in_the_key_store() {
+        let t = tempfile::tempdir().unwrap();
+        let store = Store::new(AbsPath::from_path(t.path()).unwrap().join("models"));
+        let mut keys = KeyStore::default();
+        keys.insert("anthropic", "sk-ant-oat01-test-abcd");
+        store.save_keys(&keys).unwrap();
+        let mut stored = Stored::default();
+        stored.providers.insert(
+            "anthropic".into(),
+            described(KeyKind::SubscriptionToken, "abcd"),
+        );
+        store.save(&stored).unwrap();
+        let metadata = std::fs::read_to_string(t.path().join("models/providers.json")).unwrap();
+        assert!(
+            metadata.contains(r#""kind": "subscription_token""#),
+            "{metadata}"
+        );
+        assert!(!metadata.contains("sk-ant"), "{metadata}");
+        let secrets = std::fs::read_to_string(t.path().join("models/keys.json")).unwrap();
+        assert!(secrets.contains("sk-ant-oat01-test-abcd"));
+    }
+
+    #[test]
+    fn kinds_follow_the_stored_key() {
+        // providers.json from before kinds existed: the kind defaults to an API key.
+        let mut stored: Stored = serde_json::from_str(
+            r#"{"providers": {
+                "anthropic": {"key": {"last4": "abcd", "added_at": 1, "added_by": null}},
+                "openai": {"key": {"last4": "9999", "added_at": 1, "added_by": null}}
+            }}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            stored.providers["anthropic"],
+            described(KeyKind::ApiKey, "abcd")
+        );
+        let mut keys = KeyStore::default();
+        keys.insert("anthropic", "sk-ant-oat01-test-abcd");
+        keys.insert("openai", "sk-test-9999");
+        stored.classify_keys(&keys);
+        assert_eq!(
+            stored.providers["anthropic"],
+            described(KeyKind::SubscriptionToken, "abcd")
+        );
+        assert_eq!(
+            stored.providers["openai"],
+            described(KeyKind::ApiKey, "9999")
+        );
+    }
 
     #[test]
     fn files_are_private_and_metadata_has_no_secret() {
@@ -127,6 +203,7 @@ mod tests {
             "anthropic".into(),
             StoredProvider {
                 key: Some(StoredKey {
+                    kind: KeyKind::ApiKey,
                     last4: "1234".into(),
                     added_at: UnixMillis(1),
                     added_by: None,

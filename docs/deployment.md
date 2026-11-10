@@ -88,10 +88,18 @@ Sessions need a model provider. There are two ways to configure them, and they c
   on the server; open the sign-in page, then paste the URL your browser ends on (it can't reach
   the server's callback listener) or enter the device code if the provider offers one. *Sign out*
   removes it.
+- **Anthropic subscription tokens** (`sk-ant-oat…`, e.g. from `claude setup-token`): paste one
+  into Anthropic's key field instead of signing in. It shows as *token set …abcd* and is used
+  like a sign-in (`Authorization: Bearer`, with the headers pi sends for subscriptions), but as
+  is: these tokens are long-lived and nothing refreshes them. When Anthropic stops accepting it
+  (expired or revoked), *Test* says *HTTP 401: token rejected*; paste a new one with *Replace
+  token*. A token pasted earlier, before controlroom told tokens from keys, is recognized
+  automatically. Other providers and gateways refuse these tokens. A sign-in and a pasted token
+  or key for the same provider exclude each other: remove one to add the other.
 - **Custom gateways** (OpenAI-compatible): a name, the base URL (`https://…/v1`), its model ids,
   the key header (`Authorization: Bearer`, `x-api-key` or `api-key`) and the key.
-- **Test** sends one cheap request (e.g. the model list) with the key, through the provider's
-  route, and shows *ok* or the HTTP status.
+- **Test** sends one cheap request (e.g. the model list) with the key or token, through the
+  provider's route, and shows *ok* or the HTTP status.
 - **Defaults**: the provider, model and thinking level of new sessions, from the models pi
   offers with what is configured.
 

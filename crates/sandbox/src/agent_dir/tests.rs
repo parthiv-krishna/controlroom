@@ -251,8 +251,15 @@ fn merges_managed_providers_and_the_user_config_wins() {
     let spec = AgentDirSpec {
         managed: ManagedProviders {
             // `gateway` has a key in the user's auth.json: theirs wins.
-            key_providers: vec!["anthropic".into(), "gateway".into(), "ui-gw".into()],
+            key_providers: vec![
+                "anthropic".into(),
+                "gateway".into(),
+                "openai".into(),
+                "ui-gw".into(),
+            ],
             key_store: Some(store.clone()),
+            // A pasted subscription token's stand-in keeps its type prefix.
+            stand_ins: [("anthropic".into(), format!("sk-ant-oat01-{PLACEHOLDER}"))].into(),
             models: serde_json::from_value(json!({
                 "ui-gw": {"baseUrl": "https://gw.example.com/v1", "api": "openai-completions",
                           "apiKey": PLACEHOLDER, "models": [{"id": "m1"}]},
@@ -267,11 +274,15 @@ fn merges_managed_providers_and_the_user_config_wins() {
         ..spec(&f)
     };
     let built = build_session_dirs(&f.layout, &spec).unwrap();
-    assert_eq!(built.stored_key_providers, ["anthropic", "ui-gw"]);
+    assert_eq!(built.stored_key_providers, ["anthropic", "openai", "ui-gw"]);
     let agent = f.layout.agent();
     let auth = read_json(agent.join("auth.json"));
     assert_eq!(
         auth["anthropic"],
+        json!({"type": "api_key", "key": format!("sk-ant-oat01-{PLACEHOLDER}")})
+    );
+    assert_eq!(
+        auth["openai"],
         json!({"type": "api_key", "key": PLACEHOLDER})
     );
     assert_eq!(auth["gateway"]["key"], PLACEHOLDER);
@@ -295,7 +306,7 @@ fn merges_managed_providers_and_the_user_config_wins() {
         manifest.stored_keys,
         Some(crate::credential::StoredKeys {
             path: store,
-            providers: vec!["anthropic".into(), "ui-gw".into()],
+            providers: vec!["anthropic".into(), "openai".into(), "ui-gw".into()],
         })
     );
 }

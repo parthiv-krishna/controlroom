@@ -6,7 +6,7 @@
 //! never from here. Only these presets and explicit custom gateways get routes from the UI, so
 //! the sandbox's network allow-list stays deliberate.
 
-use controlroom_protocol::agentd::AuthHeader;
+use controlroom_protocol::agentd::{AuthHeader, KeyKind};
 
 use crate::config::sandbox::RouteConfig;
 
@@ -54,6 +54,18 @@ pub struct Subscription {
     pub route: RouteSpec,
     /// JWT claims the session's synthetic token keeps (`oauth_claims`).
     pub claims: &'static [&'static str],
+    /// Long-lived subscription tokens pasted in place of an API key, if the provider has them.
+    pub pasted: Option<PastedToken>,
+}
+
+/// A subscription token pasted in place of an API key (e.g. from `claude setup-token`). It
+/// takes the subscription's route and is used as is: there is nothing to refresh it with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PastedToken {
+    /// The prefix pi tells these tokens from API keys by.
+    pub prefix: &'static str,
+    /// Its test.
+    pub probe: Probe,
 }
 
 /// A provider Settings › Models offers.
@@ -75,6 +87,16 @@ const RAW: &str = "{}";
 /// pi's Anthropic Messages API: the SDK sends API keys as `x-api-key` and subscription tokens
 /// (which pi recognizes by their `sk-ant-oat` prefix) as `Authorization: Bearer`.
 const ANTHROPIC_MESSAGES: &[&str] = &["POST /v1/messages"];
+
+/// The headers pi 1.2.0 sends with an Anthropic subscription token besides `Authorization`
+/// (pi-ai `api/anthropic-messages.js`: `createClient` and `getBetaFeatures`), so a test looks
+/// like a session's requests.
+const ANTHROPIC_SUBSCRIPTION_HEADERS: &[(&str, &str)] = &[
+    ("anthropic-version", "2023-06-01"),
+    ("anthropic-beta", "claude-code-20250219,oauth-2025-04-20"),
+    ("user-agent", "claude-cli/2.1.280"),
+    ("x-app", "cli"),
+];
 
 /// The presets, in display order.
 pub const PRESETS: &[Preset] = &[
@@ -101,6 +123,14 @@ pub const PRESETS: &[Preset] = &[
                 format: BEARER,
             },
             claims: &[],
+            // `claude setup-token`'s tokens. The model list answers them as it answers keys.
+            pasted: Some(PastedToken {
+                prefix: "sk-ant-oat",
+                probe: Probe {
+                    path: "/v1/models",
+                    headers: ANTHROPIC_SUBSCRIPTION_HEADERS,
+                },
+            }),
         }),
     },
     Preset {
@@ -116,6 +146,7 @@ pub const PRESETS: &[Preset] = &[
             },
             // pi reads the account id from the token.
             claims: &["https://api.openai.com/auth"],
+            pasted: None,
         }),
     },
     Preset {
@@ -186,6 +217,37 @@ pub fn preset(id: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|p| p.id == id)
 }
 
+/// The subscription tokens `id` takes in place of an API key.
+pub fn pasted_token(id: &str) -> Option<PastedToken> {
+    preset(id)?.subscription?.pasted
+}
+
+/// What `key` is as `provider`'s key: a subscription token when it has the prefix of the ones
+/// the provider takes.
+pub fn key_kind(provider: &str, key: &str) -> KeyKind {
+    match pasted_token(provider) {
+        Some(token) if key.starts_with(token.prefix) => KeyKind::SubscriptionToken,
+        _ => KeyKind::ApiKey,
+    }
+}
+
+/// [`key_kind`], refusing another preset's subscription token: no other provider takes it, and
+/// pi would send it as an API key.
+pub fn check_key(provider: &str, key: &str) -> Result<KeyKind, String> {
+    for p in PRESETS {
+        if let Some(token) = p.subscription.and_then(|s| s.pasted)
+            && p.id != provider
+            && key.starts_with(token.prefix)
+        {
+            return Err(format!(
+                "this is a {} subscription token ({}…); add it to {} instead",
+                p.label, token.prefix, p.label
+            ));
+        }
+    }
+    Ok(key_kind(provider, key))
+}
+
 /// A custom gateway's header and value template.
 pub fn gateway_header(auth: AuthHeader) -> Option<(&'static str, &'static str)> {
     match auth {
@@ -216,5 +278,35 @@ mod tests {
         }
         assert_eq!(preset("anthropic").unwrap().label, "Anthropic");
         assert!(preset("gateway").is_none());
+    }
+
+    #[test]
+    fn subscription_tokens_are_told_by_their_prefix() {
+        let token = "sk-ant-oat01-test-abcd";
+        assert_eq!(key_kind("anthropic", token), KeyKind::SubscriptionToken);
+        assert_eq!(
+            check_key("anthropic", token),
+            Ok(KeyKind::SubscriptionToken)
+        );
+        for key in [
+            "sk-ant-api03-test-abcd",
+            "sk-ant-test",
+            "x-sk-ant-oat01-test",
+        ] {
+            assert_eq!(check_key("anthropic", key), Ok(KeyKind::ApiKey), "{key}");
+        }
+        // Another provider's or a gateway's: refused, naming where it goes.
+        for provider in ["openai", "openrouter", "google", "my-gateway"] {
+            let err = check_key(provider, token).unwrap_err();
+            assert!(err.contains("add it to Anthropic"), "{err}");
+            assert_eq!(key_kind(provider, token), KeyKind::ApiKey);
+        }
+        assert_eq!(check_key("openai", "sk-test"), Ok(KeyKind::ApiKey));
+        // The token's route is the sign-in's.
+        let sub = preset("anthropic").unwrap().subscription.unwrap();
+        assert_eq!(
+            (sub.route.header, sub.route.format),
+            ("Authorization", BEARER)
+        );
     }
 }

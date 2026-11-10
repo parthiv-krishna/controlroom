@@ -29,9 +29,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use controlroom_protocol::agentd::{
-    LoginCancelParams, LoginInputParams, LoginStartParams, LoginState, LoginStep, LoginWaitParams,
-    ModelProvider, ModelsProviderParams, ModelsSetDefaultsParams, ModelsSetGatewayParams,
-    ModelsSetKeyParams, ModelsState, ProviderSource, ProviderTest, SignedIn, StoredKey,
+    KeyKind, LoginCancelParams, LoginInputParams, LoginStartParams, LoginState, LoginStep,
+    LoginWaitParams, ModelProvider, ModelsProviderParams, ModelsSetDefaultsParams,
+    ModelsSetGatewayParams, ModelsSetKeyParams, ModelsState, ProviderSource, ProviderTest,
+    SignedIn, StoredKey,
 };
 use controlroom_protocol::session::DeviceRef;
 use controlroom_protocol::{ErrorData, Resource, RpcError, UnixMillis};
@@ -120,9 +121,10 @@ impl Models {
     /// `models.set_key`.
     pub async fn set_key(&self, p: ModelsSetKeyParams) -> Result<ModelsState, RpcError> {
         let key = valid_key(&p.key)?;
+        let id = p.provider.as_str();
+        let kind = presets::check_key(id, key).map_err(invalid)?;
         let _write = self.writes.lock().await;
         let ctx = self.context()?;
-        let id = p.provider.as_str();
         refuse_server_declared(&ctx.server, id)?;
         let is_gateway = ctx
             .stored
@@ -145,10 +147,14 @@ impl Models {
         self.store.save_keys(&keys).map_err(internal)?;
         let mut stored = ctx.stored;
         let entry = stored.providers.entry(id.to_owned()).or_default();
-        entry.key = Some(stored_key(key, &p.by));
+        entry.key = Some(stored_key(key, kind, &p.by));
         entry.test = None;
         self.store.save(&stored).map_err(internal)?;
-        self.changed(&p.by, id, "API key set");
+        let what = match kind {
+            KeyKind::SubscriptionToken => "subscription token set",
+            _ => "API key set",
+        };
+        self.changed(&p.by, id, what);
         self.list().await
     }
 
@@ -157,6 +163,11 @@ impl Models {
         let id = p.provider.as_str();
         valid_gateway_id(id)?;
         let key = p.key.as_deref().map(valid_key).transpose()?;
+        let kind = key
+            .map(|key| presets::check_key(id, key))
+            .transpose()
+            .map_err(invalid)?
+            .unwrap_or_default();
         let mut gateway = p.gateway;
         gateway.models = valid_models(&gateway.models)?;
         gateway.base_url = gateway.base_url.trim().to_owned();
@@ -174,7 +185,7 @@ impl Models {
             Some(key) => {
                 keys.insert(id, key);
                 self.store.save_keys(&keys).map_err(internal)?;
-                entry.key = Some(stored_key(key, &p.by));
+                entry.key = Some(stored_key(key, kind, &p.by));
             }
             None if keys.contains(id) => {}
             None => return Err(invalid("a new gateway needs its API key")),
@@ -249,7 +260,8 @@ impl Models {
     }
 
     /// `models.test`: one cheap request with the provider's credential, through its route's
-    /// upstream and header; a sign-in is tested by getting a fresh token. The result is kept.
+    /// upstream and header; a sign-in is tested by getting a fresh token. A pasted subscription
+    /// token is tested as it is (it is never refreshed). The result is kept.
     pub async fn test(&self, p: ModelsProviderParams) -> Result<ModelsState, RpcError> {
         let id = p.provider.clone();
         let ctx = self.context()?;
@@ -339,10 +351,13 @@ impl Models {
             .value
             .resolve(home().as_ref(), &self.dirs.pi_agent_dir())
             .map_err(internal)?;
+        let keys = self.store.keys().map_err(internal)?;
+        let mut stored = self.store.load().map_err(internal)?;
+        stored.classify_keys(&keys);
         Ok(Context {
             server: ServerConfig::load(&sandbox),
-            stored: self.store.load().map_err(internal)?,
-            keys: self.store.keys().map_err(internal)?,
+            stored,
+            keys,
             sandbox,
         })
     }
@@ -492,6 +507,9 @@ fn row(ctx: &Context, catalog: Option<&Catalog>, id: &str) -> ModelProvider {
         },
         takes_key: declared.is_none()
             && (preset.and_then(|p| p.api_key).is_some() || stored.gateway.is_some()),
+        token_prefix: presets::pasted_token(id)
+            .filter(|_| declared.is_none())
+            .map(|t| t.prefix.to_owned()),
         can_sign_in: can_sign_in(ctx, catalog, id),
         key: stored.key,
         signed_in: (ctx.server.auth_type(id) == Some("oauth")).then(|| SignedIn {
@@ -553,6 +571,7 @@ fn probe_target(ctx: &Context, id: &str) -> Result<Option<ProbeRequest>, RpcErro
                 .iter()
                 .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
                 .collect(),
+            unauthorized: None,
         }));
     }
     if declared {
@@ -566,6 +585,26 @@ fn probe_target(ctx: &Context, id: &str) -> Result<Option<ProbeRequest>, RpcErro
             header: header.to_owned(),
             format: format.to_owned(),
             extra: Vec::new(),
+            unauthorized: None,
+        }));
+    }
+    let extra = |probe: presets::Probe| -> Vec<(String, String)> {
+        probe
+            .headers
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    };
+    if stored.and_then(|s| s.key.as_ref()).map(|k| k.kind) == Some(KeyKind::SubscriptionToken)
+        && let Some(sub) = presets::preset(id).and_then(|p| p.subscription)
+        && let Some(token) = sub.pasted
+    {
+        return Ok(Some(ProbeRequest {
+            url: url(sub.route.upstream, token.probe.path),
+            header: sub.route.header.to_owned(),
+            format: sub.route.format.to_owned(),
+            extra: extra(token.probe),
+            unauthorized: Some("token rejected (expired or revoked?)"),
         }));
     }
     let (route, probe) = preset.ok_or_else(|| not_found(Resource::Provider, id))?;
@@ -573,11 +612,8 @@ fn probe_target(ctx: &Context, id: &str) -> Result<Option<ProbeRequest>, RpcErro
         url: url(route.upstream, probe.path),
         header: route.header.to_owned(),
         format: route.format.to_owned(),
-        extra: probe
-            .headers
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect(),
+        extra: extra(probe),
+        unauthorized: None,
     }))
 }
 
@@ -598,9 +634,10 @@ fn refuse_server_declared(server: &ServerConfig, id: &str) -> Result<(), RpcErro
     }
 }
 
-fn stored_key(key: &str, by: &Option<DeviceRef>) -> StoredKey {
+fn stored_key(key: &str, kind: KeyKind, by: &Option<DeviceRef>) -> StoredKey {
     let tail: Vec<char> = key.chars().rev().take(4).collect();
     StoredKey {
+        kind,
         last4: tail.into_iter().rev().collect(),
         added_at: UnixMillis::now(),
         added_by: by.clone(),

@@ -5082,6 +5082,7 @@
      "label": "Anthropic",
      "source": "none",
      "takes_key": true,
+     "token_prefix": "sk-ant-oat",
      "can_sign_in": true,
      "key": null,
      "signed_in": null,
@@ -5094,6 +5095,7 @@
      "label": "ChatGPT (Codex)",
      "source": "none",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": true,
      "key": null,
      "signed_in": {
@@ -5108,8 +5110,10 @@
      "label": "OpenAI",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "4f2a",
       "added_at": 1767592800000,
       "added_by": {
@@ -5127,8 +5131,10 @@
      "label": "Google (Gemini)",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "9c1d",
       "added_at": 1767500000000,
       "added_by": {
@@ -5150,8 +5156,10 @@
      "label": "OpenRouter",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "1b2c",
       "added_at": 1767300000000,
       "added_by": {
@@ -5173,8 +5181,10 @@
      "label": "gw",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "77ab",
       "added_at": 1767400000000,
       "added_by": {
@@ -5198,6 +5208,7 @@
      "label": "litellm",
      "source": "server",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": null,
      "signed_in": null,
@@ -5263,6 +5274,7 @@
      "label": "Anthropic",
      "source": "none",
      "takes_key": true,
+     "token_prefix": "sk-ant-oat",
      "can_sign_in": true,
      "key": null,
      "signed_in": null,
@@ -5275,6 +5287,7 @@
      "label": "ChatGPT (Codex)",
      "source": "none",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": true,
      "key": null,
      "signed_in": {
@@ -5289,8 +5302,10 @@
      "label": "OpenAI",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "4f2a",
       "added_at": 1767592800000,
       "added_by": {
@@ -5308,8 +5323,10 @@
      "label": "Google (Gemini)",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "9c1d",
       "added_at": 1767500000000,
       "added_by": {
@@ -5331,8 +5348,10 @@
      "label": "OpenRouter",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "1b2c",
       "added_at": 1767300000000,
       "added_by": {
@@ -5354,8 +5373,10 @@
      "label": "gw",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "77ab",
       "added_at": 1767400000000,
       "added_by": {
@@ -5379,6 +5400,7 @@
      "label": "litellm",
      "source": "server",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": null,
      "signed_in": null,
@@ -5444,6 +5466,7 @@
      "label": "Anthropic",
      "source": "none",
      "takes_key": true,
+     "token_prefix": "sk-ant-oat",
      "can_sign_in": true,
      "key": null,
      "signed_in": null,
@@ -5456,6 +5479,7 @@
      "label": "ChatGPT (Codex)",
      "source": "none",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": true,
      "key": null,
      "signed_in": {
@@ -5470,8 +5494,10 @@
      "label": "OpenAI",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "4f2a",
       "added_at": 1767592800000,
       "added_by": {
@@ -5489,8 +5515,10 @@
      "label": "Google (Gemini)",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "9c1d",
       "added_at": 1767500000000,
       "added_by": {
@@ -5512,8 +5540,10 @@
      "label": "OpenRouter",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "1b2c",
       "added_at": 1767300000000,
       "added_by": {
@@ -5535,8 +5565,10 @@
      "label": "gw",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "77ab",
       "added_at": 1767400000000,
       "added_by": {
@@ -5560,6 +5592,7 @@
      "label": "litellm",
      "source": "server",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": null,
      "signed_in": null,
@@ -5625,6 +5658,7 @@
      "label": "Anthropic",
      "source": "none",
      "takes_key": true,
+     "token_prefix": "sk-ant-oat",
      "can_sign_in": true,
      "key": null,
      "signed_in": null,
@@ -5637,6 +5671,7 @@
      "label": "ChatGPT (Codex)",
      "source": "none",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": true,
      "key": null,
      "signed_in": {
@@ -5651,8 +5686,10 @@
      "label": "OpenAI",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "4f2a",
       "added_at": 1767592800000,
       "added_by": {
@@ -5670,8 +5707,10 @@
      "label": "Google (Gemini)",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "9c1d",
       "added_at": 1767500000000,
       "added_by": {
@@ -5693,8 +5732,10 @@
      "label": "OpenRouter",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "1b2c",
       "added_at": 1767300000000,
       "added_by": {
@@ -5716,8 +5757,10 @@
      "label": "gw",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "77ab",
       "added_at": 1767400000000,
       "added_by": {
@@ -5741,6 +5784,7 @@
      "label": "litellm",
      "source": "server",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": null,
      "signed_in": null,
@@ -5806,6 +5850,7 @@
      "label": "Anthropic",
      "source": "none",
      "takes_key": true,
+     "token_prefix": "sk-ant-oat",
      "can_sign_in": true,
      "key": null,
      "signed_in": null,
@@ -5818,6 +5863,7 @@
      "label": "ChatGPT (Codex)",
      "source": "none",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": true,
      "key": null,
      "signed_in": {
@@ -5832,8 +5878,10 @@
      "label": "OpenAI",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "4f2a",
       "added_at": 1767592800000,
       "added_by": {
@@ -5851,8 +5899,10 @@
      "label": "Google (Gemini)",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "9c1d",
       "added_at": 1767500000000,
       "added_by": {
@@ -5874,8 +5924,10 @@
      "label": "OpenRouter",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "1b2c",
       "added_at": 1767300000000,
       "added_by": {
@@ -5897,8 +5949,10 @@
      "label": "gw",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "77ab",
       "added_at": 1767400000000,
       "added_by": {
@@ -5922,6 +5976,7 @@
      "label": "litellm",
      "source": "server",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": null,
      "signed_in": null,
@@ -5987,6 +6042,7 @@
      "label": "Anthropic",
      "source": "none",
      "takes_key": true,
+     "token_prefix": "sk-ant-oat",
      "can_sign_in": true,
      "key": null,
      "signed_in": null,
@@ -5999,6 +6055,7 @@
      "label": "ChatGPT (Codex)",
      "source": "none",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": true,
      "key": null,
      "signed_in": {
@@ -6013,8 +6070,10 @@
      "label": "OpenAI",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "4f2a",
       "added_at": 1767592800000,
       "added_by": {
@@ -6032,8 +6091,10 @@
      "label": "Google (Gemini)",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "9c1d",
       "added_at": 1767500000000,
       "added_by": {
@@ -6055,8 +6116,10 @@
      "label": "OpenRouter",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "1b2c",
       "added_at": 1767300000000,
       "added_by": {
@@ -6078,8 +6141,10 @@
      "label": "gw",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "77ab",
       "added_at": 1767400000000,
       "added_by": {
@@ -6103,6 +6168,7 @@
      "label": "litellm",
      "source": "server",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": null,
      "signed_in": null,
@@ -6168,6 +6234,7 @@
      "label": "Anthropic",
      "source": "none",
      "takes_key": true,
+     "token_prefix": "sk-ant-oat",
      "can_sign_in": true,
      "key": null,
      "signed_in": null,
@@ -6180,6 +6247,7 @@
      "label": "ChatGPT (Codex)",
      "source": "none",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": true,
      "key": null,
      "signed_in": {
@@ -6194,8 +6262,10 @@
      "label": "OpenAI",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "4f2a",
       "added_at": 1767592800000,
       "added_by": {
@@ -6213,8 +6283,10 @@
      "label": "Google (Gemini)",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "9c1d",
       "added_at": 1767500000000,
       "added_by": {
@@ -6236,8 +6308,10 @@
      "label": "OpenRouter",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "1b2c",
       "added_at": 1767300000000,
       "added_by": {
@@ -6259,8 +6333,10 @@
      "label": "gw",
      "source": "ui",
      "takes_key": true,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": {
+      "kind": "api_key",
       "last4": "77ab",
       "added_at": 1767400000000,
       "added_by": {
@@ -6284,6 +6360,7 @@
      "label": "litellm",
      "source": "server",
      "takes_key": false,
+     "token_prefix": null,
      "can_sign_in": false,
      "key": null,
      "signed_in": null,

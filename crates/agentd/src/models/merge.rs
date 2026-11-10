@@ -5,9 +5,9 @@
 
 use std::collections::BTreeMap;
 
-use controlroom_protocol::agentd::Gateway;
+use controlroom_protocol::agentd::{Gateway, KeyKind};
 use controlroom_sandbox::AbsPath;
-use controlroom_sandbox::agent_dir::{ManagedProviders, PLACEHOLDER};
+use controlroom_sandbox::agent_dir::{ManagedProviders, PLACEHOLDER, stand_in};
 use controlroom_sandbox::credential::KeyStore;
 use serde_json::{Map, Value, json};
 
@@ -47,15 +47,27 @@ pub fn additions(
             continue;
         }
         let signed_in = server.auth_type(preset.id) == Some("oauth");
-        match (preset.subscription, preset.api_key) {
-            (Some(sub), _) if signed_in => {
+        let token = keys
+            .get(preset.id)
+            .filter(|key| presets::key_kind(preset.id, key.expose()) == KeyKind::SubscriptionToken);
+        match (preset.subscription, preset.api_key, token) {
+            (Some(sub), _, _) if signed_in => {
                 out.routes.push(sub.route.route(preset.id));
                 if !sub.claims.is_empty() {
                     let claims = sub.claims.iter().map(|c| (*c).to_owned()).collect();
                     out.claims.insert(preset.id.to_owned(), claims);
                 }
             }
-            (_, Some((route, _))) if keys.contains(preset.id) => {
+            // A pasted subscription token: the sign-in's route, and a stand-in with the
+            // token's type prefix, by which pi sends it as a subscription's.
+            (Some(sub), _, Some(token)) => {
+                out.routes.push(sub.route.route(preset.id));
+                out.managed.key_providers.push(preset.id.to_owned());
+                out.managed
+                    .stand_ins
+                    .insert(preset.id.to_owned(), stand_in(token.expose()));
+            }
+            (_, Some((route, _)), _) if keys.contains(preset.id) => {
                 out.routes.push(route.route(preset.id));
                 out.managed.key_providers.push(preset.id.to_owned());
             }
@@ -191,6 +203,7 @@ mod tests {
 
     fn key() -> Option<StoredKey> {
         Some(StoredKey {
+            kind: KeyKind::ApiKey,
             last4: "abcd".into(),
             added_at: UnixMillis(1),
             added_by: None,
@@ -300,6 +313,45 @@ mod tests {
         for route in a.routes {
             route.resolve(false).unwrap();
         }
+    }
+
+    #[test]
+    fn a_pasted_subscription_token_takes_the_sign_in_route() {
+        let store = AbsPath::new("/s/keys.json").unwrap();
+        let mut keys = KeyStore::default();
+        keys.insert("anthropic", "sk-ant-oat01-test-secret-abcd");
+        let a = additions(&Stored::default(), &keys, &store, &ServerConfig::default());
+        let route = &a.routes[0];
+        assert_eq!(a.routes.len(), 1);
+        assert_eq!(
+            (
+                route.provider.as_str(),
+                route.upstream.as_str(),
+                route.inject_header.as_deref(),
+                route.credential_format.as_deref(),
+                route.allow.as_slice(),
+            ),
+            (
+                "anthropic",
+                "https://api.anthropic.com",
+                Some("Authorization"),
+                Some("Bearer {}"),
+                ["POST /v1/messages".to_owned()].as_slice(),
+            )
+        );
+        route.resolve(false).unwrap();
+        assert_eq!(a.managed.key_providers, ["anthropic"]);
+        assert_eq!(
+            a.managed.stand_ins["anthropic"],
+            format!("sk-ant-oat01-{PLACEHOLDER}")
+        );
+        assert!(a.claims.is_empty());
+
+        // An API key keeps the x-api-key route and the plain placeholder.
+        keys.insert("anthropic", "sk-ant-api03-test-secret");
+        let a = additions(&Stored::default(), &keys, &store, &ServerConfig::default());
+        assert_eq!(a.routes[0].inject_header.as_deref(), Some("x-api-key"));
+        assert!(a.managed.stand_ins.is_empty());
     }
 
     #[test]
