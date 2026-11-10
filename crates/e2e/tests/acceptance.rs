@@ -10,6 +10,9 @@
 //! 2. a link blip while a `bash` runs: the result arrives once, with the link-drop note;
 //! 3. a background job whose exit wakes the agent once.
 //!
+//! A second test covers the sandbox's file requests: harmless runtime probes raise none, and
+//! "Always allow" and "Never" carry over to new sessions on the machine.
+//!
 //! Needs nono 0.80.0, Landlock and pi, so it is `#[ignore]`d; run it with
 //! `crates/e2e/scripts/acceptance-pi-nono.sh`. Every process it starts is killed at the end,
 //! pass or fail.
@@ -329,4 +332,178 @@ async fn real_pi_under_nono_works_on_two_nono_confined_hosts() {
     world
         .wait_session(&id, "closed", |s: &Value| s["state"] == "closed")
         .await;
+}
+
+/// Answers the session's pending sandbox file requests until one for a path ending in `target`
+/// comes: that one gets `option`, the others are denied. Returns the request.
+async fn answer_file_request(world: &mut World, id: &str, target: &str, option: &str) -> Value {
+    loop {
+        let summary = world
+            .wait_session(id, "a pending file request", |s| {
+                s["requests"]
+                    .as_array()
+                    .is_some_and(|r| r.iter().any(|r| r["body"]["kind"] == "path"))
+            })
+            .await;
+        let request = summary["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["body"]["kind"] == "path")
+            .unwrap()
+            .clone();
+        let ours = request["body"]["path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with(target));
+        let chosen = if ours { option } else { "deny" };
+        world
+            .ui
+            .ok(
+                "request.respond",
+                json!({"op_id": controlroom_controller::test_support::op(), "id": id,
+                       "request_id": request["id"],
+                       "response": {"kind": "choice", "option_id": chosen}}),
+            )
+            .await;
+        if ours {
+            return request;
+        }
+    }
+}
+
+/// The file requests a session's timeline shows.
+async fn file_requests(world: &mut World, id: &str) -> Vec<Value> {
+    let timeline = world.timeline(id).await;
+    let found = timeline
+        .of_kind("request")
+        .into_iter()
+        .filter(|r| r["request"]["body"]["kind"] == "path")
+        .cloned()
+        .collect();
+    world.unsubscribe(timeline).await;
+    found
+}
+
+/// Spec §11 "Harmless defaults" and the standing decisions on file requests, end to end with
+/// real pi and nono: a strict session reads the runtime probes without a request; "Always
+/// allow" and "Never" on its file requests carry over to a new session on the machine, which
+/// reads the allowed path and is refused the never-path without any request.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs nono 0.80.0, Landlock and pi; run crates/e2e/scripts/acceptance-pi-nono.sh"]
+async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
+    let mock = MockModel::start(Vec::new()).await.expect("mock model");
+    let mut nono_tmp = NonoTmp::new();
+    let (server_tmp, devbox_tmp, buildbox_tmp) = (nono_tmp.dir(), nono_tmp.dir(), nono_tmp.dir());
+    let mut world = World::start_with(|agentd, devbox, buildbox| {
+        configure_server(agentd, &mock, &server_tmp);
+        configure_host(devbox, &devbox_tmp);
+        configure_host(buildbox, &buildbox_tmp);
+    })
+    .await;
+    world.devbox.dir("src/api");
+    let notes = world.devbox.dir("notes");
+    std::fs::write(notes.join("allowed.txt"), "allowed-content\n").unwrap();
+    std::fs::write(notes.join("never.txt"), "never-content\n").unwrap();
+    let devbox = world.devbox.id.clone();
+    let strict_session = |world: &World| {
+        let mut params = world.create_params(&[(&devbox, "~/src/api")], json!({}));
+        params.as_object_mut().unwrap().remove("sandbox_level");
+        params
+    };
+    let created = world.ui.ok("session.create", strict_session(&world)).await;
+    let first = created["session"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(created["session"]["sandbox"]["level"], "strict");
+    world
+        .wait_session(&first, "idle", |s| {
+            s["state"] == "idle" && s["agent_live"] == true
+        })
+        .await;
+    let bash =
+        |call: &str, command: &str| Reply::tool_call(call, "bash", json!({"command": command}));
+
+    // 1. The runtime probes: no request.
+    mock.push([
+        bash(
+            "call_probe",
+            "cat /proc/sys/vm/nr_hugepages >/dev/null && echo probed",
+        ),
+        Reply::text("Probed."),
+    ]);
+    world.prompt(&first, "Probe the huge pages.").await;
+    assert!(seen(&mock, 0).contains("probed"), "{}", seen(&mock, 0));
+
+    // 2. "Always allow" on one path, "Never" on another.
+    let from = mock.requests().len();
+    mock.push([
+        bash("call_allowed", "cat ~/notes/allowed.txt"),
+        bash("call_never", "cat ~/notes/never.txt 2>&1"),
+        Reply::text("Read them."),
+    ]);
+    let mark = world.turn_mark(&first);
+    world.send_prompt(&first, "Read the notes.").await;
+    let always =
+        answer_file_request(&mut world, &first, "/notes/allowed.txt", "allow-always").await;
+    assert_eq!(always["body"]["machine"], "devbox");
+    answer_file_request(&mut world, &first, "/notes/never.txt", "never").await;
+    world.wait_turn(&first, mark).await;
+    let after = seen(&mock, from);
+    assert!(after.contains("allowed-content"), "{after}");
+    assert!(!after.contains("never-content"), "{after}");
+    let probes = file_requests(&mut world, &first).await;
+    assert!(
+        !probes.iter().any(|r| r["request"]["body"]["path"]
+            .as_str()
+            .is_some_and(|p| p.starts_with("/proc/sys"))),
+        "{probes:#?}"
+    );
+    let profiles = world.ui.ok("sandbox.profiles", json!({})).await;
+    let profile = &profiles["profiles"][0];
+    assert_eq!(profile["scope"]["machine_id"], json!(devbox));
+    assert!(
+        profile["grants"][0]["value"]
+            .as_str()
+            .unwrap()
+            .ends_with("/notes/allowed.txt")
+    );
+    assert!(
+        profile["never"][0]
+            .as_str()
+            .unwrap()
+            .ends_with("/notes/never.txt")
+    );
+
+    // 3. A new session: the allowed path reads, the never-path is refused, nothing is asked.
+    let created = world.ui.ok("session.create", strict_session(&world)).await;
+    let second = created["session"]["id"].as_str().unwrap().to_owned();
+    world
+        .wait_session(&second, "idle", |s| {
+            s["state"] == "idle" && s["agent_live"] == true
+        })
+        .await;
+    let from = mock.requests().len();
+    mock.push([
+        bash(
+            "call_again",
+            "cat ~/notes/allowed.txt; cat ~/notes/never.txt 2>&1 || echo refused",
+        ),
+        Reply::text("Done."),
+    ]);
+    world.prompt(&second, "Read the notes again.").await;
+    let after = seen(&mock, from);
+    assert!(after.contains("allowed-content"), "{after}");
+    assert!(
+        after.contains("refused") && !after.contains("never-content"),
+        "{after}"
+    );
+    assert!(file_requests(&mut world, &second).await.is_empty());
+
+    for id in [first, second] {
+        world
+            .ui
+            .ok(
+                "session.close",
+                json!({"op_id": controlroom_controller::test_support::op(), "id": id}),
+            )
+            .await;
+    }
 }
