@@ -591,7 +591,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "controlroom-agentd"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-client-core"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "bytes",
  "chacha20poly1305",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-controller"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "controlroom-client-core",
  "controlroom-controller",
@@ -667,7 +667,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-drivers"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "controlroom-protocol",
  "controlroom-transcript",
@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-e2e"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "controlroom-client-core",
  "controlroom-controller",
@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-fake-agent"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "controlroom-transcript",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-fixture-tool"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "axum",
@@ -724,7 +724,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-protocol"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "serde",
  "serde_json",
@@ -736,7 +736,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-runtime"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "controlroom-drivers",
  "controlroom-protocol",
@@ -756,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-sandbox"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.3.4",
@@ -770,7 +770,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-supervisor"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-transcript"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -797,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "controlroom-web"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "axum",
@@ -829,7 +829,7 @@ dependencies = [
 
 [[package]]
 name = "controlroomd"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
