@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { lastReply, login, openSession, send, settled, timeline, toolCalls } from './helpers';
+import { lastReply, login, openSession, requestCards, send, settled, toolCalls } from './helpers';
 
 // The agent's command reads from the terminal: devbox's host daemon notices it waits for input,
 // the session raises a terminal-input request, and the user answers by typing in that shell's
@@ -9,7 +9,7 @@ test('a command waiting for input is answered in the terminal tab', async ({ pag
   await openSession(page, 'two');
   await send(page, 'Ask me for a name');
 
-  const card = timeline(page).locator('.rq-terminal_input').last();
+  const card = requestCards(page, 'terminal_input').last();
   await expect(card).toHaveClass(/\bpending\b/);
   await expect(card.locator('[data-shell]')).toContainText('devbox');
   await card.getByRole('button', { name: 'Open terminal “devbox”' }).click();
@@ -22,7 +22,7 @@ test('a command waiting for input is answered in the terminal tab', async ({ pag
   await page.keyboard.type('alice');
   await page.keyboard.press('Enter');
 
-  await expect(timeline(page).locator('.rq-terminal_input.pending')).toHaveCount(0);
+  await expect(requestCards(page, 'terminal_input.pending')).toHaveCount(0);
   await expect(toolCalls(page, '# ask')).toHaveClass(/s-completed/);
   await expect(lastReply(page)).toHaveText('Greeted.');
   await expect(dock.locator('.xterm-rows')).toContainText('hello alice');

@@ -1,16 +1,14 @@
 <script lang="ts">
   // The session timeline: one component per item kind, windowed (only rows near the viewport are
   // in the DOM, with measured heights in a Fenwick tree), patched in place while text streams, and
-  // stuck to the bottom unless the user scrolled up. Pending requests that have no timeline item
-  // (a subagent's, rolled up from the summary) follow the last row. A "Started fresh" divider
-  // precedes the first row of each agent session started fresh. The raw view replaces the list
-  // while it is open.
+  // stuck to the bottom unless the user scrolled up. Open requests are pinned above the composer
+  // (`RequestTray`), not here. A "Started fresh" divider precedes the first row of each agent
+  // session started fresh. The raw view replaces the list while it is open.
   import { onDestroy, untrack } from 'svelte';
   import { useApp } from '../app/app.svelte';
   import { freshDividers } from '../model/fresh';
   import { HeightIndex, visibleRange } from '../model/heights';
   import type { FeedSession, TimelineItem } from '../protocol';
-  import RequestCard from '../session/RequestCard.svelte';
   import { Timeline } from '../state/timeline.svelte';
   import { provideTimeline } from './context';
   import ItemView from './ItemView.svelte';
@@ -48,7 +46,6 @@
   const opened = untrack(() => key);
   onDestroy(() => delete app.view.raw[opened]);
 
-  const orphans = $derived(s.requests.filter((r) => r.state === 'pending' && !timeline.requestIds.has(r.id)));
   const freshStarts = $derived(feed?.detail?.agent_sessions.filter((a) => a.started_by === 'fresh') ?? []);
   const fresh = $derived(freshDividers(freshStarts.length ? rows.map((c) => ({ id: c.id, ts: c.item.ts })) : [], freshStarts));
 
@@ -127,7 +124,6 @@
   $effect(() => {
     void layout;
     void rows;
-    void orphans;
     if (stick && scroller && !focusing) scroller.scrollTop = scroller.scrollHeight;
   });
 
@@ -170,7 +166,7 @@
       {#if timeline.trimmed}<div class="muted small trimmed">{timeline.trimmed} earlier items not kept</div>{/if}
       {#if !rows.length}
         <div class="placeholder">
-          {#if s.preview && !orphans.length}<p class="preview">{s.preview}</p>{/if}
+          {#if s.preview && !s.requests.length}<p class="preview">{s.preview}</p>{/if}
           {#if s.state === 'starting'}<p class="muted"><span class="spin"></span> starting agent…</p>{/if}
         </div>
       {/if}
@@ -183,7 +179,6 @@
       {/each}
       <div style:height="{padBottom}px" aria-hidden="true"></div>
       {#each fresh.trailing as a (a.native_id)}{@render divider()}{/each}
-      {#each orphans as req (req.id)}<div class="row"><RequestCard {req} {s} /></div>{/each}
     </div>
   </div>
 {/if}

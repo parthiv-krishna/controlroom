@@ -1,10 +1,10 @@
 import { expect, type Page, test } from '@playwright/test';
-import { header, login, newSession, send, sessionRow, signIn, timeline } from './helpers';
+import { header, login, newSession, requestCards, send, sessionRow, signIn, timeline } from './helpers';
 
 // pi (on the server) runs `git push` in devbox's shell, which runs under the workspace's nono
 // profile there: nono mediates the push and asks the host daemon, which raises an approval
-// through the server. It shows as a sandbox card in the timeline and the notifications panel of
-// both tabs. One tab allows it once (the push lands); the other denies the next push with a
+// through the server. It shows as a sandbox card pinned above the composer and in the
+// notifications panel of both tabs. One tab allows it once (the push lands); the other denies the next push with a
 // reason (pi sees it; the test script checks the remote and what pi told the model).
 test('git push approvals across two tabs', async ({ page, browser }) => {
   await login(page, 'Laptop');
@@ -15,7 +15,7 @@ test('git push approvals across two tabs', async ({ page, browser }) => {
   const notes = other.getByRole('complementary', { name: 'Notifications' });
 
   // The approval reaches both tabs and the notifications panel.
-  const card = (p: Page) => timeline(p).locator('.rq-sandbox').last();
+  const card = (p: Page) => requestCards(p, 'sandbox').last();
   for (const p of [page, other]) {
     await expect(card(p)).toHaveClass(/\bpending\b/);
     await expect(card(p).locator('pre.code')).toContainText('git push origin HEAD:allowed');

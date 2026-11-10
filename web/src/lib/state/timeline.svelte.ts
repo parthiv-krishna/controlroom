@@ -11,7 +11,7 @@
 // - The reading view stays quiet: retries fold into their run, a notice repeated verbatim (an
 //   extension's "ready" at each agent start) shows once with a count, and a session-info item
 //   shows only the values that changed (the first ones are what the header already shows).
-import type { RawFrame, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
+import type { RawFrame, Request, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
 
 /** Items kept per timeline; older ones are trimmed (the protocol has no paging yet). */
 export const MAX_ITEMS = 5000;
@@ -49,6 +49,10 @@ export const hiddenInTimeline = (item: TimelineItem): boolean => item.kind === '
 export type SessionInfo = Partial<Record<'title' | 'model' | 'thinking', string>>;
 const INFO_FIELDS = ['title', 'model', 'thinking'] as const;
 
+/** A request item's request; a subagent's (shown in its parent) is answered on the subagent. */
+export const requestOf = (item: ItemOf<'request'>): Request =>
+  item.actor === 'root' || item.request.origin_child ? item.request : { ...item.request, origin_child: item.actor };
+
 /** The nested-tool parent of an item, if it has one. */
 const parentOf = (item: TimelineItem): string | null =>
   item.kind === 'tool_call' && item.parent_tool_call_id && item.parent_tool_call_id !== item.tool_call_id ? item.parent_tool_call_id : null;
@@ -64,10 +68,10 @@ export class Timeline {
   retries = $state.raw<ReadonlyMap<string, readonly ItemCell[]>>(new Map());
   /** How often a shown notice was repeated verbatim (2 or more), by its id. */
   repeats = $state.raw<ReadonlyMap<string, number>>(new Map());
+  /** The latest state of every request in the timeline, by request id (a subagent's with its `origin_child`). */
+  requests = $state.raw<ReadonlyMap<string, Request>>(new Map());
   /** The values a shown session-info item changed, by its id. */
   infoChanges = $state.raw<ReadonlyMap<string, SessionInfo>>(new Map());
-  /** Ids of the requests that have a timeline item (others are shown from the summary). */
-  requestIds = $state.raw<ReadonlySet<string>>(new Set());
   /** Raw transcript frames (only while a raw view asks for them). */
   readonly raw = new RawFrames();
 
@@ -147,8 +151,8 @@ export class Timeline {
       return true;
     }
     cell.item = item;
-    // Notices and session info are folded by their content.
-    if (item.kind === 'notice' || item.kind === 'session_info' || old.kind !== item.kind) return true;
+    // Notices and session info are folded by their content; requests are collected by state.
+    if (item.kind === 'notice' || item.kind === 'session_info' || item.kind === 'request' || old.kind !== item.kind) return true;
     return parentOf(old) !== parentOf(item);
   }
 
@@ -189,11 +193,11 @@ export class Timeline {
       this.trimmed += excess;
     }
     const tools = new Map<string, ItemCell>();
-    const requests = new Set<string>();
+    const requests = new Map<string, Request>();
     for (const cell of this.order) {
       const { item } = cell;
       if (item.kind === 'tool_call') tools.set(item.tool_call_id, cell);
-      else if (item.kind === 'request') requests.add(item.request.id);
+      else if (item.kind === 'request') requests.set(item.request.id, requestOf(item));
     }
     const rows: ItemCell[] = [];
     const children = new Map<string, ItemCell[]>();
@@ -258,10 +262,10 @@ export class Timeline {
     this.hosts = hosts;
     this.rows = rows;
     this.children = children;
+    this.requests = requests;
     this.retries = retries;
     this.repeats = repeats;
     this.infoChanges = infoChanges;
-    if (requests.size !== this.requestIds.size || [...requests].some((id) => !this.requestIds.has(id))) this.requestIds = requests;
   }
 }
 

@@ -118,6 +118,21 @@ describe('Timeline', () => {
   });
 });
 
+describe('Timeline requests', () => {
+  it('keeps the latest state of each request, a subagent\'s with its origin', () => {
+    const r = (state: 'pending' | 'answered', actor = 'root'): TimelineItem => ({
+      ...base, actor, id: `i-${actor}`, seq_from: 1, seq_to: state === 'pending' ? 1 : 2, kind: 'request',
+      request: { id: `r-${actor}`, created_at: 0, state, kind: 'dialog', title: '', detail: null, body: null, blocking: true, options: [], questions: [], answer: null, origin_child: null },
+    });
+    const t = new Timeline();
+    t.apply([up(r('pending')), up(r('pending', 'child'))], 0);
+    expect(t.requests.get('r-root')?.state).toBe('pending');
+    expect(t.requests.get('r-child')?.origin_child).toBe('child');
+    t.apply([up(r('answered'))], 1);
+    expect(t.requests.get('r-root')?.state).toBe('answered');
+  });
+});
+
 describe('Timeline folding', () => {
   const run = (id: string, seq: number, actor = 'root'): TimelineItem => ({
     ...base, actor, id, seq_from: seq, seq_to: seq, kind: 'run', trigger: { kind: 'user', device: null }, state: 'settled', outcome: 'completed', error: null,

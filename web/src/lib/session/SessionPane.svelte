@@ -1,6 +1,6 @@
 <script lang="ts">
   // The session pane: banners, the jobs strip, the timeline slot, the todo panel, schedules, the
-  // queue, the composer and the terminal dock. The header is in the top bar on desktop and inline
+  // queue, the open requests, the composer and the terminal dock. The header is in the top bar on desktop and inline
   // on the phone.
   import { useApp } from '../app/app.svelte';
   import type { FeedSession } from '../protocol';
@@ -9,6 +9,7 @@
   import Composer from './Composer.svelte';
   import JobsStrip from './JobsStrip.svelte';
   import QueuePanel from './QueuePanel.svelte';
+  import RequestTray from './RequestTray.svelte';
   import SchedulesPanel from './SchedulesPanel.svelte';
   import SessionHeader from './SessionHeader.svelte';
   import TodoPanel from './TodoPanel.svelte';
@@ -33,6 +34,7 @@
   {#if detail && (detail.todos.length || PAUSED.has(detail.auto_continue.status))}<TodoPanel {s} {detail} />{/if}
   {#if showSchedules}<SchedulesPanel {s} />{/if}
   {#if detail?.queue.length || s.queue.paused}<QueuePanel {s} items={detail?.queue ?? []} />{/if}
+  <RequestTray {s} />
   <Composer {s} />
   <TerminalDock session={s} {machineName} />
 </div>

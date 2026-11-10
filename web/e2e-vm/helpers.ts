@@ -118,6 +118,11 @@ export function timeline(page: Page): Locator {
   return page.locator('[data-pane="session"][aria-label="Timeline"]');
 }
 
+/** The open session's request cards of a kind (a CSS suffix): pinned above the composer while open, then in the timeline. */
+export function requestCards(page: Page, kind: string): Locator {
+  return page.getByRole('region', { name: 'Requests', exact: true }).or(timeline(page)).locator(`.rq-${kind}`);
+}
+
 /** The open session's last agent message. */
 export function lastReply(page: Page): Locator {
   return timeline(page).locator('.msg.r-agent').last();

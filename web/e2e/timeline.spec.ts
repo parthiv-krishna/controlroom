@@ -59,18 +59,25 @@ test('nested tool calls render inside their parent, live and from the backlog', 
   await expect(nested.locator('.st')).toHaveCount(0);
 });
 
-test('a dialog streamed into the timeline is answered from the timeline', async ({ page }) => {
+test('a dialog streamed into the timeline is pinned above the composer; the timeline keeps a stub', async ({ page }) => {
   await start(page, release);
   await advance(page, release, 9); // up to the pending permission dialog
   const card = item(page, 'c3.dialog-18');
-  await expect(card).toContainText('Allow: echo fixture-guard ok?');
-  await card.getByRole('button', { name: 'Allow' }).click();
+  const tray = page.getByRole('main').getByRole('region', { name: 'Requests' });
+  const pinned = tray.locator('[data-request="c3.dialog-18"]');
+  await expect(pinned).toContainText('Allow: echo fixture-guard ok?');
+  // The timeline shows a stub that jumps to the pinned card.
+  await expect(card.locator('[data-request]')).toHaveCount(0);
+  await card.locator('[data-stub="c3.dialog-18"]').click();
+  await expect(pinned.getByRole('button', { name: 'Allow' })).toBeFocused();
+  await pinned.getByRole('button', { name: 'Allow' }).click();
   await expect.poll(async () => (await calls(page, 'request.respond')).map((c) => c.params)).toContainEqual(
     expect.objectContaining({ id: S.release, request_id: 'c3.dialog-18', response: { kind: 'choice', option_id: '0' } }),
   );
-  // The recording's answer arrives: the card shows the outcome.
+  // The recording's answer arrives: the tray empties and the timeline shows the outcome.
   await advance(page, release, 1);
   await expect(card).toContainText('→ Allow');
+  await expect(tray).toHaveCount(0);
 });
 
 test('raw view: an item opens its records, and a record links back to its item', async ({ page }) => {
