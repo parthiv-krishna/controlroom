@@ -1,0 +1,27 @@
+nono 0.80 for musl: classify an open's access from the kernel's two access-mode bits.
+
+The seccomp supervisor classifies a trapped open by `flags & libc::O_ACCMODE`. On musl,
+O_ACCMODE is `03|O_PATH`, so every `O_PATH` open (`O_RDONLY|O_PATH`: systemd's `/proc/` and
+`/proc/1/root` probes, fd-based path walks) comes out as neither read-only nor write-only and is
+treated as read-write: the static build asks to "Read and write" such paths and denies them,
+without asking, even inside read-only grants such as `/nix/store`. The glibc build (O_ACCMODE is
+3) reports them as reads. Masking with 0o3, the kernel's own access mode, gives the same answer
+on both.
+
+--- a/crates/nono/src/sandbox/linux.rs
++++ b/crates/nono/src/sandbox/linux.rs
+@@ -1665,11 +1665,12 @@
+ 
+ /// Classify access mode from open flags.
+ ///
+-/// Extracts O_ACCMODE bits and maps to AccessMode. Used by both openat (where flags
++/// Extracts the access-mode bits and maps to AccessMode. Used by both openat (where flags
+ /// come from args[2] directly) and openat2 (where flags come from open_how.flags).
++/// The kernel's access mode is the low two bits; musl's O_ACCMODE also includes O_PATH.
+ #[must_use]
+ pub fn classify_access_from_flags(flags: i32) -> crate::AccessMode {
+-    match flags & libc::O_ACCMODE {
++    match flags & 0o3 {
+         libc::O_RDONLY => crate::AccessMode::Read,
+         libc::O_WRONLY => crate::AccessMode::Write,
+         _ => crate::AccessMode::ReadWrite,

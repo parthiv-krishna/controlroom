@@ -1,8 +1,8 @@
 # nono, pinned to the version controlroom's sandbox profiles are validated against
 # (spec §11, §14). Built from the upstream tag, independent of the nixpkgs revision, so a
 # nixpkgs bump never changes the sandbox. Bump it only together with
-# `controlroom_sandbox::probe::PINNED_NONO_VERSION` (and check ./nono-musl-o-path.patch, which the
-# static build for the hosts in ./rust.nix applies), and re-run the validation scripts
+# `controlroom_sandbox::probe::PINNED_NONO_VERSION` (and check ./nono-musl-o-path.patch and ./nono-musl-o-path-access.patch,
+# which the static build for the hosts in ./rust.nix applies), and re-run the validation scripts
 # (crates/sandbox/scripts/validate-nono.sh, crates/agentd/scripts/acceptance-pi-nono.sh, and the
 # ignored `controlroomd --test host nono` tests with CR_TEST_NONO set to the static build).
 { pkgs }:
