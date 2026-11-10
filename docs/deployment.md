@@ -261,6 +261,18 @@ dialog shows. The server installs nono and the daemon and runs `controlroomd doc
 the nono in use ("bundled" or "configured in sandbox.toml", with its version) and the Landlock
 ABI.
 
+Sandboxed shells on a host reach only what **Settings › Sandbox** grants. Two things that commonly
+surprise:
+
+- **Unix sockets** need a socket grant (the "Sockets" row): nono can't ask about a socket
+  connection, so an ungranted one fails at once ("Permission denied" or "Operation not
+  permitted"), e.g. `dbus-send --system` without the D-Bus system bus. systemd 254 and later
+  (`systemctl`, `busctl`, `loginctl`) can't use the bus from the sandbox even when it is granted
+  (spec §11.6).
+- **Paths nono always protects** (`~/.ssh`, `~/.bash_history`, `~/.bashrc`, `~/.config/gcloud`, …)
+  can be granted one by one, but no directory containing one (`~`, `~/.config`, `~/.local/share`):
+  nono would refuse to start, so Settings refuses them with the reason.
+
 ## 6. Phone: the installed app and push
 
 1. Open the public URL in Safari and sign in.
@@ -287,7 +299,10 @@ journalctl -u controlroom -u controlroom-agent -e
   each machine's daemon automatically once the machine is idle. It runs the new binary first and
   rolls back if the daemon doesn't answer; running agents are not interrupted. nono is uploaded
   only when its version changes; each daemon version keeps the nono it came with, so a rollback
-  restores both.
+  restores both. A nono rebuilt with the same version (a new patch in `nix/`) is not
+  uploaded to hosts that already have that version: remove
+  `~/.local/share/controlroom/nono/<version>/nono` on the host before the next daemon
+  upgrade, which then uploads the new build.
 - To roll the server back: `nixos-rebuild switch --rollback` (or boot the previous generation).
   Daemons are never downgraded: hosts that were already upgraded keep the newer daemon (the
   previous ones stay under `~/.local/share/controlroom/versions/`).
