@@ -331,13 +331,21 @@ def overlap() -> None:
 
 
 def push_subscribe() -> None:
-    """A device (iPhone) turns Web Push on; its subscription points at the mock push service."""
+    """A device (iPhone) turns Web Push on, without a push delay; its subscription points at
+    the mock push service."""
     Spec("push").finish()
+
+
+def push_handshakes() -> int:
+    """How many pushes reached the mock push service."""
+    return int(server.succeed("journalctl -u push-mock | grep -c 'TLS handshake for push.example.com' || true"))
 
 
 def approvals() -> None:
     """git push in devbox's sandbox needs an approval: allowed once in one tab, denied with a
-    reason in the other."""
+    reason in the other. Pushes wait while a tab is in use: neither approval is pushed then
+    (a negative check over a few seconds, with no push delay), and the second one is pushed to
+    the iPhone once both tabs are hidden."""
     as_alice(
         devbox,
         "mkdir -p ~/push && cd ~/push && git init -q --bare remote.git && git init -q repo && cd repo"
@@ -354,7 +362,15 @@ def approvals() -> None:
     def remote_has(branch: str) -> bool:
         return devbox.execute(f"su - alice -c 'git -C ~/push/remote.git rev-parse -q --verify refs/heads/{branch}'")[0] == 0
 
-    Spec("approvals").finish()
+    spec = Spec("approvals")
+    spec.step("push-held")
+    time.sleep(5)
+    assert push_handshakes() == 0, "a push went out while a tab was in use"
+    spec.release("push-held")
+    spec.step("push-released")
+    web_push()
+    spec.release("push-released")
+    spec.finish()
     mock_done()
     assert remote_has("allowed"), "the allowed push reached the remote"
     assert not remote_has("denied"), "the denied push must not reach the remote"
@@ -561,7 +577,6 @@ try:
     overlap()
     push_subscribe()
     approvals()
-    web_push()
     terminal_input()
     user_terminals()
     schedules()

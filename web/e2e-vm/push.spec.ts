@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { login } from './helpers';
+import { choose, login } from './helpers';
 
 // Web Push on a device. Headless Chromium has no push service offline and denies notifications,
 // so both are faked: notifications are granted, and `subscribe` returns a subscription (with a
-// real P-256 key) at the VM's mock push service, push.example.com. The device then goes away;
-// the next approval (approvals.spec.ts) is pushed to it, and the test script checks that the
-// server reached the mock push service.
+// real P-256 key) at the VM's mock push service, push.example.com. Pushes go out without a delay
+// from now on. The device then goes away; approvals.spec.ts checks that a new approval is held
+// while a tab is in use and pushed to it once both tabs are hidden, and the test script checks
+// what reached the mock push service.
 test('push is enabled on a device', async ({ browser }) => {
   const context = await browser.newContext();
   await context.addInitScript(fakePushService);
@@ -21,6 +22,9 @@ test('push is enabled on a device', async ({ browser }) => {
   await settings.getByRole('button', { name: 'Enable', exact: true }).click();
   await expect(settings).toContainText('Push is on for iPhone');
   await expect(settings.getByRole('button', { name: 'Turn off' })).toBeVisible();
+  await expect(settings.getByRole('checkbox', { name: "Hold while I'm active" })).toBeChecked();
+  await choose(settings, 'Push delay', 'None');
+  await expect(settings.getByRole('button', { name: 'Push delay' })).toHaveText(/None/);
   await context.close();
 });
 
