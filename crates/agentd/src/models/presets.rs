@@ -240,8 +240,8 @@ pub fn check_key(provider: &str, key: &str) -> Result<KeyKind, String> {
             && key.starts_with(token.prefix)
         {
             return Err(format!(
-                "this is a {} subscription token ({}…); add it to {} instead",
-                p.label, token.prefix, p.label
+                "{}… is a subscription token for {}; add it to {} instead",
+                token.prefix, p.label, p.label
             ));
         }
     }
