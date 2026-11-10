@@ -50,6 +50,7 @@ impl Scheduler {
             retry_at: HashMap::new(),
             notes: HashMap::new(),
             attempts: JoinSet::new(),
+            connects: 0,
         };
         let bus = hub.subscribe_bus();
         let handle = tokio::spawn(task.run(bus));
@@ -80,6 +81,8 @@ struct Attempt {
     id: ScheduleId,
     at: UnixMillis,
     result: Delivered,
+    /// [`Task::connects`] when the delivery started.
+    connects: u64,
 }
 
 struct Task {
@@ -92,6 +95,9 @@ struct Task {
     /// Notes for claimed due times, added to their run entry.
     notes: HashMap<(ScheduleId, UnixMillis), String>,
     attempts: JoinSet<Attempt>,
+    /// How often the agent daemon connected. A delivery that fails after a connect that
+    /// happened while it ran retries at once: that connect's retry already passed it by.
+    connects: u64,
 }
 
 impl Task {
@@ -139,6 +145,7 @@ impl Task {
     fn on_bus(&mut self, event: BusEvent) -> bool {
         match event {
             BusEvent::Agentd { connected: true } => {
+                self.connects += 1;
                 self.retry_at.clear();
                 true
             }
@@ -249,20 +256,31 @@ impl Task {
     fn start_delivery(&mut self, hub: &Arc<Hub>, s: Schedule, at: UnixMillis) {
         self.in_flight.insert(s.id);
         let hub = hub.clone();
+        let connects = self.connects;
         self.attempts.spawn(async move {
             let result = deliver(&hub, &s, at).await;
             Attempt {
                 id: s.id,
                 at,
                 result,
+                connects,
             }
         });
     }
 
     fn finish(&mut self, hub: &Hub, attempt: Attempt, now: UnixMillis) {
-        let Attempt { id, at, result } = attempt;
+        let Attempt {
+            id,
+            at,
+            result,
+            connects,
+        } = attempt;
         self.in_flight.remove(&id);
         match result {
+            Delivered::Retry(e) if connects != self.connects => {
+                tracing::debug!(schedule = %id, error = %e.message, "schedule delivery failed across a reconnect; retrying now");
+                self.retry_at.remove(&id);
+            }
             Delivered::Retry(e) => {
                 tracing::debug!(schedule = %id, error = %e.message, "schedule delivery will be retried");
                 self.retry_at.insert(id, retry_time(hub, now));
