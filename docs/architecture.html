@@ -611,6 +611,7 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <li>a raw view (opt-in raw frames).</li>
 </ul></li>
 <li><b>Server-owned attention and roll-ups:</b> no client-side state derivation.</li>
+<li><b>Push timing</b> (Settings › Notifications, stored per owner): every push waits a delay (default 30 s) and is dropped if its attention was answered, read or cleared meanwhile. While the user is <b>active</b> on any device (a visible, focused tab with key, pointer or touch input within the idle window, default 2 min, reported as a throttled <code>client.activity</code> heartbeat), pushes go to no device: the active tab shows attention in-app. When the user leaves (idle, hidden, blurred, closed or disconnected), pushes still pending are sent then, approvals as urgent, deduplicated as always. Pending pushes are rebuilt from current attention after a restart (pending requests; a failure or finished run within its delay is not).</li>
 <li><b>Device names:</b> each browser has a persistent <code>device_id</code> (localStorage) and a user-chosen <b>label</b> ("Laptop", "Phone").
 <ul>
 <li><b>First load:</b> an unobtrusive inline prompt "Name this device", pre-filled with a friendly guess derived from the user agent (e.g. "Firefox on Linux", "Safari on iPhone"). It's skippable, and the guess is kept if skipped.</li>

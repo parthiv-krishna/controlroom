@@ -219,10 +219,10 @@ Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.
 | `tasks.create` · `update` · `move` · `delete` · `link {task_id, session_id}` · `unlink` · `checklist_add` · `checklist_update` · `checklist_remove` | tasks (`project_ids`, `links: [session_id]`, checklist) |
 | `grants.revoke` | contact grants |
 | `devices.register` · `rename` · `remove` | devices (remove signs the device out) |
-| `notifications.preferences` · `set_preferences` · `subscribe` · `unsubscribe` | Web Push |
+| `notifications.preferences` · `set_preferences` · `subscribe` · `unsubscribe` | Web Push: the owner's `{attention, questions, turn_end, hold_while_active, delay_s, idle_s}` (defaults on, off, off, on, 30, 120; `delay_s` ≤ 3600, `idle_s` 60–3600) |
 | `schedules.create {session_id, …}` · `update` · `delete` · `run_now` | schedules (§8.1, capability `schedules`): `Schedule {session_id, spec: cron{expr}·interval{every_s ≥ 60}, timezone, message, enabled, if_busy, missed, next_run, pending_run, recent_runs[]}`; fired as `session.prompt` with `origin: schedule` and `op_id = <schedule id>:<due ms>` |
 | `sandbox.profiles` · `sandbox.set_profile {scope, change}` | sandbox defaults (§11.6) |
-| `client.focus {device_id, session_id?, visible}` | push deduplication |
+| `client.focus {device_id, session_id?, visible}` · `client.activity {}` | push deduplication (a visible client showing the session skips its device) and presence: a visible client with user input (the throttled `client.activity` heartbeat, ~20 s) within `idle_s` makes the owner active, which holds every push |
 
 **State feed.** `StateSnapshot {machines[], sessions[FeedSession], overlaps[], projects[], tasks[], grants[], schedules[], devices[]}`; `state.events {changes[{rev, kind}]}` with `machine_* · session_upserted{session} · session_removed{session_id} · overlaps_changed{overlaps} · project_* · task_* · grant_* · schedule_* · device_*` (`_upserted` / `_removed`).
 `FeedSession` = the agent daemon's `SessionSummary` + `project_ids[]` (the projects of the tasks that link it; empty = **Unassigned**; the controller computes it). `Overlap {machine_id, path, session_ids[]}`: a directory used by several open sessions' workspaces (allowed; the UI warns). `ContactGrant {id, from: session_id, to: session_id, scope, granted_at, by?}`.
