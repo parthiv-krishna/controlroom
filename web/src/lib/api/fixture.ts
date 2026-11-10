@@ -263,5 +263,6 @@ const ACK_METHODS = new Set<UiMethod>([
   'tasks.delete', 'grants.revoke', 'devices.remove', 'schedules.delete', 'client.focus', 'session.cancel',
   'session.close', 'session.reopen', 'session.resume', 'session.delete', 'session.update', 'session.set_option',
   'queue.edit', 'queue.remove', 'queue.reorder', 'queue.resume', 'todo.remove', 'todo.reorder', 'sandbox.revoke',
+  'session.terminal_close',
 ] satisfies AckMethod[]);
 const isAck = (method: UiMethod): boolean => ACK_METHODS.has(method);

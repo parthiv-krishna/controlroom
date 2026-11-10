@@ -44,6 +44,8 @@ pub struct Workspace {
 struct State {
     /// The generated profile; `None` at level off.
     profile: Option<AbsPath>,
+    /// The profile of the user's sandboxed terminals; `None` at level off.
+    user_profile: Option<AbsPath>,
     worker: Option<Arc<WorkerClient>>,
 }
 
@@ -63,6 +65,19 @@ impl Workspace {
             &host.sandbox,
             &host.dirs,
             self.profile().as_ref(),
+            &self.root,
+            argv,
+        )
+    }
+
+    /// Wraps `argv` in this workspace's sandbox for one of the user's terminals (the same
+    /// policy; approvals are marked as the user's).
+    pub fn wrap_user(&self, host: &Host, argv: Vec<String>) -> Result<Wrapped, RpcError> {
+        let profile = self.lock().user_profile.clone();
+        sandbox::wrap(
+            &host.sandbox,
+            &host.dirs,
+            profile.as_ref(),
             &self.root,
             argv,
         )
@@ -189,27 +204,34 @@ fn install(
     }
     std::fs::write(files.bashrc().as_path(), integration::BASHRC)
         .map_err(|e| fs_error(files.bashrc().as_str(), e))?;
-    let hook = match host.approvals.port() {
-        Some(port) => Some(HookUrl {
-            port,
-            session: controlroom_sandbox::SessionId::new(&id.to_string())
-                .map_err(|e| internal(e.to_string()))?,
-            secret: hook_secret(&files)?,
-        }),
-        None => None,
-    };
+    // The agent's processes and the user's sandboxed terminals: the same policy, each with its
+    // own approval webhook URL (their approvals are told apart by the secret).
     let policy = sandbox::policy(&sandbox)?;
-    let profile = sandbox::write_profile(
-        &host.sandbox,
-        &host.dirs,
-        ProfileInput {
-            id: &id.to_string(),
-            root: &root,
-            files: &files,
-            policy,
-            hook,
-        },
-    )?;
+    let write = |path: AbsPath, secret: AbsPath| {
+        let hook = match host.approvals.port() {
+            Some(port) => Some(HookUrl {
+                port,
+                session: controlroom_sandbox::SessionId::new(&id.to_string())
+                    .map_err(|e| internal(e.to_string()))?,
+                secret: hook_secret(&secret)?,
+            }),
+            None => None,
+        };
+        sandbox::write_profile(
+            &host.sandbox,
+            &host.dirs,
+            ProfileInput {
+                id: &id.to_string(),
+                root: &root,
+                files: &files,
+                path,
+                policy: policy.clone(),
+                hook,
+            },
+        )
+    };
+    let profile = write(files.profile(), files.hook_secret())?;
+    let user_profile = write(files.user_profile(), files.user_hook_secret())?;
     let workspace = Arc::new(Workspace {
         id,
         session_id,
@@ -217,6 +239,7 @@ fn install(
         files,
         state: Mutex::new(State {
             profile,
+            user_profile,
             worker: None,
         }),
     });
@@ -224,9 +247,8 @@ fn install(
     Ok(workspace)
 }
 
-/// The workspace's webhook secret, created on first use.
-fn hook_secret(files: &WorkspacePaths) -> Result<HookSecret, RpcError> {
-    let path = files.hook_secret();
+/// A webhook secret of the workspace (in the file `path`), created on first use.
+fn hook_secret(path: &AbsPath) -> Result<HookSecret, RpcError> {
     if let Some(secret) = std::fs::read_to_string(path.as_path())
         .ok()
         .and_then(|s| HookSecret::parse(s.trim()))
@@ -234,7 +256,7 @@ fn hook_secret(files: &WorkspacePaths) -> Result<HookSecret, RpcError> {
         return Ok(secret);
     }
     let secret = HookSecret::generate().map_err(|e| internal(e.to_string()))?;
-    write_private_file(&path, secret.as_str().as_bytes()).map_err(internal)?;
+    write_private_file(path, secret.as_str().as_bytes()).map_err(internal)?;
     Ok(secret)
 }
 

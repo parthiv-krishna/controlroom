@@ -14,12 +14,14 @@ use std::time::{Duration, Instant};
 
 use controlroom_protocol::agentd::{ClientRole, HelloParams};
 use controlroom_protocol::host::{
-    HostHelloResult, HostOp, HostResult, ShellOpenParams, ToolRunParams, WorkspaceOpenParams,
-    WorkspaceOpenResult, methods,
+    HostHelloResult, HostOp, HostResult, HostShell, ShellOpenParams, ToolRunParams,
+    WorkspaceOpenParams, WorkspaceOpenResult, methods,
 };
-use controlroom_protocol::ids::{CallId, ControllerId, SessionId, WorkspaceId};
+use controlroom_protocol::ids::{CallId, ControllerId, DeviceId, SessionId, WorkspaceId};
 use controlroom_protocol::jsonrpc::{Method, RpcRequest};
-use controlroom_protocol::session::{SandboxLevel, SandboxSpec};
+use controlroom_protocol::session::{
+    DeviceRef, SandboxLevel, SandboxSpec, ShellOwner, ShellSandbox,
+};
 use controlroom_protocol::{HOST_PROTOCOL_VERSION, RpcError};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -426,13 +428,29 @@ impl Session {
 
     pub async fn shell(&self, client: &RpcClient, name: &str) {
         client
-            .call::<methods::ShellOpen>(ShellOpenParams {
-                workspace_id: self.workspace,
-                name: name.into(),
-                cwd: None,
-            })
+            .call::<methods::ShellOpen>(ShellOpenParams::agent(self.workspace, name.into(), None))
             .await
             .unwrap();
+    }
+
+    /// Opens one of the user's terminals, `name`, with `sandbox`, opened by device "Laptop".
+    pub async fn user_shell(
+        &self,
+        client: &RpcClient,
+        name: &str,
+        sandbox: ShellSandbox,
+    ) -> Result<HostShell, RpcError> {
+        client
+            .call::<methods::ShellOpen>(ShellOpenParams {
+                owner: ShellOwner::User,
+                sandbox,
+                by: Some(DeviceRef {
+                    device_id: DeviceId::new("dev-laptop"),
+                    label: "Laptop".into(),
+                }),
+                ..ShellOpenParams::agent(self.workspace, name.into(), None)
+            })
+            .await
     }
 
     pub fn run_params(&self, call: &str, op: HostOp) -> ToolRunParams {

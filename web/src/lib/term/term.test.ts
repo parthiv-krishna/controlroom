@@ -3,6 +3,7 @@ import type { Shell, Workspace } from '../protocol';
 import { FixtureTerminals } from './fixture';
 import { ctrlChar, passesKeys, terminalTakesKeys } from './keys';
 import type { LinkStatus } from './link';
+import { isMine, isUnsandboxed, tabLabel, unsandboxedConfirm } from './mine';
 import { shellGroups, type DockSession } from './session';
 
 describe('terminal keys', () => {
@@ -38,7 +39,16 @@ const ws = (id: string, machine_id: string, path: string, primary: boolean): Wor
   added_at: 0,
   availability: { connectivity: { state: 'connected' }, since: 0 },
 });
-const shell = (name: string, workspace_id: string): Shell => ({ name, workspace_id, cwd: '~', state: { state: 'idle' }, reset_pending: false, foreground: null });
+const shell = (name: string, workspace_id: string, owner: Shell['owner'] = 'agent', sandbox: Shell['sandbox'] = 'workspace'): Shell => ({
+  name,
+  workspace_id,
+  owner,
+  sandbox,
+  cwd: '~',
+  state: { state: 'idle' },
+  reset_pending: false,
+  foreground: null,
+});
 
 describe('dock sessions', () => {
   it('groups shells by workspace, primary first', () => {
@@ -85,5 +95,19 @@ describe('fixture terminals', () => {
     expect(screen).toContain('authenticated');
     expect(screen).not.toContain('s3cret');
     expect(terminals.log[0]).toMatchObject({ inputs: ['stty size\r', 'vim\r', ':q\r', 'sudo true\rs3cret\r'], resizes: [[120, 40]] });
+  });
+});
+
+describe("the user's terminals", () => {
+  it('are told apart from the agent shells, and unsandboxed ones are marked', () => {
+    const agent = shell('devbox', 'w1');
+    const mine = shell('you@devbox', 'w1', 'user');
+    const raw = shell('you@devbox-2', 'w1', 'user', 'unsandboxed');
+    expect([agent, mine, raw].map(isMine)).toEqual([false, true, true]);
+    expect([agent, mine, raw].map(isUnsandboxed)).toEqual([false, false, true]);
+    expect([agent, mine, raw].map(tabLabel)).toEqual(['devbox', 'devbox', 'devbox-2']);
+    // An owner or mode this build doesn't know is the user's, and unsandboxed.
+    expect(isUnsandboxed(shell('x', 'w1', 'unknown', 'unknown'))).toBe(true);
+    expect(unsandboxedConfirm('alice', 'devbox')).toBe('Runs as alice on devbox without the sandbox.');
   });
 });

@@ -18,7 +18,9 @@ use controlroom_protocol::host::{
     HostOp, HostRequest, ShellOpenParams, ToolRunParams, WorkspaceOpenParams,
 };
 use controlroom_protocol::ids::{CallId, DeviceId, HostOpId, MachineId, SessionId, WorkspaceId};
-use controlroom_protocol::session::{SandboxLevel, SandboxSpec, Shell, ShellState, WorkspaceSpec};
+use controlroom_protocol::session::{
+    SandboxLevel, SandboxSpec, Shell, ShellOwner, ShellSandbox, ShellState, WorkspaceSpec,
+};
 use controlroom_protocol::terminal::TerminalEvent;
 use controlroom_protocol::{ErrorData, RpcOutcome};
 use support::{Setup, add_machine_at, controller_with_agentd, ui};
@@ -98,16 +100,14 @@ impl World {
             .host_call(
                 "shell",
                 machine,
-                HostRequest::ShellOpen(ShellOpenParams {
-                    workspace_id: workspace,
-                    name: "devbox".into(),
-                    cwd: None,
-                }),
+                HostRequest::ShellOpen(ShellOpenParams::agent(workspace, "devbox".into(), None)),
             )
             .await;
         summary.shells.push(Shell {
             name: "devbox".into(),
             workspace_id: workspace,
+            owner: ShellOwner::Agent,
+            sandbox: ShellSandbox::Workspace,
             cwd: world.host.work().into(),
             state: ShellState::Idle,
             reset_pending: false,
@@ -448,4 +448,87 @@ async fn a_browser_that_falls_behind_stalls_nothing_and_loses_nothing() {
         numbers.len(),
         slow.resets
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_users_terminal_streams_to_its_browser_and_the_agent_cant_run_in_it() {
+    let world = World::start().await;
+    world
+        .host_call(
+            "mine",
+            world.machine,
+            HostRequest::ShellOpen(ShellOpenParams {
+                owner: ShellOwner::User,
+                sandbox: ShellSandbox::Unsandboxed,
+                ..ShellOpenParams::agent(world.workspace, "you@devbox".into(), None)
+            }),
+        )
+        .await;
+    let mut summary = world.agentd.session(world.session).unwrap();
+    summary.shells.push(Shell {
+        name: "you@devbox".into(),
+        workspace_id: world.workspace,
+        owner: ShellOwner::User,
+        sandbox: ShellSandbox::Unsandboxed,
+        cwd: world.host.work().into(),
+        state: ShellState::Idle,
+        reset_pending: false,
+        foreground: None,
+    });
+    world.agentd.upsert_session(summary);
+
+    // The signed-in browser attaches and types.
+    let auth = world.login(None);
+    let mut term = world.open(&auth, "you@devbox").await;
+    term.type_line("echo mine-$((40+2))").await;
+    term.until("the typed command's output", |t| {
+        t.screen.contains("mine-42")
+    })
+    .await;
+
+    // An agent command naming it never reaches the host: the router refuses it.
+    world.agentd.request(HostOpRequest {
+        id: HostOpId::new("sneak"),
+        machine_id: world.machine,
+        session_id: Some(world.session),
+        request: HostRequest::ToolRun(ToolRunParams {
+            call_id: CallId::new("sneak"),
+            workspace_id: world.workspace,
+            op: HostOp::Bash {
+                shell: "you@devbox".into(),
+                command: "echo sneaked-$((6*7))".into(),
+                timeout_s: None,
+            },
+        }),
+    });
+    match world.agentd.response(&HostOpId::new("sneak")).await {
+        RpcOutcome::Error(e) => {
+            assert!(matches!(e.data, Some(ErrorData::ShellGone { .. })), "{e:?}");
+            assert!(
+                e.message.contains("open one with shell_new"),
+                "the router's: {e:?}"
+            );
+        }
+        other => panic!("the agent ran in the user's terminal: {other:?}"),
+    }
+    // The agent's own shell still runs commands.
+    world
+        .host_call(
+            "fine",
+            world.machine,
+            HostRequest::ToolRun(ToolRunParams {
+                call_id: CallId::new("fine"),
+                workspace_id: world.workspace,
+                op: HostOp::Bash {
+                    shell: "devbox".into(),
+                    command: "true".into(),
+                    timeout_s: None,
+                },
+            }),
+        )
+        .await;
+    term.type_line("echo after").await;
+    term.until("more output", |t| t.screen.contains("after\r\n"))
+        .await;
+    assert!(!term.screen.contains("sneaked-42"), "{:?}", term.screen);
 }

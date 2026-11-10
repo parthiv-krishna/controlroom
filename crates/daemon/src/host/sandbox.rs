@@ -176,19 +176,21 @@ pub struct ProfileInput<'a> {
     pub root: &'a AbsPath,
     /// Its files.
     pub files: &'a WorkspacePaths,
+    /// Where to write the profile (the agent's or the user's terminals').
+    pub path: AbsPath,
     /// Its policy.
     pub policy: EffectivePolicy,
     /// The approval webhook, if it runs.
     pub hook: Option<HookUrl>,
 }
 
-/// Writes the workspace's nono profile; `None` (and no file) at level off.
+/// Writes a nono profile of the workspace to `input.path`; `None` (and no file) at level off.
 pub fn write_profile(
     env: &SandboxEnv,
     dirs: &Dirs,
     input: ProfileInput<'_>,
 ) -> Result<Option<AbsPath>, RpcError> {
-    let profile = input.files.profile();
+    let profile = input.path.clone();
     if input.policy.level == SandboxLevel::Off {
         let _ = std::fs::remove_file(profile.as_path());
         return Ok(None);
@@ -417,6 +419,7 @@ mod tests {
             id: "01JAW000000000000000000001",
             root: &root,
             files: &files,
+            path: files.profile(),
             policy: policy(&spec).unwrap(),
             hook: Some(hook),
         };

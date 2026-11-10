@@ -4,13 +4,16 @@
 //! A shell is a PTY on its workspace's host (`<session>/<name>` there). Its record follows the
 //! host's reports; `opened` remembers the host epoch it was last opened in, so a host restart
 //! leads to `shell.open` (which reopens it in its last directory) before its next command.
+//!
+//! The user's own terminals are shell records too (see `terminals`); everything here that the
+//! agent reaches looks at the agent's shells only.
 
 use std::sync::Arc;
 
 use controlroom_protocol::agent::{AgentShell, AgentShells, ShellEndParams, ShellNewParams};
 use controlroom_protocol::host::{HostRequest, HostShell, ShellCloseParams};
 use controlroom_protocol::ids::{HostOpId, MachineId, SessionId, ShellId};
-use controlroom_protocol::session::SessionState;
+use controlroom_protocol::session::{SessionState, ShellOwner, ShellState};
 use controlroom_protocol::{ErrorData, Resource, RpcError};
 
 use super::calls::open_shell;
@@ -48,7 +51,7 @@ impl Runtime {
                 .data
                 .shells
                 .iter()
-                .find(|s| s.shell.name == params.name)
+                .find(|s| s.is_agents() && s.shell.name == params.name)
             {
                 let on = session.data.workspace(shell.shell.workspace_id);
                 if on.map(|w| w.machine_id) != Some(machine) {
@@ -83,7 +86,7 @@ impl Runtime {
                 .data
                 .shells
                 .iter()
-                .find(|s| s.shell.name == params.name)
+                .find(|s| s.is_agents() && s.shell.name == params.name)
                 .ok_or_else(|| shell_gone(&params.name))?;
             Ok(AgentShell {
                 machine: core.machines.name(&machine),
@@ -137,7 +140,8 @@ fn check_name(name: &str) -> Result<(), RpcError> {
     }
 }
 
-/// Opens the session's shells not yet opened in their host's current epoch.
+/// Opens the session's agent shells not yet opened in their host's current epoch (the user's
+/// terminals are never reopened).
 pub(crate) async fn open_shells(inner: Arc<Inner>, id: SessionId) {
     let due = inner.with_core(|core| {
         let Some(session) = core.sessions.get(&id) else {
@@ -147,6 +151,7 @@ pub(crate) async fn open_shells(inner: Arc<Inner>, id: SessionId) {
             .data
             .shells
             .iter()
+            .filter(|s| s.is_agents())
             .filter_map(|s| {
                 let machine = session.data.workspace(s.shell.workspace_id)?.machine_id;
                 (s.opened.is_none() || s.opened != core.machines.epoch(&machine)).then(|| {
@@ -174,7 +179,8 @@ pub(crate) async fn open_shells(inner: Arc<Inner>, id: SessionId) {
 }
 
 impl Core {
-    /// Records a shell the host opened (new or reopened).
+    /// Records a shell the host opened (new or reopened). A user's terminal must still have its
+    /// record (`shell_gone` if it was closed meanwhile).
     pub(crate) fn shell_opened(
         &mut self,
         id: SessionId,
@@ -187,6 +193,7 @@ impl Core {
         let shells = &mut session.data.shells;
         let index = match shells.iter().position(|s| s.shell.name == name) {
             Some(index) => index,
+            None if host.shell.owner != ShellOwner::Agent => return Err(shell_gone(&name)),
             None => {
                 shells.push(ShellRecord::new(
                     name,
@@ -201,7 +208,8 @@ impl Core {
         Ok(())
     }
 
-    /// `shell.changed` from a host.
+    /// `shell.changed` from a host. A user's terminal that is `gone` ended for good: its record
+    /// goes.
     pub(crate) fn shell_changed(&mut self, host: &HostShell) -> Result<(), RpcError> {
         let Some((session, name)) = host.shell_id.as_str().split_once('/') else {
             return Ok(());
@@ -212,13 +220,15 @@ impl Core {
         let Ok(session) = self.session_mut(id) else {
             return Ok(());
         };
-        if let Some(record) = session
-            .data
-            .shells
-            .iter_mut()
-            .find(|s| s.shell.name == name)
-        {
-            record.update(host);
+        let shells = &mut session.data.shells;
+        let Some(index) = shells.iter().position(|s| s.shell.name == name) else {
+            return Ok(());
+        };
+        if !shells[index].is_agents() && host.shell.state == ShellState::Gone {
+            tracing::info!(session = %id, shell = name, "user terminal ended");
+            shells.remove(index);
+        } else {
+            shells[index].update(host);
         }
         Ok(())
     }
@@ -228,7 +238,7 @@ impl Core {
         let index = data
             .shells
             .iter()
-            .position(|s| s.shell.name == name)
+            .position(|s| s.is_agents() && s.shell.name == name)
             .ok_or_else(|| shell_gone(name))?;
         if data.workspaces.iter().any(|w| w.shell == name) {
             return Err(invalid_params(
@@ -252,7 +262,8 @@ impl Core {
         Ok(())
     }
 
-    /// Ends every shell of a closing session.
+    /// Ends every shell of a closing session (the user's terminals are forgotten; the agent's
+    /// reopen with the session).
     pub(crate) fn close_shells(&mut self, id: SessionId) -> Result<(), RpcError> {
         let data = &self.session(id)?.data;
         let shells: Vec<(MachineId, String)> = data
@@ -273,9 +284,11 @@ impl Core {
                 }),
             );
         }
-        for shell in &mut self.session_mut(id)?.data.shells {
+        let shells = &mut self.session_mut(id)?.data.shells;
+        shells.retain(|s| s.is_agents());
+        for shell in shells {
             shell.opened = None;
-            shell.shell.state = controlroom_protocol::session::ShellState::Gone;
+            shell.shell.state = ShellState::Gone;
         }
         Ok(())
     }

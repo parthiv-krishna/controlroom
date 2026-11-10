@@ -10,3 +10,4 @@ mod journal;
 mod nono;
 mod shells;
 mod terminal;
+mod user_terminals;

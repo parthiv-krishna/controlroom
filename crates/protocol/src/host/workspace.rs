@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ids::{RemotePath, SessionId, ShellId, WorkspaceId};
-use crate::session::{SandboxSpec, Shell};
+use crate::session::{DeviceRef, SandboxSpec, Shell, ShellOwner, ShellSandbox};
 
 /// Params of `workspace.open`: resolve and check the directory and write the workspace's sandbox
 /// profile. Idempotent by `workspace_id`; calling it again with a changed `sandbox` rewrites the
@@ -83,8 +83,13 @@ pub struct HostShell {
 
 /// Params of `shell.open`: start a login shell (a detached PTY supervisor under the workspace's
 /// profile, with the shell integration that reports command boundaries and the cwd). Idempotent:
-/// a live shell with this name is returned unchanged; a `gone` one is reopened in its last
-/// directory (or `cwd`) with `reset_pending` set.
+/// a live shell with this name is returned unchanged; a `gone` agent shell is reopened in its
+/// last directory (or `cwd`) with `reset_pending` set.
+///
+/// The user's own terminals (`owner: user`) are never reopened: when their process ends they
+/// are forgotten (`shell.changed` with `gone`), and a host restart that took their supervisor
+/// drops them from `shell.list`. The agent's `tool.run` refuses them (`shell_gone`). An
+/// `unsandboxed` one runs without nono; opening it is logged with `by`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ShellOpenParams {
     /// The workspace to run it in.
@@ -94,6 +99,29 @@ pub struct ShellOpenParams {
     /// The starting directory, absolute or relative to the workspace root; default the root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<RemotePath>,
+    /// Whose shell it is; default the agent's.
+    #[serde(default)]
+    pub owner: ShellOwner,
+    /// How it is confined; only the user's terminals may be `unsandboxed`.
+    #[serde(default)]
+    pub sandbox: ShellSandbox,
+    /// The device that opened a user's terminal, for the host's log.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
+}
+
+impl ShellOpenParams {
+    /// Opens (or reopens) an agent shell.
+    pub fn agent(workspace_id: WorkspaceId, name: String, cwd: Option<RemotePath>) -> Self {
+        Self {
+            workspace_id,
+            name,
+            cwd,
+            owner: ShellOwner::Agent,
+            sandbox: ShellSandbox::Workspace,
+            by: None,
+        }
+    }
 }
 
 /// Params of `shell.close`: end the shell (SIGHUP to its group). Idempotent.

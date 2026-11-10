@@ -130,7 +130,7 @@ impl Runtime {
     }
 }
 
-/// Opens (or reopens) a shell on its host and records it.
+/// Opens (or reopens) an agent shell on its host and records it.
 pub(crate) async fn open_shell(
     inner: &Arc<Inner>,
     id: SessionId,
@@ -139,11 +139,7 @@ pub(crate) async fn open_shell(
     name: String,
     cwd: Option<RemotePath>,
 ) -> Result<(), RpcError> {
-    let request = HostRequest::ShellOpen(ShellOpenParams {
-        workspace_id: workspace,
-        name: name.clone(),
-        cwd,
-    });
+    let request = HostRequest::ShellOpen(ShellOpenParams::agent(workspace, name.clone(), cwd));
     let key = HostOpId::new(format!("shell.open:{id}/{name}"));
     let (value, _) = session_request(inner, id, machine, key, request, None).await?;
     let shell = parse(value)?;
@@ -305,11 +301,12 @@ impl Core {
             },
         };
         if let HostOp::Bash { shell, .. } = &params.op {
+            // The user's own terminals are as good as nonexistent to the agent.
             let record = session
                 .data
                 .shells
                 .iter()
-                .find(|s| s.shell.name == *shell)
+                .find(|s| s.is_agents() && s.shell.name == *shell)
                 .ok_or_else(|| super::shells::shell_gone(shell))?;
             let workspace = record.shell.workspace_id;
             if session.data.workspace(workspace).map(|w| w.machine_id) != Some(machine) {

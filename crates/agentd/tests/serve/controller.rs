@@ -147,6 +147,8 @@ impl Host {
                     shell: Shell {
                         name: p.name.clone(),
                         workspace_id: p.workspace_id,
+                        owner: p.owner,
+                        sandbox: p.sandbox,
                         cwd: p.cwd.clone().unwrap_or_else(|| RemotePath::new("/")),
                         state: ShellState::Idle,
                         reset_pending: false,

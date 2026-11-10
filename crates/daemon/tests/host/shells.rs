@@ -159,11 +159,11 @@ async fn cancel_interrupts_the_command_and_the_shell_survives() {
     }
     // Opening the busy shell again returns it at once.
     let reopened = client
-        .call::<methods::ShellOpen>(controlroom_protocol::host::ShellOpenParams {
-            workspace_id: session.workspace,
-            name: "s".into(),
-            cwd: None,
-        })
+        .call::<methods::ShellOpen>(controlroom_protocol::host::ShellOpenParams::agent(
+            session.workspace,
+            "s".into(),
+            None,
+        ))
         .await
         .unwrap();
     assert!(matches!(reopened.shell.state, ShellState::Running { .. }));

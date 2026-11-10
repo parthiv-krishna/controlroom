@@ -27,6 +27,7 @@ mod models;
 mod runtime;
 mod sessions;
 mod settings;
+mod terminals;
 
 pub use commands::*;
 pub use create::*;
@@ -37,10 +38,11 @@ pub use models::*;
 pub use runtime::*;
 pub use sessions::*;
 pub use settings::*;
+pub use terminals::*;
 
 use crate::host::DoctorReport;
 use crate::jsonrpc::{Ack, NoParams};
-use crate::session::{Job, Todo, Workspace};
+use crate::session::{Job, Shell, Todo, Workspace};
 
 /// Marker types for every agent daemon method; see [`crate::jsonrpc::Method`].
 pub mod methods {
@@ -88,6 +90,10 @@ pub mod methods {
         SessionMarkUnread = "session.mark_unread" (SessionOpParams) -> ReadCursor;
         /// Change an agent option (model, thinking level, ...).
         SessionSetOption = "session.set_option" (SessionSetOptionParams) -> Ack;
+        /// Open a terminal of the user's own (sandboxed or not) in a workspace.
+        SessionTerminalOpen = "session.terminal_open" (TerminalOpenParams) -> Shell;
+        /// End one of the user's terminals.
+        SessionTerminalClose = "session.terminal_close" (TerminalCloseParams) -> Ack;
 
         /// Deliver a queued item ahead of everything else.
         QueueSendNow = "queue.send_now" (QueueSendNowParams) -> SendNowResult;

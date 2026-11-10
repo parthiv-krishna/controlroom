@@ -342,3 +342,77 @@ async fn shells_and_jobs_run_under_the_workspace_profile() {
     );
     assert!(denied.load(std::sync::atomic::Ordering::SeqCst) >= 1);
 }
+
+/// The user's sandboxed terminal is confined like the agent's shells (its approvals are marked
+/// as the user's); an unsandboxed one isn't.
+#[tokio::test]
+#[ignore = "needs nono 0.80 and Landlock (CR_TEST_NONO)"]
+async fn user_terminals_are_confined_unless_unsandboxed() {
+    use controlroom_protocol::session::ShellSandbox;
+
+    let env = env().await;
+    let approver = env.controller().await;
+    approver
+        .call::<methods::ApprovalsSubscribe>(NoParams {})
+        .await
+        .unwrap();
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let session = Session::open(&env, &client, SandboxLevel::Strict).await;
+    let sandboxed = session
+        .user_shell(&client, "you@devbox", ShellSandbox::Workspace)
+        .await
+        .unwrap_or_else(|e| panic!("{e}\n{}", env.log()));
+    let unsandboxed = session
+        .user_shell(&client, "you@devbox-2", ShellSandbox::Unsandboxed)
+        .await
+        .unwrap();
+    let probe = |name: &str| {
+        format!(
+            "cat ~/secret.txt > {name}-read.txt 2>&1; echo x > ~/{name}-planted.txt; echo $? > {name}-done.txt\r"
+        )
+    };
+
+    // The sandboxed terminal asks to read outside the workspace: an approval marked as the
+    // user's, denied.
+    crate::harness::type_into(&env, sandboxed.shell_id.as_str(), probe("in").as_bytes());
+    let note = approver.note("approval.request").await;
+    let approval: HostApproval = serde_json::from_value(note["approval"].clone()).unwrap();
+    assert!(approval.from_user_terminal, "{approval:?}");
+    approver
+        .call::<methods::ApprovalRespond>(ApprovalRespondParams {
+            approval_id: approval.id,
+            option_id: "deny".into(),
+            reason: None,
+        })
+        .await
+        .unwrap();
+    // Later approvals of the same command (the write) are denied too.
+    tokio::spawn(async move {
+        loop {
+            let note = approver.note("approval.request").await;
+            let approval: HostApproval = serde_json::from_value(note["approval"].clone()).unwrap();
+            let _ = approver
+                .call::<methods::ApprovalRespond>(ApprovalRespondParams {
+                    approval_id: approval.id,
+                    option_id: "deny".into(),
+                    reason: None,
+                })
+                .await;
+        }
+    });
+    let done = env.project().join("in-done.txt");
+    crate::harness::wait_until("the sandboxed probe ran", || done.exists()).await;
+    let read = std::fs::read_to_string(env.project().join("in-read.txt")).unwrap();
+    assert!(!read.contains("outside the workspace"), "{read}");
+    assert!(!env.home().join("in-planted.txt").exists());
+
+    // The unsandboxed one reads and writes as the user.
+    crate::harness::type_into(&env, unsandboxed.shell_id.as_str(), probe("out").as_bytes());
+    let done = env.project().join("out-done.txt");
+    crate::harness::wait_until("the unsandboxed probe ran", || done.exists()).await;
+    let read = std::fs::read_to_string(env.project().join("out-read.txt")).unwrap();
+    assert_eq!(read, "outside the workspace\n");
+    assert!(env.home().join("out-planted.txt").exists());
+}

@@ -146,7 +146,7 @@ pub(crate) fn open(
     session: SessionId,
     shell: &str,
 ) -> Result<TerminalStream, RpcError> {
-    let target = target::Target::resolve(&hub, session, shell)?;
+    let target = target::Target::resolve(&hub, &opener, session, shell)?;
     let (in_tx, in_rx) = mpsc::channel(INPUT_QUEUE);
     let (out_tx, out_rx) = mpsc::channel(OUTPUT_QUEUE);
     let (close_tx, close_rx) = watch::channel(None);

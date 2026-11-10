@@ -79,12 +79,18 @@ impl Core {
             self.respond_approval(machine, &approval.id, &approval.options, None);
             return Ok(());
         }
+        // The user's own terminal asked: the same flow, marked as theirs.
+        let title = if approval.from_user_terminal {
+            format!("Your terminal: {}", approval.title)
+        } else {
+            approval.title
+        };
         let request = Request {
             id: approval_request_id(&approval.id),
             kind: RequestKind::Sandbox,
             blocking: true,
             state: RequestState::Pending,
-            title: approval.title,
+            title,
             detail: approval.detail,
             body: Some(approval.body),
             options: approval.options,

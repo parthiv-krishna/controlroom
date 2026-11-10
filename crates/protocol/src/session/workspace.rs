@@ -87,15 +87,54 @@ pub enum ShellState {
     Unknown,
 }
 
+/// Whose shell it is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellOwner {
+    /// The agent's: its `bash` runs there; the user watches and types along.
+    #[default]
+    Agent,
+    /// The user's own terminal: private, never listed, readable or reachable by the agent.
+    User,
+    /// An owner this build doesn't know; treated as the user's (hidden from the agent).
+    #[serde(other)]
+    Unknown,
+}
+
+/// How a shell is confined.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellSandbox {
+    /// The workspace's sandbox profile (every agent shell).
+    #[default]
+    Workspace,
+    /// No sandbox: a login shell as the host's SSH user (only the user's own terminals, each
+    /// confirmed when opened).
+    Unsandboxed,
+    /// A mode this build doesn't know; shown as unsandboxed.
+    #[serde(other)]
+    Unknown,
+}
+
 /// A named shell of a session: a PTY on a workspace's host whose state (cwd, environment,
 /// functions, venv) persists between the agent's commands and the user's typing. The UI shows
 /// one terminal tab per shell.
+///
+/// The user's own terminals are shells too ([`ShellOwner::User`]): they are in the session's
+/// summary for the UI, and never in what the agent sees.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Shell {
-    /// Unique within the session, e.g. `"devbox"` or `"devbox-2"`.
+    /// Unique within the session, e.g. `"devbox"` or `"devbox-2"`; the user's terminals are
+    /// named `you@<workspace's default shell>[-<n>]` (agent shell names have no `@`).
     pub name: String,
     /// The workspace it runs in (under that workspace's sandbox).
     pub workspace_id: WorkspaceId,
+    /// Whose shell it is.
+    #[serde(default)]
+    pub owner: ShellOwner,
+    /// How it is confined.
+    #[serde(default)]
+    pub sandbox: ShellSandbox,
     /// Its working directory, from the shell's OSC 7 reports.
     pub cwd: RemotePath,
     /// What it is doing.

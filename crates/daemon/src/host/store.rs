@@ -5,7 +5,7 @@
 //!
 //! - `meta`: the daemon id and the job event log's acked revision;
 //! - `workspaces`: open workspaces and the sandbox they were opened with;
-//! - `shells`: named shells, their current supervisor and last cwd;
+//! - `shells`: named shells (the agent's and the user's), their current supervisor and last cwd;
 //! - `journal`: tool calls by call id (see [`super::tools`]);
 //! - `jobs`, `job_events`: jobs and the job event log (see [`super::jobs`]).
 
@@ -15,7 +15,8 @@ use controlroom_protocol::{ErrorData, RpcError};
 use rusqlite::{Connection, OptionalExtension};
 
 /// Migrations, applied in order; the index plus one is the schema version.
-const MIGRATIONS: &[&str] = &[r"
+const MIGRATIONS: &[&str] = &[
+    r"
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE workspaces (
         id TEXT PRIMARY KEY,
@@ -64,7 +65,13 @@ const MIGRATIONS: &[&str] = &[r"
         job_id TEXT NOT NULL,
         event TEXT NOT NULL
     );
-"];
+",
+    // 2: the user's own terminals.
+    r"
+    ALTER TABLE shells ADD COLUMN owner TEXT NOT NULL DEFAULT 'agent';
+    ALTER TABLE shells ADD COLUMN sandbox TEXT NOT NULL DEFAULT 'workspace';
+",
+];
 
 /// The database, shared by the host's modules.
 #[derive(Clone)]

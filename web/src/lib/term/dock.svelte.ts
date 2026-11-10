@@ -1,12 +1,14 @@
 // The terminal dock's view state for this visit, per session: whether it is open, which shell's
-// tab is selected and its height. `focusShell` opens a shell's tab and focuses its terminal (the
-// `terminal_input` request card uses it).
+// tab is selected (or the terminal being opened) and its height. `focusShell` opens a shell's tab
+// and focuses its terminal (the `terminal_input` request card uses it).
 import type { SessionId } from '../protocol';
 
 export interface DockState {
   open: boolean;
   /** The selected shell; null: the first one. */
   shell: string | null;
+  /** A terminal the user just opened: selected (with "Opening…") until the summary lists it. */
+  opening: string | null;
   /** The desktop dock's height in pixels. */
   height: number;
 }
@@ -20,7 +22,7 @@ class Docks {
   focusRequest = $state<{ session: SessionId; shell: string; n: number } | null>(null);
 
   get(session: SessionId): DockState {
-    return this.states[session] ?? { open: false, shell: null, height: DEFAULT_HEIGHT };
+    return this.states[session] ?? { open: false, shell: null, opening: null, height: DEFAULT_HEIGHT };
   }
 
   update(session: SessionId, patch: Partial<DockState>): void {

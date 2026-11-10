@@ -7,7 +7,9 @@
 //!
 //! Settings › Models changes (`models.*`) are logged here with the device that made them,
 //! never with their params: those can hold an API key, which passes through once and is
-//! never stored or logged by the controller.
+//! never stored or logged by the controller. So is every terminal of the user's own that is
+//! opened or closed (`session.terminal_*`; the device also fills `by`, for the agent daemon's
+//! and the host's logs).
 
 use std::sync::Arc;
 
@@ -44,8 +46,8 @@ struct Entry {
     machines: bool,
     /// May take long on the agent daemon (a provider test, pi's sign-in): the slow timeout.
     slow: bool,
-    /// A change to log with the device that made it (and the `provider` param, nothing else).
-    audit: bool,
+    /// What to log with the device that made the call.
+    audit: Audit,
 }
 
 const fn plain(method: &'static str) -> Entry {
@@ -54,7 +56,7 @@ const fn plain(method: &'static str) -> Entry {
         fill: Fill::None,
         machines: false,
         slow: false,
-        audit: false,
+        audit: Audit::None,
     }
 }
 
@@ -70,7 +72,27 @@ const fn models_change(method: &'static str, slow: bool) -> Entry {
     Entry {
         fill: Fill::Responder,
         slow,
-        audit: true,
+        audit: Audit::Models,
+        ..plain(method)
+    }
+}
+
+/// What a passed-through call logs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Audit {
+    /// Nothing.
+    None,
+    /// A Settings › Models change, with its `provider` param (nothing else: a key).
+    Models,
+    /// One of the user's terminals opened (with its sandbox mode) or closed, once it succeeded.
+    Terminal,
+}
+
+/// One of the user's terminals: the device fills `by`, and it is logged.
+const fn terminal(method: &'static str) -> Entry {
+    Entry {
+        fill: Fill::Responder,
+        audit: Audit::Terminal,
         ..plain(method)
     }
 }
@@ -93,6 +115,8 @@ const TABLE: &[Entry] = &[
     plain("session.mark_read"),
     plain("session.mark_unread"),
     plain("session.set_option"),
+    terminal("session.terminal_open"),
+    terminal("session.terminal_close"),
     plain("queue.send_now"),
     plain("queue.edit"),
     plain("queue.remove"),
@@ -166,9 +190,10 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
     if entry.machines {
         conn.hub.outbound.barrier().await;
     }
-    if entry.audit {
+    if entry.audit == Audit::Models {
         audit(conn, method, &params);
     }
+    let logged = (entry.audit == Audit::Terminal).then(|| params.clone());
     let options = CallOptions {
         timeout: if entry.slow {
             CallTimeout::After(conn.hub.services.tuning.slow_call_timeout)
@@ -183,7 +208,28 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
         .call_raw_with(method, Value::Object(params), options)
         .await
         .map_err(agentd_error)?;
+    if let Some(params) = logged {
+        log_terminal(conn, method, &params, &value);
+    }
     Ok(Reply { value, after: None })
+}
+
+/// Logs one of the user's terminals opened or closed, with its device and sandbox mode.
+fn log_terminal(conn: &Conn, method: &str, params: &Map<String, Value>, result: &Value) {
+    let device = conn.device_ref().map_or_else(
+        || "an unregistered device".to_owned(),
+        |d| format!("{} ({})", d.label, d.device_id),
+    );
+    let text = |v: Option<&Value>| v.and_then(Value::as_str).unwrap_or("-").to_owned();
+    let session = text(params.get("id"));
+    if method == "session.terminal_open" {
+        let shell = text(result.get("name"));
+        let sandbox = text(result.get("sandbox"));
+        tracing::info!(%session, %shell, %sandbox, %device, "user terminal opened");
+    } else {
+        let shell = text(params.get("name"));
+        tracing::info!(%session, %shell, %device, "user terminal closed");
+    }
 }
 
 /// Logs a change with its device and provider; never the other params (an API key).

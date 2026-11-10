@@ -379,6 +379,8 @@ impl FakeMachines {
                             shell: Shell {
                                 name: p.name.clone(),
                                 workspace_id: p.workspace_id,
+                                owner: p.owner,
+                                sandbox: p.sandbox,
                                 cwd: p.cwd.clone().unwrap_or(root),
                                 state: ShellState::Idle,
                                 reset_pending: false,
@@ -838,6 +840,26 @@ impl FakeMachines {
         self.report();
     }
 
+    /// A shell's process ends and the host reports it `gone` (a user's terminal is forgotten).
+    pub(crate) fn end_shell(&self, machine: MachineId, shell: &ShellId) {
+        let gone = self.with(machine, |m| m.shells.remove(shell));
+        if let Some(mut gone) = gone {
+            gone.shell.state = ShellState::Gone;
+            self.notify(
+                machine,
+                HostNotification::ShellChanged(controlroom_protocol::host::ShellChangedParams {
+                    shell: gone,
+                }),
+            );
+        }
+    }
+
+    /// The host reboots: every shell's supervisor is gone, then the daemon restarts.
+    pub(crate) fn reboot(&self, machine: MachineId) {
+        self.with(machine, |m| m.shells.clear());
+        self.restart(machine);
+    }
+
     /// The host daemon restarts: running calls are lost, then the link comes back with a new
     /// epoch.
     pub(crate) fn restart(&self, machine: MachineId) {
@@ -930,12 +952,23 @@ impl FakeMachines {
         self.end_job(machine, job, None, None, Some("host rebooted"));
     }
 
-    /// nono asks for an approval in a workspace.
+    /// nono asks for an approval in a workspace (for the agent).
     pub(crate) fn approval(
         &self,
         machine: MachineId,
         session: SessionId,
         workspace: WorkspaceId,
+    ) -> ApprovalId {
+        self.approval_from(machine, session, workspace, false)
+    }
+
+    /// nono asks for an approval in a workspace, for the agent or one of the user's terminals.
+    pub(crate) fn approval_from(
+        &self,
+        machine: MachineId,
+        session: SessionId,
+        workspace: WorkspaceId,
+        from_user_terminal: bool,
     ) -> ApprovalId {
         let approval = HostApproval {
             id: ApprovalId::generate(),
@@ -947,6 +980,7 @@ impl FakeMachines {
                 command: "git push origin main".into(),
                 cwd: None,
             },
+            from_user_terminal,
             options: vec![
                 RequestOption {
                     id: "allow-once".into(),

@@ -18,7 +18,8 @@ use controlroom_protocol::ids::{
 use controlroom_protocol::session::{
     Attention, AttentionRollup, Availability, ContentPart, LiveWork, PromptOrigin, QueueStatus,
     RequestBody, RequestKind, RequestState, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec,
-    SessionState, SessionSummary, SessionUsage, Shell, ShellState, Workspace, WorkspaceSpec,
+    SessionState, SessionSummary, SessionUsage, Shell, ShellOwner, ShellSandbox, ShellState,
+    Workspace, WorkspaceSpec,
 };
 use controlroom_protocol::timeline::InjectOrigin;
 use controlroom_protocol::ui::{self, Connectivity, StateCursor};
@@ -99,6 +100,8 @@ fn shell() -> Shell {
     Shell {
         name: "devbox".into(),
         workspace_id: wid(),
+        owner: ShellOwner::Agent,
+        sandbox: ShellSandbox::Workspace,
         cwd: "/home/alice/src/api/src".into(),
         state: ShellState::Running {
             call_id: CallId::new("call-7"),
@@ -112,6 +115,8 @@ fn shell_json() -> Value {
     json!({
         "name": "devbox",
         "workspace_id": WID,
+        "owner": "agent",
+        "sandbox": "workspace",
         "cwd": "/home/alice/src/api/src",
         "state": {"state": "running", "call_id": "call-7"},
         "reset_pending": false,
@@ -559,6 +564,7 @@ fn golden_host_approval() {
         },
         options: vec![],
         created_at: UnixMillis(3_000),
+        from_user_terminal: false,
     };
     golden(
         &RpcNotification::new::<host::notifications::ApprovalRequest>(
@@ -581,7 +587,8 @@ fn golden_host_approval() {
                     "body": {"kind": "git_push", "command": "git push origin main",
                              "remote": "origin", "branch": "main", "force": false},
                     "options": [],
-                    "created_at": 3000
+                    "created_at": 3000,
+                    "from_user_terminal": false
                 }
             }
         }),
@@ -1119,6 +1126,24 @@ fn unknown_variants_decode_as_unknown() {
     newer["future"] = json!(true);
     let decoded: SessionSummary = serde_json::from_value(newer).unwrap();
     assert_eq!(decoded.shells[0].state, ShellState::Unknown);
+    // A shell from before the user's terminals is the agent's, in the workspace's sandbox; an
+    // owner or mode this build doesn't know decodes as unknown (hidden from the agent).
+    let mut old = shell_json();
+    old.as_object_mut().unwrap().remove("owner");
+    old.as_object_mut().unwrap().remove("sandbox");
+    let old: Shell = serde_json::from_value(old).unwrap();
+    assert_eq!(
+        (old.owner, old.sandbox),
+        (ShellOwner::Agent, ShellSandbox::Workspace)
+    );
+    let mut newer = shell_json();
+    newer["owner"] = json!("guest");
+    newer["sandbox"] = json!("vm");
+    let newer: Shell = serde_json::from_value(newer).unwrap();
+    assert_eq!(
+        (newer.owner, newer.sandbox),
+        (ShellOwner::Unknown, ShellSandbox::Unknown)
+    );
     // The old daemon's live work (without host calls) still decodes.
     let old: LiveWork =
         serde_json::from_value(json!({"jobs": 1, "children": 0, "asks": 0})).unwrap();

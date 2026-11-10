@@ -169,9 +169,20 @@ impl WorkspacePaths {
         self.dir.join("profile.json")
     }
 
+    /// The nono profile of the user's sandboxed terminals: the same policy, with its own
+    /// approval webhook URL (so their approvals are marked as the user's).
+    pub fn user_profile(&self) -> AbsPath {
+        self.dir.join("profile-user.json")
+    }
+
     /// The approval webhook secret.
     pub fn hook_secret(&self) -> AbsPath {
         self.dir.join("hook.secret")
+    }
+
+    /// The approval webhook secret of the user's terminals.
+    pub fn user_hook_secret(&self) -> AbsPath {
+        self.dir.join("hook-user.secret")
     }
 
     /// The sandbox's `TMPDIR`.

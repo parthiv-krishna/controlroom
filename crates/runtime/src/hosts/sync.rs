@@ -4,7 +4,8 @@
 //! runtime renews what lived on the old connection: `jobs.subscribe {since: cursor}` (the job
 //! event log from the persisted cursor; see `jobs::events`), `approvals.subscribe` (pending
 //! approvals), `workspace.open` of every open session's workspaces there (idempotent; refreshes
-//! instruction files and skills), and `shell.open` of shells the host's new epoch doesn't know.
+//! instruction files and skills), `shell.open` of agent shells the host's new epoch doesn't know,
+//! and `shell.list` to drop the user's terminals the host no longer has.
 //! Requests of an earlier connection still pending are withdrawn first.
 //!
 //! **Job events** arriving before the subscription's result are buffered and applied after its
@@ -31,6 +32,7 @@ use serde_json::Value;
 
 use super::calls::parse;
 use super::shells::open_shells;
+use super::terminals::verify_terminals;
 use crate::core::Core;
 use crate::errors::internal;
 use crate::runtime::{Inner, Runtime};
@@ -166,9 +168,13 @@ async fn refresh(
         }
     });
     futures::future::join_all(opens).await;
-    let shells = sessions
-        .into_iter()
-        .map(|id| open_shells(inner.clone(), id));
+    let shells = sessions.into_iter().map(|id| {
+        let inner = inner.clone();
+        async move {
+            open_shells(inner.clone(), id).await;
+            verify_terminals(inner, id).await;
+        }
+    });
     futures::future::join_all(shells).await;
 }
 

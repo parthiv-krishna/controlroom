@@ -2,7 +2,9 @@
 
 use controlroom_protocol::host::{ContextFile, HostShell, Skill};
 use controlroom_protocol::ids::{CallId, Epoch, MachineId, RemotePath, UnixMillis, WorkspaceId};
-use controlroom_protocol::session::{Availability, Shell, ShellState, Workspace};
+use controlroom_protocol::session::{
+    Availability, Shell, ShellOwner, ShellSandbox, ShellState, Workspace,
+};
 use serde::{Deserialize, Serialize};
 
 /// One workspace of a session.
@@ -65,12 +67,40 @@ pub(crate) struct ShellRecord {
 }
 
 impl ShellRecord {
-    /// A shell not yet opened on its host.
+    /// An agent shell not yet opened on its host.
     pub(crate) fn new(name: String, workspace_id: WorkspaceId, cwd: RemotePath) -> Self {
+        Self::of(
+            ShellOwner::Agent,
+            ShellSandbox::Workspace,
+            name,
+            workspace_id,
+            cwd,
+        )
+    }
+
+    /// One of the user's terminals, not yet opened on its host.
+    pub(crate) fn user(
+        sandbox: ShellSandbox,
+        name: String,
+        workspace_id: WorkspaceId,
+        cwd: RemotePath,
+    ) -> Self {
+        Self::of(ShellOwner::User, sandbox, name, workspace_id, cwd)
+    }
+
+    fn of(
+        owner: ShellOwner,
+        sandbox: ShellSandbox,
+        name: String,
+        workspace_id: WorkspaceId,
+        cwd: RemotePath,
+    ) -> Self {
         ShellRecord {
             shell: Shell {
                 name,
                 workspace_id,
+                owner,
+                sandbox,
                 cwd,
                 state: ShellState::Idle,
                 reset_pending: false,
@@ -80,11 +110,24 @@ impl ShellRecord {
         }
     }
 
-    /// Takes the host's view of the shell (cwd, state, reset, foreground process).
+    /// Whether the agent may see and use it (an unknown owner counts as the user's).
+    pub(crate) fn is_agents(&self) -> bool {
+        self.shell.owner == ShellOwner::Agent
+    }
+
+    /// Takes the host's view of the shell (cwd, state, reset, foreground process). Its
+    /// workspace, owner and sandbox stay the session's: a host never makes a user's terminal
+    /// the agent's.
     pub(crate) fn update(&mut self, host: &HostShell) {
-        let workspace_id = self.shell.workspace_id;
+        let (workspace_id, owner, sandbox) = (
+            self.shell.workspace_id,
+            self.shell.owner,
+            self.shell.sandbox,
+        );
         self.shell = host.shell.clone();
         self.shell.workspace_id = workspace_id;
+        self.shell.owner = owner;
+        self.shell.sandbox = sandbox;
     }
 }
 

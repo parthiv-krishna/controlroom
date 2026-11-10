@@ -87,6 +87,8 @@ export type * from "./SessionInfo";
 export type * from "./SessionState";
 export type * from "./ShellEndParams";
 export type * from "./ShellNewParams";
+export type * from "./ShellOwner";
+export type * from "./ShellSandbox";
 export type * from "./ShellState";
 export type * from "./Skill";
 export type * from "./Todo";

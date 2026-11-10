@@ -11,6 +11,9 @@
 //!   long as the command runs (the agent daemon applies the grace period instead).
 //! - **Answers** go back verbatim with `hostops.respond`; a request for a machine the
 //!   controller doesn't know (or that was removed) is answered `not_found {machine}`.
+//! - **The user's terminals** are out of the agent's reach here too (defense in depth, after
+//!   the agent daemon and before the host): an agent command (`tool.run` `bash`) naming one of
+//!   the session's user-owned shells is answered `shell_gone` and never reaches the host.
 //! - **Ordering**: answers, forwarded host notifications (`hostops.notify`) and machine
 //!   reports (`hostops.machines`) leave through one ordered [`outbound`] queue, so a call's
 //!   output reaches the agent daemon before its result, and a new connection's report before
@@ -24,10 +27,11 @@ use std::sync::Arc;
 
 use controlroom_protocol::agentd::{HostOpRequest, HostOpsRespondParams};
 use controlroom_protocol::error::Resource;
-use controlroom_protocol::host::HostRequest;
+use controlroom_protocol::host::{HostOp, HostRequest};
 use controlroom_protocol::ids::{HostOpId, MachineId, SubscriptionId};
+use controlroom_protocol::session::ShellOwner;
 use controlroom_protocol::ui::Connectivity;
-use controlroom_protocol::{RpcError, RpcOutcome};
+use controlroom_protocol::{ErrorData, RpcError, RpcOutcome};
 use serde_json::Value;
 use tokio::task::AbortHandle;
 
@@ -89,6 +93,33 @@ impl Router {
             .values()
             .any(|p| p.request.machine_id == machine && p.flight.is_some())
     }
+}
+
+/// The user's terminal an agent command names, if it names one: the shell of a `tool.run`
+/// `bash` that the session's summary lists as not the agent's.
+fn users_shell<'a>(st: &HubState, request: &'a HostOpRequest) -> Option<&'a str> {
+    let HostRequest::ToolRun(run) = &request.request else {
+        return None;
+    };
+    let HostOp::Bash { shell, .. } = &run.op else {
+        return None;
+    };
+    let session = st.global.sessions.get(&request.session_id?)?;
+    session
+        .shells
+        .iter()
+        .any(|s| s.name == *shell && s.owner != ShellOwner::Agent)
+        .then_some(shell.as_str())
+}
+
+/// `shell_gone` for an agent command in a shell it can't reach.
+fn shell_gone(shell: &str) -> RpcError {
+    RpcError::new(
+        ErrorData::ShellGone {
+            shell: shell.to_owned(),
+        },
+        format!("no shell {shell:?}; open one with shell_new"),
+    )
 }
 
 /// The method and params of a host request, as sent on the wire.
@@ -230,7 +261,10 @@ impl Hub {
             Some(_) if matches!(pending.request.request, HostRequest::Hello(_)) => Some(
                 invalid_params("the controller owns the host handshake; hello is never forwarded"),
             ),
-            Some(_) => None,
+            Some(_) => users_shell(st, &pending.request).map(|shell| {
+                tracing::warn!(%shell, "refused an agent command in one of the user's terminals");
+                shell_gone(shell)
+            }),
         };
         if let Some(error) = refusal {
             let id = pending.request.id.clone();

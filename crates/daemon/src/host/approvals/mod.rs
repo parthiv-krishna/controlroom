@@ -29,6 +29,7 @@ use controlroom_protocol::host::{
 use controlroom_protocol::ids::{ApprovalId, SubscriptionId, UnixMillis, WorkspaceId};
 use controlroom_protocol::session::RequestState;
 use controlroom_protocol::{ErrorData, Resource, RpcError};
+use controlroom_sandbox::AbsPath;
 use controlroom_sandbox::webhook::{ApprovalReply, ApprovalRequest, HookSecret, parse_hook_path};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -257,9 +258,9 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, host: &Arc<Host>) {
         Err(_) => return,
     };
     let (status, reply) = match route(&request, host) {
-        Ok((approval, workspace)) => {
+        Ok((approval, origin)) => {
             let budget = reply_budget(request.header("x-nono-timeout-secs"));
-            match decide(host, workspace, &approval, budget, &mut stream).await {
+            match decide(host, origin, &approval, budget, &mut stream).await {
                 Some(reply) => (200, reply),
                 // nono hung up: nobody to answer.
                 None => return,
@@ -273,30 +274,32 @@ async fn handle(mut stream: TcpStream, peer: SocketAddr, host: &Arc<Host>) {
 }
 
 /// Checks method, path and secret, and decodes the body. The error is the status to answer.
-fn route(
-    request: &http::Request,
-    host: &Host,
-) -> Result<
-    (
-        ApprovalRequest,
-        (WorkspaceId, controlroom_protocol::ids::SessionId),
-    ),
-    u16,
-> {
+fn route(request: &http::Request, host: &Host) -> Result<(ApprovalRequest, Origin), u16> {
     if request.method != "POST" {
         return Err(405);
     }
     let (id, secret) = parse_hook_path(&request.path).ok_or(404u16)?;
     let workspace: WorkspaceId = id.as_str().parse().map_err(|_| 404u16)?;
-    let stored = std::fs::read_to_string(host.dirs.workspace(id.as_str()).hook_secret().as_path())
-        .ok()
-        .and_then(|s| HookSecret::parse(s.trim()));
-    let session = host.workspaces.get(&workspace).map(|w| w.session_id);
-    let (Some(stored), Some(session)) = (stored, session) else {
+    let files = host.dirs.workspace(id.as_str());
+    let stored = |path: AbsPath| {
+        std::fs::read_to_string(path.as_path())
+            .ok()
+            .and_then(|s| HookSecret::parse(s.trim()))
+    };
+    let (agent, user) = (
+        stored(files.hook_secret()),
+        stored(files.user_hook_secret()),
+    );
+    let Some(session) = host.workspaces.get(&workspace).map(|w| w.session_id) else {
         tracing::warn!("webhook: a request for unknown workspace {workspace}");
         return Err(403);
     };
-    if !stored.matches(&secret) {
+    // Both are compared, so the time taken doesn't tell which one matched.
+    let (is_agent, is_user) = (
+        agent.is_some_and(|s| s.matches(&secret)),
+        user.is_some_and(|s| s.matches(&secret)),
+    );
+    if !is_agent && !is_user {
         tracing::warn!("webhook: a request for workspace {workspace} with a wrong secret");
         return Err(403);
     }
@@ -304,35 +307,54 @@ fn route(
         tracing::warn!("webhook: workspace {workspace}: {e}");
         400u16
     })?;
-    Ok((approval, (workspace, session)))
+    Ok((
+        approval,
+        Origin {
+            workspace,
+            session,
+            user_terminal: is_user,
+        },
+    ))
+}
+
+/// Where an approval request comes from.
+struct Origin {
+    workspace: WorkspaceId,
+    session: controlroom_protocol::ids::SessionId,
+    /// One of the user's sandboxed terminals, not the agent.
+    user_terminal: bool,
 }
 
 /// Raises the approval and waits for its first resolution, at most `budget`. `None` when the
 /// client hung up first (the approval then expires).
 async fn decide(
     host: &Host,
-    (workspace_id, session_id): (WorkspaceId, controlroom_protocol::ids::SessionId),
+    origin: Origin,
     request: &ApprovalRequest,
     budget: Duration,
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
 ) -> Option<ApprovalReply> {
     let Some(shown) = show(request) else {
-        tracing::info!("workspace {workspace_id}: denying an approval it can't show");
+        tracing::info!(
+            "workspace {}: denying an approval it can't show",
+            origin.workspace
+        );
         return Some(ApprovalReply::denied(
             "controlroom can't show this kind of request",
         ));
     };
     let approval = HostApproval {
         id: ApprovalId::generate(),
-        session_id,
-        workspace_id,
+        session_id: origin.session,
+        workspace_id: origin.workspace,
         title: shown.title,
         detail: shown.detail,
         body: shown.body,
         options: shown.options,
         created_at: UnixMillis::now(),
+        from_user_terminal: origin.user_terminal,
     };
-    let id = approval.id;
+    let (id, workspace_id) = (approval.id, approval.workspace_id);
     let (answer, answered) = oneshot::channel();
     let approvals = &host.approvals;
     approvals.lock().pending.insert(

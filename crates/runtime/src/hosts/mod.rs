@@ -11,6 +11,7 @@
 //! - `records`: what sessions persist about hosts (workspaces, shells, late calls);
 //! - `workspaces`: creating sessions on workspaces, adding and removing them, `session.info`;
 //! - `shells`: the session's named shells;
+//! - `terminals`: the user's own terminals (private shells, never the agent's);
 //! - `calls`: the agent's `host.call` with link-loss pauses, grace and journal acks;
 //! - `late`: results of calls that outlived their grace period;
 //! - `approvals`: host sandbox approvals and waits for terminal input as session requests;
@@ -24,6 +25,7 @@ mod machines;
 mod records;
 mod shells;
 mod sync;
+mod terminals;
 mod workspaces;
 
 pub(crate) use bridge::Bridge;

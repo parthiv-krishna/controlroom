@@ -3,7 +3,7 @@
 
 use controlroom_controller::test_support::{FakeAgentd, session_summary};
 use controlroom_protocol::ids::{MachineId, SessionId};
-use controlroom_protocol::session::{Shell, ShellState, WorkspaceSpec};
+use controlroom_protocol::session::{Shell, ShellOwner, ShellSandbox, ShellState, WorkspaceSpec};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -73,6 +73,8 @@ async fn a_stream_sends_events_as_text_and_ends_with_a_normal_close() {
     summary.shells.push(Shell {
         name: "dev box".into(),
         workspace_id: summary.workspaces[0].id,
+        owner: ShellOwner::Agent,
+        sandbox: ShellSandbox::Workspace,
         cwd: "/home/alice/src".into(),
         state: ShellState::Idle,
         reset_pending: false,

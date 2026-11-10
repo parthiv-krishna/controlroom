@@ -94,6 +94,8 @@ fn summary() -> SessionSummary {
         shells: vec![Shell {
             name: "devbox".into(),
             workspace_id: WID.parse().unwrap(),
+            owner: ShellOwner::Agent,
+            sandbox: ShellSandbox::Workspace,
             cwd: "/home/alice/src/app".into(),
             state: ShellState::Idle,
             reset_pending: false,
@@ -185,6 +187,8 @@ fn summary_json() -> Value {
         "shells": [{
             "name": "devbox",
             "workspace_id": WID,
+            "owner": "agent",
+            "sandbox": "workspace",
             "cwd": "/home/alice/src/app",
             "state": {"state": "idle"},
             "reset_pending": false,

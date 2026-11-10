@@ -367,11 +367,7 @@ async fn the_real_host_daemon_runs_routed_calls_across_a_link_drop() {
     );
     send(
         "shell",
-        HostRequest::ShellOpen(ShellOpenParams {
-            workspace_id: workspace,
-            name: "devbox".into(),
-            cwd: None,
-        }),
+        HostRequest::ShellOpen(ShellOpenParams::agent(workspace, "devbox".into(), None)),
     );
     result(agentd.response(&HostOpId::new("shell")).await);
     let run = |call: &str, command: &str| {

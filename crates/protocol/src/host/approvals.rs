@@ -34,6 +34,9 @@ pub struct HostApproval {
     pub options: Vec<RequestOption>,
     /// When nono asked.
     pub created_at: UnixMillis,
+    /// The user's own (sandboxed) terminal asked, not the agent.
+    #[serde(default)]
+    pub from_user_terminal: bool,
 }
 
 /// Result of `approvals.subscribe`: the pending approvals, then `approval.request` and

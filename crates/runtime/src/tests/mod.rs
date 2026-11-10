@@ -16,6 +16,7 @@ mod raised;
 mod recovery;
 mod requests;
 mod sessions;
+mod terminals;
 mod workspaces;
 
 use std::collections::HashMap;

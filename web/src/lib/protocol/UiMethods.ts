@@ -83,6 +83,7 @@ import type { SessionSubscribeParams } from "./SessionSubscribeParams";
 import type { SessionSubscribeResult } from "./SessionSubscribeResult";
 import type { SessionUpdateParams } from "./SessionUpdateParams";
 import type { SettingsSetParams } from "./SettingsSetParams";
+import type { Shell } from "./Shell";
 import type { StartFreshResult } from "./StartFreshResult";
 import type { StateEventsParams } from "./StateEventsParams";
 import type { StateSubscribeParams } from "./StateSubscribeParams";
@@ -93,6 +94,8 @@ import type { TasksCreateParams } from "./TasksCreateParams";
 import type { TasksLinkParams } from "./TasksLinkParams";
 import type { TasksMoveParams } from "./TasksMoveParams";
 import type { TasksUpdateParams } from "./TasksUpdateParams";
+import type { TerminalCloseParams } from "./TerminalCloseParams";
+import type { TerminalOpenParams } from "./TerminalOpenParams";
 import type { Todo } from "./Todo";
 import type { TodoAddParams } from "./TodoAddParams";
 import type { TodoAddResult } from "./TodoAddResult";
@@ -343,6 +346,14 @@ export type UiMethods = {
    * Pass-through: change an agent option.
    */
   "session.set_option": { params: SessionSetOptionParams, result: Ack },
+  /**
+   * Pass-through: open a terminal of the user's own in a workspace (`by` is filled in).
+   */
+  "session.terminal_open": { params: TerminalOpenParams, result: Shell },
+  /**
+   * Pass-through: end one of the user's terminals.
+   */
+  "session.terminal_close": { params: TerminalCloseParams, result: Ack },
   /**
    * Pass-through: send a queued item now.
    */

@@ -14,6 +14,11 @@
 //!   and that command's result says its variables were lost (`reset_pending` until then).
 //! - **Daemon restarts** keep shells: their supervisors are detached. The new daemon reattaches
 //!   and, for a command that was running, re-reads the output from where it started.
+//! - **The user's own terminals** ([`ShellOwner::User`]) are shells too, with the same
+//!   supervisor and rcfile, under the workspace's profile for user terminals (its approvals are
+//!   marked as the user's) or, `unsandboxed`, without nono. The agent's commands never run in
+//!   them ([`Shells::require`] doesn't find them), and they are never reopened: when their
+//!   process ends, or a restart finds their supervisor gone, they are forgotten.
 
 pub mod integration;
 mod output;
@@ -30,7 +35,9 @@ use controlroom_protocol::host::{
     ShellOpenParams, notifications,
 };
 use controlroom_protocol::ids::{CallId, SessionId, ShellId, WorkspaceId};
-use controlroom_protocol::session::{Shell as WireShell, ShellState};
+use controlroom_protocol::session::{
+    DeviceRef, Shell as WireShell, ShellOwner, ShellSandbox, ShellState,
+};
 use controlroom_protocol::{ErrorData, RemotePath, RpcError};
 use controlroom_sandbox::AbsPath;
 use controlroom_supervisor::{Client, Exec, LaunchRequest, Paths, RecordStream, SpawnSpec, launch};
@@ -43,6 +50,7 @@ pub use run::{BashRun, Resume};
 use self::output::Output;
 use self::parser::{Event, Parser};
 use super::Host;
+use super::sandbox::Wrapped;
 use super::store::internal;
 use crate::dirs::{create_private_dir, write_private_file};
 
@@ -102,6 +110,10 @@ pub struct Shell {
     pub session_id: SessionId,
     /// The workspace it runs in.
     pub workspace_id: WorkspaceId,
+    /// Whose shell it is.
+    pub owner: ShellOwner,
+    /// How it is confined.
+    pub sandbox: ShellSandbox,
     inner: Mutex<Inner>,
     run_lock: Arc<tokio::sync::Mutex<()>>,
     /// True while the shell waits at its prompt with no agent command pending.
@@ -109,19 +121,14 @@ pub struct Shell {
 }
 
 impl Shell {
-    fn new(
-        id: ShellId,
-        name: String,
-        session_id: SessionId,
-        workspace_id: WorkspaceId,
-        cwd: String,
-        reset_reason: Option<String>,
-    ) -> Self {
+    fn new(key: Key, cwd: String, reset_reason: Option<String>) -> Self {
         Self {
-            id,
-            name,
-            session_id,
-            workspace_id,
+            id: key.id,
+            name: key.name,
+            session_id: key.session_id,
+            workspace_id: key.workspace_id,
+            owner: key.owner,
+            sandbox: key.sandbox,
             inner: Mutex::new(Inner {
                 cwd,
                 reset_reason,
@@ -137,6 +144,11 @@ impl Shell {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether this is one of the user's terminals (an unknown owner counts as the user's).
+    pub fn is_user(&self) -> bool {
+        self.owner != ShellOwner::Agent
     }
 
     /// Serializes agent commands: held while one runs.
@@ -162,6 +174,8 @@ impl Shell {
             shell: WireShell {
                 name: self.name.clone(),
                 workspace_id: self.workspace_id,
+                owner: self.owner,
+                sandbox: self.sandbox,
                 cwd: RemotePath::from(inner.cwd.as_str()),
                 state,
                 reset_pending: inner.reset_reason.is_some(),
@@ -285,8 +299,22 @@ impl Shell {
         }
     }
 
-    /// The supervisor of `generation` ended (with its exit record, if it wrote one).
-    fn on_exit(&self, host: &Arc<Host>, generation: u64, exit: Option<ExitInfo>) {
+    /// The supervisor of `generation` ended (with its exit record, if it wrote one). A user's
+    /// terminal is forgotten; an agent shell is `gone` until it is reopened.
+    fn on_exit(self: &Arc<Self>, host: &Arc<Host>, generation: u64, exit: Option<ExitInfo>) {
+        if self.is_user() {
+            let current = self
+                .lock()
+                .proc
+                .as_ref()
+                .is_some_and(|p| p.generation == generation);
+            if current {
+                self.lock().proc = None;
+                self.ready.send_replace(false);
+                host.shells.forget(host, self, "its shell exited");
+            }
+            return;
+        }
         {
             let mut inner = self.lock();
             if inner
@@ -376,7 +404,15 @@ async fn spawn(
         workspace.files.bashrc().to_string(),
         "-i".to_owned(),
     ];
-    let wrapped = workspace.wrap(host, argv)?;
+    let wrapped = match (shell.owner, shell.sandbox) {
+        (ShellOwner::Agent, _) => workspace.wrap(host, argv)?,
+        (_, ShellSandbox::Workspace) => workspace.wrap_user(host, argv)?,
+        // Only a confirmed request of the user's opens an unsandboxed terminal (see `open`).
+        (_, ShellSandbox::Unsandboxed | ShellSandbox::Unknown) => Wrapped {
+            argv,
+            env: Vec::new(),
+        },
+    };
     let supervisor = ulid::Ulid::generate().to_string();
     let dir = host.dirs.shell_dir(&supervisor);
     create_private_dir(&dir).map_err(internal)?;
@@ -466,6 +502,47 @@ async fn read_loop(host: Arc<Host>, shell: Arc<Shell>, generation: u64, mut read
     shell.on_exit(&host, generation, None);
 }
 
+/// What identifies a shell and doesn't change while it lives.
+struct Key {
+    id: ShellId,
+    name: String,
+    session_id: SessionId,
+    workspace_id: WorkspaceId,
+    owner: ShellOwner,
+    sandbox: ShellSandbox,
+}
+
+/// A shell enum as stored in its text column (its wire name).
+fn enum_text<T: serde::Serialize>(value: T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// A shell enum from its text column (`Unknown` for a value this build doesn't know).
+fn enum_parse<T: serde::de::DeserializeOwned>(text: String) -> Option<T> {
+    serde_json::from_value(serde_json::Value::String(text)).ok()
+}
+
+/// `shell_gone` for `name`.
+fn gone(name: &str) -> RpcError {
+    RpcError::new(
+        ErrorData::ShellGone {
+            shell: name.to_owned(),
+        },
+        format!("there is no shell {name:?}; open it first"),
+    )
+}
+
+/// The device of a user's terminal, for the log.
+fn device(by: Option<&DeviceRef>) -> String {
+    by.map_or_else(
+        || "an unknown device".to_owned(),
+        |d| format!("{} ({})", d.label, d.device_id),
+    )
+}
+
 /// The host's shells.
 pub struct Shells {
     map: Mutex<HashMap<ShellId, Arc<Shell>>>,
@@ -486,19 +563,45 @@ impl Shells {
         self.map.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// The shell named `name` in `session`, or `shell_gone`.
+    /// The agent shell named `name` in `session`, for an agent command; `shell_gone` if there
+    /// is none, or it is one of the user's terminals (the agent can't reach those).
     pub fn require(&self, session: SessionId, name: &str) -> Result<Arc<Shell>, RpcError> {
         self.lock()
             .get(&ShellId::of(session, name))
+            .filter(|s| !s.is_user())
             .cloned()
-            .ok_or_else(|| {
-                RpcError::new(
-                    ErrorData::ShellGone {
-                        shell: name.to_owned(),
-                    },
-                    format!("there is no shell {name:?}; open it first"),
-                )
-            })
+            .ok_or_else(|| gone(name))
+    }
+
+    /// Forgets a user's terminal whose process ended: drops it from the map and the store and
+    /// tells the controller it is `gone`.
+    fn forget(&self, host: &Arc<Host>, shell: &Arc<Shell>, why: &str) {
+        let removed = {
+            let mut map = self.lock();
+            match map.get(&shell.id) {
+                Some(current) if Arc::ptr_eq(current, shell) => map.remove(&shell.id).is_some(),
+                _ => false,
+            }
+        };
+        if !removed {
+            return;
+        }
+        tracing::info!(shell = %shell.id, "user terminal ended: {why}");
+        let id = shell.id.to_string();
+        let store = host.store.clone();
+        tokio::spawn(async move {
+            let deleted = store
+                .run(move |c| c.execute("DELETE FROM shells WHERE id = ?1", [id]))
+                .await;
+            if let Err(e) = deleted {
+                tracing::warn!("forgetting a user terminal: {}", e.message);
+            }
+        });
+        let mut ended = shell.describe();
+        ended.shell.state = ShellState::Gone;
+        if let Some(controller) = host.conns.controller() {
+            controller.notify::<notifications::ShellChanged>(ShellChangedParams { shell: ended });
+        }
     }
 
     /// Tells the controller a shell changed.
@@ -510,8 +613,9 @@ impl Shells {
         }
     }
 
-    /// `shell.open`: idempotent by name; a gone shell is reopened in its last directory (or
-    /// `cwd`) and keeps `reset_pending`.
+    /// `shell.open`: idempotent by name; a gone agent shell is reopened in its last directory
+    /// (or `cwd`) and keeps `reset_pending`. A user's terminal is started once (and forgotten
+    /// when it ends); opening it is logged with its device.
     pub async fn open(
         &self,
         host: &Arc<Host>,
@@ -522,6 +626,12 @@ impl Shells {
             return Err(RpcError::new(
                 ErrorData::InvalidParams,
                 "a shell name is non-empty and has no '/'",
+            ));
+        }
+        if params.owner == ShellOwner::Agent && params.sandbox != ShellSandbox::Workspace {
+            return Err(RpcError::new(
+                ErrorData::InvalidParams,
+                "agent shells run in the workspace's sandbox",
             ));
         }
         let id = ShellId::of(workspace.session_id, &params.name);
@@ -537,16 +647,24 @@ impl Shells {
             map.entry(id.clone())
                 .or_insert_with(|| {
                     Arc::new(Shell::new(
-                        id.clone(),
-                        params.name.clone(),
-                        workspace.session_id,
-                        workspace.id,
+                        Key {
+                            id: id.clone(),
+                            name: params.name.clone(),
+                            session_id: workspace.session_id,
+                            workspace_id: workspace.id,
+                            owner: params.owner,
+                            sandbox: params.sandbox,
+                        },
                         start.clone().unwrap_or_else(|| workspace.root.to_string()),
                         None,
                     ))
                 })
                 .clone()
         };
+        if shell.owner != params.owner || shell.sandbox != params.sandbox {
+            // Never hand one owner's shell to the other.
+            return Err(gone(&params.name));
+        }
         if shell.workspace_id != workspace.id {
             return Err(RpcError::new(
                 ErrorData::InvalidParams,
@@ -560,19 +678,36 @@ impl Shells {
             workspace.id.to_string(),
             shell.cwd(),
         );
+        let (owner, sandbox) = (enum_text(shell.owner), enum_text(shell.sandbox));
         host.store
             .run(move |c| {
                 c.execute(
-                    "INSERT OR IGNORE INTO shells (id, session_id, name, workspace_id, cwd)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![row_id, session, name, ws, cwd],
+                    "INSERT OR IGNORE INTO shells (id, session_id, name, workspace_id, cwd, owner,
+                     sandbox) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![row_id, session, name, ws, cwd, owner, sandbox],
                 )
             })
             .await?;
         // A live shell is returned as it is, even while a command runs in it.
         if !shell.is_running() {
             let _turn = shell.lock_run().await;
-            shell.ensure_running(host, start).await?;
+            let started = shell.ensure_running(host, start).await;
+            if shell.is_user() {
+                match &started {
+                    Ok(()) => tracing::info!(
+                        shell = %shell.id,
+                        sandbox = %enum_text(shell.sandbox),
+                        device = %device(params.by.as_ref()),
+                        "user terminal opened"
+                    ),
+                    Err(e) => {
+                        // Not reopened: a failed start leaves nothing behind.
+                        shell.terminate().await;
+                        self.forget(host, &shell, &format!("it didn't start: {}", e.message));
+                    }
+                }
+            }
+            started?;
         }
         Ok(shell.describe())
     }
@@ -636,14 +771,18 @@ impl Shells {
             .run(|c| {
                 let mut stmt = c.prepare(
                     "SELECT id, session_id, name, workspace_id, supervisor, cwd, reset_reason,
-                     shell_pid FROM shells",
+                     shell_pid, owner, sandbox FROM shells",
                 )?;
                 let rows = stmt.query_map([], |r| {
                     Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
+                        (
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, String>(3)?,
+                            r.get::<_, String>(8)?,
+                            r.get::<_, String>(9)?,
+                        ),
                         r.get::<_, Option<String>>(4)?,
                         r.get::<_, String>(5)?,
                         r.get::<_, Option<String>>(6)?,
@@ -654,12 +793,27 @@ impl Shells {
             })
             .await?;
         let mut adopted = HashMap::new();
-        for (id, session, name, workspace, supervisor, cwd, reset, shell_pid) in rows {
-            let (Ok(session), Ok(workspace)) = (session.parse(), workspace.parse()) else {
+        for ((id, session, name, workspace, owner, sandbox), supervisor, cwd, reset, shell_pid) in
+            rows
+        {
+            let (Ok(session_id), Ok(workspace_id), Some(owner), Some(sandbox)) = (
+                session.parse(),
+                workspace.parse(),
+                enum_parse(owner),
+                enum_parse(sandbox),
+            ) else {
                 continue;
             };
             let id = ShellId::new(id);
-            let shell = Arc::new(Shell::new(id.clone(), name, session, workspace, cwd, reset));
+            let key = Key {
+                id: id.clone(),
+                name,
+                session_id,
+                workspace_id,
+                owner,
+                sandbox,
+            };
+            let shell = Arc::new(Shell::new(key, cwd, reset));
             self.lock().insert(id.clone(), shell.clone());
             let resume = resumes.remove(&id);
             let attached = match &supervisor {
@@ -668,6 +822,13 @@ impl Shells {
                 }
                 None => None,
             };
+            if shell.is_user() {
+                // Never respawned: without its supervisor it is gone for good.
+                if attached.is_none() {
+                    self.forget(host, &shell, "the host restarted, and its process with it");
+                }
+                continue;
+            }
             match (attached, resume) {
                 (Some(Some(run)), Some(resume)) => {
                     adopted.insert(resume.call_id, run);

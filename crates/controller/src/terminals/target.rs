@@ -1,10 +1,13 @@
-//! Which shell a stream attaches to, and whether it is still there.
+//! Which shell a stream attaches to, whether its opener may attach to it, and whether it is
+//! still there.
 
 use controlroom_protocol::ids::{MachineId, SessionId, ShellId};
-use controlroom_protocol::session::SessionSummary;
+use controlroom_protocol::session::{SessionSummary, Shell, ShellOwner};
 use controlroom_protocol::{ErrorData, RpcError};
 
+use super::Opener;
 use crate::hub::{BusEvent, Hub};
+use crate::store::OwnerId;
 
 /// A session shell on its machine.
 #[derive(Debug, Clone)]
@@ -16,22 +19,38 @@ pub(super) struct Target {
 }
 
 impl Target {
-    /// Looks the shell up in the agent daemon's sessions.
-    pub(super) fn resolve(hub: &Hub, session: SessionId, shell: &str) -> Result<Self, RpcError> {
+    /// Looks the shell up in the agent daemon's sessions; `shell_gone` too when `opener` may
+    /// not attach to it ([`may_attach`]).
+    pub(super) fn resolve(
+        hub: &Hub,
+        opener: &Opener,
+        session: SessionId,
+        shell: &str,
+    ) -> Result<Self, RpcError> {
         let summary = hub.session(session).ok_or_else(|| {
             RpcError::new(
                 ErrorData::UnknownSession { id: session },
                 format!("no session {session}"),
             )
         })?;
-        let machine = machine_of(&summary, shell).ok_or_else(|| {
+        let gone = || {
             RpcError::new(
                 ErrorData::ShellGone {
                     shell: shell.to_owned(),
                 },
                 format!("session {session} has no shell {shell:?}"),
             )
-        })?;
+        };
+        let found = summary
+            .shells
+            .iter()
+            .find(|s| s.name == shell)
+            .ok_or_else(gone)?;
+        if !may_attach(&hub.owner, opener, found) {
+            tracing::warn!(%session, shell, "refused a terminal stream to one of the user's terminals");
+            return Err(gone());
+        }
+        let machine = machine_of(&summary, shell).ok_or_else(gone)?;
         Ok(Self {
             session,
             shell: shell.to_owned(),
@@ -70,6 +89,15 @@ impl Target {
     }
 }
 
+/// Whether `opener` may attach to `shell`. The agent's shells: any client of the owner. The
+/// user's own terminals: only a browser signed in (with a login session) as their owner. There
+/// is one owner per hub today, so this holds for every browser of it; the check stays explicit
+/// for when there are more, and never admits an opener without a login.
+fn may_attach(owner: &OwnerId, opener: &Opener, shell: &Shell) -> bool {
+    shell.owner == ShellOwner::Agent
+        || (opener.token_hash.is_some() && opener.principal.owner == *owner)
+}
+
 /// The machine of `session`'s shell `name`.
 fn machine_of(session: &SessionSummary, name: &str) -> Option<MachineId> {
     let shell = session.shells.iter().find(|s| s.name == name)?;
@@ -78,4 +106,71 @@ fn machine_of(session: &SessionSummary, name: &str) -> Option<MachineId> {
         .iter()
         .find(|w| w.id == shell.workspace_id)
         .map(|w| w.machine_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use controlroom_protocol::ids::WorkspaceId;
+    use controlroom_protocol::session::{ShellSandbox, ShellState};
+    use controlroom_protocol::ui::AuthMode;
+
+    use super::*;
+    use crate::auth::Principal;
+
+    fn opener(owner: &str, login: bool) -> Opener {
+        Opener {
+            principal: Principal {
+                owner: OwnerId::new(owner),
+                mode: AuthMode::DevToken,
+                subject: "dev".into(),
+                groups: Vec::new(),
+                name: None,
+                email: None,
+            },
+            token_hash: login.then(|| "hash".to_owned()),
+            device: None,
+        }
+    }
+
+    fn shell(owner: ShellOwner) -> Shell {
+        Shell {
+            name: "you@devbox".into(),
+            workspace_id: WorkspaceId::generate(),
+            owner,
+            sandbox: ShellSandbox::Unsandboxed,
+            cwd: "/home/alice".into(),
+            state: ShellState::Idle,
+            reset_pending: false,
+            foreground: None,
+        }
+    }
+
+    #[test]
+    fn only_the_owners_signed_in_browser_attaches_to_a_users_terminal() {
+        let owner = OwnerId::local();
+        let mine = shell(ShellOwner::User);
+        assert!(may_attach(&owner, &opener(OwnerId::LOCAL, true), &mine));
+        assert!(
+            !may_attach(&owner, &opener(OwnerId::LOCAL, false), &mine),
+            "no login session"
+        );
+        assert!(
+            !may_attach(&owner, &opener("someone-else", true), &mine),
+            "another owner"
+        );
+        assert!(
+            !may_attach(
+                &owner,
+                &opener(OwnerId::LOCAL, false),
+                &shell(ShellOwner::Unknown)
+            ),
+            "an unknown owner counts as the user's"
+        );
+        // The agent's shells stay open to the owner's clients, as before.
+        assert!(may_attach(
+            &owner,
+            &opener(OwnerId::LOCAL, false),
+            &shell(ShellOwner::Agent)
+        ));
+    }
 }

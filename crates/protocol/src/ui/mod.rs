@@ -41,7 +41,7 @@ use crate::agentd::*;
 use crate::host::{DoctorReport, FsListParams, FsListResult};
 use crate::ids::MachineId;
 use crate::jsonrpc::{Ack, NoParams};
-use crate::session::{Job, Todo, Workspace};
+use crate::session::{Job, Shell, Todo, Workspace};
 
 /// Adds the target machine to a host command's params: on the wire, `machine_id` sits next to
 /// the command's own fields.
@@ -196,6 +196,10 @@ pub mod methods {
         SessionMarkUnread = "session.mark_unread" (SessionOpParams) -> ReadCursor;
         /// Pass-through: change an agent option.
         SessionSetOption = "session.set_option" (SessionSetOptionParams) -> Ack;
+        /// Pass-through: open a terminal of the user's own in a workspace (`by` is filled in).
+        SessionTerminalOpen = "session.terminal_open" (TerminalOpenParams) -> Shell;
+        /// Pass-through: end one of the user's terminals.
+        SessionTerminalClose = "session.terminal_close" (TerminalCloseParams) -> Ack;
         /// Pass-through: send a queued item now.
         QueueSendNow = "queue.send_now" (QueueSendNowParams) -> SendNowResult;
         /// Pass-through: edit a queued item.

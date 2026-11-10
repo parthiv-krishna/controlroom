@@ -356,6 +356,8 @@
      {
       "name": "buildbox",
       "workspace_id": "01JAW000000000000000000001",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/acme-api",
       "state": {
        "state": "idle"
@@ -366,6 +368,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000002",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/acme-web",
       "state": {
        "state": "idle"
@@ -558,6 +562,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000003",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/controlroom/web",
       "state": {
        "state": "idle"
@@ -692,6 +698,8 @@
      {
       "name": "buildbox",
       "workspace_id": "01JAW000000000000000000004",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/controlroom",
       "state": {
        "state": "waiting_input",
@@ -857,6 +865,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000005",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/controlroom",
       "state": {
        "state": "idle"
@@ -995,6 +1005,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000006",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/docs",
       "state": {
        "state": "idle"
@@ -1168,6 +1180,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000007",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/docs/blog",
       "state": {
        "state": "idle"
@@ -1352,6 +1366,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000008",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/controlroom/nix",
       "state": {
        "state": "idle"
@@ -1484,6 +1500,8 @@
      {
       "name": "buildbox",
       "workspace_id": "01JAW000000000000000000009",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/data/pipeline",
       "state": {
        "state": "idle"
@@ -1616,6 +1634,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000010",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/controlroom/web",
       "state": {
        "state": "idle"
@@ -1750,6 +1770,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000011",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/controlroom",
       "state": {
        "state": "idle"
@@ -1898,6 +1920,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000012",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/bench",
       "state": {
        "state": "idle"
@@ -1908,6 +1932,8 @@
      {
       "name": "buildbox",
       "workspace_id": "01JAW000000000000000000013",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/bench",
       "state": {
        "state": "running",
@@ -1915,6 +1941,30 @@
       },
       "reset_pending": false,
       "foreground": null
+     },
+     {
+      "name": "you@devbox",
+      "workspace_id": "01JAW000000000000000000012",
+      "owner": "user",
+      "sandbox": "workspace",
+      "cwd": "/home/alice/src/bench",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": null
+     },
+     {
+      "name": "you@buildbox",
+      "workspace_id": "01JAW000000000000000000013",
+      "owner": "user",
+      "sandbox": "unsandboxed",
+      "cwd": "/home/alice/src/bench",
+      "state": {
+       "state": "idle"
+      },
+      "reset_pending": false,
+      "foreground": "vim"
      }
     ],
     "created_at": 1767427200000,
@@ -2107,6 +2157,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000014",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/bench/sweep-64k",
       "state": {
        "state": "idle"
@@ -2274,6 +2326,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000015",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/bench/sweep-8k",
       "state": {
        "state": "idle"
@@ -2420,6 +2474,8 @@
      {
       "name": "gpubox",
       "workspace_id": "01JAW000000000000000000016",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/data/dedupe",
       "state": {
        "state": "idle"
@@ -2430,6 +2486,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000017",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/data/samples",
       "state": {
        "state": "idle"
@@ -2597,6 +2655,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000018",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/legacy-deploy",
       "state": {
        "state": "idle"
@@ -2761,6 +2821,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000019",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/ops",
       "state": {
        "state": "idle"
@@ -2895,6 +2957,8 @@
      {
       "name": "buildbox",
       "workspace_id": "01JAW000000000000000000020",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/src/acme-api",
       "state": {
        "state": "idle"
@@ -3064,6 +3128,8 @@
      {
       "name": "devbox",
       "workspace_id": "01JAW000000000000000000021",
+      "owner": "agent",
+      "sandbox": "workspace",
       "cwd": "/home/alice/notes",
       "state": {
        "state": "idle"
@@ -6464,6 +6530,18 @@
    "step": {
     "kind": "cancelled"
    }
+  },
+  "session.terminal_open": {
+   "name": "you@devbox-2",
+   "workspace_id": "01JAW000000000000000000012",
+   "owner": "user",
+   "sandbox": "workspace",
+   "cwd": "/home/alice/src/bench",
+   "state": {
+    "state": "idle"
+   },
+   "reset_pending": false,
+   "foreground": null
   }
  },
  "script": [
@@ -6502,6 +6580,8 @@
         {
          "name": "devbox",
          "workspace_id": "01JAW000000000000000000003",
+         "owner": "agent",
+         "sandbox": "workspace",
          "cwd": "/home/alice/src/controlroom/web",
          "state": {
           "state": "idle"
@@ -6750,6 +6830,8 @@
         {
          "name": "devbox",
          "workspace_id": "01JAW000000000000000000015",
+         "owner": "agent",
+         "sandbox": "workspace",
          "cwd": "/home/alice/src/bench/sweep-8k",
          "state": {
           "state": "idle"

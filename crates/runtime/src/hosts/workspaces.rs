@@ -475,7 +475,7 @@ impl Core {
 }
 
 impl Session {
-    /// What the agent sees of its workspaces and shells.
+    /// What the agent sees of its workspaces and shells: never the user's own terminals.
     pub(crate) fn info(&self) -> SessionInfo {
         let machines = &self.machines;
         let data = &self.data;
@@ -499,6 +499,7 @@ impl Session {
             shells: data
                 .shells
                 .iter()
+                .filter(|s| s.is_agents())
                 .map(|s| AgentShell {
                     machine: data
                         .workspace(s.shell.workspace_id)

@@ -93,6 +93,8 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         AgentdRequest::SessionMarkRead(p) => json(runtime.mark_read(p).await),
         AgentdRequest::SessionMarkUnread(p) => json(runtime.mark_unread(p).await),
         AgentdRequest::SessionSetOption(p) => ack(runtime.set_option(p).await),
+        AgentdRequest::SessionTerminalOpen(p) => json(runtime.terminal_open(p).await),
+        AgentdRequest::SessionTerminalClose(p) => ack(runtime.terminal_close(p).await),
 
         AgentdRequest::QueueSendNow(p) => json(runtime.send_now(p).await),
         AgentdRequest::QueueEdit(p) => ack(runtime.queue_edit(p).await),

@@ -147,7 +147,7 @@ export function workspace(machine: string, dir: string, extra: Partial<Workspace
 
 /** An idle shell. */
 export function shell(name: string, machine: string, cwd: string): AgentShell {
-  return { name, machine, workspace_id: `W-${machine}`, cwd, state: { state: 'idle' }, reset_pending: false, foreground: null };
+  return { name, machine, workspace_id: `W-${machine}`, owner: 'agent', sandbox: 'workspace', cwd, state: { state: 'idle' }, reset_pending: false, foreground: null };
 }
 
 /** One workspace on devbox (`~/src/api`) with its default shell. */
