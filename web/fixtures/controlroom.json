@@ -4304,12 +4304,18 @@
   "notifications.preferences": {
    "attention": true,
    "questions": false,
-   "turn_end": false
+   "turn_end": false,
+   "hold_while_active": true,
+   "delay_s": 30,
+   "idle_s": 120
   },
   "notifications.set_preferences": {
    "attention": true,
    "questions": false,
-   "turn_end": false
+   "turn_end": false,
+   "hold_while_active": true,
+   "delay_s": 30,
+   "idle_s": 120
   },
   "notifications.subscribe": {
    "device_id": "device-laptop",

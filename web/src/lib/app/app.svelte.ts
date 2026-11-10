@@ -14,6 +14,7 @@ import type { FeedSession, OpId, Project, SessionDetail, SessionId, Task, TaskSt
 import type { Client } from '../state/client.svelte';
 import { Dialogs, Toasts } from './overlays.svelte';
 import { Prefs } from './prefs.svelte';
+import { InputHeartbeat, pageShown } from './presence';
 import { View, type NewSessionPreset, type SessionRef, type SettingsTab } from './view.svelte';
 
 /** A fresh idempotency key for one user action. */
@@ -27,6 +28,10 @@ export class App {
   readonly view = new View();
   readonly dialogs = new Dialogs();
   readonly toasts = new Toasts();
+  /** User input, reported in the background (failures stay silent) so pushes wait while the user is here. */
+  private readonly heartbeat = new InputHeartbeat(() => {
+    this.client.request('client.activity', {}).catch(() => {});
+  });
 
   readonly ctx: Ctx;
   /** The rail's scope. */
@@ -192,17 +197,24 @@ export class App {
     void this.client.call('session.mark_read', { ...onSession(s), seq: s.last_turn_end_seq });
   }
 
-  /** Reports what this tab shows, for push deduplication. */
+  /** Reports what this tab shows, for push deduplication and presence. The next input reports at
+   * once (the tab may have been shown again, or the connection reopened). */
   reportFocus(): void {
     if (!this.client.online) return;
     const c = this.view.current;
     const showing = c && (this.desk || this.view.phoneDetail) && !this.view.settings;
-    const visible = typeof document === 'undefined' || (document.visibilityState === 'visible' && document.hasFocus());
+    const visible = typeof document === 'undefined' || pageShown();
+    this.heartbeat.reset();
     void this.client.call('client.focus', {
       device_id: this.client.device.id,
       session_id: showing ? c.id : null,
       visible,
     });
+  }
+
+  /** Reports user input: throttled, and only while the tab is shown. */
+  reportInput(): void {
+    if (this.client.online) this.heartbeat.input();
   }
 
   async copy(text: string): Promise<void> {

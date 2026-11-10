@@ -1,10 +1,12 @@
 <script lang="ts">
-  // Which events push (attention; non-blocking questions, off by default; finished runs), and Web
-  // Push on this device.
+  // Which events push (attention; non-blocking questions, off by default; finished runs), when
+  // (a delay, and held while the user is active on any device), and Web Push on this device.
+  // The preferences are the server's (the owner's), not this device's.
   import { useApp } from '../app/app.svelte';
   import { describeError } from '../api/errors';
   import { pushSubscription } from '../pwa';
-  import type { NotificationPreferences } from '../protocol';
+  import type { NotificationPreferences, NotificationsSetPreferencesParams } from '../protocol';
+  import Dropdown from '../ui/Dropdown.svelte';
 
   const app = useApp();
   const online = $derived(app.client.online);
@@ -17,7 +19,15 @@
   const thisDevice = $derived(app.client.feed.devices.get(app.client.device.id));
   const pushOn = $derived(app.client.feed.deviceList.filter((d) => d.push));
 
-  async function set(fields: Partial<NotificationPreferences>) {
+  const DELAYS: [string, number][] = [['None', 0], ['30 s', 30], ['1 min', 60], ['2 min', 120], ['5 min', 300]];
+  const IDLE: [string, number][] = [['1 min', 60], ['2 min', 120], ['5 min', 300], ['10 min', 600]];
+  /** The choices, plus the current value if it was set elsewhere. */
+  const choices = (list: [string, number][], current: number) =>
+    (list.some(([, s]) => s === current) ? list : [...list, [`${current} s`, current] as [string, number]])
+      .sort((a, b) => a[1] - b[1])
+      .map(([label, s]) => ({ value: String(s), label }));
+
+  async function set(fields: NotificationsSetPreferencesParams) {
     const r = await app.client.call('notifications.set_preferences', fields);
     if (r) prefs = r;
   }
@@ -40,6 +50,18 @@
   <label class="check"><input type="checkbox" checked={p.attention} disabled={!online} onchange={(e) => set({ attention: e.currentTarget.checked })} /> Needs you, failed or interrupted</label>
   <label class="check"><input type="checkbox" checked={p.questions} disabled={!online} onchange={(e) => set({ questions: e.currentTarget.checked })} /> Questions</label>
   <label class="check"><input type="checkbox" checked={p.turn_end} disabled={!online} onchange={(e) => set({ turn_end: e.currentTarget.checked })} /> Finished runs</label>
+  <div class="sec-h">When</div>
+  <div class="settings">
+    <span>Delay</span><Dropdown small label="Push delay" value={String(p.delay_s)} disabled={!online} options={choices(DELAYS, p.delay_s)} onchange={(v) => set({ delay_s: Number(v) })} />
+    <span class="small muted">dropped if answered first</span>
+  </div>
+  <label class="check"><input type="checkbox" checked={p.hold_while_active} disabled={!online} onchange={(e) => set({ hold_while_active: e.currentTarget.checked })} /> Hold while I'm active</label>
+  {#if p.hold_while_active}
+    <div class="settings sub">
+      <span>Idle after</span><Dropdown small label="Idle after" value={String(p.idle_s)} disabled={!online} options={choices(IDLE, p.idle_s)} onchange={(v) => set({ idle_s: Number(v) })} />
+      <span class="small muted">no push while you use any device</span>
+    </div>
+  {/if}
 {/if}
 {#if push}
   <div class="row">
@@ -60,5 +82,7 @@
 
 <style>
   .check { display: flex; align-items: center; gap: 8px; }
+  .settings { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 2px 0; }
+  .sub { padding-left: 21px; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 </style>

@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import type { Transport } from './lib/api/transport';
   import { App, provideApp } from './lib/app/app.svelte';
+  import { watchPresence } from './lib/app/presence';
   import { onCaptureKey, onKey } from './lib/keys/keyboard';
   import { trackPaneFocus } from './lib/keys/navigator';
   import Help from './lib/keys/Help.svelte';
@@ -74,7 +75,8 @@
     if (s?.unread && client.online && (app.desk || view.phoneDetail)) app.markRead(s);
   });
 
-  // client.focus: whenever the shown session, layout, visibility or connection changes.
+  // client.focus: whenever the shown session, layout, visibility or connection changes; input as
+  // client.activity (presence: pushes wait while the user is here).
   $effect(() => {
     void view.current;
     void view.phoneDetail;
@@ -93,23 +95,18 @@
       const s = link && client.feed.sessions.get(link.id);
       if (s && view.current?.id !== s.id) app.open(s);
     };
-    const onVisible = () => app.reportFocus();
+    const unwatch = watchPresence(window, { input: () => app.reportInput(), changed: () => app.reportFocus() });
     const onCapture = (e: KeyboardEvent) => onCaptureKey(app, e);
     scheme.addEventListener('change', onScheme);
     window.addEventListener('resize', onResize);
     window.addEventListener('hashchange', onHash);
-    window.addEventListener('focus', onVisible);
-    window.addEventListener('blur', onVisible);
-    document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('keydown', onCapture, true);
     return () => {
       untrack();
+      unwatch();
       scheme.removeEventListener('change', onScheme);
       window.removeEventListener('resize', onResize);
       window.removeEventListener('hashchange', onHash);
-      window.removeEventListener('focus', onVisible);
-      window.removeEventListener('blur', onVisible);
-      document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('keydown', onCapture, true);
     };
   });
