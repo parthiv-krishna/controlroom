@@ -141,3 +141,77 @@ async fn approvals_survive_a_restart_and_follow_the_hosts_list() {
     let s = h.wait_state(id, SessionState::Idle).await;
     assert!(s.requests.iter().all(|r| r.id != request_id(gone)));
 }
+
+/// A file request (here from the user's own terminal) names its machine: "Always allow" and
+/// "Never" say which machine's defaults they change, and the answer line repeats it.
+#[tokio::test]
+async fn a_file_request_names_its_machine() {
+    use controlroom_protocol::session::{OptionStyle, PathAccess, RequestBody, RequestOption};
+
+    let mut h = Harness::new(FakeScript::default()).await;
+    let id = h.create().await;
+    let workspace = h.summary(id).workspaces[0].id;
+    let devbox = h.devbox;
+    h.machines
+        .wait("approvals.subscribe", move |m| {
+            m.methods(devbox)
+                .contains(&"approvals.subscribe".to_owned())
+        })
+        .await;
+    let option = |id: &str, label: &str, style| RequestOption {
+        id: id.into(),
+        label: label.into(),
+        style,
+    };
+    let body = RequestBody::Path {
+        path: "/home/alice/.cache/nix/x".into(),
+        access: PathAccess::ReadWrite,
+        in_workspace: Some(false),
+        machine_id: None,
+        machine: None,
+    };
+    let options = vec![
+        option(
+            "allow-session",
+            "Allow for this session",
+            OptionStyle::AllowAlways,
+        ),
+        option("allow-always", "Always allow", OptionStyle::AllowAlways),
+        option("never", "Never", OptionStyle::Deny),
+        option("deny", "Deny", OptionStyle::Deny),
+    ];
+    let approval = h
+        .machines
+        .raise_approval(devbox, id, workspace, body, options, true);
+    h.wait_state(id, SessionState::AwaitingPermission).await;
+    let request = &h.summary(id).requests[0];
+    // Raised from the user's own terminal: marked as theirs, with the same machine labels.
+    assert_eq!(request.title, "Your terminal: Run git push origin main?");
+    let labels: Vec<&str> = request.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        [
+            "Allow for this session",
+            "Always allow (devbox)",
+            "Never (devbox)",
+            "Deny"
+        ]
+    );
+    assert!(matches!(
+        &request.body,
+        Some(RequestBody::Path { machine_id: Some(m), machine: Some(name), .. })
+            if *m == devbox && name == "devbox"
+    ));
+    let answered =
+        h.rt.respond(choose(id, approval, "allow-always"))
+            .await
+            .unwrap();
+    assert_eq!(
+        answered.request.answer.unwrap().label,
+        "Always allow (devbox)"
+    );
+    h.machines
+        .wait("the answer", move |m| m.answers(devbox).len() == 1)
+        .await;
+    assert_eq!(h.machines.answers(devbox)[0].option_id, "allow-always");
+}

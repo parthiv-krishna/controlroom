@@ -961,3 +961,95 @@ fn models_wire_shapes() {
         UiRequest::from_parts("models.set_key", json!({"provider": "openai", "key": "k"})).unwrap();
     assert_eq!(call.method(), "models.set_key");
 }
+
+#[test]
+fn golden_sandbox_profile_changes_for_paths() {
+    let scope = ProfileScope::Machine {
+        machine_id: MID.parse().unwrap(),
+    };
+    golden(
+        &SandboxSetProfileParams {
+            scope: scope.clone(),
+            change: ProfileChange::AddGrant {
+                grant: NewGrant {
+                    kind: GrantKind::Path,
+                    value: "~/.cache/nix".into(),
+                    access: Some(PathAccess::ReadWrite),
+                },
+            },
+        },
+        json!({
+            "scope": {"kind": "machine", "machine_id": MID},
+            "change": {"kind": "add_grant",
+                       "grant": {"kind": "path", "value": "~/.cache/nix", "access": "read_write"}}
+        }),
+    );
+    golden(
+        &ProfileChange::AddNever {
+            path: "~/.bash_history".into(),
+        },
+        json!({"kind": "add_never", "path": "~/.bash_history"}),
+    );
+    golden(
+        &ProfileChange::RemoveNever {
+            path: "~/.bash_history".into(),
+        },
+        json!({"kind": "remove_never", "path": "~/.bash_history"}),
+    );
+    // Profiles and specs from before the never list decode with an empty one.
+    let old: SandboxProfile = serde_json::from_value(json!({
+        "scope": {"kind": "machine", "machine_id": MID},
+        "level": null, "grants": [], "domains": [], "mediated": []
+    }))
+    .unwrap();
+    assert!(old.never.is_empty());
+    let old: SandboxSpec = serde_json::from_value(
+        json!({"level": "strict", "grants": [], "domains": [], "mediated": []}),
+    )
+    .unwrap();
+    assert!(old.never.is_empty());
+}
+
+#[test]
+fn golden_path_request_body_and_file_options() {
+    use controlroom_protocol::host::options;
+    golden(
+        &RequestBody::Path {
+            path: "/home/alice/.cache/nix/x".into(),
+            access: PathAccess::Read,
+            in_workspace: Some(false),
+            machine_id: Some(MID.parse().unwrap()),
+            machine: Some("devbox".into()),
+        },
+        json!({"kind": "path", "path": "/home/alice/.cache/nix/x", "access": "read",
+               "in_workspace": false, "machine_id": MID, "machine": "devbox"}),
+    );
+    // A body from an older host or agent daemon still decodes.
+    let old: RequestBody =
+        serde_json::from_value(json!({"kind": "path", "path": "/x", "access": "write"})).unwrap();
+    assert!(matches!(
+        old,
+        RequestBody::Path {
+            in_workspace: None,
+            machine_id: None,
+            machine: None,
+            ..
+        }
+    ));
+    assert_eq!(
+        [
+            options::ALLOW_ONCE,
+            options::ALLOW_SESSION,
+            options::ALLOW_ALWAYS,
+            options::NEVER,
+            options::DENY
+        ],
+        [
+            "allow-once",
+            "allow-session",
+            "allow-always",
+            "never",
+            "deny"
+        ]
+    );
+}

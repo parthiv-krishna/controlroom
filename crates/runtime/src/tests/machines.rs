@@ -952,7 +952,7 @@ impl FakeMachines {
         self.end_job(machine, job, None, None, Some("host rebooted"));
     }
 
-    /// nono asks for an approval in a workspace (for the agent).
+    /// nono asks for an approval (a `git push`) in a workspace, for the agent.
     pub(crate) fn approval(
         &self,
         machine: MachineId,
@@ -962,12 +962,46 @@ impl FakeMachines {
         self.approval_from(machine, session, workspace, false)
     }
 
-    /// nono asks for an approval in a workspace, for the agent or one of the user's terminals.
+    /// nono asks for an approval (a `git push`) in a workspace, for the agent or one of the
+    /// user's terminals.
     pub(crate) fn approval_from(
         &self,
         machine: MachineId,
         session: SessionId,
         workspace: WorkspaceId,
+        from_user_terminal: bool,
+    ) -> ApprovalId {
+        let option = |id: &str, label: &str, style| RequestOption {
+            id: id.into(),
+            label: label.into(),
+            style,
+        };
+        let body = RequestBody::Command {
+            command: "git push origin main".into(),
+            cwd: None,
+        };
+        let options = vec![
+            option("allow-once", "Allow once", OptionStyle::Allow),
+            option("deny", "Deny", OptionStyle::Deny),
+        ];
+        self.raise_approval(
+            machine,
+            session,
+            workspace,
+            body,
+            options,
+            from_user_terminal,
+        )
+    }
+
+    /// nono asks for an approval with `body` and `options` in a workspace.
+    pub(crate) fn raise_approval(
+        &self,
+        machine: MachineId,
+        session: SessionId,
+        workspace: WorkspaceId,
+        body: RequestBody,
+        options: Vec<RequestOption>,
         from_user_terminal: bool,
     ) -> ApprovalId {
         let approval = HostApproval {
@@ -976,23 +1010,9 @@ impl FakeMachines {
             workspace_id: workspace,
             title: "Run git push origin main?".into(),
             detail: None,
-            body: RequestBody::Command {
-                command: "git push origin main".into(),
-                cwd: None,
-            },
+            body,
             from_user_terminal,
-            options: vec![
-                RequestOption {
-                    id: "allow-once".into(),
-                    label: "Allow once".into(),
-                    style: OptionStyle::Allow,
-                },
-                RequestOption {
-                    id: "deny".into(),
-                    label: "Deny".into(),
-                    style: OptionStyle::Deny,
-                },
-            ],
+            options,
             created_at: self.clock.now(),
         };
         let id = approval.id;

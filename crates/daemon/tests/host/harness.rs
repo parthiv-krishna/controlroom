@@ -409,6 +409,11 @@ pub struct Session {
 
 impl Session {
     pub async fn open(env: &HostEnv, client: &RpcClient, level: SandboxLevel) -> Self {
+        Self::open_with(env, client, sandbox(level)).await
+    }
+
+    /// A session whose workspace is opened with `spec`.
+    pub async fn open_with(env: &HostEnv, client: &RpcClient, spec: SandboxSpec) -> Self {
         let id = SessionId::generate();
         let workspace = WorkspaceId::generate();
         let opened = client
@@ -416,7 +421,7 @@ impl Session {
                 workspace_id: workspace,
                 session_id: id,
                 path: "~/project".into(),
-                sandbox: sandbox(level),
+                sandbox: spec,
             })
             .await
             .unwrap_or_else(|e| panic!("workspace.open: {e}\n{}", env.log()));

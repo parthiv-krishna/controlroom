@@ -10,7 +10,7 @@ use controlroom_protocol::host::{
 };
 use controlroom_protocol::host::{CheckStatus, FsListParams};
 use controlroom_protocol::jsonrpc::NoParams;
-use controlroom_protocol::session::{RequestBody, SandboxLevel};
+use controlroom_protocol::session::{PathAccess, RequestBody, SandboxLevel, SandboxSpec};
 use controlroom_protocol::{Capability, ErrorData, ProtocolVersion};
 use serde_json::{Value, json};
 
@@ -321,4 +321,86 @@ async fn sandbox_approvals_go_to_the_controller_and_back() {
     // A wrong secret is refused without asking.
     let wrong = format!("/nono/v1/{}/{}", session.workspace, "ab".repeat(32));
     assert_eq!(post(port, &wrong, &json!({})).0, 403);
+}
+
+/// File requests: "Always allow" and "Never" apply to the running workspace at once (later
+/// requests for the path are answered without asking), and the spec's never-paths are denied
+/// without an approval.
+#[tokio::test]
+async fn always_and_never_apply_to_the_running_workspace() {
+    let env = HostEnv::start().await;
+    let client = env.controller().await;
+    let spec = SandboxSpec {
+        never: vec!["~/.bash_history".into()],
+        ..crate::harness::sandbox(SandboxLevel::Off)
+    };
+    let session = Session::open_with(&env, &client, spec).await;
+    client
+        .call::<methods::ApprovalsSubscribe>(NoParams {})
+        .await
+        .unwrap();
+    let (port, secret) = hook(&env, &session);
+    let url = format!("/nono/v1/{}/{}", session.workspace, secret.trim());
+    let home = env.home().to_str().unwrap().to_owned();
+    let ask = |rel: &str, access: &str| {
+        let url = url.clone();
+        let request = json!({"backend": "controlroom", "request": {
+            "capability_type": "capability", "request_id": rel,
+            "path": format!("{home}/{rel}"), "access": access}});
+        std::thread::spawn(move || post(port, &url, &request))
+    };
+    let raised = || async {
+        let note = client.note("approval.request").await;
+        serde_json::from_value::<HostApproval>(note["approval"].clone()).unwrap()
+    };
+    let answer = |approval: HostApproval, option: &'static str| {
+        client.call::<methods::ApprovalRespond>(ApprovalRespondParams {
+            approval_id: approval.id,
+            option_id: option.into(),
+            reason: None,
+        })
+    };
+    let decision = |reply: (u16, Value)| reply.1["decision"].as_str().unwrap().to_owned();
+
+    // A never-path from the spec: denied, nothing raised.
+    assert_eq!(
+        decision(ask(".bash_history", "Read").join().unwrap()),
+        "denied"
+    );
+
+    // Always allow: granted now, and later requests for the path without asking.
+    let pending = ask(".cache/nix/fetcher.sqlite", "ReadWrite");
+    let approval = raised().await;
+    let ids: Vec<&str> = approval.options.iter().map(|o| o.id.as_str()).collect();
+    assert_eq!(ids, ["allow-session", "allow-always", "never", "deny"]);
+    assert!(matches!(
+        approval.body,
+        RequestBody::Path {
+            access: PathAccess::ReadWrite,
+            in_workspace: Some(false),
+            ..
+        }
+    ));
+    answer(approval, "allow-always").await.unwrap();
+    assert_eq!(decision(pending.join().unwrap()), "granted");
+    let again = ask(".cache/nix/fetcher.sqlite", "Write");
+    assert_eq!(decision(again.join().unwrap()), "granted");
+
+    // Never: denied now and from then on.
+    let pending = ask("secret.txt", "Read");
+    answer(raised().await, "never").await.unwrap();
+    assert_eq!(decision(pending.join().unwrap()), "denied");
+    assert_eq!(
+        decision(ask("secret.txt", "Read").join().unwrap()),
+        "denied"
+    );
+
+    // Nothing else was raised in between: the next approval is this one.
+    let pending = ask("notes.txt", "Read");
+    let approval = raised().await;
+    assert!(
+        matches!(&approval.body, RequestBody::Path { path, .. } if path.as_str().ends_with("/notes.txt"))
+    );
+    answer(approval, "deny").await.unwrap();
+    assert_eq!(decision(pending.join().unwrap()), "denied");
 }

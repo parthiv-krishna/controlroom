@@ -49,6 +49,8 @@ struct State {
     session_subs: HashMap<SessionId, SubscriptionId>,
     /// `session.prompt` results by op id (a repeat returns the first), in order.
     prompts: Vec<(String, Value, Value)>,
+    /// Results of otherwise acknowledged methods, by method.
+    results: HashMap<String, Value>,
     /// Refusing connections.
     down: bool,
 }
@@ -222,6 +224,12 @@ impl FakeAgentd {
             .filter(|(m, _)| m == method)
             .map(|(_, p)| p.clone())
             .collect()
+    }
+
+    /// Answers every later call of `method` (one the fake only acknowledges otherwise) with
+    /// `result`.
+    pub fn answer_with(&self, method: &str, result: Value) {
+        self.lock().results.insert(method.to_owned(), result);
     }
 
     /// Every prompt delivered (once per op id), in order.
@@ -469,7 +477,7 @@ fn handle(
         }
         "session.prompt" => prompt(&mut st, params),
         "doctor.report" | "agents.list" => Err(RpcError::new(ErrorData::Unsupported, "fake")),
-        _ => Ok(json!({})),
+        _ => Ok(st.results.get(method).cloned().unwrap_or_else(|| json!({}))),
     }
 }
 

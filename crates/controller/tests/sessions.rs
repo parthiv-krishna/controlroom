@@ -330,3 +330,131 @@ async fn a_create_waits_for_the_agent_daemon_to_see_what_the_ui_saw() {
     let response = next.response(create).await;
     assert!(response.get("error").is_none(), "{response}");
 }
+
+/// "Always allow" and "Never" on a file request become standing on the requesting machine's
+/// sandbox defaults, recorded with the deciding device; new sessions get them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn always_and_never_on_a_file_request_change_the_machine_defaults() {
+    let agentd = FakeAgentd::start().await;
+    let bundled = bundled_daemons();
+    let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
+    let host = RemoteHost::start().await;
+    let _fake = FakeHost::start(&host);
+    let mut next = ui(&setup.controller, "laptop").await;
+    agentd.wait_connected(1).await;
+    let devbox = add_machine(&mut next, &host, "devbox").await;
+    let session = SessionId::generate();
+
+    let answered = |option: &str, path: &str, access: &str| {
+        json!({"request": {
+            "id": "approval-1", "kind": "sandbox", "blocking": true, "state": "answered",
+            "title": "Write?", "detail": null,
+            "body": {"kind": "path", "path": path, "access": access, "in_workspace": false,
+                     "machine_id": devbox, "machine": "devbox"},
+            "options": [], "questions": [],
+            "answer": {"response": {"kind": "choice", "option_id": option},
+                       "label": "x", "by": null, "at": 1},
+            "origin_child": null, "created_at": 1},
+            "then": null})
+    };
+    let respond = |option: &str| {
+        json!({"op_id": op(), "id": session, "request_id": "approval-1",
+               "response": {"kind": "choice", "option_id": option}})
+    };
+    agentd.answer_with(
+        "request.respond",
+        answered(
+            "allow-always",
+            "/home/alice/.cache/nix/x.sqlite-shm",
+            "write",
+        ),
+    );
+    next.ok("request.respond", respond("allow-always")).await;
+    agentd.answer_with(
+        "request.respond",
+        answered("never", "/home/alice/.bash_history", "read"),
+    );
+    next.ok("request.respond", respond("never")).await;
+    // Another answer changes nothing.
+    agentd.answer_with(
+        "request.respond",
+        answered("allow-session", "/srv/other", "read"),
+    );
+    next.ok("request.respond", respond("allow-session")).await;
+
+    let profiles = next.ok("sandbox.profiles", json!({})).await["profiles"].clone();
+    let profile = &profiles[0];
+    assert_eq!(
+        profile["scope"],
+        json!({"kind": "machine", "machine_id": devbox})
+    );
+    let grants = profile["grants"].as_array().unwrap();
+    assert_eq!(grants.len(), 1, "{profile}");
+    assert_eq!(grants[0]["kind"], "path");
+    assert_eq!(grants[0]["value"], "/home/alice/.cache/nix/x.sqlite-shm");
+    assert_eq!(grants[0]["access"], "read_write");
+    assert_eq!(grants[0]["scope"], "standing");
+    assert_eq!(grants[0]["by"]["device_id"], "laptop");
+    assert_eq!(profile["never"], json!(["/home/alice/.bash_history"]));
+
+    // A new session on the machine starts with both.
+    let created = next
+        .ok(
+            "session.create",
+            json!({"op_id": op(), "workspaces": [{"machine_id": devbox, "path": "~/src"}]}),
+        )
+        .await;
+    assert!(created["session"]["id"].is_string());
+    let sent = &agentd.calls("session.create")[0]["sandbox"];
+    assert_eq!(
+        sent["grants"][0]["value"],
+        "/home/alice/.cache/nix/x.sqlite-shm"
+    );
+    assert_eq!(sent["never"], json!(["/home/alice/.bash_history"]));
+}
+
+/// Settings › Sandbox adds path grants and never-paths per machine, normalized; relative paths,
+/// `..` and a read-write `/` are refused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn path_grants_and_never_paths_are_checked_and_normalized() {
+    let agentd = FakeAgentd::start().await;
+    let bundled = bundled_daemons();
+    let setup = controller_with_agentd(Some(bundled.path()), agentd.socket());
+    let host = RemoteHost::start().await;
+    let _fake = FakeHost::start(&host);
+    let mut next = ui(&setup.controller, "laptop").await;
+    agentd.wait_connected(1).await;
+    let devbox = add_machine(&mut next, &host, "devbox").await;
+    let scope = json!({"kind": "machine", "machine_id": devbox});
+    let grant = |value: &str, access: &str| {
+        json!({"scope": scope, "change": {"kind": "add_grant",
+               "grant": {"kind": "path", "value": value, "access": access}}})
+    };
+    for (value, access) in [("rel/x", "read"), ("~/a/../b", "read"), ("/", "read_write")] {
+        next.err(
+            "sandbox.set_profile",
+            grant(value, access),
+            "invalid_params",
+        )
+        .await;
+    }
+    next.ok("sandbox.set_profile", grant("~/.cache//nix/", "read_write"))
+        .await;
+    let result = next
+        .ok(
+            "sandbox.set_profile",
+            json!({"scope": scope, "change": {"kind": "add_never", "path": "~/.bash_history"}}),
+        )
+        .await;
+    let profile = &result["profiles"][0];
+    assert_eq!(profile["grants"][0]["value"], "~/.cache/nix");
+    assert_eq!(profile["grants"][0]["by"]["device_id"], "laptop");
+    assert_eq!(profile["never"], json!(["~/.bash_history"]));
+    let result = next
+        .ok(
+            "sandbox.set_profile",
+            json!({"scope": scope, "change": {"kind": "remove_never", "path": "~/.bash_history"}}),
+        )
+        .await;
+    assert_eq!(result["profiles"][0]["never"], json!([]));
+}
