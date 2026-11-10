@@ -131,9 +131,9 @@
             {@const mine = isMine(shell)}
             {@const raw = isUnsandboxed(shell)}
             <span class="tabw" class:mine class:raw class:on>
-              <button class="tab" role="tab" aria-selected={on} title="{g.label} · {shell.cwd}" onclick={() => pick(shell)}>
-                {#if mine}<span class="who">{raw ? 'unsandboxed' : 'you'}</span>{/if}
-                {tabLabel(shell)}
+              <!-- The tab's text starts with its badge or name: no whitespace before them. -->
+              <button class="tab" role="tab" aria-selected={on} title="{g.label} · {shell.cwd}" onclick={() => pick(shell)}
+                >{#if mine}<span class="who">{raw ? 'unsandboxed' : 'you'}</span>{' '}{/if}{tabLabel(shell)}
                 {#if !mine}
                   {#if shell.state.state === 'waiting_input'}<span class="mark wait">⌨ input</span>
                   {:else if shell.state.state === 'running'}<span class="mark agent">agent</span>

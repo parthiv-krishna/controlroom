@@ -132,6 +132,8 @@ test('your terminals: "+" opens one sandboxed, or unsandboxed after a confirm; t
   const raw = tabs.getByRole('tab', { name: 'unsandboxed buildbox' });
   await expect(raw).toBeVisible();
   await expect(tabs.locator('.tabw.raw')).toHaveCount(1);
+  // Each tab's text starts with its badge or name.
+  await expect(tabs.getByRole('tab')).toHaveText([/^devbox\s*$/, /^you devbox\s*$/, /^buildbox agent\s*$/, /^unsandboxed buildbox\s*$/]);
   await expect(tabs.locator('.tabw.mine')).toHaveCount(2);
 
   // "+" lists every workspace, sandboxed and unsandboxed.
