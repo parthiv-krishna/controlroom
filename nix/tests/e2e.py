@@ -381,6 +381,33 @@ def terminal_input() -> None:
     assert "hello alice" in tool_result("call_ask")
 
 
+def user_terminals() -> None:
+    """The user's own terminals on devbox: the unsandboxed one writes outside the workspace (no
+    nono), the sandboxed one can't; the agent's shell list doesn't show them and its command in
+    one is refused. Each opening is logged with the device on the server and on devbox."""
+    mock(
+        tool("call_shells", "shell_list", {}),
+        bash("call_sneak", "sneak", "echo sneaked > ~/sneaked.txt", shell="you@devbox"),
+        say("Only my own shells."),
+    )
+    Spec("user-terminals").finish()
+    mock_done()
+    devbox.succeed("grep -q outside /home/alice/outside-unsandboxed.txt")
+    devbox.fail("test -e /home/alice/planted-by-you.txt")
+    shells = tool_result("call_shells")
+    assert "devbox" in shells and "you@" not in shells, shells
+    sneak = tool_result("call_sneak")
+    assert "no shell" in sneak and "you@devbox" in sneak, sneak
+    devbox.fail("test -e /home/alice/sneaked.txt")
+    server.succeed(
+        "journalctl -u controlroom | grep 'user terminal opened' | grep unsandboxed | grep -q Laptop"
+    )
+    devbox.succeed(
+        "grep 'user terminal opened' /home/alice/.local/state/controlroom/daemon.log"
+        " | grep unsandboxed | grep -q Laptop"
+    )
+
+
 def schedules() -> None:
     """A schedule's "Run now" sends its message to pi through the server's scheduler."""
     mock(say("Inbox is empty."))
@@ -536,6 +563,7 @@ try:
     approvals()
     web_push()
     terminal_input()
+    user_terminals()
     schedules()
     models()
     blip()

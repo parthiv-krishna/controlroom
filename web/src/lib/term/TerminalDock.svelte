@@ -132,7 +132,7 @@
             {@const raw = isUnsandboxed(shell)}
             <span class="tabw" class:mine class:raw class:on>
               <button class="tab" role="tab" aria-selected={on} title="{g.label} · {shell.cwd}" onclick={() => pick(shell)}>
-                {#if mine}<span class="who">{raw ? 'unsandboxed' : 'you'}</span>{:else}<span class="glyph" aria-hidden="true">◆</span>{/if}
+                {#if mine}<span class="who">{raw ? 'unsandboxed' : 'you'}</span>{/if}
                 {tabLabel(shell)}
                 {#if !mine}
                   {#if shell.state.state === 'waiting_input'}<span class="mark wait">⌨ input</span>
@@ -203,7 +203,6 @@
   .tabw.raw.on { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 22%, transparent); }
   .tab { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: none; background: none; color: var(--fg); font: 12.5px var(--mono); cursor: pointer; white-space: nowrap; }
   .tabw.mine .tab { padding-right: 4px; }
-  .glyph { font-size: 9px; color: var(--info); }
   .who { font: 600 10.5px var(--font); padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--fg); }
   .raw .who { background: var(--bad); color: #fff; text-transform: uppercase; letter-spacing: 0.03em; }
   .x { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 7px 2px 3px; }
