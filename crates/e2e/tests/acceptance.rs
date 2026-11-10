@@ -11,7 +11,9 @@
 //! 3. a background job whose exit wakes the agent once.
 //!
 //! A second test covers the sandbox's file requests: harmless runtime probes raise none, and
-//! "Always allow" and "Never" carry over to new sessions on the machine.
+//! "Always allow" and "Never" carry over to new sessions on the machine. A third changes a
+//! session's level after creation (strict, off, back to the defaults) and checks the restarted
+//! agent and shell are confined accordingly.
 //!
 //! Needs nono 0.80.0, Landlock and pi, so it is `#[ignore]`d; run it with
 //! `crates/e2e/scripts/acceptance-pi-nono.sh`. Every process it starts is killed at the end,
@@ -32,14 +34,16 @@ fn env_var(var: &str) -> String {
 }
 
 /// The bundle's launcher, pointing the mock provider at nono's reverse proxy: nono hands the
-/// sandbox the proxied base URL and a phantom key for the route.
+/// sandbox the proxied base URL and a phantom key for the route. At level off there is no nono:
+/// pi runs on the agent daemon's own agent dir, which names the mock directly, so nothing is
+/// rewritten.
 fn agent_command(bundle: &Path, mock: &MockModel) -> String {
     let origin = format!("http://127.0.0.1:{}", mock.port());
     let placeholder = controlroom_sandbox::agent_dir::PLACEHOLDER;
     let launcher = bundle.join("bin/controlroom-pi");
     let script = format!(
         r##"m="$PI_CODING_AGENT_DIR/models.json"
-sed -e "s#{origin}#$CR_MOCK_BASE_URL#" -e 's#"{placeholder}"#"$CR_MOCK_PHANTOM"#' "$m" > "$m.tmp" && mv "$m.tmp" "$m" || exit 1
+[ -z "$CR_MOCK_BASE_URL" ] || {{ sed -e "s#{origin}#$CR_MOCK_BASE_URL#" -e 's#"{placeholder}"#"$CR_MOCK_PHANTOM"#' "$m" > "$m.tmp" && mv "$m.tmp" "$m" || exit 1; }}
 PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 exec {launcher} -- "$@""##,
         launcher = launcher.display(),
     );
@@ -142,6 +146,17 @@ fn seen(mock: &MockModel, from: usize) -> String {
         .iter()
         .map(|r| r["messages"].to_string())
         .collect()
+}
+
+/// The result of tool call `call` as the model last saw it.
+fn tool_result(mock: &MockModel, call: &str) -> String {
+    mock.requests()
+        .iter()
+        .rev()
+        .flat_map(|r| r["messages"].as_array().cloned().unwrap_or_default())
+        .find(|m| m["role"] == "tool" && m["tool_call_id"] == call)
+        .map(|m| m["content"].to_string())
+        .unwrap_or_else(|| panic!("no result of {call}"))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -365,6 +380,14 @@ async fn answer_file_request(world: &mut World, id: &str, target: &str, option: 
                        "response": {"kind": "choice", "option_id": chosen}}),
             )
             .await;
+        // The feed no longer lists it (so the next look doesn't answer it again).
+        world
+            .wait_session(id, "the answered request gone", |s| {
+                s["requests"]
+                    .as_array()
+                    .is_none_or(|r| r.iter().all(|r| r["id"] != request["id"]))
+            })
+            .await;
         if ours {
             return request;
         }
@@ -506,4 +529,136 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
             )
             .await;
     }
+}
+
+/// Spec §11 "A session's level after creation", end to end with real pi and nono: in a strict
+/// session, `cat` of a file outside the workspace raises a file request (denied here); after
+/// `session.set_sandbox_level` to off the agent restarts resumed, with the note in its context,
+/// and the same command in the restarted shell reads the file without a request; back to the
+/// defaults (strict), it asks again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs nono 0.80.0, Landlock and pi; run crates/e2e/scripts/acceptance-pi-nono.sh"]
+async fn a_level_change_reaches_the_agent_and_its_shells() {
+    let mock = MockModel::start(Vec::new()).await.expect("mock model");
+    let mut nono_tmp = NonoTmp::new();
+    let (server_tmp, devbox_tmp, buildbox_tmp) = (nono_tmp.dir(), nono_tmp.dir(), nono_tmp.dir());
+    let mut world = World::start_with(|agentd, devbox, buildbox| {
+        configure_server(agentd, &mock, &server_tmp);
+        configure_host(devbox, &devbox_tmp);
+        configure_host(buildbox, &buildbox_tmp);
+    })
+    .await;
+    world.devbox.dir("src/api");
+    let notes = world.devbox.dir("notes");
+    std::fs::write(notes.join("outside.txt"), "outside-content\n").unwrap();
+    let devbox = world.devbox.id.clone();
+    let mut params = world.create_params(&[(&devbox, "~/src/api")], json!({}));
+    params.as_object_mut().unwrap().remove("sandbox_level");
+    let created = world.ui.ok("session.create", params).await;
+    let id = created["session"]["id"].as_str().unwrap().to_owned();
+    world
+        .wait_session(&id, "idle", |s| {
+            s["state"] == "idle" && s["agent_live"] == true
+        })
+        .await;
+    let read = |call: &str| {
+        Reply::tool_call(
+            call,
+            "bash",
+            json!({"command": "cat ~/notes/outside.txt 2>&1 || echo refused"}),
+        )
+    };
+    let set_level = |level: Value| json!({"op_id": controlroom_controller::test_support::op(), "id": id, "level": level});
+
+    // 1. Strict: the read raises a request; denied, it fails.
+    mock.push([read("call_strict"), Reply::text("Tried.")]);
+    let mark = world.turn_mark(&id);
+    world.send_prompt(&id, "Read the outside note.").await;
+    answer_file_request(&mut world, &id, "/notes/outside.txt", "deny").await;
+    world.wait_turn(&id, mark).await;
+    let result = tool_result(&mock, "call_strict");
+    assert!(
+        result.contains("refused") && !result.contains("outside-content"),
+        "{result}"
+    );
+
+    // 2. Off: the summary says so at once; the agent restarts, resumed; the shell restarted
+    // unsandboxed reads the file without a request, and says it was reset.
+    world
+        .ui
+        .ok("session.set_sandbox_level", set_level(json!("off")))
+        .await;
+    world
+        .wait_session(&id, "level off", |s| {
+            s["sandbox"]["level"] == "off" && s["sandbox"]["explicit"] == true
+        })
+        .await;
+    let from = mock.requests().len();
+    mock.push([read("call_off"), Reply::text("Read it.")]);
+    world.prompt(&id, "Read it again.").await;
+    let result = tool_result(&mock, "call_off");
+    assert!(result.contains("outside-content"), "{result}");
+    assert!(
+        result.contains("the sandbox level changed"),
+        "the shell reset: {result}"
+    );
+    let after = seen(&mock, from);
+    assert!(after.contains("it is now off"), "the note: {after}");
+    assert!(
+        after.contains("Tried."),
+        "the conversation was resumed: {after}"
+    );
+
+    // 3. Back to the defaults (strict): confined again.
+    world
+        .ui
+        .ok("session.set_sandbox_level", set_level(Value::Null))
+        .await;
+    world
+        .wait_session(&id, "back to the defaults", |s| {
+            s["sandbox"]["level"] == "strict" && s["sandbox"]["explicit"] == false
+        })
+        .await;
+    let from = mock.requests().len();
+    mock.push([read("call_strict_again"), Reply::text("Refused again.")]);
+    let mark = world.turn_mark(&id);
+    world.send_prompt(&id, "Once more.").await;
+    answer_file_request(&mut world, &id, "/notes/outside.txt", "deny").await;
+    world.wait_turn(&id, mark).await;
+    let result = tool_result(&mock, "call_strict_again");
+    assert!(
+        result.contains("refused") && !result.contains("outside-content"),
+        "{result}"
+    );
+    assert!(result.contains("the sandbox level changed"), "{result}");
+    let after = seen(&mock, from);
+    assert!(after.contains("it is now strict"), "the note: {after}");
+
+    // The timeline has a divider per change, and file requests from the strict runs only.
+    let levels = |t: &controlroom_e2e::session::Timeline| -> Vec<Value> {
+        t.of_kind("session_info")
+            .into_iter()
+            .filter(|i| !i["sandbox"].is_null())
+            .map(|i| i["sandbox"].clone())
+            .collect()
+    };
+    let mut timeline = world.timeline(&id).await;
+    world
+        .until(&mut timeline, "both dividers", |t| levels(t).len() == 2)
+        .await;
+    assert_eq!(levels(&timeline), [json!("off"), json!("strict")]);
+    let requests = timeline
+        .of_kind("request")
+        .into_iter()
+        .filter(|r| r["request"]["body"]["kind"] == "path")
+        .count();
+    assert_eq!(requests, 2);
+    world.unsubscribe(timeline).await;
+    world
+        .ui
+        .ok(
+            "session.close",
+            json!({"op_id": controlroom_controller::test_support::op(), "id": id}),
+        )
+        .await;
 }
