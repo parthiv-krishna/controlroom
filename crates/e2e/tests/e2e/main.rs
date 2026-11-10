@@ -5,4 +5,5 @@ mod jobs;
 mod links;
 mod restarts;
 mod sessions;
+mod terminals;
 mod tools;
