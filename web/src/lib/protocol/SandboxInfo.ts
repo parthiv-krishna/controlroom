@@ -15,7 +15,8 @@ level: SandboxLevel,
  */
 default_level: SandboxLevel, 
 /**
- * `level` was chosen explicitly for this session (new-session dialog or template). It
+ * `level` was chosen explicitly for this session (new-session dialog, template, or
+ * `session.set_sandbox_level`). It
  * stays across restarts; otherwise a restart picks up changed defaults.
  */
 explicit: boolean, 

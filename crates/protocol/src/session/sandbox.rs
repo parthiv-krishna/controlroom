@@ -3,7 +3,7 @@
 //! **Level resolution.** The controller computes a session's *defaults* ([`SandboxSpec`]) from
 //! its machine and every matching project: the strictest level, and the union of grants,
 //! domains and mediated commands. An explicit level chosen for the session (in the new-session
-//! dialog or a template) is an affirmative user choice and wins in either direction; without
+//! dialog, a template, or later with `session.set_sandbox_level`) is an affirmative user choice and wins in either direction; without
 //! one, the default level applies. Session grants add on top.
 
 use serde::{Deserialize, Serialize};
@@ -140,7 +140,8 @@ pub struct SandboxInfo {
     pub level: SandboxLevel,
     /// The level of the session's defaults (machine and projects).
     pub default_level: SandboxLevel,
-    /// `level` was chosen explicitly for this session (new-session dialog or template). It
+    /// `level` was chosen explicitly for this session (new-session dialog, template, or
+    /// `session.set_sandbox_level`). It
     /// stays across restarts; otherwise a restart picks up changed defaults.
     pub explicit: bool,
     /// `level` confines less than `default_level`: show the "looser than defaults" badge (`off`

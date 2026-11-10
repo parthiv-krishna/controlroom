@@ -40,7 +40,8 @@ name?: string | null,
 parent_id?: SessionId | null, 
 /**
  * An explicit level chosen by the user (new-session dialog or template). Honored in either
- * direction, and kept for the session's life; absent: the default level applies.
+ * direction, and kept until changed with `session.set_sandbox_level`; absent: the default
+ * level applies.
  */
 sandbox_level?: SandboxLevel | null, 
 /**
