@@ -56,6 +56,8 @@ use crate::dirs::{create_private_dir, write_private_file};
 
 /// How long a new shell may take to show its first prompt.
 const START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long a restarting shell may take to end (the supervisor kills it 5 s after SIGTERM).
+const RESTART_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// How an agent command ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +96,8 @@ struct Proc {
 struct Inner {
     cwd: String,
     reset_reason: Option<String>,
+    /// Why the shell is being restarted: its reset notice once its process has ended.
+    restart_reason: Option<String>,
     foreground: Option<String>,
     proc: Option<Proc>,
     active: Option<Active>,
@@ -118,6 +122,8 @@ pub struct Shell {
     run_lock: Arc<tokio::sync::Mutex<()>>,
     /// True while the shell waits at its prompt with no agent command pending.
     ready: watch::Sender<bool>,
+    /// The generation of the shell's last process that ended.
+    exited: watch::Sender<u64>,
 }
 
 impl Shell {
@@ -132,6 +138,7 @@ impl Shell {
             inner: Mutex::new(Inner {
                 cwd,
                 reset_reason,
+                restart_reason: None,
                 foreground: None,
                 proc: None,
                 active: None,
@@ -139,6 +146,7 @@ impl Shell {
             }),
             run_lock: Arc::new(tokio::sync::Mutex::new(())),
             ready: watch::Sender::new(false),
+            exited: watch::Sender::new(0),
         }
     }
 
@@ -337,7 +345,8 @@ impl Shell {
                 _ => "is gone (its supervisor died, e.g. the host restarted)".to_owned(),
             };
             // Why it is reopened; the extension says what that means for the agent.
-            inner.reset_reason = Some(format!("the shell {status}"));
+            let reason = inner.restart_reason.take();
+            inner.reset_reason = Some(reason.unwrap_or_else(|| format!("the shell {status}")));
             if let Some(active) = inner.active.as_mut()
                 && let Some(done) = active.done.take()
             {
@@ -345,8 +354,37 @@ impl Shell {
             }
         }
         self.ready.send_replace(false);
+        self.exited.send_replace(generation);
         self.persist(host);
         host.shells.changed(host, self);
+    }
+
+    /// Restarts a running agent shell under its workspace's current profile, in its last
+    /// directory: its process ends (and with it a running command), and the next command's
+    /// result gives `reason` as its reset notice. A shell that isn't running starts under the
+    /// current profile anyway when it is next used.
+    async fn restart(self: &Arc<Self>, host: &Arc<Host>, reason: &str) -> Result<(), RpcError> {
+        let generation = {
+            let mut inner = self.lock();
+            let Some(proc) = inner.proc.as_ref() else {
+                return Ok(());
+            };
+            let generation = proc.generation;
+            inner.restart_reason = Some(reason.to_owned());
+            generation
+        };
+        self.terminate().await;
+        let mut exited = self.exited.subscribe();
+        let ended = exited.wait_for(|g| *g >= generation);
+        if tokio::time::timeout(RESTART_TIMEOUT, ended).await.is_err() {
+            return Err(internal(format!(
+                "shell {} didn't end within {}s",
+                self.name,
+                RESTART_TIMEOUT.as_secs()
+            )));
+        }
+        let _turn = self.lock_run().await;
+        self.ensure_running(host, None).await
     }
 
     /// Saves the cwd, supervisor and reset state.
@@ -741,6 +779,33 @@ impl Shells {
             .collect();
         shells.sort_by(|a, b| a.shell_id.as_str().cmp(b.shell_id.as_str()));
         ShellListResult { shells }
+    }
+
+    /// Restarts the agent's shells of `workspace` under its current profile, all at once (after
+    /// a level change; see [`Shell::restart`]). The user's terminals keep running under the
+    /// profile they started with until they end.
+    pub async fn restart_agent_shells(
+        &self,
+        host: &Arc<Host>,
+        workspace: &WorkspaceId,
+        reason: &str,
+    ) {
+        let shells: Vec<Arc<Shell>> = self
+            .lock()
+            .values()
+            .filter(|s| s.workspace_id == *workspace && !s.is_user())
+            .cloned()
+            .collect();
+        let mut restarts = tokio::task::JoinSet::new();
+        for shell in shells {
+            let (host, reason) = (host.clone(), reason.to_owned());
+            restarts.spawn(async move {
+                if let Err(e) = shell.restart(&host, &reason).await {
+                    tracing::warn!(shell = %shell.id, "restarting a shell: {}", e.message);
+                }
+            });
+        }
+        restarts.join_all().await;
     }
 
     /// Ends every shell of a closing workspace.

@@ -1,10 +1,12 @@
 //! Workspaces (`workspace.open`, `workspace.close`): one session's directory on this host with
 //! its own nono profile, webhook secret, `TMPDIR` and fs worker.
 //!
-//! `workspace.open` is idempotent by id: again with a changed sandbox it rewrites the profile
-//! and restarts the fs worker (shells and jobs started later use the new profile; running ones
-//! keep theirs until reopened). Open workspaces are persisted, so a restarted daemon keeps
-//! serving them.
+//! `workspace.open` is idempotent by id: again with a changed sandbox it rewrites the profiles
+//! and restarts the fs worker (shells and jobs started later use the new profiles; running ones
+//! keep theirs until reopened). A changed **level** also restarts the agent's shells under the
+//! new profile (see [`super::shells::Shells::restart_agent_shells`]); the user's terminals and
+//! running jobs keep the sandbox they started with until they end. Open workspaces are
+//! persisted, so a restarted daemon keeps serving them.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -14,8 +16,8 @@ use controlroom_protocol::host::{WorkspaceCloseParams, WorkspaceOpenParams, Work
 use controlroom_protocol::ids::{SessionId, WorkspaceId};
 use controlroom_protocol::session::SandboxSpec;
 use controlroom_protocol::{ErrorData, RemotePath, Resource, RpcError};
-use controlroom_sandbox::AbsPath;
 use controlroom_sandbox::webhook::{HookSecret, HookUrl};
+use controlroom_sandbox::{AbsPath, SandboxLevel};
 use rusqlite::params;
 
 use super::Host;
@@ -39,6 +41,8 @@ pub struct Workspace {
     pub root: AbsPath,
     /// Its files under the host state dir.
     pub files: WorkspacePaths,
+    /// The level its profiles were written at.
+    pub level: SandboxLevel,
     state: Mutex<State>,
 }
 
@@ -242,6 +246,7 @@ fn install(
         session_id,
         root,
         files,
+        level: policy.level,
         state: Mutex::new(State {
             profile,
             user_profile,
@@ -289,6 +294,7 @@ pub async fn open(
         ));
     }
     let id = params.workspace_id;
+    let previous = host.workspaces.get(&id).map(|w| w.level);
     let installed = {
         let host = host.clone();
         let (root, sandbox) = (root.clone(), params.sandbox.clone());
@@ -312,6 +318,11 @@ pub async fn open(
             )
         })
         .await?;
+    if previous.is_some_and(|level| level != installed.level) {
+        host.shells
+            .restart_agent_shells(host, &id, "the sandbox level changed")
+            .await;
+    }
     drop(installed);
     let scan_root = root.clone();
     let (context_files, skills) = tokio::task::spawn_blocking(move || {

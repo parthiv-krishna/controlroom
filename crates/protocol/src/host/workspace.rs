@@ -14,7 +14,10 @@ use crate::session::{DeviceRef, SandboxSpec, Shell, ShellOwner, ShellSandbox};
 
 /// Params of `workspace.open`: resolve and check the directory and write the workspace's sandbox
 /// profile. Idempotent by `workspace_id`; calling it again with a changed `sandbox` rewrites the
-/// profile (shells and jobs started later use it; running ones keep theirs until reopened).
+/// profiles (shells and jobs started later use them; running ones keep theirs until reopened).
+/// A changed `level` also restarts the agent's shells under the new profile, in their last
+/// directory; their next command reports the reset ("the sandbox level changed"). The user's
+/// terminals and running jobs keep the sandbox they started with until they end.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct WorkspaceOpenParams {
     /// The workspace (assigned by the agent daemon).

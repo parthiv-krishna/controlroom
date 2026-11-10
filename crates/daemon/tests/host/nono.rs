@@ -581,3 +581,72 @@ async fn never_paths_are_denied_silently_and_grants_need_no_approval() {
         "{asked:?}"
     );
 }
+
+/// A level change (the workspace reopened at another level) restarts the agent's shell under
+/// the new profile, and the restarted shell is confined accordingly: strict asks for (and here
+/// gets denied) home config and other files outside the workspace, relaxed reads the configured
+/// home config without asking, off reads anything, and strict again confines it again.
+#[tokio::test]
+#[ignore = "needs nono 0.80 and Landlock (CR_TEST_NONO)"]
+async fn a_shell_restarted_at_another_level_is_confined_by_it() {
+    let nono = std::env::var("CR_TEST_NONO").unwrap_or_else(|_| "nono".into());
+    let env = env_with(
+        &format!(
+            "nono = {nono:?}\nrelaxed_reads = [{{ path = \"~/.gitconfig\", kind = \"file\" }}]\n"
+        ),
+        |env| {
+            std::fs::write(env.home().join(".gitconfig"), "[user]\n\tname = alice\n").unwrap();
+        },
+    )
+    .await;
+    let seen = record_and_deny(&env).await;
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let session = Session::open(&env, &client, SandboxLevel::Strict).await;
+    session.shell(&client, "s").await;
+    let reopen = |level| {
+        client.call::<methods::WorkspaceOpen>(controlroom_protocol::host::WorkspaceOpenParams {
+            workspace_id: session.workspace,
+            session_id: session.id,
+            path: "~/project".into(),
+            sandbox: crate::harness::sandbox(level),
+        })
+    };
+    let read = |call: &'static str, file: &'static str| {
+        let session = &session;
+        let client = &client;
+        async move {
+            let (exit, _, result) = session
+                .bash(client, call, "s", &format!("cat ~/{file} > /dev/null"))
+                .await;
+            let HostResult::Bash { shell_reset, .. } = result else {
+                unreachable!()
+            };
+            (exit == Some(0), shell_reset)
+        }
+    };
+
+    // Strict: both files are outside the workspace; reading asks (and is denied).
+    assert_eq!(read("c1", ".gitconfig").await, (false, None));
+    assert_eq!(asked(&seen).len(), 1, "{:?}", asked(&seen));
+
+    // Relaxed: the shell restarts; home config is readable without asking, the rest isn't.
+    reopen(SandboxLevel::Relaxed).await.unwrap();
+    let reset = Some("the sandbox level changed".to_owned());
+    assert_eq!(read("c2", ".gitconfig").await, (true, reset.clone()));
+    assert_eq!(asked(&seen).len(), 1, "{:?}", asked(&seen));
+    assert_eq!(read("c3", "secret.txt").await, (false, None));
+    assert_eq!(asked(&seen).len(), 2, "{:?}", asked(&seen));
+
+    // Off: anything, without asking.
+    reopen(SandboxLevel::Off).await.unwrap();
+    assert_eq!(read("c4", "secret.txt").await, (true, reset.clone()));
+    assert_eq!(asked(&seen).len(), 2, "{:?}", asked(&seen));
+
+    // Strict again: confined again.
+    reopen(SandboxLevel::Strict).await.unwrap();
+    assert_eq!(read("c5", "secret.txt").await, (false, reset));
+    assert_eq!(read("c6", ".gitconfig").await, (false, None));
+    assert_eq!(asked(&seen).len(), 4, "{:?}", asked(&seen));
+}
