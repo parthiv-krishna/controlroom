@@ -7,6 +7,7 @@
   },
   "filesystem": {
     "read": [
+      "/proc/sys",
       "/nix/store",
       "/nix/store/bbbb-controlroom-pi-bundle",
       "/home/alice/datasets"

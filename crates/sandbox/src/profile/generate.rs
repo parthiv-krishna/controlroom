@@ -37,6 +37,22 @@ const DENY_VARS: [&str; 9] = [
     "SSH_AUTH_SOCK",
 ];
 
+/// Read-only paths every profile gets, at every level (spec §11.2, "Harmless defaults"):
+/// runtime probes that every common toolchain makes at startup, which would otherwise raise an
+/// approval card in every session. nono's implied `default` profile already reads `/proc/self`
+/// (so a process's own `/proc/<pid>`, which nono maps onto it), `/proc/{cpuinfo,meminfo,stat}`,
+/// and the `linux_sysfs_read` group (included below) all of `/sys`, which covers
+/// `/sys/kernel/mm/transparent_hugepage` and `/sys/fs/cgroup` (`cpu.max`, `memory.max`).
+///
+/// - `/proc/sys`: kernel tunables, read by glibc (`vm/overcommit_memory`,
+///   `kernel/ngroups_max`), allocators and runtimes probing huge pages (`vm/nr_hugepages`),
+///   Go (`net/core/somaxconn`), the JVM (`kernel/pid_max`, `kernel/threads-max`,
+///   `vm/max_map_count`), file watchers (`fs/inotify/max_user_watches`) and more. It holds
+///   kernel configuration only (no user data or credentials, as `/sys` which is already
+///   readable), it is read-only here, and file permissions still apply (root-only entries
+///   stay unreadable).
+pub const RUNTIME_READS: [&str; 1] = ["/proc/sys"];
+
 /// Commands that mediated callers may invoke: `git` may run `ssh` (fetch and push over SSH)
 /// even though direct `ssh` is denied.
 const CHAINS: [(&str, &str); 1] = [("git", "ssh")];
@@ -135,7 +151,8 @@ fn strings(paths: &[AbsPath]) -> Vec<String> {
 }
 
 fn filesystem(spec: &Input) -> Filesystem {
-    let mut read = strings(spec.read_only);
+    let mut read: Vec<String> = RUNTIME_READS.iter().map(|p| (*p).to_owned()).collect();
+    read.extend(strings(spec.read_only));
     let mut allow = strings(&spec.writable);
     let mut allow_file = Vec::new();
     // `read` takes files and directories; read-write grants go to allow/allow_file.

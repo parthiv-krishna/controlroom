@@ -340,3 +340,76 @@ fn a_workspace_keeps_home_and_has_no_agent_dirs_or_credentials() {
         Err(ProfileError::SandboxOff)
     );
 }
+
+/// The runtime probes are readable at every level, for agent sessions and workspaces alike,
+/// and never writable.
+#[test]
+fn runtime_probes_are_readable_at_every_level() {
+    use controlroom_sandbox::profile::RUNTIME_READS;
+    for level in [SandboxLevel::Strict, SandboxLevel::Relaxed] {
+        let mut session = full();
+        session.policy.level = level;
+        let mut ws = workspace();
+        ws.policy.level = level;
+        for profile in [
+            generate_profile(&session).unwrap().to_value(),
+            generate_workspace_profile(&ws).unwrap().to_value(),
+        ] {
+            let fs = &profile["filesystem"];
+            for path in RUNTIME_READS {
+                assert!(
+                    fs["read"].as_array().unwrap().contains(&json!(path)),
+                    "{level:?}: {path} not readable: {fs}"
+                );
+                for field in ["allow", "allow_file"] {
+                    let listed = fs[field].as_array().into_iter().flatten();
+                    assert!(listed.into_iter().all(|p| p != path), "{path} is writable");
+                }
+            }
+            // `/sys` (transparent huge pages, cgroup limits) comes from nono's sysfs group.
+            assert!(
+                profile["groups"]["include"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("linux_sysfs_read"))
+            );
+        }
+    }
+}
+
+/// Standing grants land in the profile by access and kind; `/` is never writable.
+#[test]
+fn grants_are_split_by_access_and_kind_and_root_stays_read_only() {
+    let grant = |path: &str, kind, access| PathGrant {
+        path: p(path),
+        kind,
+        access,
+    };
+    let mut spec = workspace();
+    spec.policy.paths = vec![
+        grant("/home/alice/.cache/nix", PathKind::Dir, Access::ReadWrite),
+        grant("/home/alice/notes.txt", PathKind::File, Access::ReadWrite),
+        grant("/home/alice/datasets", PathKind::Dir, Access::Read),
+    ];
+    let profile = generate_workspace_profile(&spec).unwrap().to_value();
+    let fs = &profile["filesystem"];
+    assert!(
+        fs["allow"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("/home/alice/.cache/nix"))
+    );
+    assert_eq!(fs["allow_file"], json!(["/home/alice/notes.txt"]));
+    assert!(
+        fs["read"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("/home/alice/datasets"))
+    );
+
+    spec.policy.paths = vec![grant("/", PathKind::Dir, Access::ReadWrite)];
+    assert_eq!(
+        generate_workspace_profile(&spec),
+        Err(ProfileError::GrantTooBroad(p("/")))
+    );
+}

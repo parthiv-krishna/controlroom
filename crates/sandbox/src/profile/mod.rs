@@ -13,7 +13,7 @@ mod input;
 mod model;
 mod validate;
 
-pub use generate::{generate_profile, generate_workspace_profile};
+pub use generate::{RUNTIME_READS, generate_profile, generate_workspace_profile};
 pub use model::NonoProfile;
 pub use validate::{ProfileError, check_profile_json, validate_spec, validate_workspace_spec};
 

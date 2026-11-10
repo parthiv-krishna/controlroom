@@ -33,6 +33,9 @@ pub enum ProfileError {
         /// The protected path it covers.
         protected: AbsPath,
     },
+    /// A read-write grant of `/`: the whole filesystem writable is never a sandbox.
+    #[error("grant {0} can't be read-write")]
+    GrantTooBroad(AbsPath),
     /// An executable directory is writable by the session (nono refuses it: the session could
     /// plant programs there).
     #[error("executable directory {dir} is writable inside the sandbox (under {writable})")]
@@ -112,10 +115,23 @@ pub(super) fn validate(spec: &Input) -> Result<(), ProfileError> {
     if spec.cwd.as_str() == "/" {
         return Err(ProfileError::RootWorkdir);
     }
+    check_broad(spec)?;
     check_protected(spec)?;
     check_exec_dirs(spec)?;
     check_routes(spec)?;
     check_approvals(spec)
+}
+
+fn check_broad(spec: &Input) -> Result<(), ProfileError> {
+    match spec
+        .policy
+        .paths
+        .iter()
+        .find(|g| g.access == Access::ReadWrite && g.path.parent().is_none())
+    {
+        Some(g) => Err(ProfileError::GrantTooBroad(g.path.clone())),
+        None => Ok(()),
+    }
 }
 
 fn check_protected(spec: &Input) -> Result<(), ProfileError> {
