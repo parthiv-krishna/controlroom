@@ -410,7 +410,9 @@ async fn file_requests(world: &mut World, id: &str) -> Vec<Value> {
 /// Spec §11 "Harmless defaults" and the standing decisions on file requests, end to end with
 /// real pi and nono: a strict session reads the runtime probes without a request; "Always
 /// allow" and "Never" on its file requests carry over to a new session on the machine, which
-/// reads the allowed path and is refused the never-path without any request.
+/// reads the allowed paths and is refused the never-path without any request. One allowed path
+/// is `~/.bash_history`, which nono denies by default (its grant needs `bypass_protection`): the
+/// agent's shell reads it at startup.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs nono 0.80.0, Landlock and pi; run crates/e2e/scripts/acceptance-pi-nono.sh"]
 async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
@@ -427,6 +429,11 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
     let notes = world.devbox.dir("notes");
     std::fs::write(notes.join("allowed.txt"), "allowed-content\n").unwrap();
     std::fs::write(notes.join("never.txt"), "never-content\n").unwrap();
+    std::fs::write(
+        world.devbox.home().join(".bash_history"),
+        "echo history-content\n",
+    )
+    .unwrap();
     let devbox = world.devbox.id.clone();
     let strict_session = |world: &World| {
         let mut params = world.create_params(&[(&devbox, "~/src/api")], json!({}));
@@ -444,7 +451,8 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
     let bash =
         |call: &str, command: &str| Reply::tool_call(call, "bash", json!({"command": command}));
 
-    // 1. The runtime probes: no request.
+    // 1. The runtime probes: no request. The shell asks for its history when it starts: "Always
+    // allow".
     mock.push([
         bash(
             "call_probe",
@@ -452,7 +460,10 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
         ),
         Reply::text("Probed."),
     ]);
-    world.prompt(&first, "Probe the huge pages.").await;
+    let mark = world.turn_mark(&first);
+    world.send_prompt(&first, "Probe the huge pages.").await;
+    answer_file_request(&mut world, &first, "/.bash_history", "allow-always").await;
+    world.wait_turn(&first, mark).await;
     assert!(seen(&mock, 0).contains("probed"), "{}", seen(&mock, 0));
 
     // 2. "Always allow" on one path, "Never" on another.
@@ -482,11 +493,16 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
     let profiles = world.ui.ok("sandbox.profiles", json!({})).await;
     let profile = &profiles["profiles"][0];
     assert_eq!(profile["scope"]["machine_id"], json!(devbox));
+    let granted: Vec<&str> = profile["grants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|g| g["value"].as_str())
+        .collect();
     assert!(
-        profile["grants"][0]["value"]
-            .as_str()
-            .unwrap()
-            .ends_with("/notes/allowed.txt")
+        granted.iter().any(|g| g.ends_with("/.bash_history"))
+            && granted.iter().any(|g| g.ends_with("/notes/allowed.txt")),
+        "{granted:?}"
     );
     assert!(
         profile["never"][0]
@@ -507,13 +523,14 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
     mock.push([
         bash(
             "call_again",
-            "cat ~/notes/allowed.txt; cat ~/notes/never.txt 2>&1 || echo refused",
+            "cat ~/.bash_history ~/notes/allowed.txt; cat ~/notes/never.txt 2>&1 || echo refused",
         ),
         Reply::text("Done."),
     ]);
     world.prompt(&second, "Read the notes again.").await;
     let after = seen(&mock, from);
     assert!(after.contains("allowed-content"), "{after}");
+    assert!(after.contains("history-content"), "{after}");
     assert!(
         after.contains("refused") && !after.contains("never-content"),
         "{after}"
