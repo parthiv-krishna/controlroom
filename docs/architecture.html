@@ -219,7 +219,7 @@ nix/             rust.nix web.nix pi.nix module.nix tests/ (NixOS VM tests)</cod
 <li><b>Commands</b> (all carry an <code>op_id</code>):
 <ul>
 <li><b>session lifecycle:</b> <code>session.create {workspaces[{machine_id, path}], name?, parent_id?, sandbox?, prompt?}</code> (every workspace's machine must be connected), <code>session.workspace_add|remove</code>, <code>prompt</code>, <code>cancel</code>, <code>close</code>, <code>reopen</code>, <code>resume</code>, <code>start_fresh</code>, <code>delete</code>;</li>
-<li><b>session state:</b> <code>update</code> (name, auto_send, auto_continue, budget), <code>mark_read</code>, <code>mark_unread</code>, <code>set_option</code>;</li>
+<li><b>session state:</b> <code>update</code> (name, auto_send, auto_continue, budget), <code>mark_read</code>, <code>mark_unread</code>, <code>set_option</code>, <code>set_sandbox_level</code> (§11);</li>
 <li><b>queue:</b> <code>queue.send_now|edit|remove|reorder|resume</code>;</li>
 <li><b>requests:</b> <code>request.respond {request_id, choice|answers, then?}</code>, one method for permissions, questions, dialogs, host sandbox approvals and waits for terminal input;</li>
 <li><b>todos:</b> <code>todo.add|update|remove|reorder</code>;</li>
@@ -552,6 +552,14 @@ sessions/&lt;id&gt;/profile.json   generated nono profile (absolute path; never 
 <li><code>relaxed</code>: adds read-only home config such as git;</li>
 <li><code>off</code>: shown with a warning badge (shells, jobs and file tools on the hosts run unsandboxed).</li>
 </ul>
+<p><b>Changing a session's level after creation</b> (<code>session.set_sandbox_level {level | null}</code>, from the level picker in the header's sandbox popover; <code>null</code> is "Use defaults"). The new level is explicit and wins in either direction, as at creation; the summary shows it (and <code>explicit</code>) at once. When the level the session runs at changes, it applies everywhere the level matters:</p>
+<ul>
+<li><b>the agent:</b> a live agent restarts and resumes its conversation (the same relaunch as a restarting start fresh), so its server sandbox matches (off runs pi unsandboxed). A running run stops as with any restart, and nothing new is written to the old process meanwhile. A stopped agent gets the level when it next starts. Refused (<code>busy</code>) while the agent is starting, and for closed sessions;</li>
+<li><b>the workspaces:</b> each is reopened with the new level (<code>workspace.open</code>), which rewrites both profiles (the agent's and the user's sandboxed terminals', with the grants, never-list and runtime reads) and restarts the agent's shells under it, in their last directory; their next command says so (<code>shell_reset</code>: "the sandbox level changed"). A host that is offline gets it when it reconnects (every reconnect reopens the workspaces);</li>
+<li><b>left running:</b> background jobs already running and the user's own sandboxed terminals keep the sandbox they started with until they end (the confirm says so; reopen a terminal to get the new level);</li>
+<li><b>the agent learns of it</b> through a non-waking note in its next turn ("The user changed the sandbox level: it is now relaxed …"), and the timeline shows a thin divider ("sandbox → relaxed"). The controller logs each change with the device.</li>
+</ul>
+<p>The UI confirms a change with one line ("Restart the agent with relaxed?"); off gets the red treatment and the "Not sandboxed" warning. Picking the level the session already runs at (or "Use defaults" when they match) only changes <code>explicit</code>: nothing restarts.</p>
 <p><code>doctor</code> (of the agent daemon and of each host) reports the Landlock ABI and which nono is used (on hosts: bundled with <code>controlroomd</code>, or configured in <code>sandbox.toml</code>) with its version; a version other than the pinned one is a warning.</p>
 <h3>11.5b Default mediated commands</h3>
 <p>nono <b>command mediation</b> runs a listed command (resolved by a PATH shim, kernel-enforced; calling the binary directly is blocked) under its <i>own</i> policy: files, network, credentials, and a decision of run, approve-each-time or deny. The default set is kept deliberately small:</p>
@@ -579,7 +587,7 @@ sessions/&lt;id&gt;/profile.json   generated nono profile (absolute path; never 
 </ul>
 A session-level grant is added on top. (Resolved: yes.)</li>
 <li><b>An explicit per-session level</b> (new-session dialog or template) is an affirmative user choice and overrides the defaults in either direction; a session looser than its defaults shows a badge (off shows the warning badge).</li>
-<li><b>Edits apply to new sessions and restarts.</b> Running sessions keep their profile until restarted. The in-session "Remove · restarts agent" applies immediately.</li>
+<li><b>Edits apply to new sessions and restarts.</b> Running sessions keep their profile until restarted. The in-session "Remove · restarts agent" applies immediately, and so does a session's own level change (above).</li>
 </ul>
 
 <h2 id="controller">12. Controller and web server</h2>
