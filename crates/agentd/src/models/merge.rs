@@ -1,5 +1,6 @@
 //! What Settings › Models adds to a launch: routes, synthetic-token claims, and the session's
-//! stored keys, gateways and defaults ([`ManagedProviders`]). Server-declared providers are
+//! stored keys (with the stand-ins of pasted subscription tokens), gateways and defaults
+//! ([`ManagedProviders`]). Server-declared providers are
 //! left alone (the server's configuration wins on a name clash), so the server's routes,
 //! `models.json` entries and keys are never replaced.
 

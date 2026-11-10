@@ -1,7 +1,9 @@
 //! `controlroom-agentd credential <session> <provider>`: prints a provider's real credential for
 //! nono's `credential_capture` (spec §11.3): its API key, or for an OAuth provider a fresh
 //! access token from the controlroom-pi bundle's helper, refreshed by pi under the agent dir's
-//! `auth.json` lock (the agent daemon is the only refresher of model credentials).
+//! `auth.json` lock (the agent daemon is the only refresher of model credentials). A
+//! subscription token pasted in Settings › Models is a stored key: printed as is, never
+//! refreshed.
 //!
 //! nono runs this host-side, unsandboxed, and injects stdout into requests on the provider's
 //! credential route. The credential goes to stdout only, without a trailing newline; errors go
