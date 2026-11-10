@@ -180,9 +180,9 @@ async fn a_file_request_names_its_machine() {
         option("never", "Never", OptionStyle::Deny),
         option("deny", "Deny", OptionStyle::Deny),
     ];
-    let approval = h
-        .machines
-        .raise_approval(devbox, id, workspace, body, options, true);
+    let approval =
+        h.machines
+            .raise_approval(devbox, id, workspace, body.clone(), options.clone(), true);
     h.wait_state(id, SessionState::AwaitingPermission).await;
     let request = &h.summary(id).requests[0];
     // Raised from the user's own terminal: marked as theirs, with the same machine labels.
@@ -214,4 +214,13 @@ async fn a_file_request_names_its_machine() {
         .wait("the answer", move |m| m.answers(devbox).len() == 1)
         .await;
     assert_eq!(h.machines.answers(devbox)[0].option_id, "allow-always");
+
+    // Nobody can answer a request of a closed session: it is denied, never "Never".
+    h.rt.close(h.op(id)).await.unwrap();
+    h.machines
+        .raise_approval(devbox, id, workspace, body, options, true);
+    h.machines
+        .wait("the denial", move |m| m.answers(devbox).len() == 2)
+        .await;
+    assert_eq!(h.machines.answers(devbox)[1].option_id, "deny");
 }

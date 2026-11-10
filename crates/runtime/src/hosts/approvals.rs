@@ -12,7 +12,7 @@
 //!   can't.
 
 use controlroom_protocol::RpcError;
-use controlroom_protocol::host::options::{ALLOW_ALWAYS, NEVER};
+use controlroom_protocol::host::options::{ALLOW_ALWAYS, DENY, NEVER};
 use controlroom_protocol::host::{
     ApprovalRespondParams, HostApproval, HostRequest, ToolWaitingInputParams,
 };
@@ -269,7 +269,8 @@ impl Core {
         }
     }
 
-    /// Denies an approval with its deny option.
+    /// Denies an approval with its plain deny option (never "Never", which would also deny the
+    /// path from then on).
     fn respond_approval(
         &mut self,
         machine: MachineId,
@@ -279,8 +280,13 @@ impl Core {
     ) {
         let deny = options
             .iter()
-            .find(|o| o.style == OptionStyle::Deny)
-            .map_or_else(|| "deny".to_owned(), |o| o.id.clone());
+            .find(|o| o.id == DENY)
+            .or_else(|| {
+                options
+                    .iter()
+                    .find(|o| o.style == OptionStyle::Deny && o.id != NEVER)
+            })
+            .map_or_else(|| DENY.to_owned(), |o| o.id.clone());
         self.send_approval_response(machine, approval, deny, reason);
     }
 

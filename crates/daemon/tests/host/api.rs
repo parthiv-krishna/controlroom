@@ -372,7 +372,7 @@ async fn always_and_never_apply_to_the_running_workspace() {
     let pending = ask(".cache/nix/fetcher.sqlite", "ReadWrite");
     let approval = raised().await;
     let ids: Vec<&str> = approval.options.iter().map(|o| o.id.as_str()).collect();
-    assert_eq!(ids, ["allow-session", "allow-always", "never", "deny"]);
+    assert_eq!(ids, ["allow-session", "allow-always", "deny", "never"]);
     assert!(matches!(
         approval.body,
         RequestBody::Path {

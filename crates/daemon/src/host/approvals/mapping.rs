@@ -50,7 +50,7 @@ pub fn path_access(access: FileAccess) -> Option<PathAccess> {
 /// without asking (unknown request types or access kinds).
 pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
     let prompt = approval.prompt()?;
-    let (body, allow) = match &approval.subject {
+    let (body, options) = match &approval.subject {
         ApprovalSubject::Command { command, args, .. } => {
             let line = if args.is_empty() {
                 command.clone()
@@ -67,7 +67,7 @@ pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
                     cwd: None,
                 },
             };
-            (body, vec![allow_once()])
+            (body, vec![allow_once(), deny()])
         }
         ApprovalSubject::Capability { path, access } => {
             let body = RequestBody::Path {
@@ -82,16 +82,17 @@ pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
                 label: label.into(),
                 style,
             };
-            let allow = vec![
+            let options = vec![
                 option(
                     ALLOW_SESSION,
                     "Allow for this session",
                     OptionStyle::AllowAlways,
                 ),
                 option(ALLOW_ALWAYS, "Always allow", OptionStyle::AllowAlways),
+                deny(),
                 option(NEVER, "Never", OptionStyle::Deny),
             ];
-            (body, allow)
+            (body, options)
         }
         ApprovalSubject::Endpoint {
             method,
@@ -103,7 +104,7 @@ pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
                 method: method.clone(),
                 url: format!("{upstream}{path}"),
             };
-            (body, vec![allow_once()])
+            (body, vec![allow_once(), deny()])
         }
         ApprovalSubject::Network { host, port } => {
             let url = match port {
@@ -114,22 +115,26 @@ pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
                 method: "CONNECT".into(),
                 url,
             };
-            (body, vec![allow_once()])
+            (body, vec![allow_once(), deny()])
         }
         ApprovalSubject::Unknown { .. } => return None,
     };
-    let mut options = allow;
-    options.push(RequestOption {
-        id: DENY.into(),
-        label: "Deny".into(),
-        style: OptionStyle::Deny,
-    });
     Some(Shown {
         title: prompt.title,
         detail: prompt.reason,
         body,
         options,
     })
+}
+
+/// Plain denial; listed before "Never", so a client that takes the first deny-styled option
+/// (e.g. to deny with a reason) never answers "Never" by accident.
+fn deny() -> RequestOption {
+    RequestOption {
+        id: DENY.into(),
+        label: "Deny".into(),
+        style: OptionStyle::Deny,
+    }
 }
 
 fn allow_once() -> RequestOption {
@@ -248,7 +253,7 @@ mod tests {
         let outside = file("/home/alice/notes.txt");
         assert_eq!(outside.detail.as_deref(), Some("intercepted"));
         let ids: Vec<&str> = outside.options.iter().map(|o| o.id.as_str()).collect();
-        assert_eq!(ids, [ALLOW_SESSION, ALLOW_ALWAYS, NEVER, DENY]);
+        assert_eq!(ids, [ALLOW_SESSION, ALLOW_ALWAYS, DENY, NEVER]);
         assert!(matches!(
             outside.body,
             RequestBody::Path {
