@@ -10,8 +10,9 @@
 // - Memory is bounded: at most MAX_ITEMS items (the oldest are trimmed) and MAX_RAW raw frames.
 // - The reading view stays quiet: retries fold into their run, a notice repeated verbatim (an
 //   extension's "ready" at each agent start) shows once with a count, and a session-info item
-//   shows only the values that changed (the first ones are what the header already shows).
-import type { RawFrame, Request, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
+//   shows only the values that changed (the first ones are what the header already shows); a new
+//   sandbox level (the user changed it) always shows.
+import type { RawFrame, Request, SandboxLevel, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
 
 /** Items kept per timeline; older ones are trimmed (the protocol has no paging yet). */
 export const MAX_ITEMS = 5000;
@@ -45,8 +46,8 @@ const before = (a: ItemCell, seqFrom: number, arrival: number): boolean =>
  */
 export const hiddenInTimeline = (item: TimelineItem): boolean => item.kind === 'usage' && item.scope === 'turn';
 
-/** The title, model and thinking level a session-info item reports. */
-export type SessionInfo = Partial<Record<'title' | 'model' | 'thinking', string>>;
+/** The title, model and thinking level a session-info item reports, and a new sandbox level. */
+export type SessionInfo = Partial<Record<'title' | 'model' | 'thinking', string>> & { sandbox?: SandboxLevel };
 const INFO_FIELDS = ['title', 'model', 'thinking'] as const;
 
 /** A request item's request; a subagent's (shown in its parent) is answered on the subagent. */
@@ -248,6 +249,7 @@ export class Timeline {
           if (before[f] !== undefined && before[f] !== v) changed[f] = v;
           now[f] = v;
         }
+        if (item.sandbox) changed.sandbox = item.sandbox;
         known.set(item.actor, now);
         if (!Object.keys(changed).length) {
           const host = rows.at(-1);

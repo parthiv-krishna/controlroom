@@ -250,7 +250,7 @@ const jobs = (s, ts) => {
   ];
 };
 
-/** File requests on devbox answered with "Always allow" and "Never" (made standing on the machine). */
+/** File requests on devbox answered with "Always allow" and "Never" (made standing on the machine), then the sandbox turned off. */
 const fileDecisions = (s, ts) => {
   const devbox = fixture.snapshot.machines.find((m) => m.name === 'devbox').id;
   const request = (id, seq, at, path, access, option, label) => ({
@@ -276,6 +276,8 @@ const fileDecisions = (s, ts) => {
     request('f.always', s + 3, ts + 900, '/home/alice/.cache/nix/fetcher-cache-v4.sqlite', 'read_write', 'allow-always', 'Always allow (devbox)'),
     request('f.never', s + 5, ts + 1800, '/home/alice/.bash_history', 'read', 'never', 'Never (devbox)'),
     agentMsg('f.reply', s + 8, ts + 2600, 'The bundle is built.'),
+    // Then the user turned the session's sandbox off.
+    { ...base('f.sandbox', s + 10, s + 10, ts + 3000), kind: 'session_info', title: null, model: null, thinking: null, sandbox: 'off' },
   ];
 };
 

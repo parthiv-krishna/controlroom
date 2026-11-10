@@ -261,7 +261,7 @@ export class FixtureTransport implements Transport {
 const ACK_METHODS = new Set<UiMethod>([
   'unsubscribe', 'machines.remove', 'machines.reconnect', 'machines.upgrade', 'keys.delete', 'projects.delete',
   'tasks.delete', 'grants.revoke', 'devices.remove', 'schedules.delete', 'client.focus', 'client.activity', 'session.cancel',
-  'session.close', 'session.reopen', 'session.resume', 'session.delete', 'session.update', 'session.set_option',
+  'session.close', 'session.reopen', 'session.resume', 'session.delete', 'session.update', 'session.set_option', 'session.set_sandbox_level',
   'queue.edit', 'queue.remove', 'queue.reorder', 'queue.resume', 'todo.remove', 'todo.reorder', 'sandbox.revoke',
   'session.terminal_close',
 ] satisfies AckMethod[]);

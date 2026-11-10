@@ -1,13 +1,13 @@
 <script lang="ts">
-  // Header badges: the sandbox level (popover with the session's grants; the "looser than
-  // defaults" badge, `off` as the warning badge), peers (whom the session may contact), and "idle,
+  // Header badges: the sandbox level (popover with the level picker and the session's grants; the
+  // "looser than defaults" badge, `off` as the warning badge), peers (whom the session may contact), and "idle,
   // but live work" (jobs, subagents or open asks will start the next turn).
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
-  import { levelLabel } from '../model/sandbox';
+  import { LEVELS, OFF_WARNING, levelChange, levelLabel } from '../model/sandbox';
   import { ago } from '../model/status';
-  import type { FeedSession, SandboxGrant, SessionDetail } from '../protocol';
-  import { dismissable } from '../ui/actions';
+  import type { FeedSession, SandboxGrant, SandboxLevel, SessionDetail } from '../protocol';
+  import { dismissable, fitInView } from '../ui/actions';
   import Icon from '../ui/Icon.svelte';
 
   let { s, detail }: { s: FeedSession; detail: SessionDetail | null } = $props();
@@ -27,6 +27,22 @@
   );
   const REL: Record<string, string> = { task: 'same task', parent: 'parent', child: 'subagent', grant: 'granted', unknown: '' };
   const SCOPE: Record<string, string> = { once: 'once', session: 'this session', standing: 'standing', unknown: '' };
+  /** The picker's choice: the explicit level, or the defaults. */
+  const choice = $derived<SandboxLevel | 'default'>(sb.explicit ? sb.level : 'default');
+  const choices = $derived([{ value: 'default' as const, label: `Defaults (${levelLabel(sb.default_level).toLowerCase()})`, hint: 'The machine and project defaults' }, ...LEVELS]);
+  const canChange = $derived(app.client.online && s.state !== 'closed');
+
+  /** Sets the level (after confirming the restart a new level means); `default` drops the explicit one. */
+  async function setLevel(to: SandboxLevel | 'default') {
+    if (to === choice) return;
+    const level = to === 'default' ? null : to;
+    const confirm = levelChange(sb, level);
+    if (confirm) {
+      pop = null;
+      if (!(await app.dialogs.confirm(confirm))) return;
+    }
+    await app.client.call('session.set_sandbox_level', { ...onSession(s), level });
+  }
 
   async function revoke(g: SandboxGrant) {
     if (g.scope === 'standing') {
@@ -49,10 +65,16 @@
       <Icon name={sb.level === 'off' ? 'shieldOff' : 'shield'} size={12} />{sb.level === 'off' ? 'no sandbox' : sb.level}{#if sb.grants.length}<span class="n">+{sb.grants.length}</span>{/if}
     </button>
     {#if pop === 'sandbox'}
-      <div class="pop" role="dialog" aria-label="Sandbox" use:dismissable={{ close, anchor: sandboxAnchor }}>
+      <div class="pop" role="dialog" aria-label="Sandbox" use:dismissable={{ close, anchor: sandboxAnchor }} use:fitInView>
         <b>Sandbox: {levelLabel(sb.level)}</b>
         <div class="small muted">{sb.explicit ? 'Chosen for this session' : 'From the machine and project defaults'}{#if sb.looser_than_default} · looser than the defaults ({levelLabel(sb.default_level)}){/if}</div>
-        {#if sb.level === 'off'}<div class="off">Not sandboxed: the agent can read and write anything your user can.</div>{/if}
+        {#if sb.level === 'off'}<div class="off">{OFF_WARNING}</div>{/if}
+        <div class="levels" role="radiogroup" aria-label="Sandbox level">
+          {#each choices as c (c.value)}
+            <button role="radio" aria-checked={choice === c.value} class:on={choice === c.value} class:danger={c.value === 'off'} title={c.hint} disabled={!canChange} onclick={() => setLevel(c.value)}>{c.label}</button>
+          {/each}
+        </div>
+        <div class="small muted">A new level restarts the agent and its shells.</div>
         <div class="sec-h">Grants</div>
         {#each sb.grants as g (g.id)}
           <div class="grant">
@@ -73,7 +95,7 @@
     <span class="wrap" bind:this={peersAnchor}>
       <button class="sbx" aria-expanded={pop === 'peers'} title="Sessions this agent may contact" onclick={() => (pop = pop === 'peers' ? null : 'peers')}>⇄ {peers.length} peer{peers.length === 1 ? '' : 's'}</button>
       {#if pop === 'peers'}
-        <div class="pop" role="dialog" aria-label="Peers" use:dismissable={{ close, anchor: peersAnchor }}>
+        <div class="pop" role="dialog" aria-label="Peers" use:dismissable={{ close, anchor: peersAnchor }} use:fitInView>
           <b>Peers</b>
           {#each peers as p (p.peer.session_id)}
             <button class="peer" onclick={() => openPeer(p.peer.session_id)}>
@@ -101,6 +123,12 @@
   .live { cursor: default; color: var(--info); border-style: dashed; }
   .pop { position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; width: min(440px, 86vw); background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 10px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
   .off { background: color-mix(in srgb, var(--bad) 13%, var(--bg2)); border-radius: 6px; padding: 6px 8px; }
+  .levels { display: flex; flex-wrap: wrap; gap: 2px; background: var(--bg3); border-radius: 8px; padding: 2px; margin-top: 4px; }
+  .levels button { flex: 1 1 auto; background: none; border: none; color: var(--muted); font: inherit; font-size: 12.5px; padding: 4px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  .levels button:disabled { cursor: default; opacity: 0.6; }
+  .levels button.on { background: var(--bg2); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+  .levels button.danger { color: var(--bad); }
+  .levels button.danger.on { font-weight: 650; background: color-mix(in srgb, var(--bad) 13%, var(--bg2)); }
   .grant { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; border-top: 1px solid var(--line); }
   .gk { font: 650 10.5px var(--mono); text-transform: uppercase; padding: 0 5px; border-radius: 5px; background: var(--bg3); }
   .scope { font-size: 10.5px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); }

@@ -1,8 +1,8 @@
-// Sandbox levels in the new-session dialog (spec §11.6). The session's own `SandboxInfo` comes from
-// the server; before a session exists, the dialog previews its default level from the profiles as
-// the server computes it: the strictest level among its workspaces' machines and its tasks'
-// projects.
-import type { MachineId, ProjectId, SandboxLevel, SandboxProfile } from '../protocol';
+// Sandbox levels in the new-session dialog and a session's header (spec §11.6). The session's own
+// `SandboxInfo` comes from the server; before a session exists, the dialog previews its default
+// level from the profiles as the server computes it: the strictest level among its workspaces'
+// machines and its tasks' projects.
+import type { MachineId, ProjectId, SandboxInfo, SandboxLevel, SandboxProfile } from '../protocol';
 
 export const LEVELS: { value: SandboxLevel; label: string; hint: string }[] = [
   { value: 'strict', label: 'Strict', hint: 'Workspace directories and session dirs only' },
@@ -15,6 +15,31 @@ const STRICTNESS: Record<SandboxLevel, number> = { strict: 2, relaxed: 1, off: 0
 
 /** Whether `level` confines less than `than`. */
 export const looser = (level: SandboxLevel, than: SandboxLevel): boolean => STRICTNESS[level] < STRICTNESS[than];
+
+/** The red warning of level off, wherever it is chosen or shown. */
+export const OFF_WARNING = 'Not sandboxed: the agent can read and write anything your user can.';
+
+/** The confirmation of a session's level change. */
+export interface LevelConfirm {
+  title: string;
+  body: string;
+  ok: string;
+  danger: boolean;
+}
+
+/**
+ * What setting a session's level to `next` (`null`: back to the defaults) asks first: `null` when the
+ * level it runs at stays the same (only `explicit` changes; nothing restarts), else a confirmation of
+ * the restart. Off gets the red treatment.
+ */
+export function levelChange(info: SandboxInfo, next: SandboxLevel | null): LevelConfirm | null {
+  const level = next ?? info.default_level;
+  if (level === info.level) return null;
+  const body = 'A running turn stops; the agent’s shells restart. Running jobs and your terminals keep the old sandbox until they end.';
+  if (level === 'off') return { title: 'Restart the agent without a sandbox?', body: `${OFF_WARNING} ${body}`, ok: 'Turn off and restart', danger: true };
+  const name = levelLabel(level).toLowerCase();
+  return { title: next === null ? `Restart the agent with the defaults (${name})?` : `Restart the agent with ${name}?`, body, ok: 'Restart', danger: false };
+}
 
 /** The default level of a new session on `machines` linked to tasks of `projects` (`strict` when nothing is set). */
 export function defaultLevel(profiles: readonly SandboxProfile[], machines: readonly MachineId[], projects: readonly ProjectId[]): SandboxLevel {

@@ -44,3 +44,14 @@ export const autofocus: Action<HTMLElement> = (node) => {
     if (node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement) node.setSelectionRange(node.value.length, node.value.length);
   });
 };
+
+/**
+ * For a popup positioned under its anchor (`left: 0`): shifts it left, once mounted, as far as it
+ * overflows the window's right edge (a badge near the right of a phone screen), never past the left.
+ */
+export const fitInView: Action<HTMLElement> = (node) => {
+  const margin = 8;
+  const rect = node.getBoundingClientRect();
+  const over = rect.right - (window.innerWidth - margin);
+  if (over > 0) node.style.left = `${-Math.min(over, Math.max(0, rect.left - margin))}px`;
+};

@@ -6,7 +6,7 @@ import { groupSessions } from './grouping';
 import { contentText, deepLinkHash, guessDeviceName, lineDiff, parseDeepLink } from './misc';
 import { notes } from './notifications';
 import { UNASSIGNED, health, inScope, needsYouElsewhere, taskIn, type Ctx } from './projects';
-import { checkProfilePath, defaultLevel, looser } from './sandbox';
+import { OFF_WARNING, checkProfilePath, defaultLevel, levelChange, looser } from './sandbox';
 import { humanSchedule, inTime, parseCron, runText, runWhen } from './schedule';
 import { connKind, connLabel, statusKind, statusLabel, statusTitle } from './status';
 import { columnTasks, orderFor, rollup, suggestMove, taskPrompt } from './tasks';
@@ -274,6 +274,19 @@ describe('sandbox defaults', () => {
     expect(defaultLevel([], [devbox.id], [])).toBe('strict');
     expect(looser('off', 'relaxed')).toBe(true);
     expect(looser('strict', 'relaxed')).toBe(false);
+  });
+
+  it('confirms a session level change only when the level it runs at changes; off in red', () => {
+    const info = { level: 'strict' as const, default_level: 'strict' as const, explicit: false, looser_than_default: false, grants: [] };
+    expect(levelChange(info, 'strict')).toBeNull();
+    expect(levelChange(info, null)).toBeNull();
+    expect(levelChange(info, 'relaxed')).toMatchObject({ title: 'Restart the agent with relaxed?', danger: false });
+    expect(levelChange(info, 'relaxed')?.body).toContain('Running jobs and your terminals keep the old sandbox');
+    const off = levelChange(info, 'off');
+    expect(off).toMatchObject({ title: 'Restart the agent without a sandbox?', danger: true });
+    expect(off?.body.startsWith(OFF_WARNING)).toBe(true);
+    const explicit = { ...info, level: 'off' as const, explicit: true, looser_than_default: true };
+    expect(levelChange(explicit, null)?.title).toBe('Restart the agent with the defaults (strict)?');
   });
 });
 

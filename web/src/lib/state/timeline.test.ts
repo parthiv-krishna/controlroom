@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TimelineItem, TimelineOp, ToolOutput } from '../protocol';
+import type { SandboxLevel, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
 import { MAX_ITEMS, MAX_RAW, RawFrames, Timeline } from './timeline.svelte';
 
 const base = { actor: 'root', ts: 0, streaming: false } as const;
@@ -141,8 +141,8 @@ describe('Timeline folding', () => {
     ...base, id, seq_from: seq, seq_to: seq, kind: 'retry', attempt, max_attempts: 3, phase: 'succeeded', delay_ms: null, error: '503',
   });
   const notice = (id: string, seq: number, text: string): TimelineItem => ({ ...base, id, seq_from: seq, seq_to: seq, kind: 'notice', level: 'info', text });
-  const info = (id: string, seq: number, fields: { model?: string; thinking?: string }): TimelineItem => ({
-    ...base, id, seq_from: seq, seq_to: seq, kind: 'session_info', title: null, model: fields.model ?? null, thinking: fields.thinking ?? null, sandbox: null,
+  const info = (id: string, seq: number, fields: { model?: string; thinking?: string; sandbox?: SandboxLevel }): TimelineItem => ({
+    ...base, id, seq_from: seq, seq_to: seq, kind: 'session_info', title: null, model: fields.model ?? null, thinking: fields.thinking ?? null, sandbox: fields.sandbox ?? null,
   });
 
   it('folds retries into their run; a retry before any run stays a row', () => {
@@ -168,6 +168,14 @@ describe('Timeline folding', () => {
     expect(ids(t)).toEqual(['m', 'i3']);
     expect(t.infoChanges.get('i3')).toEqual({ model: 'B' });
     expect(t.rowOf('i1')?.id).toBe('m');
+  });
+
+  it('always shows a new sandbox level, even the first one', () => {
+    const t = new Timeline();
+    t.apply([up(msg('m', 1)), up(info('i1', 2, { model: 'A' })), up(info('s1', 3, { sandbox: 'relaxed' })), up(info('s2', 4, { sandbox: 'off' }))], 0);
+    expect(ids(t)).toEqual(['m', 's1', 's2']);
+    expect(t.infoChanges.get('s1')).toEqual({ sandbox: 'relaxed' });
+    expect(t.infoChanges.get('s2')).toEqual({ sandbox: 'off' });
   });
 });
 
