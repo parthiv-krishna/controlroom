@@ -10,6 +10,9 @@
 //! never stored or logged by the controller. So is every terminal of the user's own that is
 //! opened or closed (`session.terminal_*`; the device also fills `by`, for the agent daemon's
 //! and the host's logs).
+//!
+//! An answered `request.respond` may also change the sandbox defaults: "Always allow" and
+//! "Never" on a file request (see [`sandbox_decisions`]).
 
 use std::sync::Arc;
 
@@ -19,7 +22,7 @@ use controlroom_protocol::session::PromptOrigin;
 use controlroom_protocol::{ErrorData, RpcError};
 use serde_json::{Map, Value};
 
-use super::{Conn, Reply, sandbox};
+use super::{Conn, Reply, sandbox, sandbox_decisions};
 use crate::errors::{internal, invalid_params, store_error};
 use crate::hub::agentd_unavailable;
 
@@ -210,6 +213,9 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
         .map_err(agentd_error)?;
     if let Some(params) = logged {
         log_terminal(conn, method, &params, &value);
+    }
+    if method == "request.respond" {
+        sandbox_decisions::remember(conn, &value)?;
     }
     Ok(Reply { value, after: None })
 }

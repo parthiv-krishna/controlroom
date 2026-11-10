@@ -301,13 +301,15 @@ fn golden_workspace_open() {
                 grants: vec![],
                 domains: vec!["example.com".into()],
                 mediated: vec![],
+                never: vec!["~/.bash_history".into()],
             },
         },
         json!({
             "workspace_id": WID,
             "session_id": SID,
             "path": "~/src/api",
-            "sandbox": {"level": "strict", "grants": [], "domains": ["example.com"], "mediated": []}
+            "sandbox": {"level": "strict", "grants": [], "domains": ["example.com"], "mediated": [],
+                        "never": ["~/.bash_history"]}
         }),
     );
     golden(

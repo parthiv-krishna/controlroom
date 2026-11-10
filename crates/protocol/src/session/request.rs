@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{RemotePath, RequestId, SessionId, UnixMillis};
+use crate::ids::{MachineId, RemotePath, RequestId, SessionId, UnixMillis};
 use crate::session::{DeviceRef, PeerRef};
 
 /// What a request asks for.
@@ -138,6 +138,16 @@ pub enum RequestBody {
         path: RemotePath,
         /// The access asked for.
         access: PathAccess,
+        /// Whether the path is under the workspace root (filled by the host).
+        #[serde(default)]
+        in_workspace: Option<bool>,
+        /// The machine whose sandbox asked (filled by the agent daemon): "Always allow" and
+        /// "Never" change this machine's sandbox defaults.
+        #[serde(default)]
+        machine_id: Option<MachineId>,
+        /// That machine's display name.
+        #[serde(default)]
+        machine: Option<String>,
     },
     /// Call an HTTP endpoint through the sandbox proxy.
     Endpoint {

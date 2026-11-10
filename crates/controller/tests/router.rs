@@ -355,6 +355,7 @@ async fn the_real_host_daemon_runs_routed_calls_across_a_link_drop() {
                 grants: Vec::new(),
                 domains: Vec::new(),
                 mediated: Vec::new(),
+                never: Vec::new(),
             },
         }),
     );

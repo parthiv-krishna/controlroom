@@ -126,6 +126,11 @@ pub struct SandboxSpec {
     pub domains: Vec<String>,
     /// Mediated commands beyond the built-in defaults.
     pub mediated: Vec<MediatedCommand>,
+    /// Paths denied without asking ("never"): absolute or `~/…` (the host expands `~`). A
+    /// file access request for one of them, or for anything under one, is denied at once and
+    /// never shown. A standing grant covering the path still wins.
+    #[serde(default)]
+    pub never: Vec<String>,
 }
 
 /// A session's sandbox, as shown in the session header.

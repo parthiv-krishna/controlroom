@@ -1,9 +1,11 @@
 //! Sandbox defaults per machine and project (spec §11.6). Each edit is applied inside one
 //! transaction, so concurrent edits of the same profile never lose each other.
 
-use controlroom_protocol::ids::{MachineId, ProjectId};
-use controlroom_protocol::session::SandboxLevel;
-use controlroom_protocol::ui::{ProfileChange, ProfileScope, SandboxProfile};
+use controlroom_protocol::ids::{GrantId, MachineId, ProjectId, UnixMillis};
+use controlroom_protocol::session::{
+    DeviceRef, GrantScope, PathAccess, SandboxGrant, SandboxLevel,
+};
+use controlroom_protocol::ui::{NewGrant, ProfileChange, ProfileScope, SandboxProfile};
 use rusqlite::OptionalExtension;
 
 use super::{OwnerId, Store, StoreError, StoreResult, enum_str, json_col, parse, to_json};
@@ -38,6 +40,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawProfile> {
             grants: json_col(row, 3)?,
             domains: json_col(row, 4)?,
             mediated: json_col(row, 5)?,
+            never: json_col(row, 6)?,
         },
     ))
 }
@@ -57,10 +60,10 @@ fn from_raw((kind, id, level, mut profile): RawProfile) -> StoreResult<SandboxPr
     Ok(profile)
 }
 
-const COLUMNS: &str = "scope_kind, scope_id, level, grants, domains, mediated";
+const COLUMNS: &str = "scope_kind, scope_id, level, grants, domains, mediated, never";
 
-/// Applies one change to a profile.
-fn apply(profile: &mut SandboxProfile, change: &ProfileChange) {
+/// Applies one change to a profile; `by` made it.
+fn apply(profile: &mut SandboxProfile, change: &ProfileChange, by: Option<&DeviceRef>) {
     match change {
         ProfileChange::SetLevel { level } => profile.level = Some(*level),
         ProfileChange::ClearLevel => profile.level = None,
@@ -70,6 +73,7 @@ fn apply(profile: &mut SandboxProfile, change: &ProfileChange) {
             }
         }
         ProfileChange::RemoveDomain { domain } => profile.domains.retain(|d| d != domain),
+        ProfileChange::AddGrant { grant } => add_grant(profile, grant, by),
         ProfileChange::RemoveGrant { grant_id } => profile.grants.retain(|g| g.id != *grant_id),
         ProfileChange::SetMediated { mediated } => {
             match profile
@@ -84,6 +88,39 @@ fn apply(profile: &mut SandboxProfile, change: &ProfileChange) {
         ProfileChange::RemoveMediated { command } => {
             profile.mediated.retain(|m| m.command != *command)
         }
+        ProfileChange::AddNever { path } => {
+            if !profile.never.contains(path) {
+                profile.never.push(path.clone());
+            }
+        }
+        ProfileChange::RemoveNever { path } => profile.never.retain(|p| p != path),
+    }
+}
+
+/// Adds a standing path grant, or widens the access of the same path granted before.
+fn add_grant(profile: &mut SandboxProfile, grant: &NewGrant, by: Option<&DeviceRef>) {
+    let wider = |a: Option<PathAccess>, b: Option<PathAccess>| {
+        if a == Some(PathAccess::ReadWrite) || b == Some(PathAccess::ReadWrite) {
+            Some(PathAccess::ReadWrite)
+        } else {
+            a.or(b)
+        }
+    };
+    match profile
+        .grants
+        .iter_mut()
+        .find(|g| g.kind == grant.kind && g.value == grant.value)
+    {
+        Some(existing) => existing.access = wider(existing.access, grant.access),
+        None => profile.grants.push(SandboxGrant {
+            id: GrantId::generate(),
+            kind: grant.kind,
+            value: grant.value.clone(),
+            access: grant.access,
+            scope: GrantScope::Standing,
+            granted_at: UnixMillis::now(),
+            by: by.cloned(),
+        }),
     }
 }
 
@@ -104,9 +141,14 @@ impl<'a> SandboxProfiles<'a> {
         rows.into_iter().map(from_raw).collect()
     }
 
-    /// Applies `change` to the profile of `scope`, creating it if needed. A profile left with
-    /// no settings is deleted.
-    pub fn change(&self, scope: &ProfileScope, change: &ProfileChange) -> StoreResult<()> {
+    /// Applies `change`, made by device `by`, to the profile of `scope`, creating it if needed.
+    /// A profile left with no settings is deleted.
+    pub fn change(
+        &self,
+        scope: &ProfileScope,
+        change: &ProfileChange,
+        by: Option<&DeviceRef>,
+    ) -> StoreResult<()> {
         let (kind, id) = scope_key(scope)?;
         self.store.transaction(|tx| {
             let mut profile = tx
@@ -127,12 +169,14 @@ impl<'a> SandboxProfiles<'a> {
                     grants: Vec::new(),
                     domains: Vec::new(),
                     mediated: Vec::new(),
+                    never: Vec::new(),
                 });
-            apply(&mut profile, change);
+            apply(&mut profile, change, by);
             let empty = profile.level.is_none()
                 && profile.grants.is_empty()
                 && profile.domains.is_empty()
-                && profile.mediated.is_empty();
+                && profile.mediated.is_empty()
+                && profile.never.is_empty();
             if empty {
                 tx.execute(
                     "DELETE FROM sandbox_profiles
@@ -143,11 +187,12 @@ impl<'a> SandboxProfiles<'a> {
             }
             tx.execute(
                 "INSERT INTO sandbox_profiles (owner_id, scope_kind, scope_id, level, grants,
-                                               domains, mediated)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                                               domains, mediated, never)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT (owner_id, scope_kind, scope_id) DO UPDATE SET
                      level = excluded.level, grants = excluded.grants,
-                     domains = excluded.domains, mediated = excluded.mediated",
+                     domains = excluded.domains, mediated = excluded.mediated,
+                     never = excluded.never",
                 rusqlite::params![
                     self.owner.as_str(),
                     kind,
@@ -156,6 +201,7 @@ impl<'a> SandboxProfiles<'a> {
                     to_json(&profile.grants)?,
                     to_json(&profile.domains)?,
                     to_json(&profile.mediated)?,
+                    to_json(&profile.never)?,
                 ],
             )?;
             Ok(())
@@ -168,16 +214,22 @@ mod tests {
     use controlroom_protocol::session::{MediatedCommand, MediationAction};
 
     use super::*;
+    use controlroom_protocol::session::GrantKind;
 
-    #[test]
-    fn changes_edit_lists_without_duplicates() {
-        let mut p = SandboxProfile {
+    fn empty() -> SandboxProfile {
+        SandboxProfile {
             scope: ProfileScope::Unknown,
             level: None,
             grants: vec![],
             domains: vec![],
             mediated: vec![],
-        };
+            never: vec![],
+        }
+    }
+
+    #[test]
+    fn changes_edit_lists_without_duplicates() {
+        let mut p = empty();
         let push = |action| ProfileChange::SetMediated {
             mediated: MediatedCommand {
                 command: "git push".into(),
@@ -197,13 +249,58 @@ mod tests {
                 level: SandboxLevel::Relaxed,
             },
         ] {
-            apply(&mut p, &change);
+            apply(&mut p, &change, None);
         }
         assert_eq!(p.domains, ["example.com"]);
         assert_eq!(p.mediated.len(), 1);
         assert_eq!(p.mediated[0].action, MediationAction::Deny);
         assert_eq!(p.level, Some(SandboxLevel::Relaxed));
-        apply(&mut p, &ProfileChange::ClearLevel);
+        apply(&mut p, &ProfileChange::ClearLevel, None);
         assert_eq!(p.level, None);
+    }
+
+    #[test]
+    fn path_grants_widen_and_never_paths_are_a_set() {
+        let mut p = empty();
+        let device = DeviceRef {
+            device_id: controlroom_protocol::ids::DeviceId::new("laptop"),
+            label: "laptop".into(),
+        };
+        let grant = |access| ProfileChange::AddGrant {
+            grant: NewGrant {
+                kind: GrantKind::Path,
+                value: "~/.cache/nix".into(),
+                access: Some(access),
+            },
+        };
+        apply(&mut p, &grant(PathAccess::Read), Some(&device));
+        apply(&mut p, &grant(PathAccess::ReadWrite), None);
+        apply(&mut p, &grant(PathAccess::Read), None);
+        assert_eq!(p.grants.len(), 1);
+        let g = &p.grants[0];
+        assert_eq!(
+            (g.kind, g.value.as_str(), g.access, g.scope),
+            (
+                GrantKind::Path,
+                "~/.cache/nix",
+                Some(PathAccess::ReadWrite),
+                GrantScope::Standing
+            )
+        );
+        assert_eq!(g.by.as_ref(), Some(&device));
+
+        let never = |path: &str| ProfileChange::AddNever { path: path.into() };
+        apply(&mut p, &never("~/.bash_history"), None);
+        apply(&mut p, &never("~/.bash_history"), None);
+        apply(&mut p, &never("/srv/secret"), None);
+        assert_eq!(p.never, ["~/.bash_history", "/srv/secret"]);
+        apply(
+            &mut p,
+            &ProfileChange::RemoveNever {
+                path: "~/.bash_history".into(),
+            },
+            None,
+        );
+        assert_eq!(p.never, ["/srv/secret"]);
     }
 }

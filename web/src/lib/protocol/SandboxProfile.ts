@@ -27,4 +27,8 @@ domains: Array<string>,
 /**
  * Mediated commands beyond the built-in defaults.
  */
-mediated: Array<MediatedCommand>, };
+mediated: Array<MediatedCommand>, 
+/**
+ * Paths denied without asking (see [`crate::session::SandboxSpec::never`]).
+ */
+never: Array<string>, };

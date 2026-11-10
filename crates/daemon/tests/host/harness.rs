@@ -396,6 +396,7 @@ pub fn sandbox(level: SandboxLevel) -> SandboxSpec {
         grants: Vec::new(),
         domains: Vec::new(),
         mediated: Vec::new(),
+        never: Vec::new(),
     }
 }
 

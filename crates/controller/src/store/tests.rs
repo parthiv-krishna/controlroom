@@ -412,6 +412,7 @@ fn sandbox_profiles_and_grants() {
             &ProfileChange::SetLevel {
                 level: SandboxLevel::Off,
             },
+            None,
         )
         .unwrap();
     repo.sandbox_profiles()
@@ -420,6 +421,7 @@ fn sandbox_profiles_and_grants() {
             &ProfileChange::AddDomain {
                 domain: "registry.example.com".into(),
             },
+            None,
         )
         .unwrap();
     let profiles = repo.sandbox_profiles().list().unwrap();
@@ -429,7 +431,7 @@ fn sandbox_profiles_and_grants() {
     assert_eq!(profiles[0].domains, ["registry.example.com"]);
     // A profile without settings disappears.
     repo.sandbox_profiles()
-        .change(&scope, &ProfileChange::ClearLevel)
+        .change(&scope, &ProfileChange::ClearLevel, None)
         .unwrap();
     repo.sandbox_profiles()
         .change(
@@ -437,9 +439,21 @@ fn sandbox_profiles_and_grants() {
             &ProfileChange::RemoveDomain {
                 domain: "registry.example.com".into(),
             },
+            None,
         )
         .unwrap();
     assert!(repo.sandbox_profiles().list().unwrap().is_empty());
+    // The never list is stored with the profile.
+    let never = ProfileChange::AddNever {
+        path: "~/.bash_history".into(),
+    };
+    repo.sandbox_profiles()
+        .change(&scope, &never, None)
+        .unwrap();
+    assert_eq!(
+        repo.sandbox_profiles().list().unwrap()[0].never,
+        ["~/.bash_history"]
+    );
 
     let a = SessionId::generate();
     let grant = repo
@@ -481,4 +495,31 @@ fn projects_created_in_the_same_millisecond_keep_their_insertion_order() {
         .map(|p| p.name)
         .collect();
     assert_eq!(names, ["p0", "p1", "p2"]);
+}
+
+/// A version-5 database (before the never list) is upgraded in place, keeping its rows.
+#[test]
+fn a_version_5_database_is_upgraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("controller.sqlite");
+    let id = Store::open(&path).unwrap().controller_id().unwrap();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch("ALTER TABLE sandbox_profiles DROP COLUMN never; PRAGMA user_version = 5;")
+        .unwrap();
+    drop(conn);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.controller_id().unwrap(), id);
+    let owner = OwnerId::new("alice");
+    store.ensure_owner(&owner).unwrap();
+    let scope = ProfileScope::Machine {
+        machine_id: MachineId::generate(),
+    };
+    let never = ProfileChange::AddNever {
+        path: "/srv/secret".into(),
+    };
+    store
+        .owner(&owner)
+        .sandbox_profiles()
+        .change(&scope, &never, None)
+        .unwrap();
 }

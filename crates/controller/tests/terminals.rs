@@ -92,6 +92,7 @@ impl World {
                         grants: Vec::new(),
                         domains: Vec::new(),
                         mediated: Vec::new(),
+                        never: Vec::new(),
                     },
                 }),
             )

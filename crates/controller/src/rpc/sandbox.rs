@@ -11,10 +11,13 @@ use std::sync::Arc;
 use controlroom_protocol::RpcError;
 use controlroom_protocol::error::Resource;
 use controlroom_protocol::ids::{MachineId, ProjectId, TaskId};
+use controlroom_protocol::session::DeviceRef;
 use controlroom_protocol::session::{MediationAction, SandboxLevel, SandboxSpec};
-use controlroom_protocol::ui::{ProfileScope, SandboxProfilesResult, SandboxSetProfileParams};
+use controlroom_protocol::ui::{
+    ProfileChange, ProfileScope, SandboxProfilesResult, SandboxSetProfileParams,
+};
 
-use super::Conn;
+use super::{Conn, profile_paths};
 use crate::errors::{invalid_params, not_found, store_error};
 use crate::hub::Hub;
 
@@ -51,8 +54,18 @@ pub(super) fn set_profile(
         }
         ProfileScope::Unknown => return Err(invalid_params("unknown profile scope")),
     }
+    let change = profile_paths::check_change(p.change)?;
+    let device = conn.device_ref();
+    if matches!(
+        change,
+        ProfileChange::AddGrant { .. }
+            | ProfileChange::AddNever { .. }
+            | ProfileChange::RemoveNever { .. }
+    ) {
+        tracing::info!(scope = ?p.scope, ?change, device = %device_label(device.as_ref()), "sandbox defaults change");
+    }
     repo.sandbox_profiles()
-        .change(&p.scope, &p.change)
+        .change(&p.scope, &change, device.as_ref())
         .map_err(store_error)?;
     profiles(conn)
 }
@@ -90,6 +103,7 @@ pub(crate) fn defaults(
         grants: Vec::new(),
         domains: Vec::new(),
         mediated: Vec::new(),
+        never: Vec::new(),
     };
     let mut level: Option<SandboxLevel> = None;
     for profile in profiles.into_iter().filter(|p| applies(&p.scope)) {
@@ -107,6 +121,11 @@ pub(crate) fn defaults(
         for domain in profile.domains {
             if !spec.domains.contains(&domain) {
                 spec.domains.push(domain);
+            }
+        }
+        for path in profile.never {
+            if !spec.never.contains(&path) {
+                spec.never.push(path);
             }
         }
         for mediated in profile.mediated {
@@ -127,4 +146,12 @@ pub(crate) fn defaults(
     }
     spec.level = level.unwrap_or(SandboxLevel::Strict);
     Ok(spec)
+}
+
+/// A device for the log: its label and id, or that there is none.
+pub(super) fn device_label(device: Option<&DeviceRef>) -> String {
+    device.map_or_else(
+        || "an unregistered device".to_owned(),
+        |d| format!("{} ({})", d.label, d.device_id),
+    )
 }

@@ -24,4 +24,10 @@ domains: Array<string>,
 /**
  * Mediated commands beyond the built-in defaults.
  */
-mediated: Array<MediatedCommand>, };
+mediated: Array<MediatedCommand>, 
+/**
+ * Paths denied without asking ("never"): absolute or `~/…` (the host expands `~`). A
+ * file access request for one of them, or for anything under one, is denied at once and
+ * never shown. A standing grant covering the path still wins.
+ */
+never: Array<string>, };

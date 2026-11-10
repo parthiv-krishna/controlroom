@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ids::{GrantId, MachineId, ProjectId};
-use crate::session::{MediatedCommand, SandboxGrant, SandboxLevel};
+use crate::session::{GrantKind, MediatedCommand, PathAccess, SandboxGrant, SandboxLevel};
 
 /// What a default profile belongs to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -42,6 +42,9 @@ pub struct SandboxProfile {
     pub domains: Vec<String>,
     /// Mediated commands beyond the built-in defaults.
     pub mediated: Vec<MediatedCommand>,
+    /// Paths denied without asking (see [`crate::session::SandboxSpec::never`]).
+    #[serde(default)]
+    pub never: Vec<String>,
 }
 
 /// Result of `sandbox.profiles` and `sandbox.set_profile`.
@@ -49,6 +52,20 @@ pub struct SandboxProfile {
 pub struct SandboxProfilesResult {
     /// Every machine and project profile that has settings.
     pub profiles: Vec<SandboxProfile>,
+}
+
+/// A standing grant to add ([`ProfileChange::AddGrant`]). Only `path` grants are added this way
+/// (domains have [`ProfileChange::AddDomain`]): `value` is absolute or `~/…` (the host expands
+/// `~`) with no `.` or `..` components, and `access` is `read` or `read_write`. `/` can't be
+/// granted read-write.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct NewGrant {
+    /// Always `path`.
+    pub kind: GrantKind,
+    /// The path.
+    pub value: String,
+    /// The access.
+    pub access: Option<PathAccess>,
 }
 
 /// One edit of a default profile.
@@ -72,6 +89,11 @@ pub enum ProfileChange {
         /// The domain.
         domain: String,
     },
+    /// Add a standing grant. A path granted again keeps the wider access.
+    AddGrant {
+        /// The grant.
+        grant: NewGrant,
+    },
     /// Remove a standing grant.
     RemoveGrant {
         /// The grant.
@@ -86,6 +108,16 @@ pub enum ProfileChange {
     RemoveMediated {
         /// The command, as in [`MediatedCommand::command`].
         command: String,
+    },
+    /// Deny a path without asking ("never"); the same path rules as [`NewGrant::value`].
+    AddNever {
+        /// The path.
+        path: String,
+    },
+    /// Ask about a path again.
+    RemoveNever {
+        /// The path, as listed.
+        path: String,
     },
 }
 

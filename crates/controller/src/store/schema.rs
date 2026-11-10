@@ -1,5 +1,6 @@
 //! The client store schema. Edited in place until the first release (spec §2 "Compatibility"):
-//! bump [`VERSION`] on every change; an existing database with another version is refused.
+//! bump [`VERSION`] on every change; an existing database with another version is refused,
+//! unless [`UPGRADES`] has an additive step from it (kept for deployed controllers).
 //!
 //! Every table except `owners` and `installation` carries a non-null `owner_id`. Child tables
 //! reference their parents through composite `(id, owner_id)` keys, so a row can never point at
@@ -12,7 +13,13 @@ use rusqlite::Connection;
 use super::{StoreError, StoreResult};
 
 /// The schema version, kept in `PRAGMA user_version`.
-pub(super) const VERSION: u32 = 5;
+pub(super) const VERSION: u32 = 6;
+
+/// Additive in-place upgrades: `(from, sql)` takes a database at `from` to `from + 1`.
+const UPGRADES: &[(u32, &str)] = &[(
+    5,
+    "ALTER TABLE sandbox_profiles ADD COLUMN never TEXT NOT NULL DEFAULT '[]';",
+)];
 
 const SCHEMA: &str = r#"
 CREATE TABLE installation (
@@ -221,6 +228,7 @@ CREATE TABLE sandbox_profiles (
     grants      TEXT NOT NULL,
     domains     TEXT NOT NULL,
     mediated    TEXT NOT NULL,
+    never       TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (owner_id, scope_kind, scope_id)
 ) STRICT;
 
@@ -233,10 +241,18 @@ CREATE TABLE prefs (
 ) STRICT;
 "#;
 
-/// Creates the schema in an empty database, or checks an existing one's version.
+/// Creates the schema in an empty database, or checks an existing one's version (upgrading it
+/// when [`UPGRADES`] can).
 pub(super) fn apply(conn: &Connection) -> StoreResult<()> {
     let found: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if found == VERSION {
+        return Ok(());
+    }
+    if let Some(steps) = upgrade_path(found) {
+        conn.execute_batch(&format!(
+            "BEGIN; {} PRAGMA user_version = {VERSION}; COMMIT;",
+            steps.concat()
+        ))?;
         return Ok(());
     }
     let empty: bool = conn.query_row(
@@ -254,4 +270,19 @@ pub(super) fn apply(conn: &Connection) -> StoreResult<()> {
         "BEGIN; {SCHEMA} PRAGMA user_version = {VERSION}; COMMIT;"
     ))?;
     Ok(())
+}
+
+/// The upgrade steps from `found` to [`VERSION`], if every one exists.
+fn upgrade_path(found: u32) -> Option<Vec<&'static str>> {
+    if found == 0 || found > VERSION {
+        return None;
+    }
+    (found..VERSION)
+        .map(|from| {
+            UPGRADES
+                .iter()
+                .find(|(v, _)| *v == from)
+                .map(|(_, sql)| *sql)
+        })
+        .collect()
 }

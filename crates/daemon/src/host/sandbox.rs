@@ -3,8 +3,10 @@
 //!
 //! - The policy merges the spec §11.5b default mediated commands (as a baseline) with the
 //!   spec's grants (`once` grants skipped), domains and mediated commands, at the spec's level.
-//!   Grants that can't be expressed are dropped (which only narrows access); an invalid
-//!   mediated command is refused (dropping it would widen access).
+//!   Path grants and never-paths may start with `~` (this host's home). Grants that can't be
+//!   expressed are dropped (which only narrows access): invalid paths, a read-write `/`, and
+//!   grants covering the daemon's own state; an invalid mediated command is refused (dropping
+//!   it would widen access).
 //! - Without a running approval webhook, approve rules become deny (fail closed).
 //! - Level `off` has no profile: processes run directly, unsandboxed (the UI shows a badge).
 
@@ -27,8 +29,7 @@ use controlroom_sandbox::{
 };
 
 use crate::config::sandbox::{self as sandbox_config, SandboxSettings};
-use crate::dirs::write_private_file;
-use crate::dirs::{Dirs, WorkspacePaths};
+use crate::dirs::{Dirs, WorkspacePaths, expand_home, write_private_file};
 use crate::nono::{Nono, NonoMissing, NonoOrigin};
 
 /// A `sandbox_unavailable` error.
@@ -103,8 +104,8 @@ pub fn level(spec: &SandboxSpec) -> SandboxLevel {
     }
 }
 
-/// The effective policy of a workspace; see the module docs.
-pub fn policy(spec: &SandboxSpec) -> Result<EffectivePolicy, RpcError> {
+/// The effective policy of a workspace (`~` is `home`); see the module docs.
+pub fn policy(spec: &SandboxSpec, home: &AbsPath) -> Result<EffectivePolicy, RpcError> {
     let baseline = ScopePolicy {
         commands: default_command_rules(),
         ..ScopePolicy::default()
@@ -116,7 +117,7 @@ pub fn policy(spec: &SandboxSpec) -> Result<EffectivePolicy, RpcError> {
         }
         match grant.kind {
             GrantKind::Path => {
-                let Ok(path) = AbsPath::new(&grant.value) else {
+                let Ok(path) = expand_home(&grant.value, home) else {
                     tracing::warn!("ignoring the path grant {:?}", grant.value);
                     continue;
                 };
@@ -223,6 +224,16 @@ pub fn write_profile(
     if !read_only.iter().any(|r| r.contains(&exe_dir)) {
         read_only.push(exe_dir);
     }
+    // nono refuses a missing executable directory.
+    let exec_dirs: Vec<AbsPath> = env
+        .settings
+        .exec_dirs
+        .iter()
+        .filter(|d| d.as_path().is_dir())
+        .cloned()
+        .collect();
+    let protected = vec![dirs.state().clone(), dirs.data(), dirs.config()];
+    drop_unusable_grants(&mut policy, &protected, &exec_dirs);
     let ssh = dirs.home().join(".ssh");
     let spec = WorkspaceSandboxSpec {
         id: SessionId::new(input.id).map_err(|e| unavailable(e.to_string()))?,
@@ -232,16 +243,9 @@ pub fn write_profile(
         policy,
         read_only,
         relaxed_reads: env.settings.relaxed_reads.clone(),
-        // nono refuses a missing executable directory.
-        exec_dirs: env
-            .settings
-            .exec_dirs
-            .iter()
-            .filter(|d| d.as_path().is_dir())
-            .cloned()
-            .collect(),
+        exec_dirs,
         ssh_config: ssh.as_path().is_dir().then_some(ssh).into_iter().collect(),
-        protected: vec![dirs.state().clone(), dirs.data(), dirs.config()],
+        protected,
         approvals: input.hook.map(|hook| Approvals {
             hook,
             timeout_secs: env.settings.approval_timeout_secs,
@@ -252,6 +256,44 @@ pub fn write_profile(
     write_private_file(&profile, generated.to_json_pretty().as_bytes())
         .map_err(|e| unavailable(format!("writing {profile}: {e}")))?;
     Ok(Some(profile))
+}
+
+/// Drops the standing grants a profile can't hold (which only narrows access): a read-write `/`,
+/// grants covering the daemon's own state (its webhook secrets and profiles), and read-write
+/// grants covering an executable directory.
+fn drop_unusable_grants(
+    policy: &mut EffectivePolicy,
+    protected: &[AbsPath],
+    exec_dirs: &[AbsPath],
+) {
+    policy.paths.retain(|grant| {
+        let writable = grant.access == Access::ReadWrite;
+        let problem = if writable && grant.path.parent().is_none() {
+            Some("/ can't be read-write")
+        } else if protected.iter().any(|p| grant.path.contains(p)) {
+            Some("it covers controlroom's own state")
+        } else if writable && exec_dirs.iter().any(|d| grant.path.contains(d)) {
+            Some("it would make an executable directory writable")
+        } else {
+            None
+        };
+        if let Some(problem) = problem {
+            tracing::warn!("ignoring the path grant {}: {problem}", grant.path);
+        }
+        problem.is_none()
+    });
+}
+
+/// The never-paths of a workspace (`~` is `home`); invalid ones are skipped.
+pub fn never_paths(spec: &SandboxSpec, home: &AbsPath) -> Vec<AbsPath> {
+    spec.never
+        .iter()
+        .filter_map(|path| {
+            expand_home(path, home)
+                .inspect_err(|e| tracing::warn!("ignoring the never-path {path:?}: {e}"))
+                .ok()
+        })
+        .collect()
 }
 
 /// A process launch, possibly wrapped in nono.
@@ -317,6 +359,75 @@ mod tests {
 
     use super::*;
 
+    fn home() -> AbsPath {
+        AbsPath::new("/home/alice").unwrap()
+    }
+
+    fn path_grant(value: &str, access: PathAccess) -> SandboxGrant {
+        SandboxGrant {
+            id: GrantId::generate(),
+            kind: GrantKind::Path,
+            value: value.into(),
+            access: Some(access),
+            scope: GrantScope::Standing,
+            granted_at: UnixMillis(1),
+            by: None,
+        }
+    }
+
+    /// Path grants and never-paths expand `~`; invalid ones are skipped, and so are grants a
+    /// profile can't hold.
+    #[test]
+    fn path_grants_expand_home_and_unusable_ones_are_dropped() {
+        let spec = SandboxSpec {
+            level: WireLevel::Strict,
+            grants: vec![
+                path_grant("~/.cache/nix", PathAccess::ReadWrite),
+                path_grant("/data/sets", PathAccess::Read),
+                path_grant("relative", PathAccess::Read),
+                path_grant("/a/../b", PathAccess::Read),
+            ],
+            domains: Vec::new(),
+            mediated: Vec::new(),
+            never: vec!["~/.bash_history".into(), "nope".into()],
+        };
+        let mut policy = policy(&spec, &home()).unwrap();
+        let granted: Vec<(&str, Access)> = policy
+            .paths
+            .iter()
+            .map(|g| (g.path.as_str(), g.access))
+            .collect();
+        assert_eq!(
+            granted,
+            [
+                ("/data/sets", Access::Read),
+                ("/home/alice/.cache/nix", Access::ReadWrite)
+            ]
+        );
+        assert_eq!(
+            never_paths(&spec, &home()),
+            [AbsPath::new("/home/alice/.bash_history").unwrap()]
+        );
+
+        let grant = |path: &str, access| PathGrant {
+            path: AbsPath::new(path).unwrap(),
+            kind: PathKind::Dir,
+            access,
+        };
+        policy.paths = vec![
+            grant("/", Access::ReadWrite),
+            grant("/home/alice", Access::Read),
+            grant("/usr", Access::ReadWrite),
+            grant("/usr", Access::Read),
+            grant("/home/alice/.cache/nix", Access::ReadWrite),
+        ];
+        let protected = [AbsPath::new("/home/alice/.local/state/controlroom").unwrap()];
+        let exec_dirs = [AbsPath::new("/usr/bin").unwrap()];
+        drop_unusable_grants(&mut policy, &protected, &exec_dirs);
+        let kept: Vec<&str> = policy.paths.iter().map(|g| g.path.as_str()).collect();
+        assert_eq!(kept, ["/usr", "/home/alice/.cache/nix"]);
+    }
+
     #[test]
     fn policies_merge_defaults_grants_and_level() {
         let spec = SandboxSpec {
@@ -346,8 +457,9 @@ mod tests {
                 command: "kubectl apply".into(),
                 action: MediationAction::Approve,
             }],
+            never: Vec::new(),
         };
-        let policy = policy(&spec).unwrap();
+        let policy = policy(&spec, &home()).unwrap();
         assert_eq!(policy.level, SandboxLevel::Relaxed);
         let domains: Vec<_> = policy.domains.iter().map(|d| d.as_str()).collect();
         assert_eq!(domains, ["git.example.com", "registry.example.com"]);
@@ -366,7 +478,7 @@ mod tests {
             }],
             ..spec
         };
-        assert!(super::policy(&bad).is_err());
+        assert!(super::policy(&bad, &home()).is_err());
     }
 
     /// nono refuses to run an approved command (git push) whose sandbox lists a file among its
@@ -409,6 +521,7 @@ mod tests {
             grants: Vec::new(),
             domains: Vec::new(),
             mediated: Vec::new(),
+            never: Vec::new(),
         };
         let hook = HookUrl {
             port: 1,
@@ -420,7 +533,7 @@ mod tests {
             root: &root,
             files: &files,
             path: files.profile(),
-            policy: policy(&spec).unwrap(),
+            policy: policy(&spec, &home).unwrap(),
             hook: Some(hook),
         };
         let profile = write_profile(&env, &dirs, input).unwrap().unwrap();

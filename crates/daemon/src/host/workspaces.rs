@@ -19,6 +19,7 @@ use controlroom_sandbox::webhook::{HookSecret, HookUrl};
 use rusqlite::params;
 
 use super::Host;
+use super::approvals::PathRules;
 use super::context::{context_files, skills};
 use super::fsops::fs_error;
 use super::sandbox::{self, ProfileInput, Wrapped};
@@ -206,7 +207,11 @@ fn install(
         .map_err(|e| fs_error(files.bashrc().as_str(), e))?;
     // The agent's processes and the user's sandboxed terminals: the same policy, each with its
     // own approval webhook URL (their approvals are told apart by the secret).
-    let policy = sandbox::policy(&sandbox)?;
+    // Both get the same grants and runtime reads; the host's path rules (never-paths, and later
+    // "Always allow" and "Never" answers) apply to both.
+    let home = host.dirs.home();
+    let policy = sandbox::policy(&sandbox, home)?;
+    let rules = PathRules::new(sandbox::never_paths(&sandbox, home));
     let write = |path: AbsPath, secret: AbsPath| {
         let hook = match host.approvals.port() {
             Some(port) => Some(HookUrl {
@@ -243,6 +248,7 @@ fn install(
             worker: None,
         }),
     });
+    host.approvals.set_rules(id, rules);
     host.workspaces.lock().insert(id, workspace.clone());
     Ok(workspace)
 }

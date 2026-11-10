@@ -14,6 +14,22 @@ use ts_rs::TS;
 use crate::ids::{ApprovalId, SessionId, SubscriptionId, UnixMillis, WorkspaceId};
 use crate::session::{RequestBody, RequestOption, RequestState};
 
+/// The option ids of host approvals ([`HostApproval::options`]).
+pub mod options {
+    /// Allow this one request (commands and endpoints).
+    pub const ALLOW_ONCE: &str = "allow-once";
+    /// Allow; nono remembers it for the rest of its run (file access).
+    pub const ALLOW_SESSION: &str = "allow-session";
+    /// Allow now, and add a standing grant with the requested access to the machine's sandbox
+    /// defaults (file access). The host also allows it for the rest of the workspace's life.
+    pub const ALLOW_ALWAYS: &str = "allow-always";
+    /// Deny now, and add the path to the machine's "never" list: later requests for it are
+    /// denied without asking (file access).
+    pub const NEVER: &str = "never";
+    /// Deny.
+    pub const DENY: &str = "deny";
+}
+
 /// A pending sandbox approval, with everything needed to show and answer it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct HostApproval {
@@ -29,8 +45,8 @@ pub struct HostApproval {
     pub detail: Option<String>,
     /// The structured subject: `git_push`, `command`, `path` or `endpoint`.
     pub body: RequestBody,
-    /// The answers: `allow-once` / `deny` for commands and endpoints, `allow-session` / `deny`
-    /// for file access.
+    /// The answers ([`options`]): `allow-once` / `deny` for commands and endpoints;
+    /// `allow-session` / `allow-always` / `never` / `deny` for file access.
     pub options: Vec<RequestOption>,
     /// When nono asked.
     pub created_at: UnixMillis,

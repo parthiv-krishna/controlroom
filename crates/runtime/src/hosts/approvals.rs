@@ -12,6 +12,7 @@
 //!   can't.
 
 use controlroom_protocol::RpcError;
+use controlroom_protocol::host::options::{ALLOW_ALWAYS, NEVER};
 use controlroom_protocol::host::{
     ApprovalRespondParams, HostApproval, HostRequest, ToolWaitingInputParams,
 };
@@ -85,6 +86,7 @@ impl Core {
         } else {
             approval.title
         };
+        let (body, options) = self.on_machine(machine, approval.body, approval.options);
         let request = Request {
             id: approval_request_id(&approval.id),
             kind: RequestKind::Sandbox,
@@ -92,8 +94,8 @@ impl Core {
             state: RequestState::Pending,
             title,
             detail: approval.detail,
-            body: Some(approval.body),
-            options: approval.options,
+            body: Some(body),
+            options,
             questions: Vec::new(),
             answer: None,
             origin_child: None,
@@ -104,6 +106,33 @@ impl Core {
             approval_id: approval.id,
         };
         self.raise_host(id, request, host)
+    }
+
+    /// A file request names the machine that asked: "Always allow" and "Never" change that
+    /// machine's sandbox defaults, so their labels (and the answer line) say which, e.g.
+    /// `Always allow (devbox)`.
+    fn on_machine(
+        &self,
+        machine: MachineId,
+        mut body: RequestBody,
+        mut options: Vec<RequestOption>,
+    ) -> (RequestBody, Vec<RequestOption>) {
+        if let RequestBody::Path {
+            machine_id,
+            machine: name,
+            ..
+        } = &mut body
+        {
+            let display = self.machines.name(&machine);
+            for option in &mut options {
+                if option.id == ALLOW_ALWAYS || option.id == NEVER {
+                    option.label = format!("{} ({display})", option.label);
+                }
+            }
+            *machine_id = Some(machine);
+            *name = Some(display);
+        }
+        (body, options)
     }
 
     /// `approval.closed`: the host ended an approval without an answer.

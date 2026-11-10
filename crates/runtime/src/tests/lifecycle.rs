@@ -374,6 +374,7 @@ async fn explicit_sandbox_levels_win_in_either_direction() {
         grants: Vec::new(),
         domains: Vec::new(),
         mediated: Vec::new(),
+        never: Vec::new(),
     };
     let looser =
         h.rt.create(SessionCreateParams {

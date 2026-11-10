@@ -1,28 +1,27 @@
 //! nono approval requests ↔ host approvals (spec §11.4, §11.5b).
 //!
 //! Every request nono sends becomes a [`HostApproval`] with a structured body (a mediated
-//! `git push` shows remote, branch and force). The options:
+//! `git push` shows remote, branch and force). The options ([`options`]):
 //!
 //! - commands, endpoints and network destinations: **Allow once** or **Deny** (nono asks for
 //!   every invocation, so there is no runtime grant to offer);
-//! - file access (capability elevation): **Allow for this session** or **Deny** (nono remembers
-//!   a granted path for the rest of its run, so "once" can't be honored).
+//! - file access (capability elevation): **Allow for this session**, **Always allow** (also a
+//!   standing grant on the machine's sandbox defaults, made by the controller), **Never**
+//!   (also the machine's "never" list) or **Deny**. nono remembers a granted path for the rest
+//!   of its run, so "once" can't be honored.
 //!
 //! A denial carries the user's reason, if any; an expired or withdrawn approval is denied with
 //! a reason saying so.
+//!
+//! [`HostApproval`]: controlroom_protocol::host::HostApproval
 
+use controlroom_protocol::host::options::{ALLOW_ALWAYS, ALLOW_ONCE, ALLOW_SESSION, DENY, NEVER};
 use controlroom_protocol::session::{OptionStyle, PathAccess, RequestBody, RequestOption};
+use controlroom_sandbox::AbsPath;
 use controlroom_sandbox::launch::shell_quote;
 use controlroom_sandbox::webhook::{
     ApprovalReply, ApprovalRequest, ApprovalSubject, FileAccess, GitPush,
 };
-
-/// Option id: allow this one request.
-pub const ALLOW_ONCE: &str = "allow-once";
-/// Option id: allow, and nono remembers it for the rest of its run.
-pub const ALLOW_SESSION: &str = "allow-session";
-/// Option id: deny.
-pub const DENY: &str = "deny";
 
 /// What an approval shows: title, detail, body and options.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,9 +36,19 @@ pub struct Shown {
     pub options: Vec<RequestOption>,
 }
 
-/// What to show for `approval`, or `None` when it must be denied without asking (unknown
-/// request types or access kinds).
-pub fn show(approval: &ApprovalRequest) -> Option<Shown> {
+/// The access of a file request, or `None` for an access kind this build doesn't know.
+pub fn path_access(access: FileAccess) -> Option<PathAccess> {
+    match access {
+        FileAccess::Read => Some(PathAccess::Read),
+        FileAccess::Write => Some(PathAccess::Write),
+        FileAccess::ReadWrite => Some(PathAccess::ReadWrite),
+        FileAccess::Unknown => None,
+    }
+}
+
+/// What to show for `approval` from the workspace at `root`, or `None` when it must be denied
+/// without asking (unknown request types or access kinds).
+pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
     let prompt = approval.prompt()?;
     let (body, allow) = match &approval.subject {
         ApprovalSubject::Command { command, args, .. } => {
@@ -58,24 +67,30 @@ pub fn show(approval: &ApprovalRequest) -> Option<Shown> {
                     cwd: None,
                 },
             };
-            (body, allow_once())
+            (body, vec![allow_once()])
         }
         ApprovalSubject::Capability { path, access } => {
-            let access = match access {
-                FileAccess::Read => PathAccess::Read,
-                FileAccess::Write => PathAccess::Write,
-                FileAccess::ReadWrite => PathAccess::ReadWrite,
-                FileAccess::Unknown => return None,
-            };
             let body = RequestBody::Path {
                 path: path.as_str().into(),
-                access,
+                access: path_access(*access)?,
+                in_workspace: AbsPath::new(path).ok().map(|p| root.contains(&p)),
+                machine_id: None,
+                machine: None,
             };
-            let allow = RequestOption {
-                id: ALLOW_SESSION.into(),
-                label: "Allow for this session".into(),
-                style: OptionStyle::AllowAlways,
+            let option = |id: &str, label: &str, style| RequestOption {
+                id: id.into(),
+                label: label.into(),
+                style,
             };
+            let allow = vec![
+                option(
+                    ALLOW_SESSION,
+                    "Allow for this session",
+                    OptionStyle::AllowAlways,
+                ),
+                option(ALLOW_ALWAYS, "Always allow", OptionStyle::AllowAlways),
+                option(NEVER, "Never", OptionStyle::Deny),
+            ];
             (body, allow)
         }
         ApprovalSubject::Endpoint {
@@ -88,7 +103,7 @@ pub fn show(approval: &ApprovalRequest) -> Option<Shown> {
                 method: method.clone(),
                 url: format!("{upstream}{path}"),
             };
-            (body, allow_once())
+            (body, vec![allow_once()])
         }
         ApprovalSubject::Network { host, port } => {
             let url = match port {
@@ -99,22 +114,21 @@ pub fn show(approval: &ApprovalRequest) -> Option<Shown> {
                 method: "CONNECT".into(),
                 url,
             };
-            (body, allow_once())
+            (body, vec![allow_once()])
         }
         ApprovalSubject::Unknown { .. } => return None,
     };
+    let mut options = allow;
+    options.push(RequestOption {
+        id: DENY.into(),
+        label: "Deny".into(),
+        style: OptionStyle::Deny,
+    });
     Some(Shown {
         title: prompt.title,
         detail: prompt.reason,
         body,
-        options: vec![
-            allow,
-            RequestOption {
-                id: DENY.into(),
-                label: "Deny".into(),
-                style: OptionStyle::Deny,
-            },
-        ],
+        options,
     })
 }
 
@@ -162,7 +176,7 @@ pub enum Outcome {
 pub fn reply(outcome: &Outcome) -> ApprovalReply {
     match outcome {
         Outcome::Chosen { option_id, .. }
-            if option_id == ALLOW_ONCE || option_id == ALLOW_SESSION =>
+            if [ALLOW_ONCE, ALLOW_SESSION, ALLOW_ALWAYS].contains(&option_id.as_str()) =>
         {
             ApprovalReply::granted()
         }
@@ -170,6 +184,9 @@ pub fn reply(outcome: &Outcome) -> ApprovalReply {
             reason: Some(reason),
             ..
         } if !reason.trim().is_empty() => ApprovalReply::denied(reason.trim()),
+        Outcome::Chosen { option_id, .. } if option_id == NEVER => {
+            ApprovalReply::denied("the user never allows this path")
+        }
         Outcome::Chosen { .. } => ApprovalReply::denied("denied by the user"),
         Outcome::Expired => ApprovalReply::denied("nobody answered the approval in time"),
         Outcome::Withdrawn => {
@@ -188,12 +205,19 @@ mod tests {
         ApprovalRequest::from_json(json.as_bytes()).unwrap()
     }
 
+    fn root() -> AbsPath {
+        AbsPath::new("/home/alice/project").unwrap()
+    }
+
     #[test]
     fn a_git_push_shows_remote_branch_and_force() {
-        let shown = show(&decode(
-            r#"{"backend":"cr","request":{"capability_type":"command","request_id":"1",
+        let shown = show(
+            &decode(
+                r#"{"backend":"cr","request":{"capability_type":"command","request_id":"1",
             "command":"git","args":["git","push","--force","origin","fix/flaky"]}}"#,
-        ))
+            ),
+            &root(),
+        )
         .unwrap();
         assert_eq!(shown.title, "Run `git push --force origin fix/flaky`?");
         assert_eq!(
@@ -211,16 +235,39 @@ mod tests {
 
     #[test]
     fn file_access_and_unknown_requests() {
-        let file = show(&decode(
-            r#"{"backend":"cr","request":{"capability_type":"capability","request_id":"3",
-            "path":"/home/alice/notes.txt","access":"Read","reason":"intercepted"}}"#,
-        ))
-        .unwrap();
-        assert_eq!(file.detail.as_deref(), Some("intercepted"));
-        assert_eq!(file.options[0].id, ALLOW_SESSION);
+        let file = |path: &str| {
+            show(
+                &decode(&format!(
+                    r#"{{"backend":"cr","request":{{"capability_type":"capability","request_id":"3",
+                    "path":"{path}","access":"Read","reason":"intercepted"}}}}"#
+                )),
+                &root(),
+            )
+            .unwrap()
+        };
+        let outside = file("/home/alice/notes.txt");
+        assert_eq!(outside.detail.as_deref(), Some("intercepted"));
+        let ids: Vec<&str> = outside.options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(ids, [ALLOW_SESSION, ALLOW_ALWAYS, NEVER, DENY]);
+        assert!(matches!(
+            outside.body,
+            RequestBody::Path {
+                access: PathAccess::Read,
+                in_workspace: Some(false),
+                ..
+            }
+        ));
+        let inside = file("/home/alice/project/.git/config");
+        assert!(matches!(
+            inside.body,
+            RequestBody::Path {
+                in_workspace: Some(true),
+                ..
+            }
+        ));
         let unknown =
             decode(r#"{"backend":"cr","request":{"capability_type":"teleport","request_id":"6"}}"#);
-        assert!(show(&unknown).is_none());
+        assert!(show(&unknown, &root()).is_none());
     }
 
     #[test]
@@ -233,6 +280,8 @@ mod tests {
         };
         assert_eq!(chosen(ALLOW_ONCE, None).decision, ReplyDecision::Granted);
         assert_eq!(chosen(ALLOW_SESSION, None).decision, ReplyDecision::Granted);
+        assert_eq!(chosen(ALLOW_ALWAYS, None).decision, ReplyDecision::Granted);
+        assert_eq!(chosen(NEVER, None).decision, ReplyDecision::Denied);
         let denied = chosen(DENY, Some("not that branch"));
         assert_eq!(denied.decision, ReplyDecision::Denied);
         assert_eq!(denied.reason.as_deref(), Some("not that branch"));

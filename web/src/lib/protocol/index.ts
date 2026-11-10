@@ -117,6 +117,7 @@ export type * from "./ModelsSetDefaultsParams";
 export type * from "./ModelsSetGatewayParams";
 export type * from "./ModelsSetKeyParams";
 export type * from "./ModelsState";
+export type * from "./NewGrant";
 export type * from "./NewMachine";
 export type * from "./NoParams";
 export type * from "./NoticeLevel";

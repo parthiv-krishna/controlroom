@@ -16,6 +16,7 @@
 
 mod http;
 mod mapping;
+mod rules;
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::{Ipv4Addr, SocketAddr};
@@ -35,8 +36,12 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, oneshot};
 
-pub use mapping::{ALLOW_ONCE, ALLOW_SESSION, DENY};
-use mapping::{Outcome, reply, show};
+use controlroom_protocol::host::options::{ALLOW_ALWAYS, NEVER};
+use controlroom_protocol::session::RequestBody;
+use controlroom_sandbox::webhook::ApprovalSubject;
+use mapping::{Outcome, path_access, reply, show};
+use rules::Auto;
+pub use rules::PathRules;
 
 use super::Host;
 use super::conns::Conns;
@@ -62,6 +67,8 @@ struct Inner {
     pending: BTreeMap<ApprovalId, Pending>,
     /// Subscribed connections and their subscription ids.
     subscribers: HashMap<u64, SubscriptionId>,
+    /// File-access decisions applied without asking, per open workspace.
+    rules: HashMap<WorkspaceId, PathRules>,
 }
 
 /// Pending approvals and their subscribers.
@@ -131,6 +138,7 @@ impl Approvals {
             .pending
             .remove(&params.approval_id)
             .expect("checked above");
+        remember(&mut inner, &pending.approval, &params.option_id);
         let _ = pending.answer.send(Outcome::Chosen {
             option_id: params.option_id,
             reason: params.reason,
@@ -138,8 +146,24 @@ impl Approvals {
         Ok(())
     }
 
-    /// Withdraws the pending approvals of a closed workspace.
+    /// Sets the rules of an opened (or reopened) workspace: decisions remembered while it was
+    /// open before are replaced by its spec's.
+    pub fn set_rules(&self, workspace: WorkspaceId, rules: PathRules) {
+        self.lock().rules.insert(workspace, rules);
+    }
+
+    /// The decision for a request of `workspace` that applies without asking, if any.
+    fn auto(&self, workspace: &WorkspaceId, request: &ApprovalRequest) -> Option<Auto> {
+        let ApprovalSubject::Capability { path, access } = &request.subject else {
+            return None;
+        };
+        let rules = self.lock().rules.get(workspace)?.clone();
+        rules.decide(path, path_access(*access)?)
+    }
+
+    /// Withdraws the pending approvals of a closed workspace and forgets its rules.
     pub fn withdraw_workspace(&self, conns: &Conns, workspace: &WorkspaceId) {
+        self.lock().rules.remove(workspace);
         let ids: Vec<ApprovalId> = self
             .lock()
             .pending
@@ -189,6 +213,25 @@ impl Approvals {
                 Notice::Closed(p) => handle.notify::<notifications::ApprovalClosed>(p),
             }
         }
+    }
+}
+
+/// Remembers an "Always allow" or "Never" answer to a file request for the rest of the workspace's
+/// life (the controller makes it standing).
+fn remember(inner: &mut Inner, approval: &HostApproval, option_id: &str) {
+    let RequestBody::Path { path, access, .. } = &approval.body else {
+        return;
+    };
+    let (Ok(path), Some(rules)) = (
+        AbsPath::new(path.as_str()),
+        inner.rules.get_mut(&approval.workspace_id),
+    ) else {
+        return;
+    };
+    match option_id {
+        ALLOW_ALWAYS => rules.add_always(path, *access),
+        NEVER => rules.add_never(path),
+        _ => {}
     }
 }
 
@@ -334,11 +377,25 @@ async fn decide(
     budget: Duration,
     stream: &mut (impl AsyncRead + AsyncWrite + Unpin),
 ) -> Option<ApprovalReply> {
-    let Some(shown) = show(request) else {
-        tracing::info!(
-            "workspace {}: denying an approval it can't show",
-            origin.workspace
-        );
+    // The workspace's rules apply to its agent and to the user's sandboxed terminals alike.
+    let workspace_id = origin.workspace;
+    match host.approvals.auto(&workspace_id, request) {
+        // Silent: no approval, no notification, nothing in the timeline.
+        Some(Auto::Deny) => {
+            tracing::debug!("workspace {workspace_id}: a never-path was denied without asking");
+            return Some(ApprovalReply::denied("the user never allows this path"));
+        }
+        Some(Auto::Grant) => {
+            tracing::debug!("workspace {workspace_id}: an always-allowed path was granted");
+            return Some(ApprovalReply::granted());
+        }
+        None => {}
+    }
+    let Some(workspace) = host.workspaces.get(&workspace_id) else {
+        return Some(ApprovalReply::denied("the workspace closed"));
+    };
+    let Some(shown) = show(request, &workspace.root) else {
+        tracing::info!("workspace {workspace_id}: denying an approval it can't show");
         return Some(ApprovalReply::denied(
             "controlroom can't show this kind of request",
         ));
