@@ -6,6 +6,9 @@
 //!   Linux: its `filesystem.deny` doesn't reach the seccomp-notify supervisor (which asks the
 //!   webhook about every path outside the initial capabilities), and refuses to start when a
 //!   deny lies under an allowed directory.
+//! - **Another process's `/proc` entry** (`/proc/<pid>/…`): denied at once, like a never-path.
+//!   nono 0.80 never opens such an entry for a sandboxed process, whatever the answer, so a card
+//!   (`systemctl` asks for `/proc/1/root`, `ps` for every `/proc/<pid>`) could only mislead.
 //! - **Always** (answered "Always allow" while the workspace is open): granted at once when the
 //!   access asked for is covered. The controller adds the standing grant to the machine's
 //!   defaults; this applies it to the running workspace's other processes too (nono itself
@@ -17,7 +20,7 @@
 use std::path::Path;
 
 use controlroom_protocol::session::PathAccess;
-use controlroom_sandbox::AbsPath;
+use controlroom_sandbox::{AbsPath, limits};
 
 /// What to do with a request without asking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +64,9 @@ impl PathRules {
         let forms = forms(path);
         if forms.is_empty() {
             return None;
+        }
+        if forms.iter().any(limits::is_process_procfs) {
+            return Some(Auto::Deny);
         }
         let covers = |rule: &AbsPath| {
             let rule_forms = forms_of(rule);
@@ -129,6 +135,24 @@ mod tests {
         );
         assert_eq!(rules.decide("/home/alice/.bash_profile", read), None);
         assert_eq!(rules.decide("relative/path", read), None);
+    }
+
+    #[test]
+    fn other_processes_proc_entries_are_denied_without_asking() {
+        let mut rules = PathRules::default();
+        rules.add_always(p("/proc"), PathAccess::Read);
+        for path in ["/proc/1/root", "/proc/4242/environ", "/proc/7/task/8/stat"] {
+            assert_eq!(
+                rules.decide(path, PathAccess::Read),
+                Some(Auto::Deny),
+                "{path}"
+            );
+        }
+        assert_eq!(rules.decide("/proc", PathAccess::Read), Some(Auto::Grant));
+        assert_eq!(
+            PathRules::default().decide("/proc/sys/kernel/x", PathAccess::Read),
+            None
+        );
     }
 
     #[test]

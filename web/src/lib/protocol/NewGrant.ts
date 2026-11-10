@@ -3,14 +3,16 @@ import type { GrantKind } from "./GrantKind";
 import type { PathAccess } from "./PathAccess";
 
 /**
- * A standing grant to add ([`ProfileChange::AddGrant`]). Only `path` grants are added this way
- * (domains have [`ProfileChange::AddDomain`]): `value` is absolute or `~/…` (the host expands
- * `~`) with no `.` or `..` components, and `access` is `read` or `read_write`. `/` can't be
- * granted read-write.
+ * A standing grant to add ([`ProfileChange::AddGrant`]): a `path` or a `socket` (domains have
+ * [`ProfileChange::AddDomain`]). `value` is absolute or `~/…` (the host expands `~`) with no
+ * `.` or `..` components. A path's `access` is `read` or `read_write`; `/` can't be granted
+ * read-write, and paths nono can't hold are refused (a directory containing one of nono's
+ * always-denied paths such as `~/.ssh`, nono's own state, another process's `/proc/<pid>`). A
+ * socket (an AF_UNIX socket the sandbox may connect to) has no `access`.
  */
 export type NewGrant = { 
 /**
- * Always `path`.
+ * `path` or `socket`.
  */
 kind: GrantKind, 
 /**
@@ -18,6 +20,6 @@ kind: GrantKind,
  */
 value: string, 
 /**
- * The access.
+ * The access of a path; `null` for a socket.
  */
 access: PathAccess | null, };

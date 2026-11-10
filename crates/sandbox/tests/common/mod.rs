@@ -95,6 +95,7 @@ pub fn full() -> SessionSandboxSpec {
             },
         ],
         domains: vec![Domain::new("registry.example.com").expect("domain")],
+        sockets: Vec::new(),
         commands: default_command_rules(),
     };
     let project = ScopePolicy {
@@ -105,6 +106,7 @@ pub fn full() -> SessionSandboxSpec {
             access: Access::ReadWrite,
         }],
         domains: vec![Domain::new("git.example.com").expect("domain")],
+        sockets: Vec::new(),
         commands: vec![
             rule("kubectl", &["apply"], CommandDecision::Approve),
             rule("kubectl", &["delete"], CommandDecision::Deny),
@@ -193,6 +195,7 @@ pub fn workspace() -> WorkspaceSandboxSpec {
             p("/home/alice/.local/state/controlroom"),
             p("/home/alice/.local/share/controlroom"),
         ],
+        nono_denied: controlroom_sandbox::limits::denied(&p("/home/alice")),
         approvals: agent.approvals,
         pins: agent.pins,
     }

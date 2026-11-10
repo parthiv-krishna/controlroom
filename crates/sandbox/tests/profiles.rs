@@ -377,7 +377,8 @@ fn runtime_probes_are_readable_at_every_level() {
     }
 }
 
-/// Standing grants land in the profile by access and kind; `/` is never writable.
+/// Standing grants land in nono's key for their access and kind (directories: `read` /
+/// `allow`; files: `read_file` / `allow_file`); `/` is never writable.
 #[test]
 fn grants_are_split_by_access_and_kind_and_root_stays_read_only() {
     let grant = |path: &str, kind, access| PathGrant {
@@ -390,26 +391,78 @@ fn grants_are_split_by_access_and_kind_and_root_stays_read_only() {
         grant("/home/alice/.cache/nix", PathKind::Dir, Access::ReadWrite),
         grant("/home/alice/notes.txt", PathKind::File, Access::ReadWrite),
         grant("/home/alice/datasets", PathKind::Dir, Access::Read),
+        grant("/home/alice/todo.txt", PathKind::File, Access::Read),
     ];
     let profile = generate_workspace_profile(&spec).unwrap().to_value();
     let fs = &profile["filesystem"];
-    assert!(
-        fs["allow"]
+    let listed = |field: &str, path: &str| {
+        fs[field]
             .as_array()
-            .unwrap()
-            .contains(&json!("/home/alice/.cache/nix"))
-    );
+            .is_some_and(|a| a.contains(&json!(path)))
+    };
+    assert!(listed("allow", "/home/alice/.cache/nix"));
     assert_eq!(fs["allow_file"], json!(["/home/alice/notes.txt"]));
-    assert!(
-        fs["read"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("/home/alice/datasets"))
-    );
+    assert!(listed("read", "/home/alice/datasets"));
+    assert_eq!(fs["read_file"], json!(["/home/alice/todo.txt"]));
+    assert!(!listed("read", "/home/alice/todo.txt"));
+    assert!(fs.get("bypass_protection").is_none(), "{fs}");
 
     spec.policy.paths = vec![grant("/", PathKind::Dir, Access::ReadWrite)];
     assert_eq!(
         generate_workspace_profile(&spec),
         Err(ProfileError::GrantTooBroad(p("/")))
     );
+}
+
+/// A grant of a path nono denies by default (`~/.bash_history`) gets `bypass_protection`, or
+/// nono drops it; a directory containing one can't be granted (nono would refuse to start).
+#[test]
+fn grants_of_nono_denied_paths_bypass_its_protection() {
+    let grant = |path: &str, kind, access| PathGrant {
+        path: p(path),
+        kind,
+        access,
+    };
+    let mut spec = workspace();
+    spec.policy.paths = vec![
+        grant("/home/alice/.bash_history", PathKind::File, Access::Read),
+        grant("/home/alice/.ssh/config", PathKind::File, Access::Read),
+        grant("/home/alice/.docker", PathKind::Dir, Access::ReadWrite),
+    ];
+    let profile = generate_workspace_profile(&spec).unwrap().to_value();
+    let fs = &profile["filesystem"];
+    assert_eq!(
+        fs["read_file"],
+        json!(["/home/alice/.bash_history", "/home/alice/.ssh/config"])
+    );
+    assert_eq!(
+        fs["bypass_protection"],
+        json!(["/home/alice/.bash_history", "/home/alice/.docker"])
+    );
+
+    spec.policy.paths = vec![grant("/home/alice/.config", PathKind::Dir, Access::Read)];
+    assert!(matches!(
+        generate_workspace_profile(&spec),
+        Err(ProfileError::ContainsNonoDenied { grant, .. }) if grant == p("/home/alice/.config")
+    ));
+    // A file contains nothing.
+    spec.policy.paths = vec![grant("/home/alice/.config", PathKind::File, Access::Read)];
+    assert!(generate_workspace_profile(&spec).is_ok());
+}
+
+/// Socket grants are connect-only `unix_socket` entries; none inside a protected path.
+#[test]
+fn socket_grants_go_to_unix_socket() {
+    let mut spec = workspace();
+    spec.policy.sockets = vec![p("/run/dbus/system_bus_socket")];
+    let profile = generate_workspace_profile(&spec).unwrap().to_value();
+    let fs = &profile["filesystem"];
+    assert_eq!(fs["unix_socket"], json!(["/run/dbus/system_bus_socket"]));
+    assert!(fs.get("read_file").is_none());
+
+    spec.policy.sockets = vec![p("/home/alice/.local/state/controlroom/run/daemon.sock")];
+    assert!(matches!(
+        generate_workspace_profile(&spec),
+        Err(ProfileError::CoversProtected { .. })
+    ));
 }

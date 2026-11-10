@@ -8,7 +8,9 @@
 //! - file access (capability elevation): **Allow for this session**, **Always allow** (also a
 //!   standing grant on the machine's sandbox defaults, made by the controller), **Never**
 //!   (also the machine's "never" list) or **Deny**. nono remembers a granted path for the rest
-//!   of its run, so "once" can't be honored.
+//!   of its run, so "once" can't be honored. "Always allow" is left out, and the detail says
+//!   why, when the standing grant couldn't take effect (`standing`, from
+//!   [`crate::host::sandbox::GrantLimits`]), so no answer is offered that silently does nothing.
 //!
 //! A denial carries the user's reason, if any; an expired or withdrawn approval is denied with
 //! a reason saying so.
@@ -19,6 +21,7 @@ use controlroom_protocol::host::options::{ALLOW_ALWAYS, ALLOW_ONCE, ALLOW_SESSIO
 use controlroom_protocol::session::{OptionStyle, PathAccess, RequestBody, RequestOption};
 use controlroom_sandbox::AbsPath;
 use controlroom_sandbox::launch::shell_quote;
+use controlroom_sandbox::policy::Access;
 use controlroom_sandbox::webhook::{
     ApprovalReply, ApprovalRequest, ApprovalSubject, FileAccess, GitPush,
 };
@@ -47,9 +50,15 @@ pub fn path_access(access: FileAccess) -> Option<PathAccess> {
 }
 
 /// What to show for `approval` from the workspace at `root`, or `None` when it must be denied
-/// without asking (unknown request types or access kinds).
-pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
+/// without asking (unknown request types or access kinds). `standing` says why a standing grant
+/// of a path with an access couldn't take effect, if it couldn't.
+pub fn show(
+    approval: &ApprovalRequest,
+    root: &AbsPath,
+    standing: impl Fn(&AbsPath, Access) -> Option<String>,
+) -> Option<Shown> {
     let prompt = approval.prompt()?;
+    let mut detail = prompt.reason;
     let (body, options) = match &approval.subject {
         ApprovalSubject::Command { command, args, .. } => {
             let line = if args.is_empty() {
@@ -70,28 +79,42 @@ pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
             (body, vec![allow_once(), deny()])
         }
         ApprovalSubject::Capability { path, access } => {
+            let abs = AbsPath::new(path).ok();
             let body = RequestBody::Path {
                 path: path.as_str().into(),
                 access: path_access(*access)?,
-                in_workspace: AbsPath::new(path).ok().map(|p| root.contains(&p)),
+                in_workspace: abs.as_ref().map(|p| root.contains(p)),
                 machine_id: None,
                 machine: None,
+            };
+            // "Always allow" grants read for a read and read-write for anything else.
+            let grant = match access {
+                FileAccess::Read => Access::Read,
+                _ => Access::ReadWrite,
+            };
+            let cant_stand = match &abs {
+                Some(path) => standing(path, grant),
+                None => Some("it is not an absolute path".into()),
             };
             let option = |id: &str, label: &str, style| RequestOption {
                 id: id.into(),
                 label: label.into(),
                 style,
             };
-            let options = vec![
-                option(
-                    ALLOW_SESSION,
-                    "Allow for this session",
+            let mut options = vec![option(
+                ALLOW_SESSION,
+                "Allow for this session",
+                OptionStyle::AllowAlways,
+            )];
+            match cant_stand {
+                Some(why) => detail = Some(format!("“Always allow” isn’t offered: {why}.")),
+                None => options.push(option(
+                    ALLOW_ALWAYS,
+                    "Always allow",
                     OptionStyle::AllowAlways,
-                ),
-                option(ALLOW_ALWAYS, "Always allow", OptionStyle::AllowAlways),
-                deny(),
-                option(NEVER, "Never", OptionStyle::Deny),
-            ];
+                )),
+            }
+            options.extend([deny(), option(NEVER, "Never", OptionStyle::Deny)]);
             (body, options)
         }
         ApprovalSubject::Endpoint {
@@ -121,7 +144,7 @@ pub fn show(approval: &ApprovalRequest, root: &AbsPath) -> Option<Shown> {
     };
     Some(Shown {
         title: prompt.title,
-        detail: prompt.reason,
+        detail,
         body,
         options,
     })
@@ -214,6 +237,38 @@ mod tests {
         AbsPath::new("/home/alice/project").unwrap()
     }
 
+    fn no_limits(_: &AbsPath, _: Access) -> Option<String> {
+        None
+    }
+
+    /// A file request whose standing grant couldn't take effect offers no "Always allow" and
+    /// says why; a write request is checked as the read-write grant "Always allow" would make.
+    #[test]
+    fn always_is_left_out_when_it_could_not_take_effect() {
+        let request = |path: &str, access: &str| {
+            decode(&format!(
+                r#"{{"backend":"cr","request":{{"capability_type":"capability","request_id":"4",
+                "path":"{path}","access":"{access}"}}}}"#
+            ))
+        };
+        let limits = |path: &AbsPath, access: Access| {
+            (path.as_str() == "/home/alice/.config" || access == Access::ReadWrite)
+                .then(|| "it contains /home/alice/.config/gcloud".to_owned())
+        };
+        let ids =
+            |shown: &Shown| -> Vec<String> { shown.options.iter().map(|o| o.id.clone()).collect() };
+        let config = show(&request("/home/alice/.config", "Read"), &root(), limits).unwrap();
+        assert_eq!(ids(&config), [ALLOW_SESSION, DENY, NEVER]);
+        assert_eq!(
+            config.detail.as_deref(),
+            Some("“Always allow” isn’t offered: it contains /home/alice/.config/gcloud.")
+        );
+        let write = show(&request("/srv/x", "Write"), &root(), limits).unwrap();
+        assert_eq!(ids(&write), [ALLOW_SESSION, DENY, NEVER]);
+        let read = show(&request("/srv/x", "Read"), &root(), limits).unwrap();
+        assert_eq!(ids(&read), [ALLOW_SESSION, ALLOW_ALWAYS, DENY, NEVER]);
+    }
+
     #[test]
     fn a_git_push_shows_remote_branch_and_force() {
         let shown = show(
@@ -222,6 +277,7 @@ mod tests {
             "command":"git","args":["git","push","--force","origin","fix/flaky"]}}"#,
             ),
             &root(),
+            no_limits,
         )
         .unwrap();
         assert_eq!(shown.title, "Run `git push --force origin fix/flaky`?");
@@ -247,6 +303,7 @@ mod tests {
                     "path":"{path}","access":"Read","reason":"intercepted"}}}}"#
                 )),
                 &root(),
+                no_limits,
             )
             .unwrap()
         };
@@ -272,7 +329,7 @@ mod tests {
         ));
         let unknown =
             decode(r#"{"backend":"cr","request":{"capability_type":"teleport","request_id":"6"}}"#);
-        assert!(show(&unknown, &root()).is_none());
+        assert!(show(&unknown, &root(), no_limits).is_none());
     }
 
     #[test]

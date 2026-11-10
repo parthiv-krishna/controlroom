@@ -45,6 +45,7 @@ pub use rules::PathRules;
 
 use super::Host;
 use super::conns::Conns;
+use super::sandbox::GrantLimits;
 use crate::dirs::write_private_file;
 
 /// Connections served at once; further ones wait in the accept queue.
@@ -394,7 +395,9 @@ async fn decide(
     let Some(workspace) = host.workspaces.get(&workspace_id) else {
         return Some(ApprovalReply::denied("the workspace closed"));
     };
-    let Some(shown) = show(request, &workspace.root) else {
+    let limits = GrantLimits::new(&host.sandbox, &host.dirs);
+    let standing = |path: &AbsPath, access| limits.path_problem(path, access);
+    let Some(shown) = show(request, &workspace.root, standing) else {
         tracing::info!("workspace {workspace_id}: denying an approval it can't show");
         return Some(ApprovalReply::denied(
             "controlroom can't show this kind of request",

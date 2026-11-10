@@ -53,9 +53,13 @@ pub struct Workdir {
 /// `filesystem`. Every entry is an absolute path.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Filesystem {
-    /// Read-only directories or files.
+    /// Read-only directories. (nono 0.80 takes a file here too, as a file grant; generated
+    /// profiles list files in `read_file`.)
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub read: Vec<String>,
+    /// Read-only single files.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub read_file: Vec<String>,
     /// Read-write directories.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub allow: Vec<String>,
@@ -68,6 +72,10 @@ pub struct Filesystem {
     /// Directories where descendant AF_UNIX sockets may be bound and connected.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unix_socket_subtree_bind: Vec<String>,
+    /// Granted paths exempted from nono's built-in denials (see [`crate::limits`]); nono only
+    /// lifts a denial for a path some grant covers.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub bypass_protection: Vec<String>,
 }
 
 /// `groups`.

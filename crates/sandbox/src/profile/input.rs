@@ -38,6 +38,8 @@ pub(super) struct Input<'a> {
     pub ssh_reads: Vec<AbsPath>,
     /// Paths no grant may cover.
     pub protected: Vec<AbsPath>,
+    /// Paths nono's built-in policy denies (none for agent sessions, which have no grants).
+    pub nono_denied: &'a [AbsPath],
     /// Credential routes.
     pub routes: &'a [CredentialRoute],
     /// The credential helper and the session it serves (with routes).
@@ -73,6 +75,7 @@ impl<'a> Input<'a> {
             command_dirs: vec![spec.cwd.clone(), layout.home(), layout.tmp()],
             ssh_reads: vec![layout.home(), layout.tmp()],
             protected,
+            nono_denied: &[],
             routes: &spec.credential_routes,
             capture: Some((&spec.credential_helper, layout.id())),
             approvals: spec.approvals.as_ref(),
@@ -100,6 +103,7 @@ impl<'a> Input<'a> {
             command_dirs: vec![spec.root.clone(), spec.tmp.clone()],
             ssh_reads,
             protected,
+            nono_denied: &spec.nono_denied,
             routes: &[],
             capture: None,
             approvals: spec.approvals.as_ref(),

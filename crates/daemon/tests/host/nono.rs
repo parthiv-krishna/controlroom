@@ -650,3 +650,236 @@ async fn a_shell_restarted_at_another_level_is_confined_by_it() {
     assert_eq!(read("c6", ".gitconfig").await, (false, None));
     assert_eq!(asked(&seen).len(), 4, "{:?}", asked(&seen));
 }
+
+/// A standing grant of `kind` (`~` allowed) for the tests below.
+fn standing(
+    kind: controlroom_protocol::session::GrantKind,
+    value: &str,
+    read: bool,
+) -> controlroom_protocol::session::SandboxGrant {
+    use controlroom_protocol::session::{GrantScope, PathAccess, SandboxGrant};
+    SandboxGrant {
+        id: controlroom_protocol::ids::GrantId::generate(),
+        kind,
+        value: value.into(),
+        access: read.then_some(PathAccess::Read),
+        scope: GrantScope::Standing,
+        granted_at: controlroom_protocol::UnixMillis(1),
+        by: None,
+    }
+}
+
+/// A read grant of `~/.bash_history`, a file nono 0.80 denies by default, takes effect: the
+/// agent's interactive shell loads the history at startup and nothing is asked. Before the
+/// profile listed granted denied paths in `filesystem.bypass_protection`, nono dropped the file
+/// grant and every new shell asked "Read ~/.bash_history?".
+#[tokio::test]
+#[ignore = "needs nono 0.80 and Landlock (CR_TEST_NONO)"]
+async fn a_read_grant_of_a_file_nono_denies_by_default_needs_no_approval() {
+    use controlroom_protocol::session::GrantKind;
+
+    let env = env().await;
+    std::fs::write(env.home().join(".bash_history"), "echo hist-line\n").unwrap();
+    let seen = record_and_deny(&env).await;
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let spec = SandboxSpec {
+        grants: vec![standing(GrantKind::Path, "~/.bash_history", true)],
+        ..crate::harness::sandbox(SandboxLevel::Strict)
+    };
+    let session = Session::open_with(&env, &client, spec).await;
+    session.shell(&client, "s").await;
+    let (exit, output, _) = session
+        .bash(
+            &client,
+            "c1",
+            "s",
+            "history | grep -c hist-line; cat ~/.bash_history",
+        )
+        .await;
+    assert_eq!(exit, Some(0), "{output}\n{}", env.log());
+    assert!(
+        output.starts_with("1\n") && output.ends_with("echo hist-line"),
+        "{output}"
+    );
+    let asked = asked(&seen);
+    assert!(
+        !asked.iter().any(|p| p.ends_with("/.bash_history")),
+        "{asked:?}"
+    );
+}
+
+/// A socket grant lets the sandbox connect to that socket and no other (`af_unix_mediation:
+/// pathname`). nono can't ask about a socket connect: the other fails at once.
+#[tokio::test]
+#[ignore = "needs nono 0.80, Landlock and curl (CR_TEST_NONO)"]
+async fn a_socket_grant_lets_a_connect_through() {
+    use controlroom_protocol::session::GrantKind;
+    use std::os::unix::net::UnixListener;
+
+    let env = env().await;
+    let curl = which("curl");
+    let sockets = env.dir.path().join("s");
+    std::fs::create_dir(&sockets).unwrap();
+    let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    for name in ["granted.sock", "other.sock"] {
+        let listener = UnixListener::bind(sockets.join(name)).unwrap();
+        let count = accepted.clone();
+        std::thread::spawn(move || {
+            for mut conn in listener.incoming().flatten() {
+                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                answer_http(&mut conn);
+            }
+        });
+    }
+    let granted = sockets.join("granted.sock");
+    let other = sockets.join("other.sock");
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let spec = SandboxSpec {
+        grants: vec![standing(
+            GrantKind::Socket,
+            granted.to_str().unwrap(),
+            false,
+        )],
+        ..crate::harness::sandbox(SandboxLevel::Strict)
+    };
+    let session = Session::open_with(&env, &client, spec).await;
+    session.shell(&client, "s").await;
+    let connect = |socket: &std::path::Path| {
+        format!(
+            "{} -s --unix-socket {} http://localhost/ >/dev/null; echo $?",
+            curl.display(),
+            socket.display()
+        )
+    };
+    // curl: 7 is "couldn't connect".
+    let (_, output, _) = session.bash(&client, "c1", "s", &connect(&granted)).await;
+    assert_eq!(output, "0", "{}", env.log());
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let (_, output, _) = session.bash(&client, "c2", "s", &connect(&other)).await;
+    assert_eq!(output, "7");
+    assert_eq!(accepted.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// With the D-Bus system bus granted, a libdbus client (`dbus-send`) talks to it; without, it
+/// can't connect. (systemd 254 and later bind their bus clients to an abstract-namespace name,
+/// which nono's pathname mediation refuses, so `systemctl` and `busctl` fail either way; see
+/// spec §11.6.) Skipped where the machine has no system bus or no `dbus-send`.
+#[tokio::test]
+#[ignore = "needs nono 0.80, Landlock, a system bus and dbus-send (CR_TEST_NONO)"]
+async fn the_system_bus_answers_once_its_socket_is_granted() {
+    use controlroom_protocol::session::GrantKind;
+
+    const BUS: &str = "/run/dbus/system_bus_socket";
+    if !std::path::Path::new(BUS).exists() {
+        eprintln!("skipped: no system bus at {BUS}");
+        return;
+    }
+    let env = env().await;
+    let dbus_send = which("dbus-send");
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let call = format!(
+        "{} --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.GetId \
+         >/dev/null 2>&1; echo $?",
+        dbus_send.display()
+    );
+    let spec = SandboxSpec {
+        grants: vec![standing(GrantKind::Socket, BUS, false)],
+        ..crate::harness::sandbox(SandboxLevel::Strict)
+    };
+    let granted = Session::open_with(&env, &client, spec).await;
+    granted.shell(&client, "s").await;
+    let (_, output, _) = granted.bash(&client, "c1", "s", &call).await;
+    assert_eq!(output, "0", "{}", env.log());
+    let plain = Session::open(&env, &client, SandboxLevel::Strict).await;
+    plain.shell(&client, "s").await;
+    let (_, output, _) = plain.bash(&client, "c2", "s", &call).await;
+    assert_ne!(output, "0");
+}
+
+/// `systemctl status` raises no card for another process's `/proc` entry (`/proc/1/root`; the
+/// host denies those without asking, since nono never opens them), and its `O_PATH` probe of
+/// `/proc/` is asked as a read, not "read and write" (the static musl build needs
+/// nix/nono-musl-o-path-access.patch). Skipped without `systemctl`.
+#[tokio::test]
+#[ignore = "needs nono 0.80, Landlock and systemctl (CR_TEST_NONO)"]
+async fn proc_probes_ask_for_reads_and_never_for_other_processes() {
+    let Some(systemctl) = find("systemctl") else {
+        eprintln!("skipped: no systemctl");
+        return;
+    };
+    let env = env().await;
+    let seen = record_and_deny(&env).await;
+    let (client, _) = env
+        .connect(controlroom_protocol::agentd::ClientRole::Debug)
+        .await;
+    let session = Session::open(&env, &client, SandboxLevel::Strict).await;
+    session.shell(&client, "s").await;
+    let command = format!(
+        "{} status --no-pager >/dev/null 2>&1; echo done",
+        systemctl.display()
+    );
+    let (_, output, _) = session.bash(&client, "c1", "s", &command).await;
+    assert_eq!(output, "done");
+    let approvals = seen.lock().unwrap().clone();
+    let paths: Vec<(String, controlroom_protocol::session::PathAccess)> = approvals
+        .iter()
+        .filter_map(|a| match &a.body {
+            RequestBody::Path { path, access, .. } => Some((path.as_str().to_owned(), *access)),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        paths
+            .iter()
+            .any(|(p, _)| p.trim_end_matches('/') == "/proc"),
+        "systemctl probes /proc: {paths:?}"
+    );
+    for (path, access) in &paths {
+        let per_process = path
+            .strip_prefix("/proc/")
+            .and_then(|rest| rest.split('/').next())
+            .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()));
+        assert!(!per_process, "asked for {path}");
+        if path.starts_with("/proc") {
+            assert_eq!(
+                *access,
+                controlroom_protocol::session::PathAccess::Read,
+                "{path}"
+            );
+        }
+    }
+}
+
+/// Reads an HTTP request head from `conn` and answers 200.
+fn answer_http(conn: &mut std::os::unix::net::UnixStream) {
+    use std::io::{Read, Write};
+    let mut head = Vec::new();
+    let mut buf = [0u8; 1024];
+    while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+        match conn.read(&mut buf) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => head.extend_from_slice(&buf[..n]),
+        }
+    }
+    let _ = conn.write_all(b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok");
+}
+
+/// `name` on the test's `PATH`, resolved to its real file (the sandbox can't follow links
+/// through an unreadable home).
+fn find(name: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|p| p.is_file())
+        .and_then(|p| std::fs::canonicalize(p).ok())
+}
+
+fn which(name: &str) -> std::path::PathBuf {
+    find(name).unwrap_or_else(|| panic!("{name} is not on PATH"))
+}

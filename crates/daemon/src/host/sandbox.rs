@@ -3,10 +3,12 @@
 //!
 //! - The policy merges the spec §11.5b default mediated commands (as a baseline) with the
 //!   spec's grants (`once` grants skipped), domains and mediated commands, at the spec's level.
-//!   Path grants and never-paths may start with `~` (this host's home). Grants that can't be
-//!   expressed are dropped (which only narrows access): invalid paths, a read-write `/`, and
-//!   grants covering the daemon's own state; an invalid mediated command is refused (dropping
-//!   it would widen access).
+//!   Path and socket grants and never-paths may start with `~` (this host's home). A path grant
+//!   is a file grant if the path is a file when the profile is written, else a directory grant
+//!   (nono skips a path that doesn't exist yet; it takes effect in the next profile written
+//!   after it appears). Grants that can't take effect are dropped (which only narrows access):
+//!   invalid paths and the ones [`GrantLimits`] names; an invalid mediated command is refused
+//!   (dropping it would widen access).
 //! - Without a running approval webhook, approve rules become deny (fail closed).
 //! - Level `off` has no profile: processes run directly, unsandboxed (the UI shows a badge).
 
@@ -25,7 +27,7 @@ use controlroom_sandbox::spec::Approvals;
 use controlroom_sandbox::webhook::HookUrl;
 use controlroom_sandbox::{
     AbsPath, Domain, EffectivePolicy, Name, SandboxLevel, SessionId, WorkspaceSandboxSpec,
-    effective_policy, generate_workspace_profile,
+    effective_policy, generate_workspace_profile, limits,
 };
 
 use crate::config::sandbox::{self as sandbox_config, SandboxSettings};
@@ -132,6 +134,10 @@ pub fn policy(spec: &SandboxSpec, home: &AbsPath) -> Result<EffectivePolicy, Rpc
                 };
                 defaults.paths.push(PathGrant { path, kind, access });
             }
+            GrantKind::Socket => match expand_home(&grant.value, home) {
+                Ok(socket) => defaults.sockets.push(socket),
+                Err(e) => tracing::warn!("ignoring the socket grant {:?}: {e}", grant.value),
+            },
             GrantKind::Domain => match Domain::new(&grant.value) {
                 Ok(domain) => defaults.domains.push(domain),
                 Err(e) => tracing::warn!("ignoring the domain grant {:?}: {e}", grant.value),
@@ -215,6 +221,8 @@ pub fn write_profile(
             Some((rule.command.clone(), pin))
         })
         .collect::<BTreeMap<_, _>>();
+    let grant_limits = GrantLimits::new(env, dirs);
+    grant_limits.drop_unusable(&mut policy);
     let mut read_only = env.settings.read_only.clone();
     read_only.push(input.files.view());
     // The fs worker runs this controlroomd inside the sandbox. Its directory, not the file:
@@ -224,17 +232,12 @@ pub fn write_profile(
     if !read_only.iter().any(|r| r.contains(&exe_dir)) {
         read_only.push(exe_dir);
     }
-    // nono refuses a missing executable directory.
-    let exec_dirs: Vec<AbsPath> = env
-        .settings
-        .exec_dirs
-        .iter()
-        .filter(|d| d.as_path().is_dir())
-        .cloned()
-        .collect();
-    let protected = vec![dirs.state().clone(), dirs.data(), dirs.config()];
-    drop_unusable_grants(&mut policy, &protected, &exec_dirs);
-    let ssh = dirs.home().join(".ssh");
+    let GrantLimits {
+        home,
+        protected,
+        exec_dirs,
+    } = grant_limits;
+    let ssh = home.join(".ssh");
     let spec = WorkspaceSandboxSpec {
         id: SessionId::new(input.id).map_err(|e| unavailable(e.to_string()))?,
         root: input.root.clone(),
@@ -246,6 +249,7 @@ pub fn write_profile(
         exec_dirs,
         ssh_config: ssh.as_path().is_dir().then_some(ssh).into_iter().collect(),
         protected,
+        nono_denied: limits::denied(&home),
         approvals: input.hook.map(|hook| Approvals {
             hook,
             timeout_secs: env.settings.approval_timeout_secs,
@@ -258,30 +262,75 @@ pub fn write_profile(
     Ok(Some(profile))
 }
 
-/// Drops the standing grants a profile can't hold (which only narrows access): a read-write `/`,
-/// grants covering the daemon's own state (its webhook secrets and profiles), and read-write
-/// grants covering an executable directory.
-fn drop_unusable_grants(
-    policy: &mut EffectivePolicy,
-    protected: &[AbsPath],
-    exec_dirs: &[AbsPath],
-) {
-    policy.paths.retain(|grant| {
-        let writable = grant.access == Access::ReadWrite;
-        let problem = if writable && grant.path.parent().is_none() {
-            Some("/ can't be read-write")
-        } else if protected.iter().any(|p| grant.path.contains(p)) {
-            Some("it covers controlroom's own state")
-        } else if writable && exec_dirs.iter().any(|d| grant.path.contains(d)) {
-            Some("it would make an executable directory writable")
-        } else {
-            None
-        };
-        if let Some(problem) = problem {
-            tracing::warn!("ignoring the path grant {}: {problem}", grant.path);
+/// What a standing grant can't cover on this host (spec §11.6): the profile drops such grants,
+/// and file requests for such paths don't offer "Always allow".
+#[derive(Debug, Clone)]
+pub struct GrantLimits {
+    /// The host user's home, which nono's built-in denials are relative to.
+    home: AbsPath,
+    /// The daemon's state, data and config dirs (webhook secrets, profiles, its socket).
+    protected: Vec<AbsPath>,
+    /// The existing executable directories besides `PATH`'s (nono refuses a missing one).
+    exec_dirs: Vec<AbsPath>,
+}
+
+impl GrantLimits {
+    /// The limits of this host.
+    pub fn new(env: &SandboxEnv, dirs: &Dirs) -> Self {
+        Self {
+            home: dirs.home().clone(),
+            protected: vec![dirs.state().clone(), dirs.data(), dirs.config()],
+            exec_dirs: env
+                .settings
+                .exec_dirs
+                .iter()
+                .filter(|d| d.as_path().is_dir())
+                .cloned()
+                .collect(),
         }
-        problem.is_none()
-    });
+    }
+
+    /// Why a standing grant of `access` on `path` can't take effect here, if it can't: a
+    /// read-write `/`, controlroom's own state (inside or covering it), a read-write grant
+    /// covering an executable directory, or what nono can't hold ([`limits::limit`]).
+    pub fn path_problem(&self, path: &AbsPath, access: Access) -> Option<String> {
+        let writable = access == Access::ReadWrite;
+        if writable && path.parent().is_none() {
+            return Some("/ can't be read-write".into());
+        }
+        if self.overlaps_protected(path) {
+            return Some("it overlaps controlroom's own state".into());
+        }
+        if writable && self.exec_dirs.iter().any(|d| path.contains(d)) {
+            return Some("it would make an executable directory writable".into());
+        }
+        let file = std::fs::metadata(path.as_path()).is_ok_and(|m| !m.is_dir());
+        limits::limit(path, file, &self.home).map(|limit| limit.to_string())
+    }
+
+    fn overlaps_protected(&self, path: &AbsPath) -> bool {
+        self.protected
+            .iter()
+            .any(|p| path.contains(p) || p.contains(path))
+    }
+
+    /// Drops the grants a profile can't hold (which only narrows access) and logs each.
+    fn drop_unusable(&self, policy: &mut EffectivePolicy) {
+        policy.paths.retain(|grant| {
+            let problem = self.path_problem(&grant.path, grant.access);
+            if let Some(problem) = &problem {
+                tracing::warn!("ignoring the path grant {}: {problem}", grant.path);
+            }
+            problem.is_none()
+        });
+        policy.sockets.retain(|socket| {
+            let own = self.overlaps_protected(socket);
+            if own {
+                tracing::warn!("ignoring the socket grant {socket}: it is controlroom's own");
+            }
+            !own
+        });
+    }
 }
 
 /// The never-paths of a workspace (`~` is `home`); invalid ones are skipped.
@@ -420,12 +469,101 @@ mod tests {
             grant("/usr", Access::ReadWrite),
             grant("/usr", Access::Read),
             grant("/home/alice/.cache/nix", Access::ReadWrite),
+            grant(
+                "/home/alice/.local/state/controlroom/host.sqlite",
+                Access::Read,
+            ),
+            grant("/home/alice/.config", Access::Read),
+            grant("/home/alice/.bash_history", Access::Read),
+            grant("/proc/1/root", Access::Read),
+            grant("/proc", Access::Read),
         ];
-        let protected = [AbsPath::new("/home/alice/.local/state/controlroom").unwrap()];
-        let exec_dirs = [AbsPath::new("/usr/bin").unwrap()];
-        drop_unusable_grants(&mut policy, &protected, &exec_dirs);
+        policy.sockets = vec![
+            AbsPath::new("/run/dbus/system_bus_socket").unwrap(),
+            AbsPath::new("/home/alice/.local/state/controlroom/run/daemon.sock").unwrap(),
+        ];
+        limits().drop_unusable(&mut policy);
         let kept: Vec<&str> = policy.paths.iter().map(|g| g.path.as_str()).collect();
-        assert_eq!(kept, ["/usr", "/home/alice/.cache/nix"]);
+        assert_eq!(
+            kept,
+            [
+                "/usr",
+                "/home/alice/.cache/nix",
+                "/home/alice/.bash_history",
+                "/proc"
+            ]
+        );
+        assert_eq!(
+            policy.sockets,
+            [AbsPath::new("/run/dbus/system_bus_socket").unwrap()]
+        );
+    }
+
+    /// The limits of a host whose home is `/home/alice`.
+    fn limits() -> GrantLimits {
+        GrantLimits {
+            home: home(),
+            protected: vec![AbsPath::new("/home/alice/.local/state/controlroom").unwrap()],
+            exec_dirs: vec![AbsPath::new("/usr/bin").unwrap()],
+        }
+    }
+
+    #[test]
+    fn grant_limits_explain_why_a_grant_cant_stand() {
+        let problem =
+            |path: &str, access| limits().path_problem(&AbsPath::new(path).unwrap(), access);
+        assert_eq!(problem("/home/alice/.bash_history", Access::Read), None);
+        assert_eq!(problem("/srv/data", Access::ReadWrite), None);
+        assert!(
+            problem("/", Access::ReadWrite)
+                .unwrap()
+                .contains("read-write")
+        );
+        assert!(
+            problem("/home/alice/.config", Access::Read)
+                .unwrap()
+                .contains("/home/alice/.config/gcloud")
+        );
+        assert!(
+            problem("/proc/1/root", Access::Read)
+                .unwrap()
+                .contains("/proc entry")
+        );
+        assert!(
+            problem("/home/alice/.local/state/controlroom/x", Access::Read)
+                .unwrap()
+                .contains("controlroom's own state")
+        );
+        assert!(
+            problem("/usr", Access::ReadWrite)
+                .unwrap()
+                .contains("executable directory")
+        );
+    }
+
+    #[test]
+    fn socket_grants_expand_home() {
+        let spec = SandboxSpec {
+            level: WireLevel::Strict,
+            grants: vec![SandboxGrant {
+                id: GrantId::generate(),
+                kind: GrantKind::Socket,
+                value: "~/run/app.sock".into(),
+                access: None,
+                scope: GrantScope::Standing,
+                granted_at: UnixMillis(1),
+                by: None,
+            }],
+            domains: Vec::new(),
+            mediated: Vec::new(),
+            never: Vec::new(),
+        };
+        let policy = policy(&spec, &home()).unwrap();
+        assert_eq!(
+            policy.sockets,
+            [AbsPath::new("/home/alice/run/app.sock").unwrap()]
+        );
+        assert!(policy.paths.is_empty());
     }
 
     #[test]

@@ -3,4 +3,4 @@
 /**
  * What a sandbox grant allows.
  */
-export type GrantKind = "path" | "domain" | "command" | "unknown";
+export type GrantKind = "path" | "domain" | "command" | "socket" | "unknown";

@@ -5,6 +5,7 @@
 //! - [`pins`]: pinning mediated commands to exact store paths (§11.5b);
 //! - [`agent_dir`]: the per-session pi agent dir with fake credentials (§11.1, §11.3);
 //! - [`credential`]: the host-side key lookup behind `controlroomd credential` (§11.3);
+//! - [`limits`]: what nono 0.80 lets a grant cover (built-in denials, its state, `/proc`);
 //! - [`webhook`]: approval webhook URL, request and reply types (§11.4);
 //! - [`workspace`]: the per-workspace sandbox of a host (§11, host side);
 //! - [`launch`]: the `nono run` argv and environment (§11.5);
@@ -16,6 +17,7 @@ pub mod credential;
 mod fsutil;
 pub mod launch;
 pub mod layout;
+pub mod limits;
 pub mod names;
 pub mod paths;
 pub mod pins;

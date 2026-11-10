@@ -274,6 +274,7 @@ fn sandbox_spec(
             level: launch.level,
             paths: Vec::new(),
             domains: Vec::new(),
+            sockets: Vec::new(),
             commands: Vec::new(),
         },
         read_only: read_only(host),

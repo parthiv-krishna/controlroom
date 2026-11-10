@@ -985,6 +985,20 @@ fn golden_sandbox_profile_changes_for_paths() {
         }),
     );
     golden(
+        &ProfileChange::AddGrant {
+            grant: NewGrant {
+                kind: GrantKind::Socket,
+                value: "/run/dbus/system_bus_socket".into(),
+                access: None,
+            },
+        },
+        json!({"kind": "add_grant",
+               "grant": {"kind": "socket", "value": "/run/dbus/system_bus_socket", "access": null}}),
+    );
+    // A grant kind from a newer build decodes as unknown (and is ignored).
+    let kind: GrantKind = serde_json::from_value(json!("tunnel")).unwrap();
+    assert_eq!(kind, GrantKind::Unknown);
+    golden(
         &ProfileChange::AddNever {
             path: "~/.bash_history".into(),
         },

@@ -52,6 +52,9 @@ pub enum GrantKind {
     Domain,
     /// A mediated command.
     Command,
+    /// An AF_UNIX socket path the sandbox may connect to (connect only; no access). Builds
+    /// that don't know it ignore it, which only narrows access.
+    Socket,
     /// A kind this build doesn't know.
     #[serde(other)]
     Unknown,

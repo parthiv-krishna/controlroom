@@ -54,17 +54,19 @@ pub struct SandboxProfilesResult {
     pub profiles: Vec<SandboxProfile>,
 }
 
-/// A standing grant to add ([`ProfileChange::AddGrant`]). Only `path` grants are added this way
-/// (domains have [`ProfileChange::AddDomain`]): `value` is absolute or `~/…` (the host expands
-/// `~`) with no `.` or `..` components, and `access` is `read` or `read_write`. `/` can't be
-/// granted read-write.
+/// A standing grant to add ([`ProfileChange::AddGrant`]): a `path` or a `socket` (domains have
+/// [`ProfileChange::AddDomain`]). `value` is absolute or `~/…` (the host expands `~`) with no
+/// `.` or `..` components. A path's `access` is `read` or `read_write`; `/` can't be granted
+/// read-write, and paths nono can't hold are refused (a directory containing one of nono's
+/// always-denied paths such as `~/.ssh`, nono's own state, another process's `/proc/<pid>`). A
+/// socket (an AF_UNIX socket the sandbox may connect to) has no `access`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct NewGrant {
-    /// Always `path`.
+    /// `path` or `socket`.
     pub kind: GrantKind,
     /// The path.
     pub value: String,
-    /// The access.
+    /// The access of a path; `null` for a socket.
     pub access: Option<PathAccess>,
 }
 

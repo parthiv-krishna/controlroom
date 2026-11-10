@@ -47,6 +47,9 @@ pub struct WorkspaceSandboxSpec {
     /// Paths no grant may cover (the host daemon's state and data dirs). `dir` is always
     /// protected.
     pub protected: Vec<AbsPath>,
+    /// The paths nono's built-in policy denies on this host ([`crate::limits::denied`]): a
+    /// grant of one gets `bypass_protection`, and no directory grant may contain one.
+    pub nono_denied: Vec<AbsPath>,
     /// The approval webhook; required for approve decisions and capability elevation.
     pub approvals: Option<Approvals>,
     /// Pins for the commands named in `policy.commands`.

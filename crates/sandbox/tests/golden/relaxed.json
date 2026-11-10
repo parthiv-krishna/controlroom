@@ -11,8 +11,10 @@
       "/nix/store",
       "/nix/store/bbbb-controlroom-pi-bundle",
       "/home/alice/datasets",
-      "/home/alice/.gitconfig",
       "/home/alice/.config/git"
+    ],
+    "read_file": [
+      "/home/alice/.gitconfig"
     ],
     "allow": [
       "/home/alice/.local/share/controlroom/sessions/01HZY3K4M5N6P7Q8R9S0T1V2W3/agent",

@@ -150,28 +150,35 @@ fn strings(paths: &[AbsPath]) -> Vec<String> {
     paths.iter().map(AbsPath::to_string).collect()
 }
 
+/// The filesystem section. System reads (runtime probes, `/nix/store`, the configured read-only
+/// paths) are directories. Grants go to nono's key for their kind and access (directories:
+/// `read` / `allow`; files: `read_file` / `allow_file`), and a grant of a path nono denies by
+/// default also gets `bypass_protection`, without which nono drops it (see [`crate::limits`]).
 fn filesystem(spec: &Input) -> Filesystem {
     let mut read: Vec<String> = RUNTIME_READS.iter().map(|p| (*p).to_owned()).collect();
     read.extend(strings(spec.read_only));
-    let mut allow = strings(&spec.writable);
-    let mut allow_file = Vec::new();
-    // `read` takes files and directories; read-write grants go to allow/allow_file.
-    for grant in spec.policy.paths.iter().chain(spec.relaxed_reads) {
-        let target = match (grant.access, grant.kind) {
-            (Access::Read, _) => &mut read,
-            (Access::ReadWrite, PathKind::Dir) => &mut allow,
-            (Access::ReadWrite, PathKind::File) => &mut allow_file,
-        };
-        target.push(grant.path.to_string());
-    }
-    Filesystem {
+    let mut fs = Filesystem {
         read,
-        allow,
-        allow_file,
+        allow: strings(&spec.writable),
         unix_socket: strings(&spec.unix_sockets),
         // Extensions (tsx) and build tools bind IPC sockets under TMPDIR.
         unix_socket_subtree_bind: vec![spec.socket_bind.to_string()],
+        ..Filesystem::default()
+    };
+    fs.unix_socket.extend(strings(&spec.policy.sockets));
+    for grant in spec.policy.paths.iter().chain(spec.relaxed_reads) {
+        let target = match (grant.access, grant.kind) {
+            (Access::Read, PathKind::Dir) => &mut fs.read,
+            (Access::Read, PathKind::File) => &mut fs.read_file,
+            (Access::ReadWrite, PathKind::Dir) => &mut fs.allow,
+            (Access::ReadWrite, PathKind::File) => &mut fs.allow_file,
+        };
+        target.push(grant.path.to_string());
+        if spec.nono_denied.contains(&grant.path) {
+            fs.bypass_protection.push(grant.path.to_string());
+        }
     }
+    fs
 }
 
 /// Domains reachable through the proxy: the policy's domains plus the route upstreams.

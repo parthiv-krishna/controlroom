@@ -96,6 +96,9 @@ pub struct ScopePolicy {
     /// Domains allowed through the proxy.
     #[serde(default)]
     pub domains: Vec<Domain>,
+    /// AF_UNIX sockets the sandbox may connect to.
+    #[serde(default)]
+    pub sockets: Vec<AbsPath>,
     /// Command-mediation rules.
     #[serde(default)]
     pub commands: Vec<CommandRule>,
@@ -110,6 +113,9 @@ pub struct EffectivePolicy {
     pub paths: Vec<PathGrant>,
     /// Allowed domains.
     pub domains: Vec<Domain>,
+    /// Sockets the sandbox may connect to.
+    #[serde(default)]
+    pub sockets: Vec<AbsPath>,
     /// Command rules, one per (command, args), with the strictest decision.
     pub commands: Vec<CommandRule>,
 }
@@ -119,7 +125,7 @@ pub struct EffectivePolicy {
 ///
 /// - level: the session's explicit level if set (an affirmative user choice), otherwise the
 ///   strictest level among the scopes, otherwise [`SandboxLevel::Strict`];
-/// - paths, domains, command rules: the union of all scopes plus the session. A path granted
+/// - paths, domains, sockets, command rules: the union of all scopes plus the session. A path granted
 ///   twice keeps the wider access (both grants were made explicitly); a command rule present
 ///   twice keeps the stricter decision.
 pub fn effective_policy<'a>(
@@ -146,6 +152,10 @@ pub fn effective_policy<'a>(
     domains.sort();
     domains.dedup();
 
+    let mut sockets: Vec<AbsPath> = all().flat_map(|s| s.sockets.iter().cloned()).collect();
+    sockets.sort();
+    sockets.dedup();
+
     let mut commands: BTreeMap<(Name, Vec<String>), CommandDecision> = BTreeMap::new();
     for rule in all().flat_map(|s| &s.commands) {
         commands
@@ -158,6 +168,7 @@ pub fn effective_policy<'a>(
         level,
         paths: paths.into_values().collect(),
         domains,
+        sockets,
         commands: commands
             .into_iter()
             .map(|((command, args), decision)| CommandRule {

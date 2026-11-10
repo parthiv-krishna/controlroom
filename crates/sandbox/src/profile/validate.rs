@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use super::input::Input;
 use crate::paths::AbsPath;
-use crate::policy::{Access, CommandDecision, SandboxLevel};
+use crate::policy::{Access, CommandDecision, PathKind, SandboxLevel};
 use crate::spec::{Endpoint, SessionSandboxSpec};
 use crate::workspace::WorkspaceSandboxSpec;
 
@@ -32,6 +32,15 @@ pub enum ProfileError {
         grant: AbsPath,
         /// The protected path it covers.
         protected: AbsPath,
+    },
+    /// A directory grant contains a path nono denies by default: nono refuses to start, since
+    /// Landlock can't deny beneath an allowed directory (see [`crate::limits`]).
+    #[error("{grant} contains {denied}, which nono always protects")]
+    ContainsNonoDenied {
+        /// The offending directory.
+        grant: AbsPath,
+        /// The denied path under it.
+        denied: AbsPath,
     },
     /// A read-write grant of `/`: the whole filesystem writable is never a sandbox.
     #[error("grant {0} can't be read-write")]
@@ -117,6 +126,7 @@ pub(super) fn validate(spec: &Input) -> Result<(), ProfileError> {
     }
     check_broad(spec)?;
     check_protected(spec)?;
+    check_nono_denied(spec)?;
     check_exec_dirs(spec)?;
     check_routes(spec)?;
     check_approvals(spec)
@@ -142,11 +152,47 @@ fn check_protected(spec: &Input) -> Result<(), ProfileError> {
         .chain(spec.exec_dirs)
         .chain(spec.policy.paths.iter().map(|g| &g.path))
         .chain(relaxed.iter().map(|g| &g.path));
+    // A socket in a protected dir (the daemon's own) would let the sandbox talk to it.
+    for socket in &spec.policy.sockets {
+        if let Some(p) = protected.iter().find(|p| p.contains(socket)) {
+            return Err(ProfileError::CoversProtected {
+                grant: socket.clone(),
+                protected: p.clone(),
+            });
+        }
+    }
     for grant in grants {
         if let Some(p) = protected.iter().find(|p| grant.contains(p)) {
             return Err(ProfileError::CoversProtected {
                 grant: grant.clone(),
                 protected: p.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn check_nono_denied(spec: &Input) -> Result<(), ProfileError> {
+    let dir_grants = spec
+        .policy
+        .paths
+        .iter()
+        .chain(spec.relaxed_reads)
+        .filter(|g| g.kind == PathKind::Dir)
+        .map(|g| &g.path);
+    let dirs = std::iter::once(spec.cwd)
+        .chain(spec.read_only)
+        .chain(spec.exec_dirs)
+        .chain(dir_grants);
+    for dir in dirs {
+        if let Some(denied) = spec
+            .nono_denied
+            .iter()
+            .find(|d| dir.contains(d) && dir != *d)
+        {
+            return Err(ProfileError::ContainsNonoDenied {
+                grant: dir.clone(),
+                denied: denied.clone(),
             });
         }
     }
