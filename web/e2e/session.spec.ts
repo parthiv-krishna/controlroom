@@ -153,6 +153,21 @@ test('session header: every workspace with its availability, and the overlap war
   await expect(page.getByRole('banner').getByText('Needs approval')).toBeVisible();
 });
 
+test('agent options follow agent_live: editable after a failed turn, locked while asleep', async ({ page }) => {
+  // Failed, but the agent is still attached and ready.
+  await start(page, '01JAS000000000000000000007');
+  const model = page.getByRole('banner').getByRole('button', { name: 'Model' });
+  await expect(model).toBeEnabled();
+  await model.click();
+  await page.getByRole('listbox', { name: 'Model' }).getByRole('option', { name: 'Small' }).click();
+  await expect.poll(async () => (await calls(page, 'session.set_option')).at(-1)?.params).toMatchObject({
+    id: '01JAS000000000000000000007', option_id: 'model', value: 'small',
+  });
+  // Asleep (no agent attached): locked.
+  await start(page, '01JAS000000000000000000010');
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Model' })).toBeDisabled();
+});
+
 test('a command waiting for terminal input names its shell; a privileged command says it runs unsandboxed', async ({ page }) => {
   await start(page, S.jobs);
   const input = page.locator('[data-request="req-term-1"]').first();

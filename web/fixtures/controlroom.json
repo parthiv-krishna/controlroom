@@ -499,6 +499,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -654,6 +655,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -818,6 +820,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -955,6 +958,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -1127,6 +1131,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -1312,6 +1317,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -1443,6 +1449,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -1574,6 +1581,7 @@
       ]
      }
     ],
+    "agent_live": false,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -1705,6 +1713,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -1838,6 +1847,7 @@
       ]
      }
     ],
+    "agent_live": false,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -2062,6 +2072,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -2228,6 +2239,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -2359,6 +2371,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -2549,6 +2562,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -2712,6 +2726,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "off",
      "default_level": "strict",
@@ -2843,6 +2858,7 @@
       ]
      }
     ],
+    "agent_live": false,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -3013,6 +3029,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "relaxed",
      "default_level": "strict",
@@ -3144,6 +3161,7 @@
       ]
      }
     ],
+    "agent_live": true,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -4403,6 +4421,7 @@
       ]
      }
     ],
+    "agent_live": false,
     "sandbox": {
      "level": "strict",
      "default_level": "strict",
@@ -6503,6 +6522,7 @@
          ]
         }
        ],
+       "agent_live": true,
        "sandbox": {
         "level": "strict",
         "default_level": "strict",
@@ -6750,6 +6770,7 @@
          ]
         }
        ],
+       "agent_live": true,
        "sandbox": {
         "level": "strict",
         "default_level": "strict",

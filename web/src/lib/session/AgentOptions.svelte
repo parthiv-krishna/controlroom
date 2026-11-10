@@ -1,7 +1,7 @@
 <script lang="ts">
   // The agent's neutral options (model, thinking level, …), from the summary.
-  // Changing one calls session.set_option, which needs a live agent; a select stays disabled until
-  // the agent reported its choices (empty until then).
+  // Changing one calls session.set_option, which needs a live, ready agent (`agent_live`: also
+  // after a failed turn); a select stays disabled until the agent reported its choices.
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import type { FeedSession } from '../protocol';
@@ -9,8 +9,7 @@
 
   let { s }: { s: FeedSession } = $props();
   const app = useApp();
-  const agentLive = $derived(['idle', 'working', 'awaiting_permission', 'awaiting_input'].includes(s.state));
-  const editable = $derived(app.client.online && agentLive);
+  const editable = $derived(app.client.online && s.agent_live);
 </script>
 
 <span class="opts">
