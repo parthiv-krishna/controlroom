@@ -12,6 +12,8 @@ test-support = ["controlroom-client-core/test-support", "dep:tempfile"]
 [dependencies]
 controlroom-client-core.workspace = true
 controlroom-protocol.workspace = true
+# What nono lets a standing grant cover (`limits`), to refuse grants that could never work.
+controlroom-sandbox.workspace = true
 # Schedules: five-field cron with DST handling, in IANA time zones (the host's tz database,
 # falling back to a bundled one where the host has none, e.g. a minimal container).
 croner = { version = "4.0", default-features = false, features = ["jiff"] }

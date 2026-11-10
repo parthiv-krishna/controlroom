@@ -24,13 +24,20 @@ use super::sandbox::device_label;
 use super::{Conn, profile_paths};
 use crate::errors::{not_found, store_error};
 
-/// Makes an answered "Always allow" or "Never" standing; other answers are left alone.
+/// Makes an answered "Always allow" or "Never" standing; other answers are left alone. A grant
+/// that could never take effect (an older host offered "Always allow" for it) is logged and not
+/// stored: the answer still holds for the running workspace.
 pub(super) fn remember(conn: &Conn, result: &Value) -> Result<(), RpcError> {
     let Ok(result) = serde_json::from_value::<RequestRespondResult>(result.clone()) else {
         return Ok(());
     };
-    let Some((scope, change)) = standing_change(&result)? else {
-        return Ok(());
+    let (scope, change) = match standing_change(&result) {
+        Ok(Some(standing)) => standing,
+        Ok(None) => return Ok(()),
+        Err(e) => {
+            tracing::warn!("not making a file decision standing: {}", e.message);
+            return Ok(());
+        }
     };
     let repo = conn.hub.repo();
     if let ProfileScope::Machine { machine_id } = &scope {
@@ -172,6 +179,11 @@ mod tests {
                 },
             ))
         );
+        let mut proc = answered(ALLOW_ALWAYS, PathAccess::Read, RequestKind::Sandbox);
+        if let Some(RequestBody::Path { path, .. }) = &mut proc.request.body {
+            *path = "/proc/1/root".into();
+        }
+        assert!(standing_change(&proc).is_err());
         for (option, kind) in [
             ("allow-session", RequestKind::Sandbox),
             ("deny", RequestKind::Sandbox),

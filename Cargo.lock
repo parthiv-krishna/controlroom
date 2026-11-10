@@ -647,6 +647,7 @@ dependencies = [
  "controlroom-client-core",
  "controlroom-controller",
  "controlroom-protocol",
+ "controlroom-sandbox",
  "croner",
  "data-encoding",
  "futures",
