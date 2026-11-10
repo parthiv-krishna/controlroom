@@ -2,9 +2,11 @@
 //! ([`controlroom_protocol::host::terminal`]).
 //!
 //! One task writes stdout: the `attached` frame, then every output record with its transcript
-//! position, and the foreground program whenever it changes. It checks the foreground at most
-//! every [`FOREGROUND_POLL`], and only after terminal activity (output or typing), from
-//! `/proc`. Another task decodes stdin: input is typed into the terminal, resizes applied.
+//! position, and the foreground program whenever it changes. It checks the foreground from
+//! `/proc` every [`FOREGROUND_POLL`] while the terminal is active (output or typing) and for
+//! [`FOREGROUND_SETTLE`] after: a typed command may start its program late (a busy host) and
+//! then print nothing, so one check right after the typing would miss it. Another task decodes
+//! stdin: input is typed into the terminal, resizes applied.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,6 +23,8 @@ use crate::host::shells::proc;
 
 /// How often the foreground program is checked while the terminal is active.
 const FOREGROUND_POLL: Duration = Duration::from_millis(250);
+/// How long the foreground keeps being checked after the last activity.
+const FOREGROUND_SETTLE: Duration = Duration::from_secs(5);
 /// How far behind a resume may start; further behind, recent output is replayed instead (a
 /// flood the client missed is not worth sending whole).
 const RESUME_RECORDS: u64 = 20_000;
@@ -54,6 +58,9 @@ pub(super) async fn attach(shell: &ShellTarget, resume: Option<Resume>) -> anyho
             .await?;
             let mut shown: Option<String> = None;
             let mut poll = tokio::time::interval(FOREGROUND_POLL);
+            let settle_ticks = FOREGROUND_SETTLE.as_millis() / FOREGROUND_POLL.as_millis();
+            // Checks left before the terminal counts as quiet.
+            let mut checks_left = 0;
             loop {
                 tokio::select! {
                     record = stream.next() => {
@@ -64,9 +71,13 @@ pub(super) async fn attach(shell: &ShellTarget, resume: Option<Resume>) -> anyho
                         active.store(true, Ordering::Relaxed);
                     }
                     _ = poll.tick() => {
-                        if !active.swap(false, Ordering::Relaxed) {
+                        if active.swap(false, Ordering::Relaxed) {
+                            checks_left = settle_ticks;
+                        }
+                        if checks_left == 0 {
                             continue;
                         }
+                        checks_left -= 1;
                         let now = foreground(shell);
                         if now != shown {
                             send(&mut out, FromHost::Foreground(now.clone())).await?;

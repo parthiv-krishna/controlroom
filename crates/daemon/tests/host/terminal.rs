@@ -143,6 +143,17 @@ async fn a_framed_attach_types_resizes_reports_the_foreground_and_resumes() {
     term.until("back at the prompt", |t| t.foreground.is_none())
         .await;
 
+    // A program that starts late and prints nothing (a busy host) still shows: the foreground
+    // keeps being checked for a while after the typing.
+    term.type_line("sh -c 'sleep 1; exec sleep 300'").await;
+    term.until("the late program in the foreground", |t| {
+        t.foreground.as_deref() == Some("sleep")
+    })
+    .await;
+    term.send(ToHost::Input(b"\x03".to_vec())).await;
+    term.until("back at the prompt again", |t| t.foreground.is_none())
+        .await;
+
     // A second client resumes where the first one's output ended: nothing again, nothing lost.
     let resume_at = term.last_seq + 1;
     drop(term);
