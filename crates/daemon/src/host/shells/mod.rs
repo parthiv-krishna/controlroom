@@ -226,8 +226,11 @@ impl Shell {
             inner.generation
         };
         self.ready.send_replace(false);
+        // Saved before anything can attach: `shell.open` answers once the prompt shows, and a
+        // `pty attach` right after finds the supervisor in the store. Saved before the read loop
+        // starts, so no later save (e.g. with the shell's pid) can be overtaken by this one.
+        self.save(host).await;
         tokio::spawn(read_loop(host.clone(), self.clone(), generation, stream));
-        self.persist(host);
         host.shells.changed(host, self);
         let mut ready = self.ready.subscribe();
         match tokio::time::timeout(START_TIMEOUT, ready.wait_for(|r| *r)).await {
@@ -387,8 +390,19 @@ impl Shell {
         self.ensure_running(host, None).await
     }
 
-    /// Saves the cwd, supervisor and reset state.
+    /// Saves the cwd, supervisor and reset state (in the background).
     fn persist(&self, host: &Arc<Host>) {
+        let save = self.save_op(host);
+        tokio::spawn(save);
+    }
+
+    /// Saves the cwd, supervisor and reset state, and waits for it.
+    async fn save(&self, host: &Arc<Host>) {
+        self.save_op(host).await;
+    }
+
+    /// The save, as of now.
+    fn save_op(&self, host: &Arc<Host>) -> impl std::future::Future<Output = ()> + Send + 'static {
         let (id, cwd, reset, supervisor, shell_pid) = {
             let inner = self.lock();
             (
@@ -400,7 +414,7 @@ impl Shell {
             )
         };
         let store = host.store.clone();
-        tokio::spawn(async move {
+        async move {
             let saved = store
                 .run(move |c| {
                     c.execute(
@@ -413,7 +427,7 @@ impl Shell {
             if let Err(e) = saved {
                 tracing::warn!("saving a shell: {}", e.message);
             }
-        });
+        }
     }
 
     /// Ends the shell (SIGHUP to its group, SIGKILL after the grace).
