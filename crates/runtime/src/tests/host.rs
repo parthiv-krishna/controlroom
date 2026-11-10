@@ -11,7 +11,7 @@ use controlroom_drivers::fake::{AgentOutput, FakeAgent, FakeScript};
 use controlroom_drivers::{Capabilities, Driver, FakeDriver};
 use controlroom_protocol::RpcError;
 use controlroom_protocol::ids::{RemotePath, Seq, SessionId, UnixMillis};
-use controlroom_protocol::session::DriverKind;
+use controlroom_protocol::session::{DriverKind, SandboxLevel};
 use controlroom_supervisor::{Exec, SpawnSpec};
 use controlroom_transcript::{Body, ExitInfo, Line, Meta, Record, StopCause};
 use futures::future::BoxFuture;
@@ -60,10 +60,18 @@ impl Agents for FakeAgents {
             stdin: controlroom_transcript::StdinMode::Pipe,
             timeout_ms: None,
             max_line_bytes: None,
-            labels: Default::default(),
+            labels: [("sandbox".to_owned(), level_name(launch.sandbox_level))].into(),
             plain_log: None,
         })
     }
+}
+
+fn level_name(level: SandboxLevel) -> String {
+    serde_json::to_value(level)
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 type Held = (String, oneshot::Sender<Result<Seq, HostError>>);
@@ -255,6 +263,17 @@ impl FakeHost {
             .unwrap_or_default()
     }
 
+    /// The sandbox level of each start of the session's agent, in order.
+    pub(crate) fn launch_levels(&self, id: SessionId) -> Vec<String> {
+        self.transcript(id)
+            .into_iter()
+            .filter_map(|r| match r.body {
+                Body::Meta(meta) => meta.labels.get("sandbox").cloned(),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(crate) fn file(&self, path: &str) -> Option<String> {
         self.lock().files.get(path).cloned()
     }
@@ -361,6 +380,7 @@ impl Host for FakeHost {
                     Body::Meta(Box::new(Meta {
                         id: session.to_string(),
                         argv: argv.clone(),
+                        labels: spec.labels.clone(),
                         ..Meta::default()
                     })),
                 );

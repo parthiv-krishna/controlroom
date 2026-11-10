@@ -303,6 +303,7 @@ impl PiDriver {
                 title,
                 model,
                 thinking,
+                sandbox: None,
             },
             Life::Done,
         );

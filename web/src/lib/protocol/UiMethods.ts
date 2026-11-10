@@ -78,6 +78,7 @@ import type { SessionOpParams } from "./SessionOpParams";
 import type { SessionPromptParams } from "./SessionPromptParams";
 import type { SessionResumeParams } from "./SessionResumeParams";
 import type { SessionSetOptionParams } from "./SessionSetOptionParams";
+import type { SessionSetSandboxLevelParams } from "./SessionSetSandboxLevelParams";
 import type { SessionStartFreshParams } from "./SessionStartFreshParams";
 import type { SessionSubscribeParams } from "./SessionSubscribeParams";
 import type { SessionSubscribeResult } from "./SessionSubscribeResult";
@@ -351,6 +352,11 @@ export type UiMethods = {
    * Pass-through: change an agent option.
    */
   "session.set_option": { params: SessionSetOptionParams, result: Ack },
+  /**
+   * Pass-through: change a session's sandbox level (`sandbox` is filled in; logged with
+   * the device).
+   */
+  "session.set_sandbox_level": { params: SessionSetSandboxLevelParams, result: Ack },
   /**
    * Pass-through: open a terminal of the user's own in a workspace (`by` is filled in).
    */

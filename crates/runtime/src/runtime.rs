@@ -9,8 +9,9 @@ use controlroom_protocol::agentd::{
     DaemonSettings, HostMachine, HostOpRequest, PromptResult, QueueEditParams, QueueRemoveParams,
     QueueReorderParams, QueueSendNowParams, ReadCursor, RequestRespondParams, RequestRespondResult,
     RetentionPolicy, SendNowResult, SessionMarkReadParams, SessionOpParams, SessionPromptParams,
-    SessionResumeParams, SessionSetOptionParams, SessionStartFreshParams, SessionUpdateParams,
-    SessionsChange, SessionsSnapshot, SettingsSetParams, StartFreshResult,
+    SessionResumeParams, SessionSetOptionParams, SessionSetSandboxLevelParams,
+    SessionStartFreshParams, SessionUpdateParams, SessionsChange, SessionsSnapshot,
+    SettingsSetParams, StartFreshResult,
 };
 use controlroom_protocol::ids::{DaemonId, HostOpId, Rev, Seq, SessionId, SubscriptionId};
 use controlroom_protocol::jsonrpc::RpcOutcome;
@@ -546,6 +547,20 @@ impl Runtime {
         self.command("session.set_option", &params.op_id, &params, |core| {
             core.set_option(&params)
         })
+        .await
+    }
+
+    /// `session.set_sandbox_level`.
+    pub async fn set_sandbox_level(
+        &self,
+        params: SessionSetSandboxLevelParams,
+    ) -> Result<(), RpcError> {
+        self.command(
+            "session.set_sandbox_level",
+            &params.op_id,
+            &params,
+            |core| core.set_sandbox_level(&params),
+        )
         .await
     }
 

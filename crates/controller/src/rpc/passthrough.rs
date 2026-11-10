@@ -11,6 +11,8 @@
 //! opened or closed (`session.terminal_*`; the device also fills `by`, for the agent daemon's
 //! and the host's logs).
 //!
+//! So is every sandbox level change of a session (`session.set_sandbox_level`, with the level).
+//!
 //! An answered `request.respond` may also change the sandbox defaults: "Always allow" and
 //! "Never" on a file request (see [`sandbox_decisions`]).
 
@@ -89,6 +91,8 @@ enum Audit {
     Models,
     /// One of the user's terminals opened (with its sandbox mode) or closed, once it succeeded.
     Terminal,
+    /// A session's sandbox level changed, once it succeeded.
+    SandboxLevel,
 }
 
 /// One of the user's terminals: the device fills `by`, and it is logged.
@@ -118,6 +122,11 @@ const TABLE: &[Entry] = &[
     plain("session.mark_read"),
     plain("session.mark_unread"),
     plain("session.set_option"),
+    Entry {
+        fill: Fill::Sandbox,
+        audit: Audit::SandboxLevel,
+        ..plain("session.set_sandbox_level")
+    },
     terminal("session.terminal_open"),
     terminal("session.terminal_close"),
     plain("queue.send_now"),
@@ -196,7 +205,8 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
     if entry.audit == Audit::Models {
         audit(conn, method, &params);
     }
-    let logged = (entry.audit == Audit::Terminal).then(|| params.clone());
+    let logged =
+        matches!(entry.audit, Audit::Terminal | Audit::SandboxLevel).then(|| params.clone());
     let options = CallOptions {
         timeout: if entry.slow {
             CallTimeout::After(conn.hub.services.tuning.slow_call_timeout)
@@ -212,7 +222,11 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
         .await
         .map_err(agentd_error)?;
     if let Some(params) = logged {
-        log_terminal(conn, method, &params, &value);
+        if entry.audit == Audit::SandboxLevel {
+            log_sandbox_level(conn, &params);
+        } else {
+            log_terminal(conn, method, &params, &value);
+        }
     }
     if method == "request.respond" {
         sandbox_decisions::remember(conn, &value)?;
@@ -220,12 +234,20 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
     Ok(Reply { value, after: None })
 }
 
+/// Logs a session's new sandbox level (`defaults` when the explicit level was dropped) with
+/// its device.
+fn log_sandbox_level(conn: &Conn, params: &Map<String, Value>) {
+    let session = params.get("id").and_then(Value::as_str).unwrap_or("-");
+    let level = params
+        .get("level")
+        .and_then(Value::as_str)
+        .unwrap_or("defaults");
+    tracing::info!(%session, %level, device = %device(conn), "session sandbox level changed");
+}
+
 /// Logs one of the user's terminals opened or closed, with its device and sandbox mode.
 fn log_terminal(conn: &Conn, method: &str, params: &Map<String, Value>, result: &Value) {
-    let device = conn.device_ref().map_or_else(
-        || "an unregistered device".to_owned(),
-        |d| format!("{} ({})", d.label, d.device_id),
-    );
+    let device = device(conn);
     let text = |v: Option<&Value>| v.and_then(Value::as_str).unwrap_or("-").to_owned();
     let session = text(params.get("id"));
     if method == "session.terminal_open" {
@@ -238,12 +260,17 @@ fn log_terminal(conn: &Conn, method: &str, params: &Map<String, Value>, result: 
     }
 }
 
-/// Logs a change with its device and provider; never the other params (an API key).
-fn audit(conn: &Conn, method: &str, params: &Map<String, Value>) {
-    let device = conn.device_ref().map_or_else(
+/// The connection's device, for the log.
+fn device(conn: &Conn) -> String {
+    conn.device_ref().map_or_else(
         || "an unregistered device".to_owned(),
         |d| format!("{} ({})", d.label, d.device_id),
-    );
+    )
+}
+
+/// Logs a change with its device and provider; never the other params (an API key).
+fn audit(conn: &Conn, method: &str, params: &Map<String, Value>) {
+    let device = device(conn);
     let provider = params
         .get("provider")
         .and_then(Value::as_str)

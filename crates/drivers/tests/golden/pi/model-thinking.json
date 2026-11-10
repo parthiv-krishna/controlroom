@@ -11,7 +11,7 @@
    "events": []},
   {"seq": 4,
    "ops": [
-     {"item":{"actor":"root","id":"info-4","kind":"session_info","model":"Mock Model B","seq_from":4,"seq_to":4,"streaming":false,"thinking":null,"title":null,"ts":1700000000320},"op":"upsert"}
+     {"item":{"actor":"root","id":"info-4","kind":"session_info","model":"Mock Model B","sandbox":null,"seq_from":4,"seq_to":4,"streaming":false,"thinking":null,"title":null,"ts":1700000000320},"op":"upsert"}
    ],
    "events": [
      {"event":"ready"},
@@ -25,7 +25,7 @@
    ]},
   {"seq": 6,
    "ops": [
-     {"item":{"actor":"root","id":"info-6","kind":"session_info","model":null,"seq_from":6,"seq_to":6,"streaming":false,"thinking":"high","title":null,"ts":1700000000321},"op":"upsert"}
+     {"item":{"actor":"root","id":"info-6","kind":"session_info","model":null,"sandbox":null,"seq_from":6,"seq_to":6,"streaming":false,"thinking":"high","title":null,"ts":1700000000321},"op":"upsert"}
    ],
    "events": [
      {"event":"options","options":[{"choices":[{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model-b"},{"choices":[{"label":"high","value":"high"}],"id":"thinking","kind":"select","label":"Thinking","value":"high"}]}
@@ -42,7 +42,7 @@
    ]},
   {"seq": 9,
    "ops": [
-     {"item":{"actor":"root","id":"info-9","kind":"session_info","model":null,"seq_from":9,"seq_to":9,"streaming":false,"thinking":"off","title":null,"ts":1700000000321},"op":"upsert"}
+     {"item":{"actor":"root","id":"info-9","kind":"session_info","model":null,"sandbox":null,"seq_from":9,"seq_to":9,"streaming":false,"thinking":"off","title":null,"ts":1700000000321},"op":"upsert"}
    ],
    "events": [
      {"event":"options","options":[{"choices":[{"label":"Mock Model B","value":"mock/mock-model-b"}],"id":"model","kind":"select","label":"Model","value":"mock/mock-model-b"},{"choices":[{"label":"off","value":"off"}],"id":"thinking","kind":"select","label":"Thinking","value":"off"}]}
@@ -59,7 +59,7 @@
    ]},
   {"seq": 12,
    "ops": [
-     {"item":{"actor":"root","id":"info-12","kind":"session_info","model":null,"seq_from":12,"seq_to":12,"streaming":false,"thinking":null,"title":"fixture session","ts":1700000000321},"op":"upsert"}
+     {"item":{"actor":"root","id":"info-12","kind":"session_info","model":null,"sandbox":null,"seq_from":12,"seq_to":12,"streaming":false,"thinking":null,"title":"fixture session","ts":1700000000321},"op":"upsert"}
    ],
    "events": [
      {"event":"title","title":"fixture session"}
@@ -158,10 +158,10 @@
 ],
 "timeline": [
   {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000319},
-  {"actor":"root","id":"info-4","kind":"session_info","model":"Mock Model B","seq_from":4,"seq_to":4,"streaming":false,"thinking":null,"title":null,"ts":1700000000320},
-  {"actor":"root","id":"info-6","kind":"session_info","model":null,"seq_from":6,"seq_to":6,"streaming":false,"thinking":"high","title":null,"ts":1700000000321},
-  {"actor":"root","id":"info-9","kind":"session_info","model":null,"seq_from":9,"seq_to":9,"streaming":false,"thinking":"off","title":null,"ts":1700000000321},
-  {"actor":"root","id":"info-12","kind":"session_info","model":null,"seq_from":12,"seq_to":12,"streaming":false,"thinking":null,"title":"fixture session","ts":1700000000321},
+  {"actor":"root","id":"info-4","kind":"session_info","model":"Mock Model B","sandbox":null,"seq_from":4,"seq_to":4,"streaming":false,"thinking":null,"title":null,"ts":1700000000320},
+  {"actor":"root","id":"info-6","kind":"session_info","model":null,"sandbox":null,"seq_from":6,"seq_to":6,"streaming":false,"thinking":"high","title":null,"ts":1700000000321},
+  {"actor":"root","id":"info-9","kind":"session_info","model":null,"sandbox":null,"seq_from":9,"seq_to":9,"streaming":false,"thinking":"off","title":null,"ts":1700000000321},
+  {"actor":"root","id":"info-12","kind":"session_info","model":null,"sandbox":null,"seq_from":12,"seq_to":12,"streaming":false,"thinking":null,"title":"fixture session","ts":1700000000321},
   {"actor":"root","id":"error-15","kind":"error","seq_from":15,"seq_to":15,"streaming":false,"text":"pi rejected set_model: Model not found: mock/no-such-model","ts":1700000000321},
   {"actor":"root","content":[{"kind":"text","text":"Which model are you?"}],"id":"user-16","kind":"message","role":"user","seq_from":16,"seq_to":17,"streaming":false,"ts":1700000000321},
   {"actor":"root","error":null,"id":"run-18","kind":"run","outcome":"completed","seq_from":18,"seq_to":33,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000323},

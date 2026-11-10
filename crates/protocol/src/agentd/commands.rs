@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ids::{OpId, QueueId, RemotePath, Seq, SessionId};
-use crate::session::{ContentPart, PromptOrigin, SandboxSpec};
+use crate::session::{ContentPart, PromptOrigin, SandboxLevel, SandboxSpec};
 
 /// Params of commands that only name a session: `session.cancel`, `session.close`,
 /// `session.reopen`, `session.delete`, `session.mark_unread`, `queue.resume`.
@@ -180,6 +180,36 @@ pub struct SessionSetOptionParams {
     pub option_id: String,
     /// The new value.
     pub value: OptionValue,
+}
+
+/// Params of `session.set_sandbox_level`: change the level a session runs at after creation.
+/// `level` is an explicit choice that wins over the defaults in either direction; `null` drops
+/// the explicit level, so the defaults' level applies again.
+///
+/// When the level the session runs at changes:
+///
+/// - the agent restarts (resumed), so its server sandbox matches; a running run stops, as for
+///   any restart;
+/// - every workspace is reopened with the new level (`workspace.open`), which rewrites its
+///   profiles and restarts the agent's shells there (their next command says so); hosts that
+///   are offline get it when they reconnect. The user's terminals and running jobs keep the
+///   sandbox they started with until they end;
+/// - the timeline gets a `session_info` divider with the new level, and the agent a note in
+///   its next turn.
+///
+/// `invalid_state` for a closed session; `busy` while the agent is starting or restarting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SessionSetSandboxLevelParams {
+    /// Idempotency key.
+    pub op_id: OpId,
+    /// The session.
+    pub id: SessionId,
+    /// The explicit level; `null`: back to the defaults' level.
+    pub level: Option<SandboxLevel>,
+    /// Refreshed sandbox defaults; absent keeps the current ones. In the UI API the controller
+    /// always fills it, as for `session.resume`, replacing any value a client sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<SandboxSpec>,
 }
 
 /// Params of `queue.send_now`: deliver a queued item ahead of everything else. While a run is

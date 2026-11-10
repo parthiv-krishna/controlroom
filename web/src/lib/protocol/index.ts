@@ -212,6 +212,7 @@ export type * from "./SessionOption";
 export type * from "./SessionPromptParams";
 export type * from "./SessionResumeParams";
 export type * from "./SessionSetOptionParams";
+export type * from "./SessionSetSandboxLevelParams";
 export type * from "./SessionStartFreshParams";
 export type * from "./SessionState";
 export type * from "./SessionSubscribeParams";

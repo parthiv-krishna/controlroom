@@ -16,6 +16,7 @@ import type { RetryPhase } from "./RetryPhase";
 import type { RunOutcome } from "./RunOutcome";
 import type { RunState } from "./RunState";
 import type { RunTrigger } from "./RunTrigger";
+import type { SandboxLevel } from "./SandboxLevel";
 import type { Seq } from "./Seq";
 import type { SessionState } from "./SessionState";
 import type { Todo } from "./Todo";
@@ -273,4 +274,9 @@ model: string | null,
 /**
  * The new thinking level label.
  */
-thinking: string | null, } | { "kind": "unknown" });
+thinking: string | null, 
+/**
+ * The new sandbox level, set by the agent daemon when the user changes it (always a
+ * change, unlike the other fields).
+ */
+sandbox: SandboxLevel | null, } | { "kind": "unknown" });

@@ -23,7 +23,7 @@ use crate::model::{Delivery, QueueEntry, SessionData, Via};
 use crate::session::Session;
 
 /// How long a closing or restarting agent gets before SIGKILL.
-const STOP_GRACE: Duration = Duration::from_secs(5);
+pub(super) const STOP_GRACE: Duration = Duration::from_secs(5);
 
 impl Core {
     /// `session.create` with its workspaces already opened on their hosts (by the caller),

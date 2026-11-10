@@ -26,8 +26,8 @@ use controlroom_protocol::ids::{
 };
 use controlroom_protocol::jsonrpc::{Ack, RpcOutcome};
 use controlroom_protocol::session::{
-    Availability, Job, JobFollow, JobStatus, OptionStyle, RequestBody, RequestOption, Shell,
-    ShellState,
+    Availability, Job, JobFollow, JobStatus, OptionStyle, RequestBody, RequestOption, SandboxLevel,
+    Shell, ShellState,
 };
 use controlroom_protocol::ui::Connectivity;
 use controlroom_protocol::{ErrorData, Resource, RpcError};
@@ -71,6 +71,8 @@ struct Machine {
     /// Counts connections; answers go out only on the connection their request ran on.
     generation: u64,
     workspaces: BTreeMap<WorkspaceId, (SessionId, RemotePath)>,
+    /// The sandbox level of every `workspace.open`, in order.
+    opened: Vec<(WorkspaceId, SandboxLevel)>,
     shells: BTreeMap<ShellId, HostShell>,
     files: BTreeMap<String, String>,
     journal: BTreeMap<CallId, Entry>,
@@ -174,6 +176,7 @@ impl FakeMachines {
                 grace_s: 600,
                 generation: 1,
                 workspaces: BTreeMap::new(),
+                opened: Vec::new(),
                 shells: BTreeMap::new(),
                 files: BTreeMap::new(),
                 journal: BTreeMap::new(),
@@ -344,6 +347,7 @@ impl FakeMachines {
                         );
                     }
                     let root = Machine::root(&p.path);
+                    m.opened.push((p.workspace_id, p.sandbox.level));
                     m.workspaces
                         .insert(p.workspace_id, (p.session_id, root.clone()));
                     ok(WorkspaceOpenResult {
@@ -885,6 +889,11 @@ impl FakeMachines {
     /// Bash commands the machine ran, in order.
     pub(crate) fn ran(&self, machine: MachineId) -> Vec<String> {
         self.with(machine, |m| m.ran.clone())
+    }
+
+    /// The sandbox level of every `workspace.open` the machine got, in order.
+    pub(crate) fn opened(&self, machine: MachineId) -> Vec<(WorkspaceId, SandboxLevel)> {
+        self.with(machine, |m| m.opened.clone())
     }
 
     /// Request methods the machine received, in order.

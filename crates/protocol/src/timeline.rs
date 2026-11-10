@@ -17,7 +17,8 @@ use ts_rs::TS;
 
 use crate::ids::{ItemId, MessageId, ScheduleId, Seq, SessionId, UnixMillis};
 use crate::session::{
-    ContentPart, ContextUsage, DeviceRef, Job, PeerRef, Request, RunOutcome, SessionState, Todo,
+    ContentPart, ContextUsage, DeviceRef, Job, PeerRef, Request, RunOutcome, SandboxLevel,
+    SessionState, Todo,
 };
 
 /// Who an item belongs to: the session itself or one of its child sessions (rolled up into the
@@ -502,6 +503,10 @@ pub enum ItemBody {
         model: Option<String>,
         /// The new thinking level label.
         thinking: Option<String>,
+        /// The new sandbox level, set by the agent daemon when the user changes it (always a
+        /// change, unlike the other fields).
+        #[serde(default)]
+        sandbox: Option<SandboxLevel>,
     },
     /// An item kind this build doesn't know; render a placeholder with a raw-view link.
     #[serde(other)]

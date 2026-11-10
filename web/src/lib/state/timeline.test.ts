@@ -142,7 +142,7 @@ describe('Timeline folding', () => {
   });
   const notice = (id: string, seq: number, text: string): TimelineItem => ({ ...base, id, seq_from: seq, seq_to: seq, kind: 'notice', level: 'info', text });
   const info = (id: string, seq: number, fields: { model?: string; thinking?: string }): TimelineItem => ({
-    ...base, id, seq_from: seq, seq_to: seq, kind: 'session_info', title: null, model: fields.model ?? null, thinking: fields.thinking ?? null,
+    ...base, id, seq_from: seq, seq_to: seq, kind: 'session_info', title: null, model: fields.model ?? null, thinking: fields.thinking ?? null, sandbox: null,
   });
 
   it('folds retries into their run; a retry before any run stays a row', () => {

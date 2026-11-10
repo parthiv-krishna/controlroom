@@ -199,6 +199,9 @@ pub mod methods {
         SessionMarkUnread = "session.mark_unread" (SessionOpParams) -> ReadCursor;
         /// Pass-through: change an agent option.
         SessionSetOption = "session.set_option" (SessionSetOptionParams) -> Ack;
+        /// Pass-through: change a session's sandbox level (`sandbox` is filled in; logged with
+        /// the device).
+        SessionSetSandboxLevel = "session.set_sandbox_level" (SessionSetSandboxLevelParams) -> Ack;
         /// Pass-through: open a terminal of the user's own in a workspace (`by` is filled in).
         SessionTerminalOpen = "session.terminal_open" (TerminalOpenParams) -> Shell;
         /// Pass-through: end one of the user's terminals.

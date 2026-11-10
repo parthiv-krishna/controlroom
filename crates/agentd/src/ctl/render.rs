@@ -421,11 +421,18 @@ fn summary(body: &ItemBody) -> Option<String> {
             title,
             model,
             thinking,
+            sandbox,
         } => {
-            let fields: Vec<String> = [("title", title), ("model", model), ("thinking", thinking)]
-                .into_iter()
-                .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}={v}")))
-                .collect();
+            let sandbox = sandbox.as_ref().map(name);
+            let fields: Vec<String> = [
+                ("title", title),
+                ("model", model),
+                ("thinking", thinking),
+                ("sandbox", &sandbox),
+            ]
+            .into_iter()
+            .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}={v}")))
+            .collect();
             format!("session: {}", fields.join(", "))
         }
         ItemBody::Unknown => "(an item kind this build doesn't know)".to_owned(),

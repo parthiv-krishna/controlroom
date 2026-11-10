@@ -9,12 +9,13 @@
 //!    names it only when asked);
 //! 3. answers for decided requests whose answer isn't in the transcript or on its way;
 //! 4. a requested cancel;
-//! 5. the queue: while the agent is busy, a send-now item is steered in (driver capability) or
+//! 5. nothing more while a restart is pending (the process is about to be replaced);
+//! 6. the queue: while the agent is busy, a send-now item is steered in (driver capability) or
 //!    the run is cancelled at a safe point (no open tool, a pending request, or "interrupt
 //!    now"); while it is idle, the head item is sent if it is a send-now item or the queue
 //!    auto-sends and isn't paused.
-//! 6. injections (`inject`): steered into an active run, or a waking one as a prompt;
-//! 7. auto-continue (`auto`), once the agent is idle after a run settled.
+//! 7. injections (`inject`): steered into an active run, or a waking one as a prompt;
+//! 8. auto-continue (`auto`), once the agent is idle after a run settled.
 //!
 //! Every line carries a [`LineTag`]; a tag that was handed over or seen in the transcript is
 //! never sent again.
@@ -60,6 +61,11 @@ impl Core {
         }
         self.write_answers(id);
         self.write_cancel(id);
+        // A process about to be replaced gets nothing new: what it took would count as
+        // delivered when it goes, so prompts and injections wait for the next one.
+        if self.sessions[&id].live.relaunch {
+            return;
+        }
         self.advance_queue(id);
         self.deliver_injections(id);
         self.auto_continue(id);

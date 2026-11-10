@@ -168,6 +168,7 @@ fn session_ops() -> Vec<TimelineOp> {
                 title: None,
                 model: Some("mock-model".into()),
                 thinking: Some("medium".into()),
+                sandbox: None,
             },
         ),
         item("r1", 2, false, run(RunState::Running, None, None)),

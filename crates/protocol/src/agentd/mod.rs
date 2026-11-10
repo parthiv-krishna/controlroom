@@ -90,6 +90,8 @@ pub mod methods {
         SessionMarkUnread = "session.mark_unread" (SessionOpParams) -> ReadCursor;
         /// Change an agent option (model, thinking level, ...).
         SessionSetOption = "session.set_option" (SessionSetOptionParams) -> Ack;
+        /// Change the session's sandbox level (restarts its agent and the agent's shells).
+        SessionSetSandboxLevel = "session.set_sandbox_level" (SessionSetSandboxLevelParams) -> Ack;
         /// Open a terminal of the user's own (sandboxed or not) in a workspace.
         SessionTerminalOpen = "session.terminal_open" (TerminalOpenParams) -> Shell;
         /// End one of the user's terminals.
