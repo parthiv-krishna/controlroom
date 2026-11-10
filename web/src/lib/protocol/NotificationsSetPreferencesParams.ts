@@ -15,4 +15,16 @@ questions?: boolean | null,
 /**
  * Push on finished runs.
  */
-turn_end?: boolean | null, };
+turn_end?: boolean | null, 
+/**
+ * Hold pushes while the user is active.
+ */
+hold_while_active?: boolean | null, 
+/**
+ * The push delay (seconds, at most an hour).
+ */
+delay_s?: number | null, 
+/**
+ * The idle window (seconds, from a minute to an hour).
+ */
+idle_s?: number | null, };

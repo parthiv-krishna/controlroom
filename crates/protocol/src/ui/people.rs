@@ -49,7 +49,12 @@ pub struct DeviceRefParams {
     pub device_id: DeviceId,
 }
 
-/// Which events push to devices.
+/// Which events push to devices, and when.
+///
+/// Every push waits `delay_s`, then goes out only if its attention is still pending. While
+/// `hold_while_active` is on and any of the owner's devices is active (a visible, focused
+/// client with user input within `idle_s`), pushes go to no device; they are sent once nobody
+/// is active anymore, if still pending.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct NotificationPreferences {
     /// Blocking approvals, failures and interruptions.
@@ -58,6 +63,13 @@ pub struct NotificationPreferences {
     pub questions: bool,
     /// Finished runs with unread output.
     pub turn_end: bool,
+    /// Hold pushes while the user is active on any device (default on).
+    pub hold_while_active: bool,
+    /// How long a push waits before it is sent (seconds; default 30, at most an hour).
+    pub delay_s: u32,
+    /// How long after the last input a device stops being active (seconds; default 120,
+    /// from a minute to an hour).
+    pub idle_s: u32,
 }
 
 /// Params of `notifications.set_preferences`. Absent fields are left unchanged.
@@ -72,6 +84,15 @@ pub struct NotificationsSetPreferencesParams {
     /// Push on finished runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_end: Option<bool>,
+    /// Hold pushes while the user is active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hold_while_active: Option<bool>,
+    /// The push delay (seconds, at most an hour).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay_s: Option<u32>,
+    /// The idle window (seconds, from a minute to an hour).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_s: Option<u32>,
 }
 
 /// Params of `notifications.subscribe`: attach a Web Push subscription to a device.

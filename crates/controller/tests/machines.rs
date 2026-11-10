@@ -283,6 +283,10 @@ async fn approvals_push_once_per_device_and_the_answer_is_attributed() {
         )
         .await;
     }
+    // Pushes go out without the default delay (presence and the delay: notify's unit tests).
+    laptop
+        .ok("notifications.set_preferences", json!({"delay_s": 0}))
+        .await;
     agentd.wait_connected(1).await;
     let machine = add_machine(&mut laptop, &host, "devbox").await;
     let id = SessionId::generate();
@@ -306,14 +310,7 @@ async fn approvals_push_once_per_device_and_the_answer_is_attributed() {
         .await;
 
     for round in 1..=2usize {
-        let request: Request = serde_json::from_value(json!({
-            "id": format!("r{round}"), "kind": "permission", "blocking": true, "state": "pending",
-            "title": "Run rm -rf build?", "detail": null, "body": null, "answer": null,
-            "origin_child": null, "options": [{"id": "0", "label": "Allow", "style": "allow"}],
-            "questions": [], "created_at": round,
-        }))
-        .unwrap();
-        session.requests = vec![request];
+        session.requests = vec![approval(&format!("r{round}"), round as i64)];
         session.attention = Some(Attention::Approval);
         agentd.upsert_session(session.clone());
         // The same summary again is no new occurrence.
@@ -357,5 +354,86 @@ async fn approvals_push_once_per_device_and_the_answer_is_attributed() {
     assert!(payload.get("machine_id").is_none());
     assert_eq!(payload["url"], json!(format!("#/s/{id}")));
     assert!(!payload.to_string().contains("rm -rf"), "metadata only");
+    controller.shutdown().await;
+}
+
+/// A pending approval as the agent daemon reports it.
+fn approval(id: &str, created_at: i64) -> Request {
+    serde_json::from_value(json!({
+        "id": id, "kind": "permission", "blocking": true, "state": "pending",
+        "title": "Run rm -rf build?", "detail": null, "body": null, "answer": null,
+        "origin_child": null, "options": [{"id": "0", "label": "Allow", "style": "allow"}],
+        "questions": [], "created_at": created_at,
+    }))
+    .unwrap()
+}
+
+/// Presence over the UI API: while the laptop's tab is visible and reports input
+/// (`client.activity`), pushes go to no device; an approval answered meanwhile is never pushed,
+/// and one still pending when the laptop's connection drops is pushed then.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pushes_wait_while_a_device_is_active() {
+    let push = std::sync::Arc::new(support::RecordingPush::default());
+    let agentd = FakeAgentd::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = support::config(
+        &dir.path().join("controller.sqlite"),
+        None,
+        Some(push.config()),
+    );
+    config.agentd_socket = Some(agentd.socket().to_owned());
+    let controller = controlroom_controller::Controller::start(config).unwrap();
+    let mut laptop = ui(&controller, "laptop").await;
+    let mut phone = ui(&controller, "phone").await;
+    phone
+        .ok(
+            "notifications.subscribe",
+            json!({"device_id": "phone", "subscription": support::browser_subscription(1)}),
+        )
+        .await;
+    let prefs = laptop
+        .ok("notifications.set_preferences", json!({"delay_s": 0}))
+        .await;
+    assert_eq!(prefs["hold_while_active"], true, "on by default");
+    assert_eq!(prefs["idle_s"], 120);
+    agentd.wait_connected(1).await;
+    let id = SessionId::generate();
+    let mut session = session_summary(id, &[]);
+    agentd.upsert_session(session.clone());
+    phone
+        .wait("the session", |m| m.sessions.contains_key(&id.to_string()))
+        .await;
+    laptop
+        .ok(
+            "client.focus",
+            json!({"device_id": "laptop", "visible": true}),
+        )
+        .await;
+    laptop.ok("client.activity", json!({})).await;
+
+    // Answered on the laptop while it is active: never pushed.
+    session.requests = vec![approval("r1", 1)];
+    agentd.upsert_session(session.clone());
+    phone
+        .wait("r1 is pending", |m| {
+            m.sessions[&id.to_string()]["requests"][0]["id"] == "r1"
+        })
+        .await;
+    session.requests = Vec::new();
+    agentd.upsert_session(session.clone());
+    // Still pending when the laptop's connection drops: pushed then (the notifier handles
+    // events in order, so r1 would have gone out before r2).
+    session.requests = vec![approval("r2", 2)];
+    agentd.upsert_session(session.clone());
+    phone
+        .wait("r2 is pending", |m| {
+            m.sessions[&id.to_string()]["requests"][0]["id"] == "r2"
+        })
+        .await;
+    drop(laptop);
+    wait_until("the push", || !push.sent().is_empty()).await;
+    let sent = push.sent();
+    assert_eq!(sent.len(), 1, "only r2, once: {sent:#?}");
+    assert_eq!(sent[0].0, "phone");
     controller.shutdown().await;
 }

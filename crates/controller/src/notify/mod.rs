@@ -1,9 +1,17 @@
 //! Notifications: attention events from the hub's event bus, delivered as Web Push to every
 //! device of the owner.
 //!
+//! - **Delay:** every push waits the owner's delay (default 30 s, `pending`). When it is due,
+//!   it is sent only if its attention is still pending (not answered, read or cleared).
+//! - **Presence:** while the owner is active on any device (a visible, focused client with
+//!   user input within the idle window, default 2 min) and holding is on (the default), due
+//!   pushes go to no device: the active client shows attention in-app. They are re-evaluated
+//!   when the user leaves (the idle window passes, or a client hides, blurs or disconnects) and
+//!   sent then if still pending, blocking requests with their urgency.
 //! - **Dedup:** each device gets at most one push per (session, attention event), claimed in
 //!   the store before sending (released again if the send fails, so a later change retries).
 //! - **Focus:** a device with a visible client showing the session is skipped.
+//! - **Restarts:** waiting pushes are rebuilt from current attention (`pending`).
 //! - **Payloads** carry metadata only: the session id, the session's and its primary machine's
 //!   names, the attention kind, and a deep link. Never code, prompts or tool output.
 //! - Subscriptions the push service reports gone (404/410) are deleted.
@@ -14,6 +22,10 @@
 //! server-owned `attention`, which open tabs show.
 
 mod endpoint;
+mod pending;
+pub(crate) mod prefs;
+#[cfg(test)]
+mod tests;
 mod webpush;
 
 use std::sync::{Arc, Weak};
@@ -26,12 +38,14 @@ use controlroom_protocol::ui::NotificationPreferences;
 use futures::future::BoxFuture;
 use serde::Serialize;
 use tokio::sync::broadcast;
+use tokio::time::Instant;
 
 pub use webpush::{VapidKey, VapidKeyError, WebPushSender};
 
 use crate::attention::{self, AttentionEvent, AttentionKind};
 use crate::hub::{BusEvent, Hub};
 use crate::store::{Delivery, PushSubscriptionRow, StoreResult};
+use pending::Queue;
 
 /// How long the dedup log remembers a delivery.
 const DEDUP_RETENTION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
@@ -99,46 +113,6 @@ struct Payload<'a> {
     url: String,
 }
 
-/// The preference keys (one row each, so setting one never overwrites another).
-pub(crate) mod prefs {
-    use controlroom_protocol::ui::NotificationPreferences;
-
-    use crate::store::{Prefs, StoreResult};
-
-    const ATTENTION: &str = "notifications.attention";
-    const QUESTIONS: &str = "notifications.questions";
-    const TURN_END: &str = "notifications.turn_end";
-
-    /// The owner's preferences; approvals and problems push by default, questions and finished
-    /// runs are in-app only by default.
-    pub(crate) fn load(prefs: &Prefs<'_>) -> StoreResult<NotificationPreferences> {
-        Ok(NotificationPreferences {
-            attention: prefs.get(ATTENTION)?.unwrap_or(true),
-            questions: prefs.get(QUESTIONS)?.unwrap_or(false),
-            turn_end: prefs.get(TURN_END)?.unwrap_or(false),
-        })
-    }
-
-    /// Sets the given preferences only.
-    pub(crate) fn set(
-        prefs: &Prefs<'_>,
-        attention: Option<bool>,
-        questions: Option<bool>,
-        turn_end: Option<bool>,
-    ) -> StoreResult<()> {
-        for (key, value) in [
-            (ATTENTION, attention),
-            (QUESTIONS, questions),
-            (TURN_END, turn_end),
-        ] {
-            if let Some(value) = value {
-                prefs.set(key, &value)?;
-            }
-        }
-        Ok(())
-    }
-}
-
 fn wanted(prefs: &NotificationPreferences, kind: AttentionKind) -> bool {
     match kind {
         AttentionKind::Approval | AttentionKind::Problem => prefs.attention,
@@ -189,56 +163,122 @@ impl Subject {
     }
 }
 
-/// Consumes the hub's bus until the hub is gone, pushing attention events.
+/// Consumes the hub's bus until the hub is gone: queues attention events and sends them when
+/// due, unless the owner is active.
 pub(crate) async fn run(
     hub: Weak<Hub>,
     config: PushConfig,
     mut bus: broadcast::Receiver<BusEvent>,
 ) {
+    let mut queue = Queue::default();
     loop {
-        let event = match bus.recv().await {
-            Ok(event) => event,
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                tracing::warn!(missed = n, "the notifier fell behind the event bus");
-                continue;
-            }
-            Err(broadcast::error::RecvError::Closed) => return,
+        let wake = queue.next_wake();
+        let event = tokio::select! {
+            event = bus.recv() => Some(event),
+            () = sleep_until(wake) => None,
         };
         let Some(hub) = hub.upgrade() else { return };
-        let (subject, events) = match event {
-            BusEvent::Session { previous, current } => (
-                Subject::of(&hub, &current),
-                attention::detect(previous.as_deref(), &current),
-            ),
-            BusEvent::SessionRemoved { session_id } => {
-                if let Err(e) = hub.repo().push().forget_session(session_id) {
-                    tracing::warn!(error = %e, "forgetting a deleted session's pushes");
+        match event {
+            Some(Ok(event)) => observe(&hub, &mut queue, event),
+            Some(Err(broadcast::error::RecvError::Lagged(n))) => {
+                tracing::warn!(missed = n, "the notifier fell behind the event bus");
+            }
+            Some(Err(broadcast::error::RecvError::Closed)) => return,
+            None => {}
+        }
+        flush(&hub, &config, &mut queue).await;
+    }
+}
+
+/// Sleeps until `at`, or forever.
+async fn sleep_until(at: Option<Instant>) {
+    match at {
+        Some(at) => tokio::time::sleep_until(at).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Queues a session's new occurrences (if they push at all) and drops the ones dealt with.
+fn observe(hub: &Hub, queue: &mut Queue, event: BusEvent) {
+    match event {
+        BusEvent::Session { previous, current } => {
+            queue.retain_session(current.id, |e| e.still_pending(&current));
+            let events = attention::detect(previous.as_deref(), &current);
+            if events.is_empty() {
+                return;
+            }
+            let prefs = match prefs::load(&hub.repo().prefs()) {
+                Ok(prefs) => prefs,
+                Err(e) => {
+                    tracing::warn!(error = %e, "reading the notification preferences");
+                    return;
                 }
-                continue;
+            };
+            let due = Instant::now() + Duration::from_secs(prefs.delay_s.into());
+            for event in events.into_iter().filter(|e| wanted(&prefs, e.kind)) {
+                queue.add(current.id, event, due);
             }
-            _ => continue,
-        };
-        for event in events {
-            if let Err(e) = deliver(&hub, &config, &subject, &event).await {
-                tracing::warn!(error = %e, "delivering a notification");
+        }
+        BusEvent::SessionRemoved { session_id } => {
+            queue.retain_session(session_id, |_| false);
+            if let Err(e) = hub.repo().push().forget_session(session_id) {
+                tracing::warn!(error = %e, "forgetting a deleted session's pushes");
             }
+        }
+        _ => {}
+    }
+}
+
+/// Sends the due pushes unless the owner is active (then they wait until the user leaves).
+async fn flush(hub: &Hub, config: &PushConfig, queue: &mut Queue) {
+    let now = Instant::now();
+    if !queue.any_due(now) {
+        return;
+    }
+    let prefs = match prefs::load(&hub.repo().prefs()) {
+        Ok(prefs) => prefs,
+        Err(e) => {
+            tracing::warn!(error = %e, "reading the notification preferences; dropping due pushes");
+            queue.take_due(now);
+            return;
+        }
+    };
+    let held = if prefs.hold_while_active {
+        hub.active_until(Duration::from_secs(prefs.idle_s.into()))
+    } else {
+        None
+    };
+    queue.set_hold(held);
+    if held.is_some() {
+        return;
+    }
+    for (session, event) in queue.take_due(now) {
+        if let Err(e) = deliver(hub, config, &prefs, session, &event).await {
+            tracing::warn!(error = %e, "delivering a notification");
         }
     }
 }
 
+/// Pushes one occurrence to every device, if it is still wanted and pending.
 async fn deliver(
     hub: &Hub,
     config: &PushConfig,
-    subject: &Subject,
+    prefs: &NotificationPreferences,
+    session_id: SessionId,
     event: &AttentionEvent,
 ) -> StoreResult<()> {
-    let repo = hub.repo();
-    if !wanted(&prefs::load(&repo.prefs())?, event.kind) {
+    if !wanted(prefs, event.kind) {
         return Ok(());
     }
+    let Some(session) = hub.session(session_id).filter(|s| event.still_pending(s)) else {
+        return Ok(());
+    };
+    let subject = Subject::of(hub, &session);
     let body = serde_json::to_vec(&subject.payload(event.kind))?;
     let urgent = event.kind == AttentionKind::Approval;
-    let focused: Vec<DeviceId> = hub.focused_devices(subject.session_id);
+    let event_key = event.event_key();
+    let focused: Vec<DeviceId> = hub.focused_devices(session_id);
+    let repo = hub.repo();
     let push = repo.push();
     push.prune_deliveries(UnixMillis(
         UnixMillis::now().0 - DEDUP_RETENTION.as_millis() as i64,
@@ -249,8 +289,8 @@ async fn deliver(
         }
         let delivery = Delivery {
             device_id: &sub.device_id,
-            session_id: subject.session_id,
-            event_key: &event.event_key,
+            session_id,
+            event_key: &event_key,
         };
         if !push.claim(delivery)? {
             continue;

@@ -1,5 +1,5 @@
-//! Connected UI clients as the hub sees them: their outbound queue, state subscriptions, focus
-//! and identity, and how the hub closes them.
+//! Connected UI clients as the hub sees them: their outbound queue, state subscriptions, focus,
+//! last user input and identity, and how the hub closes them.
 
 use std::collections::HashMap;
 
@@ -8,6 +8,7 @@ use controlroom_protocol::RpcNotification;
 use controlroom_protocol::ids::{DeviceId, SessionId, SubscriptionId};
 use controlroom_protocol::ui::StateChange;
 use tokio::sync::{mpsc, watch};
+use tokio::time::Instant;
 
 /// Identifies one UI connection within a hub.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -83,6 +84,9 @@ pub(crate) struct ClientEntry {
     pub state_subs: HashMap<SubscriptionId, Option<Vec<StateChange>>>,
     /// What it shows, for push deduplication.
     pub focus: Option<Focus>,
+    /// When it last reported user input (`client.activity`): while visible and recent, its
+    /// device is active and pushes are held.
+    pub last_input: Option<Instant>,
     /// Who it signed in as (its device from `hello` or `devices.register`).
     pub credentials: Credentials,
 }

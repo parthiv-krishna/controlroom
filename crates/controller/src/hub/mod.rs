@@ -37,6 +37,7 @@ use controlroom_protocol::ui::{
 use controlroom_protocol::{ErrorData, RpcError, RpcNotification};
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc};
+use tokio::time::Instant;
 
 pub(crate) use bus::BusEvent;
 pub use clients::CloseReason;
@@ -557,6 +558,7 @@ impl Hub {
                 sink,
                 state_subs: HashMap::new(),
                 focus: None,
+                last_input: None,
                 credentials: Credentials {
                     device: None,
                     auth_token_hash,
@@ -583,7 +585,10 @@ impl Hub {
     pub(crate) fn remove_client(&self, id: ClientId) {
         let ended = {
             let mut st = self.lock();
-            st.clients.remove(&id);
+            let removed = st.clients.remove(&id);
+            if removed.is_some_and(|c| c.focus.is_some_and(|f| f.visible)) {
+                let _ = st.bus.send(BusEvent::PresenceChanged);
+            }
             let mut ended = Vec::new();
             st.timelines.retain(|_, fanout| {
                 if fanout.remove_client(id) {
@@ -623,6 +628,36 @@ impl Hub {
         for terminal in st.terminals.values().filter(|t| pred(&t.credentials)) {
             close_once(&terminal.close, reason);
         }
+    }
+
+    /// Records what a client shows; the user may have left (hidden or blurred).
+    pub(crate) fn set_focus(&self, client: ClientId, focus: Focus) {
+        let mut st = self.lock();
+        if let Some(entry) = st.clients.get_mut(&client) {
+            entry.focus = Some(focus);
+            let _ = st.bus.send(BusEvent::PresenceChanged);
+        }
+    }
+
+    /// Records user input on a client, now.
+    pub(crate) fn record_input(&self, client: ClientId) {
+        if let Some(entry) = self.lock().clients.get_mut(&client) {
+            entry.last_input = Some(Instant::now());
+        }
+    }
+
+    /// Until when the owner is active, if anyone is now: the latest end of the idle window
+    /// (`idle` after the last input) over the visible clients. Hidden, blurred and
+    /// disconnected clients don't count.
+    pub(crate) fn active_until(&self, idle: Duration) -> Option<Instant> {
+        let now = Instant::now();
+        self.lock()
+            .clients
+            .values()
+            .filter(|c| c.focus.as_ref().is_some_and(|f| f.visible))
+            .filter_map(|c| c.last_input.map(|at| at + idle))
+            .filter(|until| *until > now)
+            .max()
     }
 
     /// Devices with a visible client focused on a session.

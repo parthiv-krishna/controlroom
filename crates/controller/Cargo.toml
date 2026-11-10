@@ -35,6 +35,8 @@ web-push-native = "0.5"
 [dev-dependencies]
 controlroom-controller = { path = ".", features = ["test-support"] }
 tempfile.workspace = true
+# Paused time for the notifier's delay and presence tests.
+tokio = { workspace = true, features = ["test-util"] }
 # Capturing the log in `tests/models.rs` (keys never reach it).
 tracing-subscriber.workspace = true
 

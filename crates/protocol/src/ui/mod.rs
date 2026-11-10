@@ -167,6 +167,9 @@ pub mod methods {
 
         /// Report what this client shows, for push deduplication.
         ClientFocus = "client.focus" (ClientFocusParams) -> Ack;
+        /// Report user input on this client (a throttled heartbeat), so pushes are held while
+        /// the user is active.
+        ClientActivity = "client.activity" (NoParams) -> Ack;
 
         /// Create a session on its workspaces with its first prompt, and link it to tasks.
         SessionCreate = "session.create" (UiSessionCreateParams) -> SessionCreateResult;

@@ -33,6 +33,9 @@ pub(crate) enum BusEvent {
     HostCallsDone { machine_id: MachineId },
     /// The link to the agent daemon came up (`true`) or went down.
     Agentd { connected: bool },
+    /// A UI client's focus changed, or a visible client disconnected: the user may have left
+    /// (held pushes are re-evaluated).
+    PresenceChanged,
 }
 
 impl BusEvent {
@@ -44,7 +47,8 @@ impl BusEvent {
             | BusEvent::HostCallsDone { machine_id } => Some(*machine_id),
             BusEvent::Session { .. }
             | BusEvent::SessionRemoved { .. }
-            | BusEvent::Agentd { .. } => None,
+            | BusEvent::Agentd { .. }
+            | BusEvent::PresenceChanged => None,
         }
     }
 }

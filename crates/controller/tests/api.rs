@@ -172,15 +172,25 @@ async fn devices_preferences_and_sandbox_profiles() {
     let prefs = a.ok("notifications.preferences", json!({})).await;
     assert_eq!(
         prefs,
-        json!({"attention": true, "questions": false, "turn_end": false})
+        json!({"attention": true, "questions": false, "turn_end": false,
+               "hold_while_active": true, "delay_s": 30, "idle_s": 120})
     );
     let prefs = a
-        .ok("notifications.set_preferences", json!({"questions": true}))
+        .ok(
+            "notifications.set_preferences",
+            json!({"questions": true, "hold_while_active": false, "delay_s": 0, "idle_s": 300}),
+        )
         .await;
     assert_eq!(
         prefs,
-        json!({"attention": true, "questions": true, "turn_end": false})
+        json!({"attention": true, "questions": true, "turn_end": false,
+               "hold_while_active": false, "delay_s": 0, "idle_s": 300})
     );
+    for bad in [json!({"delay_s": 3601}), json!({"idle_s": 59})] {
+        a.err("notifications.set_preferences", bad, "invalid_params")
+            .await;
+    }
+    a.ok("client.activity", json!({})).await;
 
     let project = a
         .ok("projects.create", json!({"name": "p", "color": "#000"}))

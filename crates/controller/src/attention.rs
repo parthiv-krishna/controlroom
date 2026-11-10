@@ -4,8 +4,11 @@
 //! controller and UI derive nothing). [`detect`] compares two summaries of one session and
 //! returns the occurrences that are new, each with a key that identifies it within the session.
 //! Delivery deduplicates on that key, so "at most one push per device per (session, attention
-//! event)" holds across restarts.
+//! event)" holds across restarts. [`AttentionEvent::still_pending`] tells whether a later
+//! summary still shows the occurrence, so a delayed push is dropped once it was dealt with.
 
+use controlroom_protocol::Seq;
+use controlroom_protocol::ids::RequestId;
 use controlroom_protocol::session::{
     Attention, Request, RequestState, RunOutcome, SessionState, SessionSummary,
 };
@@ -35,12 +38,52 @@ impl AttentionKind {
     }
 }
 
+/// What an occurrence is about within its session.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum Occurrence {
+    /// A request (approvals and questions).
+    Request(RequestId),
+    /// The turn that ended at this seq (problems and finished runs).
+    TurnEnd(Seq),
+}
+
 /// One notification-worthy occurrence in a session.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct AttentionEvent {
     pub kind: AttentionKind,
-    /// Identifies the occurrence within the session, e.g. `approval:<request id>`.
-    pub event_key: String,
+    pub occurrence: Occurrence,
+}
+
+impl AttentionEvent {
+    /// Identifies the occurrence within the session, e.g. `approval:<request id>` (the
+    /// delivery dedup key).
+    pub(crate) fn event_key(&self) -> String {
+        match (&self.occurrence, self.kind) {
+            (Occurrence::Request(id), AttentionKind::Approval) => format!("approval:{id}"),
+            (Occurrence::Request(id), _) => format!("question:{id}"),
+            (Occurrence::TurnEnd(seq), AttentionKind::Problem) => format!("problem@{}", seq.0),
+            (Occurrence::TurnEnd(seq), _) => format!("turn_end@{}", seq.0),
+        }
+    }
+
+    /// Whether `current` (a later summary of the same session) still shows the occurrence: the
+    /// request is still pending, the problem still stands after the same turn, or the finished
+    /// run is still unread and no other turn ended since.
+    pub(crate) fn still_pending(&self, current: &SessionSummary) -> bool {
+        match &self.occurrence {
+            Occurrence::Request(id) => current
+                .requests
+                .iter()
+                .any(|r| r.id == *id && r.state == RequestState::Pending),
+            Occurrence::TurnEnd(seq) => {
+                current.last_turn_end_seq == *seq
+                    && match self.kind {
+                        AttentionKind::Problem => current.attention == Some(Attention::Problem),
+                        _ => current.unread,
+                    }
+            }
+        }
+    }
 }
 
 /// The session's own pending requests of one tier (descendants' roll up from their own
@@ -72,14 +115,14 @@ pub(crate) fn detect(
     current: &SessionSummary,
 ) -> Vec<AttentionEvent> {
     let mut events = Vec::new();
-    for (blocking, kind, prefix) in [
-        (true, AttentionKind::Approval, "approval"),
-        (false, AttentionKind::Question, "question"),
+    for (blocking, kind) in [
+        (true, AttentionKind::Approval),
+        (false, AttentionKind::Question),
     ] {
         if let Some(request) = new_request(previous, current, blocking) {
             events.push(AttentionEvent {
                 kind,
-                event_key: format!("{prefix}:{}", request.id),
+                occurrence: Occurrence::Request(request.id.clone()),
             });
         }
     }
@@ -87,12 +130,13 @@ pub(crate) fn detect(
         return events;
     };
     let turn_ended = current.last_turn_end_seq > previous.last_turn_end_seq;
+    let at_turn_end = Occurrence::TurnEnd(current.last_turn_end_seq);
     if current.attention == Some(Attention::Problem)
         && (previous.attention != Some(Attention::Problem) || turn_ended)
     {
         events.push(AttentionEvent {
             kind: AttentionKind::Problem,
-            event_key: format!("problem@{}", current.last_turn_end_seq.0),
+            occurrence: at_turn_end,
         });
     } else if turn_ended
         && current.unread
@@ -104,23 +148,22 @@ pub(crate) fn detect(
     {
         events.push(AttentionEvent {
             kind: AttentionKind::TurnEnd,
-            event_key: format!("turn_end@{}", current.last_turn_end_seq.0),
+            occurrence: at_turn_end,
         });
     }
     events
 }
 
 #[cfg(test)]
-mod tests {
-    use controlroom_protocol::Seq;
+pub(crate) mod tests {
     use controlroom_protocol::UnixMillis;
-    use controlroom_protocol::ids::RequestId;
     use controlroom_protocol::session::RequestKind;
     use serde_json::json;
 
     use super::*;
 
-    fn summary() -> SessionSummary {
+    /// An idle session with nothing pending.
+    pub(crate) fn summary() -> SessionSummary {
         serde_json::from_value(json!({
             "id": "01HZY3K6W8Q9X2V4N7B5C1D3E6", "name": null, "title": null, "workspaces": [],
             "shells": [], "created_at": 0, "updated_at": 0, "closed_at": null,
@@ -139,7 +182,8 @@ mod tests {
         .unwrap()
     }
 
-    fn request(id: &str, blocking: bool) -> Request {
+    /// A pending request (an approval if `blocking`, else a question).
+    pub(crate) fn request(id: &str, blocking: bool) -> Request {
         Request {
             id: RequestId::new(id),
             kind: if blocking {
@@ -160,8 +204,8 @@ mod tests {
         }
     }
 
-    fn keys(events: &[AttentionEvent]) -> Vec<&str> {
-        events.iter().map(|e| e.event_key.as_str()).collect()
+    fn keys(events: &[AttentionEvent]) -> Vec<String> {
+        events.iter().map(|e| e.event_key()).collect()
     }
 
     #[test]
@@ -223,5 +267,48 @@ mod tests {
         let mut read = done.clone();
         read.unread = false;
         assert!(detect(Some(&working), &read).is_empty());
+    }
+
+    #[test]
+    fn occurrences_stay_pending_until_dealt_with() {
+        let idle = summary();
+        let mut asking = summary();
+        asking.requests = vec![request("r1", true)];
+        let [approval] = detect(Some(&idle), &asking).try_into().unwrap();
+        assert!(approval.still_pending(&asking));
+        let mut answered = asking.clone();
+        answered.requests[0].state = RequestState::Answered;
+        assert!(!approval.still_pending(&answered));
+        assert!(!approval.still_pending(&idle), "withdrawn");
+
+        let mut failed = summary();
+        failed.attention = Some(Attention::Problem);
+        failed.last_turn_end_seq = Seq(10);
+        let problem = AttentionEvent {
+            kind: AttentionKind::Problem,
+            occurrence: Occurrence::TurnEnd(Seq(10)),
+        };
+        assert!(
+            problem.still_pending(&failed),
+            "reading doesn't clear a problem"
+        );
+        let mut resumed = failed.clone();
+        resumed.attention = None;
+        assert!(!problem.still_pending(&resumed));
+
+        let mut done = summary();
+        done.unread = true;
+        done.last_turn_end_seq = Seq(12);
+        let finished = AttentionEvent {
+            kind: AttentionKind::TurnEnd,
+            occurrence: Occurrence::TurnEnd(Seq(12)),
+        };
+        assert!(finished.still_pending(&done));
+        let mut read = done.clone();
+        read.unread = false;
+        assert!(!finished.still_pending(&read));
+        let mut next = done.clone();
+        next.last_turn_end_seq = Seq(14);
+        assert!(!finished.still_pending(&next), "a later turn ended");
     }
 }

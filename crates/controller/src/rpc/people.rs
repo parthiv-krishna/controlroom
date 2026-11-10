@@ -107,8 +107,8 @@ pub(super) fn set_preferences(
     conn: &Conn,
     p: NotificationsSetPreferencesParams,
 ) -> Result<NotificationPreferences, RpcError> {
-    let repo = conn.hub.repo();
-    prefs::set(&repo.prefs(), p.attention, p.questions, p.turn_end).map_err(store_error)?;
+    prefs::check(&p).map_err(invalid_params)?;
+    prefs::set(&conn.hub.repo().prefs(), &p).map_err(store_error)?;
     preferences(conn)
 }
 
@@ -139,11 +139,15 @@ pub(super) fn push_unsubscribe(conn: &Conn, p: DeviceRefParams) -> Result<Device
     Ok(device)
 }
 
-/// `client.focus`: what this connection shows, for push deduplication. Closing the connection
-/// clears it.
+/// `client.focus`: what this connection shows, for push deduplication and presence. Closing
+/// the connection clears it.
 pub(super) fn focus(conn: &Conn, focus: Focus) -> Ack {
-    if let Some(client) = conn.hub.lock().clients.get_mut(&conn.client) {
-        client.focus = Some(focus);
-    }
+    conn.hub.set_focus(conn.client, focus);
+    Ack {}
+}
+
+/// `client.activity`: the user just interacted with this connection's page.
+pub(super) fn activity(conn: &Conn) -> Ack {
+    conn.hub.record_input(conn.client);
     Ack {}
 }

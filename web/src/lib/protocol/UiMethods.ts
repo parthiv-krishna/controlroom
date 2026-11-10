@@ -291,6 +291,11 @@ export type UiMethods = {
    */
   "client.focus": { params: ClientFocusParams, result: Ack },
   /**
+   * Report user input on this client (a throttled heartbeat), so pushes are held while
+   * the user is active.
+   */
+  "client.activity": { params: NoParams, result: Ack },
+  /**
    * Create a session on its workspaces with its first prompt, and link it to tasks.
    */
   "session.create": { params: UiSessionCreateParams, result: SessionCreateResult },

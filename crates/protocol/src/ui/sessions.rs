@@ -27,7 +27,8 @@ pub struct UiSessionCreateParams {
 
 /// Params of `client.focus`: what this client shows, so pushes for a session the user is
 /// looking at are skipped. Send it whenever the open session, visibility or focus changes;
-/// closing the connection clears it.
+/// closing the connection clears it. A visible client that also reports user input
+/// (`client.activity`) makes its device active, which holds pushes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ClientFocusParams {
     /// This browser's device.

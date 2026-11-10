@@ -105,6 +105,7 @@ pub(super) async fn dispatch(
                 visible: p.visible,
             },
         )),
+        UiRequest::ClientActivity(_) => reply(people::activity(conn)),
 
         UiRequest::SchedulesCreate(p) => reply(schedules::create(
             conn,
