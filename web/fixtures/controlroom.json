@@ -2777,6 +2777,43 @@
       "answer": null,
       "origin_child": null,
       "created_at": 1767599900000
+     },
+     {
+      "id": "req-path-2",
+      "kind": "sandbox",
+      "blocking": true,
+      "state": "pending",
+      "title": "Read /home/alice/.config?",
+      "detail": "“Always allow” isn’t offered: it contains /home/alice/.config/gcloud, which nono always protects, so nono would refuse to start.",
+      "body": {
+       "kind": "path",
+       "path": "/home/alice/.config",
+       "access": "read",
+       "in_workspace": false,
+       "machine_id": "01JAM000000000000000000001",
+       "machine": "devbox"
+      },
+      "options": [
+       {
+        "id": "allow-session",
+        "label": "Allow for this session",
+        "style": "allow_always"
+       },
+       {
+        "id": "deny",
+        "label": "Deny",
+        "style": "deny"
+       },
+       {
+        "id": "never",
+        "label": "Never (devbox)",
+        "style": "deny"
+       }
+      ],
+      "questions": [],
+      "answer": null,
+      "origin_child": null,
+      "created_at": 1767599950000
      }
     ],
     "todo": null,
@@ -4371,6 +4408,15 @@
         "device_id": "device-laptop",
         "label": "Laptop (Firefox on Linux)"
        }
+      },
+      {
+       "id": "01JAG000000000000000000022",
+       "kind": "socket",
+       "value": "/run/dbus/system_bus_socket",
+       "access": null,
+       "scope": "standing",
+       "granted_at": 1766822400000,
+       "by": null
       }
      ],
      "domains": [],
@@ -4432,6 +4478,15 @@
         "device_id": "device-laptop",
         "label": "Laptop (Firefox on Linux)"
        }
+      },
+      {
+       "id": "01JAG000000000000000000022",
+       "kind": "socket",
+       "value": "/run/dbus/system_bus_socket",
+       "access": null,
+       "scope": "standing",
+       "granted_at": 1766822400000,
+       "by": null
       }
      ],
      "domains": [],

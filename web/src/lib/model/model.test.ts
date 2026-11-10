@@ -6,7 +6,7 @@ import { groupSessions } from './grouping';
 import { contentText, deepLinkHash, guessDeviceName, lineDiff, parseDeepLink } from './misc';
 import { notes } from './notifications';
 import { UNASSIGNED, health, inScope, needsYouElsewhere, taskIn, type Ctx } from './projects';
-import { OFF_WARNING, checkProfilePath, defaultLevel, levelChange, looser } from './sandbox';
+import { OFF_WARNING, checkProfilePath, defaultLevel, grantLimit, levelChange, looser } from './sandbox';
 import { humanSchedule, inTime, parseCron, runText, runWhen } from './schedule';
 import { connKind, connLabel, statusKind, statusLabel, statusTitle } from './status';
 import { columnTasks, orderFor, rollup, suggestMove, taskPrompt } from './tasks';
@@ -318,10 +318,22 @@ describe('misc', () => {
 });
 
 describe('sandbox paths', () => {
-  it('accepts absolute and home paths, normalized, and flags broad ones', () => {
-    expect(checkProfilePath(' ~/.cache//nix/ ')).toEqual({ ok: true, path: '~/.cache/nix', broad: false });
-    expect(checkProfilePath('/srv/data')).toEqual({ ok: true, path: '/srv/data', broad: false });
-    for (const broad of ['/', '~', '~/', '/home/', '//']) expect(checkProfilePath(broad)).toMatchObject({ ok: true, broad: true });
+  it('accepts absolute and home paths, normalized', () => {
+    expect(checkProfilePath(' ~/.cache//nix/ ')).toEqual({ ok: true, path: '~/.cache/nix' });
+    expect(checkProfilePath('/srv/data')).toEqual({ ok: true, path: '/srv/data' });
+    for (const root of ['/', '//']) expect(checkProfilePath(root)).toEqual({ ok: true, path: '/' });
+  });
+
+  it('names the grants nono could never hold', () => {
+    for (const ok of ['~/.bash_history', '~/.ssh/config', '~/.cache/nix', '/proc', '/srv', '/home/alice/.bashrc']) expect(grantLimit(ok)).toBeNull();
+    expect(grantLimit('/')).toContain('every home');
+    expect(grantLimit('/home')).toContain('every home');
+    expect(grantLimit('~')).toContain('~/.ssh');
+    expect(grantLimit('~/.config')).toContain('~/.config/gcloud');
+    expect(grantLimit('/home/alice/.local/share')).toContain('/home/alice/.local/share/keyrings');
+    expect(grantLimit('/root')).toContain('/root/.ssh');
+    expect(grantLimit('~/.nono/x')).toContain('nono');
+    expect(grantLimit('/proc/1/root')).toContain('/proc entry');
   });
 
   it('refuses relative paths and . or ..', () => {

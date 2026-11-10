@@ -12,7 +12,7 @@ async function openSandbox(page: Page) {
 
 const changes = async (page: Page) => (await calls(page, 'sandbox.set_profile')).map((c) => (c.params as { change: unknown }).change);
 
-test('sandbox tab: path grants with access, a broad-grant confirm, and never-paths', async ({ page }) => {
+test('sandbox tab: path grants with access, grants nono could never hold refused, and never-paths', async ({ page }) => {
   await start(page);
   const settings = await openSandbox(page);
   const devbox = settings.locator(`[data-profile="m:${M.devbox}"]`);
@@ -34,21 +34,26 @@ test('sandbox tab: path grants with access, a broad-grant confirm, and never-pat
   await expect(devbox.getByRole('alert')).toHaveCount(0);
   await expect.poll(() => changes(page)).toEqual([{ kind: 'add_grant', grant: { kind: 'path', value: '~/.cache/nix', access: 'read_write' } }]);
 
-  // `/` read-write is refused; a broad grant needs a confirmation.
+  // `/` read-write is refused; so are grants nono could never hold, with the reason.
   await grant.fill('/');
   await grant.press('Enter');
   await expect(devbox.getByRole('alert')).toContainText('can’t be granted read-write');
   await devbox.getByRole('button', { name: 'Access for devbox' }).click();
   await page.getByRole('option', { name: 'read', exact: true }).click();
-  await grant.fill('~');
+  await grant.fill('~/.config');
   await grant.press('Enter');
-  const confirm = page.getByRole('alertdialog', { name: /Grant read access to ~ on devbox/ });
-  await confirm.getByRole('button', { name: 'Cancel' }).click();
+  await expect(devbox.getByRole('alert')).toContainText('~/.config can’t be granted: it contains ~/.config/gcloud, which nono always protects');
+  await grant.fill('/proc/1/root');
+  await grant.press('Enter');
+  await expect(devbox.getByRole('alert')).toContainText('one process’s /proc entry');
   expect(await changes(page)).toHaveLength(1);
-  await grant.fill('/home');
+  // A file nono denies by default can be granted.
+  await grant.fill('~/.bash_history');
   await grant.press('Enter');
-  await page.getByRole('alertdialog', { name: /Grant read access to \/home on devbox/ }).getByRole('button', { name: 'Grant' }).click();
-  await expect.poll(async () => (await changes(page)).at(-1)).toEqual({ kind: 'add_grant', grant: { kind: 'path', value: '/home', access: 'read' } });
+  await expect.poll(async () => (await changes(page)).at(-1)).toEqual({ kind: 'add_grant', grant: { kind: 'path', value: '~/.bash_history', access: 'read' } });
+  // The one-click process listing grant.
+  await devbox.getByRole('button', { name: 'Grant Process listing (/proc, read-only) on devbox' }).click();
+  await expect.poll(async () => (await changes(page)).at(-1)).toEqual({ kind: 'add_grant', grant: { kind: 'path', value: '/proc', access: 'read' } });
 
   // Never-paths: listed, added and removed.
   await expect(devbox.locator('[data-never="~/.bash_history"]')).toBeVisible();
@@ -63,6 +68,47 @@ test('sandbox tab: path grants with access, a broad-grant confirm, and never-pat
   const buildbox = settings.locator(`[data-profile="m:${M.buildbox}"]`);
   await buildbox.getByRole('button', { name: 'Remove grant /home/alice/.cache/cargo on buildbox' }).click();
   await expect.poll(async () => (await changes(page)).at(-1)).toMatchObject({ kind: 'remove_grant', grant_id: '01JAG000000000000000000021' });
+});
+
+test('sandbox tab: sockets, with one-click known sockets and none by default', async ({ page }) => {
+  await start(page);
+  const settings = await openSandbox(page);
+  const devbox = settings.locator(`[data-profile="m:${M.devbox}"]`);
+  await expect(devbox.locator('[data-socket]')).toHaveCount(0);
+  const bus = devbox.getByRole('button', { name: 'Allow D-Bus system bus (/run/dbus/system_bus_socket) on devbox' });
+  await expect(bus).toHaveText('+ D-Bus system bus');
+  await expect(bus).toHaveAttribute('title', /polkit/);
+  await expect(devbox.getByRole('button', { name: /^Allow systemd journal \(stdout\)/ })).toBeVisible();
+  await expect(devbox).toContainText('nono can’t ask');
+  await bus.click();
+  await expect.poll(async () => (await changes(page)).at(-1)).toEqual({ kind: 'add_grant', grant: { kind: 'socket', value: '/run/dbus/system_bus_socket', access: null } });
+
+  // A typed socket, normalized; a relative one is refused.
+  const socket = devbox.getByLabel('Add socket for devbox');
+  await socket.fill('run/app.sock');
+  await socket.press('Enter');
+  await expect(devbox.getByRole('alert')).toContainText('absolute path');
+  await socket.fill('~/run//app.sock');
+  await socket.press('Enter');
+  await expect.poll(async () => (await changes(page)).at(-1)).toEqual({ kind: 'add_grant', grant: { kind: 'socket', value: '~/run/app.sock', access: null } });
+
+  // buildbox has the system bus: listed under Sockets (not Grants), removable, no hint for it.
+  const buildbox = settings.locator(`[data-profile="m:${M.buildbox}"]`);
+  await expect(buildbox.locator('[data-socket="/run/dbus/system_bus_socket"]')).toBeVisible();
+  await expect(buildbox.locator('[data-grant="/run/dbus/system_bus_socket"]')).toHaveCount(0);
+  await expect(buildbox.getByRole('button', { name: /^Allow D-Bus system bus/ })).toHaveCount(0);
+  await buildbox.getByRole('button', { name: 'Remove socket /run/dbus/system_bus_socket on buildbox' }).click();
+  await expect.poll(async () => (await changes(page)).at(-1)).toMatchObject({ kind: 'remove_grant', grant_id: '01JAG000000000000000000022' });
+});
+
+test('a file request whose standing grant could never work offers no “Always allow” and says why', async ({ page }) => {
+  await start(page, S.deploy);
+  const card = page.getByRole('main').locator('[data-request="req-path-2"]').first();
+  await expect(card).toContainText('/home/alice/.config');
+  await expect(card).toContainText('“Always allow” isn’t offered: it contains /home/alice/.config/gcloud');
+  await expect(card.getByRole('button', { name: /^Always allow/ })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: /for this session$/ })).toHaveText('Allow for this session');
+  await expect(card.getByRole('button', { name: /^Never allow .* on devbox/ })).toHaveText('Never (devbox)');
 });
 
 test('a file request: access, path, where; terse options with full names; answer lines', async ({ page }) => {
