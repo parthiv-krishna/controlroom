@@ -466,3 +466,31 @@ fn socket_grants_go_to_unix_socket() {
         Err(ProfileError::CoversProtected { .. })
     ));
 }
+
+/// home-manager hosts: `~/.bashrc` and `~/.profile` are symlinks into the Nix store, which every
+/// profile reads. nono runs such profiles; generating one must not refuse the store as
+/// "containing" a denied path (a 0.0.29 regression that refused every workspace).
+#[test]
+fn a_read_only_store_holding_the_targets_of_symlinked_shell_configs_is_fine() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = p(std::fs::canonicalize(dir.path()).unwrap().to_str().unwrap());
+    let (home, store) = (root.join("home"), root.join("store"));
+    std::fs::create_dir_all(home.as_path()).unwrap();
+    std::fs::create_dir_all(store.as_path()).unwrap();
+    for (link, target) in [(".bashrc", "abc-bashrc"), (".profile", "def-profile")] {
+        std::fs::write(store.join(target).as_path(), "").unwrap();
+        std::os::unix::fs::symlink(store.join(target).as_path(), home.join(link).as_path())
+            .unwrap();
+    }
+    let mut spec = workspace();
+    spec.read_only.push(store.clone());
+    spec.nono_denied = controlroom_sandbox::limits::denied(&home);
+    let profile = generate_workspace_profile(&spec).unwrap().to_value();
+    assert!(
+        profile["filesystem"]["read"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(store.as_str())),
+        "{profile}"
+    );
+}

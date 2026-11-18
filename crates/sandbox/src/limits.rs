@@ -109,20 +109,14 @@ impl fmt::Display for Limit {
     }
 }
 
-/// The paths nono denies on a host whose home is `home`, with the targets of those that are
-/// symlinks (nono denies both forms).
+/// The paths nono denies on a host whose home is `home`, as nono names them (under the home).
+///
+/// Symlink targets are deliberately not included: with home-manager, `~/.bashrc` and
+/// `~/.profile` point into `/nix/store`, and nono 0.80 runs fine with `/nix/store` readable.
+/// Counting the targets made every profile with the store "contain a denied path" and refused
+/// every workspace on such hosts.
 pub fn denied(home: &AbsPath) -> Vec<AbsPath> {
-    let mut out = Vec::with_capacity(DENIED_IN_HOME.len());
-    for rel in DENIED_IN_HOME {
-        let path = home.join(rel);
-        let target = std::fs::canonicalize(path.as_path())
-            .ok()
-            .and_then(|t| AbsPath::from_path(&t).ok())
-            .filter(|t| *t != path);
-        out.push(path);
-        out.extend(target);
-    }
-    out
+    DENIED_IN_HOME.iter().map(|rel| home.join(rel)).collect()
 }
 
 /// Whether `path` is one process's `/proc` entry: `/proc/<pid>` or anything under it.
@@ -293,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn denied_paths_include_symlink_targets() {
+    fn denied_paths_are_named_under_the_home_never_by_their_symlink_targets() {
         let dir = tempfile::tempdir().unwrap();
         let home = AbsPath::from_path(&std::fs::canonicalize(dir.path()).unwrap()).unwrap();
         std::fs::write(home.join("history").as_path(), "").unwrap();
@@ -304,7 +298,7 @@ mod tests {
         .unwrap();
         let denied = denied(&home);
         assert!(denied.contains(&home.join(".bash_history")));
-        assert!(denied.contains(&home.join("history")));
         assert!(denied.contains(&home.join(".ssh")));
+        assert!(!denied.contains(&home.join("history")));
     }
 }
