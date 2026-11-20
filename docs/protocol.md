@@ -97,7 +97,7 @@ Answers are `Response`: `choice {option_id, reason?}` · `answers {answers[]}` �
 | kind | fields |
 | --- | --- |
 | `run` | `trigger` (user · queue · steer · inject{origin, label} · auto_continue · retry · extension{name} · schedule{schedule_id, name}), `state` running/settled, `outcome?`, `error?`. Injection origins: user · job · child · message · answer · todo · continue · tool_late (a late tool result) · workspace (host unreachable past the grace, workspace added or removed, shell reset) |
-| `message` | `role` user/agent/notice, `content[]` (text · image · resource) |
+| `message` | `role` user/agent/notice, `content[]` (text · image · resource), `origin?` (`MessageOrigin`, below; `null` on agent and notice messages) |
 | `thinking` | `text` |
 | `tool_call` | `tool_call_id, parent_tool_call_id?, name, title, tool_kind, input?` (display text), `status, output?` (text · diff · terminal), `exit?, duration_ms?`. Remote tools keep pi's names and argument shapes, so `read devbox:~/src/api/main.rs` maps like a local read |
 | `todo` | `items[]` (snapshot after a change) |
@@ -108,6 +108,20 @@ Answers are `Response`: `choice {option_id, reason?}` · `answers {answers[]}` �
 | `usage` | `scope, tokens {input, output, cache_read, cache_write}, cost?, context?` |
 | `compaction` / `retry` | `reason, phase, tokens_before?, tokens_after?, error?` / `attempt, max_attempts?, phase, delay_ms?, error?` |
 | `notice` / `error` / `session_info` | `level, text` / `text` / `title?, model?, thinking?, sandbox?` (`sandbox`: the new level after `session.set_sandbox_level`, made by the agent daemon) |
+
+**Message origins.** The agent daemon sets `origin` on the user message of every line it writes, so a client can show machine-written input as a compact row tied to its source (the full text on expand). `MessageOrigin`, tagged by `kind`:
+
+| kind | fields | the message is |
+| --- | --- | --- |
+| `user` | `device?` | a prompt the user sent to an idle agent |
+| `queue` | `device?` | a queued prompt, delivered from the queue (also a send-now sent once the agent is idle) |
+| `steer` | `device?` | a send-now steered into the running run (it starts the next run if that one ends first) |
+| `schedule` | `schedule_id, name` | a schedule's prompt (its name when it fired), steered or not |
+| `inject` | `origin` (an injection origin, above), `label`, `source?` | input the daemon wrote for the agent. `label` as in the run trigger (`job: tests (exit 0)`). `source` by origin: `job` the job id (a wake that merges several jobs has none), `child` the child session id, `message` the sending session id, `answer` the question's request id, `tool_late` the tool call id, `workspace` the workspace id (added or removed) or the machine id (unreachable); none for `todo` and sandbox level notices (`workspace`, label `sandbox level`) |
+| `auto_continue` | | an auto-continue nudge |
+| `unknown` | | a kind this build doesn't know |
+
+The origin is recorded with the line's tag when the daemon writes it and survives restarts; a steered injection inside a user's run carries its own origin, not the run's trigger. Messages the daemon can't attribute (an extension's, lines from before origins existed) have `origin: null`. A run started by a line gets the matching trigger (`user`, `queue`, `steer`, `schedule`, `inject {origin, label}`, `auto_continue`).
 
 `TimelineOp`: `upsert {item}` (insert or replace whole) · `append_text {id, text, seq_from, seq_to}` (message's last text part, thinking text, or tool text output) · `end {id, seq_from, seq_to}` (clears `streaming`).
 `RawFrame {seq, ts, stream: to_agent|from_agent|stderr|meta, text}` only with `raw_since`.
