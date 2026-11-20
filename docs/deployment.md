@@ -98,6 +98,20 @@ Sessions need a model provider. There are two ways to configure them, and they c
   or key for the same provider exclude each other: remove one to add the other.
 - **Custom gateways** (OpenAI-compatible): a name, the base URL (`https://…/v1`), its model ids,
   the key header (`Authorization: Bearer`, `x-api-key` or `api-key`) and the key.
+- **Accounts** (e.g. a personal and a work subscription): *+ Account* on a preset or a gateway
+  adds a named account (lowercase letters, digits and dashes) under it, with its own key, pasted
+  token or sign-in: *Add key* or *Sign in* on the account's row. What was set up before is the
+  provider's first account, named *default* (*Rename* it, e.g. to *personal*); nothing needs
+  re-entering. For pi, each added account is a provider of its own (`anthropic-work`, chosen when
+  it is added and kept on rename) with its provider's models, so the session header's model
+  picker lists every model once per account (*Model · work*), switching account is switching
+  model, and the header's usage line names the account (`… $0.420 work 12.0%/200k`). Each
+  account's sign-in lives in its own directory (`models/accounts/<id>/auth.json`) and is refreshed
+  there only. Each row shows what the server's sessions used through it (last 24 hours, 7 days,
+  all time; deleted sessions no longer count). *Remove* on an account deletes it with its key or
+  sign-in (and the defaults, if they named it). The defaults can name an account.
+  A provider the server's config declares keeps its server credential (read-only) and can still
+  get UI accounts next to it; an account never takes a server-declared provider's id.
 - **Test** sends one cheap request (e.g. the model list) with the key or token, through the
   provider's route, and shows *ok* or the HTTP status.
 - **Defaults**: the provider, model and thinking level of new sessions, from the models pi
@@ -105,8 +119,10 @@ Sessions need a model provider. There are two ways to configure them, and they c
 
 Changes apply to new sessions and to restarts of existing ones; running agents keep what they
 started with. They are stored in `/var/lib/controlroom-agent/models/` (`keys.json` is mode
-0600, readable by the agent user only) and logged by both services with the device that made
-them, never with a key. Only the presets and gateways you add get network routes from the UI, so
+0600, `accounts/` 0700, readable by the agent user only) and logged by both services with the
+device that made them, never with a key. An added account's models are pi's own model list of
+its provider, fetched when Settings › Models is opened or changed (kept in
+`models/definitions.json`); after a pi upgrade, open Settings › Models once to refresh it. Only the presets and gateways you add get network routes from the UI, so
 the sandbox's allow-list stays deliberate. Sessions at sandbox level *off* use the server's own
 config only (sign-ins included, UI keys, gateways and defaults not).
 
