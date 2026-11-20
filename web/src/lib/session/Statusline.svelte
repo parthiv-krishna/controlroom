@@ -1,13 +1,22 @@
 <script lang="ts">
   // The session's usage in the header, in pi's footer format (model/statusline): monospace and
   // compact. When the row it sits in is too narrow, parts are dropped (W, R, CH, …; the context
-  // part stays). Tapping it, or hovering with a mouse, shows every part with its label.
+  // part stays). Tapping it, or hovering with a mouse, shows every part with its label. When the
+  // model's provider has several accounts (Settings › Models), the account is named after the cost.
+  import { useApp } from '../app/app.svelte';
+  import { accountName, modelProvider } from '../model/accounts';
   import { partsToDrop, statusParts, type PartKey } from '../model/statusline';
   import type { FeedSession } from '../protocol';
   import { dismissable } from '../ui/actions';
 
   let { s }: { s: FeedSession } = $props();
-  const parts = $derived(statusParts(s.usage, s.context));
+  const app = useApp();
+  $effect(() => app.accounts.ensure());
+  const account = $derived.by(() => {
+    const model = s.options.find((o) => o.id === 'model');
+    return model?.kind === 'select' ? accountName(app.accounts.list, modelProvider(model.value)) : null;
+  });
+  const parts = $derived(statusParts(s.usage, s.context, account));
 
   let root: HTMLElement | undefined = $state();
   let line: HTMLElement | undefined = $state();

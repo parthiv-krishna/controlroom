@@ -82,3 +82,14 @@ describe('partsToDrop', () => {
     expect([...partsToDrop(few, w, 1, 0, 19)]).toEqual(['input']);
   });
 });
+
+describe('the account part', () => {
+  it('names the account after the cost, and is dropped after the cost', () => {
+    const parts = statusParts(usage(10, 5, 0, 0, 0.5, null), ctx(15, 1000), 'work');
+    expect(parts.map((p) => p.text)).toEqual(['↑10', '↓5', '$0.500', 'work', '1.5%/1.0k']);
+    const widths = new Map<PartKey, number>(parts.map((p) => [p.key, 10]));
+    expect([...partsToDrop(parts, widths, 0, 0, 20)]).toEqual(['input', 'output', 'cost']);
+    expect([...partsToDrop(parts, widths, 0, 0, 10)]).toEqual(['input', 'output', 'cost', 'account']);
+    expect(statusParts(ZERO, null, 'work')).toEqual([]);
+  });
+});

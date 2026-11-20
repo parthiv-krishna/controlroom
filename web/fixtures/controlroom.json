@@ -3269,15 +3269,15 @@
       "id": "model",
       "label": "Model",
       "kind": "select",
-      "value": "large",
+      "value": "openrouter-work/mock-router",
       "choices": [
        {
-        "value": "large",
-        "label": "Large"
+        "value": "openrouter/mock-router",
+        "label": "Mock Router"
        },
        {
-        "value": "small",
-        "label": "Small"
+        "value": "openrouter-work/mock-router",
+        "label": "Mock Router"
        }
       ]
      },
@@ -5267,7 +5267,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai-codex",
@@ -5282,7 +5286,11 @@
      },
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai",
@@ -5303,7 +5311,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "google",
@@ -5328,7 +5340,11 @@
       "message": "HTTP 403 Forbidden",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openrouter",
@@ -5353,7 +5369,92 @@
       "message": "HTTP 200 OK",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
     },
     {
      "id": "gw",
@@ -5380,7 +5481,11 @@
       "auth_header": "bearer"
      },
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "litellm",
@@ -5393,7 +5498,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
     }
    ],
    "models": [
@@ -5429,6 +5538,12 @@
     },
     {
      "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
      "id": "mock-router",
      "name": "Mock Router",
      "reasoning": false
@@ -5459,7 +5574,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai-codex",
@@ -5474,7 +5593,11 @@
      },
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai",
@@ -5495,7 +5618,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "google",
@@ -5520,7 +5647,11 @@
       "message": "HTTP 403 Forbidden",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openrouter",
@@ -5545,7 +5676,92 @@
       "message": "HTTP 200 OK",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
     },
     {
      "id": "gw",
@@ -5572,7 +5788,11 @@
       "auth_header": "bearer"
      },
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "litellm",
@@ -5585,7 +5805,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
     }
    ],
    "models": [
@@ -5621,6 +5845,12 @@
     },
     {
      "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
      "id": "mock-router",
      "name": "Mock Router",
      "reasoning": false
@@ -5651,7 +5881,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai-codex",
@@ -5666,7 +5900,11 @@
      },
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai",
@@ -5687,7 +5925,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "google",
@@ -5712,7 +5954,11 @@
       "message": "HTTP 403 Forbidden",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openrouter",
@@ -5737,7 +5983,92 @@
       "message": "HTTP 200 OK",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
     },
     {
      "id": "gw",
@@ -5764,7 +6095,11 @@
       "auth_header": "bearer"
      },
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "litellm",
@@ -5777,7 +6112,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
     }
    ],
    "models": [
@@ -5813,6 +6152,12 @@
     },
     {
      "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
      "id": "mock-router",
      "name": "Mock Router",
      "reasoning": false
@@ -5843,7 +6188,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai-codex",
@@ -5858,7 +6207,11 @@
      },
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai",
@@ -5879,7 +6232,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "google",
@@ -5904,7 +6261,11 @@
       "message": "HTTP 403 Forbidden",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openrouter",
@@ -5929,7 +6290,92 @@
       "message": "HTTP 200 OK",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
     },
     {
      "id": "gw",
@@ -5956,7 +6402,11 @@
       "auth_header": "bearer"
      },
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "litellm",
@@ -5969,7 +6419,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
     }
    ],
    "models": [
@@ -6005,6 +6459,12 @@
     },
     {
      "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
      "id": "mock-router",
      "name": "Mock Router",
      "reasoning": false
@@ -6035,7 +6495,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai-codex",
@@ -6050,7 +6514,11 @@
      },
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai",
@@ -6071,7 +6539,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "google",
@@ -6096,7 +6568,11 @@
       "message": "HTTP 403 Forbidden",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openrouter",
@@ -6121,7 +6597,92 @@
       "message": "HTTP 200 OK",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
     },
     {
      "id": "gw",
@@ -6148,7 +6709,11 @@
       "auth_header": "bearer"
      },
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "litellm",
@@ -6161,7 +6726,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
     }
    ],
    "models": [
@@ -6197,6 +6766,12 @@
     },
     {
      "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
      "id": "mock-router",
      "name": "Mock Router",
      "reasoning": false
@@ -6227,7 +6802,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai-codex",
@@ -6242,7 +6821,11 @@
      },
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai",
@@ -6263,7 +6846,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "google",
@@ -6288,7 +6875,11 @@
       "message": "HTTP 403 Forbidden",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openrouter",
@@ -6313,7 +6904,92 @@
       "message": "HTTP 200 OK",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
     },
     {
      "id": "gw",
@@ -6340,7 +7016,11 @@
       "auth_header": "bearer"
      },
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "litellm",
@@ -6353,7 +7033,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
     }
    ],
    "models": [
@@ -6392,6 +7076,12 @@
      "id": "mock-router",
      "name": "Mock Router",
      "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
     }
    ],
    "models_error": null,
@@ -6419,7 +7109,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai-codex",
@@ -6434,7 +7128,11 @@
      },
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openai",
@@ -6455,7 +7153,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "google",
@@ -6480,7 +7182,11 @@
       "message": "HTTP 403 Forbidden",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "openrouter",
@@ -6505,7 +7211,92 @@
       "message": "HTTP 200 OK",
       "at": 1767596000000
      },
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
     },
     {
      "id": "gw",
@@ -6532,7 +7323,11 @@
       "auth_header": "bearer"
      },
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
     },
     {
      "id": "litellm",
@@ -6545,7 +7340,11 @@
      "signed_in": null,
      "gateway": null,
      "test": null,
-     "clash": null
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
     }
    ],
    "models": [
@@ -6581,6 +7380,12 @@
     },
     {
      "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
      "id": "mock-router",
      "name": "Mock Router",
      "reasoning": false
@@ -6655,6 +7460,634 @@
    },
    "reset_pending": false,
    "foreground": null
+  },
+  "models.add_account": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "token_prefix": "sk-ant-oat",
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "token_prefix": null,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.rename_account": {
+   "providers": [
+    {
+     "id": "anthropic",
+     "label": "Anthropic",
+     "source": "none",
+     "takes_key": true,
+     "token_prefix": "sk-ant-oat",
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "openai-codex",
+     "label": "ChatGPT (Codex)",
+     "source": "none",
+     "takes_key": false,
+     "token_prefix": null,
+     "can_sign_in": true,
+     "key": null,
+     "signed_in": {
+      "account": "alice@example.com"
+     },
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "openai",
+     "label": "OpenAI",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "4f2a",
+      "added_at": 1767592800000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "google",
+     "label": "Google (Gemini)",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "9c1d",
+      "added_at": 1767500000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": false,
+      "message": "HTTP 403 Forbidden",
+      "at": 1767596000000
+     },
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "openrouter",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "1b2c",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": {
+      "ok": true,
+      "message": "HTTP 200 OK",
+      "at": 1767596000000
+     },
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 42000,
+        "output": 3100,
+        "cache_read": 120000,
+        "cache_write": 0
+       },
+       "cost": 0.31
+      },
+      "week": {
+       "tokens": {
+        "input": 310000,
+        "output": 22000,
+        "cache_read": 900000,
+        "cache_write": 0
+       },
+       "cost": 2.4
+      },
+      "total": {
+       "tokens": {
+        "input": 1200000,
+        "output": 88000,
+        "cache_read": 4100000,
+        "cache_write": 0
+       },
+       "cost": 9.75
+      }
+     }
+    },
+    {
+     "id": "openrouter-work",
+     "label": "OpenRouter",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77aa",
+      "added_at": 1767300000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": "work",
+     "account_of": "openrouter",
+     "can_add_account": false,
+     "usage": {
+      "day": {
+       "tokens": {
+        "input": 9000,
+        "output": 800,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.07
+      },
+      "week": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      },
+      "total": {
+       "tokens": {
+        "input": 52000,
+        "output": 4100,
+        "cache_read": 0,
+        "cache_write": 0
+       },
+       "cost": 0.42
+      }
+     }
+    },
+    {
+     "id": "gw",
+     "label": "gw",
+     "source": "ui",
+     "takes_key": true,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": {
+      "kind": "api_key",
+      "last4": "77ab",
+      "added_at": 1767400000000,
+      "added_by": {
+       "device_id": "device-laptop",
+       "label": "Laptop (Firefox on Linux)"
+      }
+     },
+     "signed_in": null,
+     "gateway": {
+      "base_url": "https://llm.example.com/v1",
+      "models": [
+       "mock-model"
+      ],
+      "auth_header": "bearer"
+     },
+     "test": null,
+     "clash": null,
+     "account": "default",
+     "account_of": null,
+     "can_add_account": true,
+     "usage": null
+    },
+    {
+     "id": "litellm",
+     "label": "litellm",
+     "source": "server",
+     "takes_key": false,
+     "token_prefix": null,
+     "can_sign_in": false,
+     "key": null,
+     "signed_in": null,
+     "gateway": null,
+     "test": null,
+     "clash": null,
+     "account": null,
+     "account_of": null,
+     "can_add_account": false,
+     "usage": null
+    }
+   ],
+   "models": [
+    {
+     "provider": "anthropic",
+     "id": "mock-sonnet",
+     "name": "Mock Sonnet",
+     "reasoning": true
+    },
+    {
+     "provider": "anthropic",
+     "id": "mock-haiku",
+     "name": "Mock Haiku",
+     "reasoning": false
+    },
+    {
+     "provider": "openai-codex",
+     "id": "mock-codex",
+     "name": "Mock Codex",
+     "reasoning": true
+    },
+    {
+     "provider": "gw",
+     "id": "mock-model",
+     "name": "mock-model",
+     "reasoning": false
+    },
+    {
+     "provider": "litellm",
+     "id": "mock-large",
+     "name": "Mock Large",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    },
+    {
+     "provider": "openrouter-work",
+     "id": "mock-router",
+     "name": "Mock Router",
+     "reasoning": false
+    }
+   ],
+   "models_error": null,
+   "defaults": {
+    "provider": "anthropic",
+    "model": "mock-sonnet",
+    "thinking": "high"
+   },
+   "server_defaults": {
+    "provider": "litellm",
+    "model": "mock-large",
+    "thinking": null
+   }
+  },
+  "models.accounts": {
+   "accounts": [
+    {
+     "provider": "openrouter",
+     "of": "openrouter",
+     "name": "default"
+    },
+    {
+     "provider": "openrouter-work",
+     "of": "openrouter",
+     "name": "work"
+    }
+   ]
   }
  },
  "script": [

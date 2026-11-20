@@ -12,6 +12,7 @@ import { randomUuid } from '../model/uuid';
 import { leadsToMatch, treeIndex, treeRoots, type TreeIndex } from '../model/tree';
 import type { FeedSession, OpId, Project, SessionDetail, SessionId, Task, TaskStatus } from '../protocol';
 import type { Client } from '../state/client.svelte';
+import { Accounts } from './accounts.svelte';
 import { Dialogs, Toasts } from './overlays.svelte';
 import { Prefs } from './prefs.svelte';
 import { InputHeartbeat, pageShown } from './presence';
@@ -28,6 +29,8 @@ export class App {
   readonly view = new View();
   readonly dialogs = new Dialogs();
   readonly toasts = new Toasts();
+  /** The accounts of model providers with several. */
+  readonly accounts: Accounts;
   /** User input, reported in the background (failures stay silent) so pushes wait while the user is here. */
   private readonly heartbeat = new InputHeartbeat(() => {
     this.client.request('client.activity', {}).catch(() => {});
@@ -44,6 +47,7 @@ export class App {
 
   constructor(readonly client: Client) {
     client.onError = (message) => this.toasts.show(message, 'error');
+    this.accounts = new Accounts(client);
     const feed = client.feed;
     this.ctx = $derived({ machines: feed.machines, machineList: feed.machineList, sessions: feed.sessionList, tasks: feed.taskList, overlaps: feed.overlaps });
     this.project = $derived((this.view.project && this.view.project !== UNASSIGNED && feed.projects.get(this.view.project)) || null);

@@ -14,6 +14,10 @@ const base: ModelProvider = {
   gateway: null,
   test: null,
   clash: null,
+  account: null,
+  account_of: null,
+  can_add_account: false,
+  usage: null,
 };
 const NOW = 1_767_600_000_000;
 

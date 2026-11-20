@@ -179,3 +179,74 @@ test('models: phone width', async ({ browser }) => {
   await expect(row.getByRole('textbox', { name: 'API key for OpenAI', exact: true })).toBeVisible();
   await page.close();
 });
+
+test('models: named accounts (add, key, rename, remove, usage)', async ({ page }) => {
+  await start(page);
+  const settings = await openModels(page);
+  const row = (id: string) => settings.locator(`[data-provider="${id}"]`);
+  // OpenRouter has two accounts: each names its account, has its own key and usage.
+  await expect(row('openrouter').locator('[data-account]')).toHaveText('default');
+  await expect(row('openrouter-work').locator('[data-account]')).toHaveText('work');
+  await expect(row('openrouter-work').locator('[data-status]')).toHaveText('key set …77aa');
+  await expect(row('openrouter').locator('[data-usage]')).toHaveText('24 h 165k tok $0.310 · 7 d 1.2M tok $2.400 · all 5.4M tok $9.750');
+  await expect(row('openrouter-work').locator('[data-usage]')).toHaveText('24 h 9.8k tok $0.070 · 7 d 56k tok $0.420 · all 56k tok $0.420');
+  // A provider with one account doesn't name it.
+  await expect(row('anthropic').locator('[data-account]')).toHaveCount(0);
+
+  // Add an account to Anthropic.
+  await row('anthropic').getByRole('button', { name: 'Add an account to Anthropic' }).click();
+  const name = row('anthropic').getByRole('textbox', { name: 'Name of the new Anthropic account' });
+  await name.fill('work');
+  await name.press('Enter');
+  await expect.poll(async () => (await calls(page, 'models.add_account')).map((c) => c.params)).toEqual([{ provider: 'anthropic', name: 'work' }]);
+  await expect(name).toHaveCount(0);
+
+  // A key for the work account goes to its own id.
+  await row('openrouter-work').getByRole('button', { name: 'Replace API key for OpenRouter (work)' }).click();
+  const key = row('openrouter-work').getByRole('textbox', { name: 'API key for OpenRouter (work)', exact: true });
+  await key.fill('sk-work-test-1111');
+  await key.press('Enter');
+  await expect.poll(async () => (await calls(page, 'models.set_key')).map((c) => c.params)).toEqual([{ provider: 'openrouter-work', key: 'sk-work-test-1111' }]);
+
+  // Rename the first account.
+  await row('openrouter').getByRole('button', { name: 'Rename account default of OpenRouter' }).click();
+  const rename = row('openrouter').getByRole('textbox', { name: 'New name of account default of OpenRouter' });
+  await expect(rename).toHaveValue('default');
+  await rename.fill('personal');
+  await row('openrouter').getByRole('button', { name: 'Rename', exact: true }).click();
+  await expect.poll(async () => (await calls(page, 'models.rename_account')).map((c) => c.params)).toEqual([{ provider: 'openrouter', name: 'personal' }]);
+
+  // Remove the work account (confirmed).
+  await row('openrouter-work').getByRole('button', { name: 'Remove account work of OpenRouter' }).click();
+  await page.getByRole('alertdialog', { name: 'Remove the account work of OpenRouter?' }).getByRole('button', { name: 'Remove' }).click();
+  await expect.poll(async () => (await calls(page, 'models.remove')).map((c) => c.params)).toEqual([{ provider: 'openrouter-work' }]);
+
+  // The defaults name accounts.
+  await settings.locator('[data-defaults]').getByLabel('Default provider').click();
+  await expect(page.getByRole('option', { name: 'OpenRouter (work)' })).toBeVisible();
+  await expect(page.getByRole('option', { name: 'OpenRouter (default)' })).toBeVisible();
+});
+
+test('models: the picker lists models per account and the statusline names the account', async ({ page }) => {
+  await start(page, '01JAS000000000000000000018');
+  const header = page.locator('header').filter({ has: page.getByRole('button', { name: 'Session usage' }) }).first();
+  const statusline = page.getByRole('button', { name: 'Session usage' }).first();
+  await expect(statusline.locator('[data-part="account"]')).toHaveText('work');
+  await header.getByLabel('Model').click();
+  await expect(page.getByRole('option', { name: 'Mock Router · default' })).toBeVisible();
+  await page.getByRole('option', { name: 'Mock Router · default' }).click();
+  await expect.poll(async () => (await calls(page, 'session.set_option')).map((c) => (c.params as { value: string }).value)).toEqual(['openrouter/mock-router']);
+});
+
+test('models: accounts at phone width', async ({ browser }) => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  await start(page);
+  const settings = await openModels(page, true);
+  const work = settings.locator('[data-provider="openrouter-work"]');
+  await expect(work.getByRole('button', { name: 'Remove account work of OpenRouter' })).toBeVisible();
+  const overflow = await settings.evaluate((el) =>
+    [...el.querySelectorAll('[data-provider], [data-provider] button, [data-usage]')].some((e) => e.getBoundingClientRect().right > window.innerWidth + 1),
+  );
+  expect(overflow).toBe(false);
+  await page.close();
+});

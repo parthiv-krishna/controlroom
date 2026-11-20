@@ -1,10 +1,11 @@
 // The session statusline: the session's usage in pi's footer format (pi 1.2.0,
 // modes/interactive/components/footer.js), e.g. `↑430k ↓378k R303M W54M CH99.3% $337.700 16.0%/1.0M`,
-// and which parts to drop when it doesn't fit.
+// the account of the session's model when its provider has several (e.g. `work`), and which parts
+// to drop when it doesn't fit.
 import type { ContextUsage, SessionUsage } from '../protocol';
 
 /** One part of the statusline. */
-export type PartKey = 'input' | 'output' | 'cache_read' | 'cache_write' | 'cache_hit' | 'cost' | 'context';
+export type PartKey = 'input' | 'output' | 'cache_read' | 'cache_write' | 'cache_hit' | 'cost' | 'account' | 'context';
 
 export interface StatusPart {
   key: PartKey;
@@ -19,7 +20,7 @@ export interface StatusPart {
 }
 
 /** Parts dropped first when the line doesn't fit; the context part always stays. */
-export const DROP_ORDER: readonly PartKey[] = ['cache_write', 'cache_read', 'cache_hit', 'input', 'output', 'cost'];
+export const DROP_ORDER: readonly PartKey[] = ['cache_write', 'cache_read', 'cache_hit', 'input', 'output', 'cost', 'account'];
 
 /** A token count as pi's footer shows it: `950`, `4.2k`, `430k`, `1.0M`, `303M`. */
 export function formatTokens(count: number): string {
@@ -35,9 +36,10 @@ const exact = (n: number): string => n.toLocaleString('en-US');
 /**
  * The statusline's parts in pi's order. Like pi, token and cost parts appear only when non-zero,
  * the cache hit rate only when the session read or wrote the cache, and the context part always
- * (`?` while its size or fill is unknown). Empty while nothing was reported.
+ * (`?` while its size or fill is unknown). `account` names the account of the session's model
+ * (Settings › Models), after the cost. Empty while nothing was reported.
  */
-export function statusParts(usage: SessionUsage, context: ContextUsage | null): StatusPart[] {
+export function statusParts(usage: SessionUsage, context: ContextUsage | null, account: string | null = null): StatusPart[] {
   const t = usage.tokens;
   const parts: StatusPart[] = [];
   const add = (key: PartKey, text: string, label: string, value: string, level: StatusPart['level'] = null) => parts.push({ key, text, label, value, level });
@@ -50,6 +52,7 @@ export function statusParts(usage: SessionUsage, context: ContextUsage | null): 
     add('cache_hit', `CH${pct}%`, 'cache hit (latest reply)', `${pct}%`);
   }
   if (usage.cost) add('cost', `$${usage.cost.toFixed(3)}`, 'cost (USD)', `$${usage.cost.toFixed(3)}`);
+  if (account && (parts.length || context)) add('account', account, 'account (of the model)', account);
   if (parts.length || context) parts.push(contextPart(context));
   return parts;
 }
