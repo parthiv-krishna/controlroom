@@ -30,7 +30,7 @@ fn steering() -> Capabilities {
     }
 }
 
-fn laptop() -> DeviceRef {
+pub(super) fn laptop() -> DeviceRef {
     DeviceRef {
         device_id: DeviceId::new("laptop-1"),
         label: "Laptop".into(),
@@ -50,7 +50,7 @@ fn gated() -> FakeScript {
         .default_turn([FakeStep::Text("ok".into())])
 }
 
-async fn ask(h: &Harness, id: SessionId, call: &str, question: &str) -> RequestId {
+pub(super) async fn ask(h: &Harness, id: SessionId, call: &str, question: &str) -> RequestId {
     h.rt.agent_ask(
         id,
         QuestionAskParams {
@@ -78,7 +78,7 @@ async fn ask(h: &Harness, id: SessionId, call: &str, question: &str) -> RequestI
     .question_id
 }
 
-fn answer(id: SessionId, request: &RequestId, choice: &str) -> RequestRespondParams {
+pub(super) fn answer(id: SessionId, request: &RequestId, choice: &str) -> RequestRespondParams {
     RequestRespondParams {
         op_id: OpId::generate(),
         id,

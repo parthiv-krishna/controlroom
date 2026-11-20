@@ -11,6 +11,7 @@ mod job_wakes;
 mod jobs;
 mod lifecycle;
 mod machines;
+mod origins;
 mod queue;
 mod raised;
 mod recovery;
