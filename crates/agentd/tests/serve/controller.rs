@@ -2,19 +2,21 @@
 //! one connected machine, `devbox`, subscribes to the host bridge and answers every host
 //! request itself, as a minimal host daemon would: workspaces resolve to their path, shells
 //! open, `bash` runs the command with `/bin/sh` in the workspace, `read` and `write` use the
-//! real files, `job_run` accepts the job (its event log stays empty), approvals are empty.
-//! Every handled method is logged.
+//! real files, `job_run` accepts the job (its event log stays empty unless the test forwards
+//! events with [`FakeController::job_events`]), approvals are empty. Every handled method is
+//! logged.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
-use controlroom_protocol::agentd::HostOpRequest;
+use controlroom_protocol::agentd::{HostOpRequest, HostOpsNotifyParams};
 use controlroom_protocol::host::{
-    ApprovalsSubscribeResult, HostOp, HostRequest, HostResult, HostShell, JobsSubscribeResult,
-    ReadContent, ShellListResult, ToolCancelResult, WorkspaceOpenResult,
+    ApprovalsSubscribeResult, HostNotification, HostOp, HostRequest, HostResult, HostShell,
+    JobEvent, JobsEventParams, JobsSubscribeResult, ReadContent, ShellListResult, ToolCancelResult,
+    WorkspaceOpenResult,
 };
-use controlroom_protocol::ids::{RemotePath, Rev, ShellId, SubscriptionId};
+use controlroom_protocol::ids::{MachineId, RemotePath, Rev, ShellId, SubscriptionId};
 use controlroom_protocol::jsonrpc::Ack;
 use controlroom_protocol::session::{Shell, ShellState};
 use controlroom_protocol::{ErrorData, Resource, RpcError, UnixMillis};
@@ -33,6 +35,9 @@ pub struct FakeController {
     client: Arc<Client>,
     thread: Option<JoinHandle<()>>,
     methods: Arc<Mutex<Vec<String>>>,
+    machine: MachineId,
+    /// The jobs subscription handed out last.
+    jobs: Arc<Mutex<Option<SubscriptionId>>>,
 }
 
 impl FakeController {
@@ -55,11 +60,13 @@ impl FakeController {
             }]}),
         );
         let methods = Arc::new(Mutex::new(Vec::new()));
+        let jobs = Arc::new(Mutex::new(None));
         let pending = client.call("hostops.subscribe", json!({}));
         let host = Host {
             client: client.clone(),
             home: home.to_owned(),
             methods: methods.clone(),
+            jobs: jobs.clone(),
         };
         let thread = std::thread::spawn(move || {
             host.answer_all(&pending["requests"]);
@@ -74,6 +81,8 @@ impl FakeController {
             client,
             thread: Some(thread),
             methods,
+            machine: machine.parse().expect("a machine id"),
+            jobs,
         }
     }
 
@@ -88,6 +97,27 @@ impl FakeController {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    /// Forwards events of the host's job log, as its `jobs.event` on the current jobs
+    /// subscription.
+    pub fn job_events(&self, events: Vec<JobEvent>) {
+        let subscription_id = self
+            .jobs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .expect("the agent daemon subscribed to jobs");
+        let params = HostOpsNotifyParams {
+            machine_id: self.machine,
+            notification: HostNotification::JobsEvent(JobsEventParams {
+                subscription_id,
+                events,
+            }),
+        };
+        self.client.call(
+            "hostops.notify",
+            serde_json::to_value(params).expect("serializable"),
+        );
     }
 }
 
@@ -105,6 +135,7 @@ struct Host {
     client: Arc<Client>,
     home: PathBuf,
     methods: Arc<Mutex<Vec<String>>>,
+    jobs: Arc<Mutex<Option<SubscriptionId>>>,
 }
 
 fn ok<T: Serialize>(value: T) -> Result<Value, RpcError> {
@@ -157,11 +188,15 @@ impl Host {
                 })
             }
             HostRequest::ShellList(_) => ok(ShellListResult { shells: Vec::new() }),
-            HostRequest::JobsSubscribe(_) => ok(JobsSubscribeResult {
-                subscription_id: SubscriptionId::generate(),
-                rev: Rev(0),
-                events: Vec::new(),
-            }),
+            HostRequest::JobsSubscribe(_) => {
+                let subscription_id = SubscriptionId::generate();
+                *self.jobs.lock().unwrap_or_else(PoisonError::into_inner) = Some(subscription_id);
+                ok(JobsSubscribeResult {
+                    subscription_id,
+                    rev: Rev(0),
+                    events: Vec::new(),
+                })
+            }
             HostRequest::ApprovalsSubscribe(_) => ok(ApprovalsSubscribeResult {
                 subscription_id: SubscriptionId::generate(),
                 pending: Vec::new(),

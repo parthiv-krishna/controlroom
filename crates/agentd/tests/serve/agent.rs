@@ -208,3 +208,102 @@ fn the_agent_socket_takes_only_its_session_token_and_survives_a_restart() {
     client.call("session.delete", json!({"op_id": op(), "id": id}));
     wait_until("the agent socket to go", || !socket.exists());
 }
+
+/// A job's exit reported mid-run is steered into the user's run: its message item names the
+/// job wake and its job, not the user.
+#[test]
+fn a_job_wake_steered_mid_run_names_its_job() {
+    use controlroom_protocol::host::{JobEvent, JobEventKind};
+    use controlroom_protocol::ids::{JobId, RemotePath, Rev, UnixMillis};
+
+    let env = Env::with(json!({"replies": [gated("Working", "hold", " done."), say("Noted.")]}));
+    let client = env.client();
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
+    let summary = client.wait_idle(&id);
+    let workspace = summary["workspaces"][0]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let mark = client.turn_mark(&id);
+    client.prompt(&id, "build it");
+    env.wait_gate("hold");
+    client.wait_session(&id, "the run", |s| {
+        s["state"] == "working" && s["preview"] == "Working"
+    });
+
+    let job = JobId::generate();
+    let event = |rev: u64, kind: JobEventKind| JobEvent {
+        rev: Rev(rev),
+        at: UnixMillis::now(),
+        job_id: job,
+        kind,
+    };
+    env.controller().job_events(vec![
+        event(
+            1,
+            JobEventKind::Started {
+                session_id: id.parse().unwrap(),
+                workspace_id: workspace,
+                name: "build".into(),
+                command: "make".into(),
+                cwd: RemotePath::new(env.work()),
+                log_path: RemotePath::new(format!("{}/build.log", env.work())),
+                timeout_s: None,
+                follow: None,
+            },
+        ),
+        event(
+            2,
+            JobEventKind::Exit {
+                exit_code: Some(0),
+                signal: None,
+                timed_out: false,
+                lost: None,
+                lines: 3,
+                duration_ms: 1_000,
+            },
+        ),
+    ]);
+    wait_until("the steered wake", || {
+        env.lines_in(&id).iter().any(|l| {
+            l["streamingBehavior"] == "steer"
+                && l["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("Background job update"))
+        })
+    });
+    env.release("hold");
+    client.wait_turn(&id, mark);
+
+    let (result, ops) = client.session_ops(&id, 0);
+    client.call(
+        "unsubscribe",
+        json!({"subscription_id": result["subscription_id"]}),
+    );
+    let users: Vec<&Value> = ops
+        .iter()
+        .map(|op| &op["item"])
+        .filter(|item| item["kind"] == "message" && item["role"] == "user")
+        .collect();
+    let wake = users
+        .iter()
+        .find(|item| {
+            item["content"][0]["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("Background job update"))
+        })
+        .expect("the wake's message");
+    assert_eq!(
+        wake["origin"],
+        json!({"kind": "inject", "origin": "job", "label": "job: build (exit 0)",
+               "source": job.to_string()})
+    );
+    let prompt = users
+        .iter()
+        .find(|item| item["content"][0]["text"] == "build it")
+        .expect("the prompt's message");
+    assert_eq!(prompt["origin"], json!({"kind": "user", "device": null}));
+    assert_eq!(triggers(&client, &id), ["user"]);
+}
