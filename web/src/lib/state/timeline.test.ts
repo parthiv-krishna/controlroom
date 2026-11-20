@@ -4,7 +4,7 @@ import { MAX_ITEMS, MAX_RAW, RawFrames, Timeline } from './timeline.svelte';
 
 const base = { actor: 'root', ts: 0, streaming: false } as const;
 const msg = (id: string, seq_from: number, seq_to = seq_from, text = '', streaming = false): TimelineItem => ({
-  ...base, id, seq_from, seq_to, streaming, kind: 'message', role: 'agent', content: text ? [{ kind: 'text', text }] : [],
+  ...base, id, seq_from, seq_to, streaming, kind: 'message', role: 'agent', content: text ? [{ kind: 'text', text }] : [], origin: null,
 });
 const tool = (id: string, seq: number, parent: string | null = null, output: ToolOutput | null = null): TimelineItem => ({
   ...base, id, seq_from: seq, seq_to: seq, kind: 'tool_call', tool_call_id: id, parent_tool_call_id: parent, name: 'bash', title: id,

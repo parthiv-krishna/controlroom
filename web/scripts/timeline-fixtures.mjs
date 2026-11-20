@@ -10,7 +10,7 @@
 //
 // Kinds pi never produces (todo, subagent, job, session_message, a withdrawn dialog, a child
 // actor, an unknown kind) are daemon-sourced; they are written by hand below (`synthetic`), as are
-// run triggers the runtime fills in (devices, schedules). The recordings ran pi's local tools; the
+// run triggers and user message origins the runtime fills in (devices, schedules, injections). The recordings ran pi's local tools; the
 // remote tools name files `machine:path`, so a tool's relative `path` gets the session's primary
 // machine (`notes.txt` → `devbox:notes.txt`).
 //
@@ -69,13 +69,33 @@ function remotePath(it, machine) {
   return { ...it, title: it.title.split(p).join(remote), input: JSON.stringify({ ...input, path: remote }, null, 2) };
 }
 
-/** Shifts one chapter into its place in the session: seq offset, id prefix, time offset. */
-function shifter({ seq, prefix, dt, trigger, machine }) {
+/** The origin of a message that starts a run with `trigger` (the runtime records both together). */
+function originOf(trigger) {
+  if (!trigger) return { kind: 'user', device: null };
+  if (trigger.kind === 'inject') return { kind: 'inject', origin: trigger.origin, label: trigger.label, source: null };
+  return trigger;
+}
+
+/**
+ * The origins of a recording's user messages, by item id: `c.origins` in order of appearance, else
+ * the first from the chapter's trigger and later ones as steers.
+ */
+function userOrigins(g, c) {
+  const ids = [];
+  for (const f of g.folded)
+    for (const o of f.ops) if (o.op === 'upsert' && o.item.kind === 'message' && o.item.role === 'user' && !ids.includes(o.item.id)) ids.push(o.item.id);
+  const fallback = (i) => (i === 0 ? originOf(c.trigger) : { kind: 'steer', device: null });
+  return new Map(ids.map((id, i) => [id, c.origins ? (c.origins[i] ?? null) : fallback(i)]));
+}
+
+/** Shifts one chapter into its place in the session: seq offset, id prefix, time offset, origins. */
+function shifter({ seq, prefix, dt, trigger, origins, machine }) {
   const id = (x) => (x == null ? x : prefix + x);
   const item = (it) => {
     let out = { ...it, id: id(it.id), seq_from: it.seq_from + seq, seq_to: it.seq_to + seq, ts: it.ts + dt };
     if (it.kind === 'tool_call') out = remotePath({ ...out, tool_call_id: id(it.tool_call_id), parent_tool_call_id: id(it.parent_tool_call_id) }, machine);
     if (it.kind === 'run' && trigger) out.trigger = trigger;
+    if (it.kind === 'message' && it.role === 'user') out.origin = origins.get(it.id) ?? null;
     if (it.kind === 'request') {
       const r = it.request;
       out.request = { ...r, id: id(r.id), created_at: r.created_at + dt, answer: r.answer && { ...r.answer, at: r.answer.at + dt } };
@@ -125,7 +145,7 @@ function materialize(items, ops) {
 
 /**
  * Builds one session's timeline from its chapters. A chapter is a recording name, or
- * `{ name, live?, trigger? }`, or `{ synthetic: (seq, ts) => items }`. `withRaw: false` leaves out the
+ * `{ name, live?, trigger?, origins? }` (see `userOrigins`), or `{ synthetic: (seq, ts) => items }`. `withRaw: false` leaves out the
  * raw frames (the long timeline, to keep the fixture small).
  */
 function session(key, machine, chapters, endTs, withRaw = true) {
@@ -145,7 +165,8 @@ function session(key, machine, chapters, endTs, withRaw = true) {
     }
     const g = golden(c.name);
     const records = recording(c.name);
-    const shift = shifter({ seq: seqBase, prefix: n ? `c${n}.` : '', dt: startTs - records[0].ts, trigger: c.trigger, machine });
+    const origins = userOrigins(g, c);
+    const shift = shifter({ seq: seqBase, prefix: n ? `c${n}.` : '', dt: startTs - records[0].ts, trigger: c.trigger, origins, machine });
     const frames = withRaw ? records.map(shift.frame) : [];
     if (!c.live) {
       materialize(items, g.folded.flatMap((f) => f.ops.map(shift.op)));
@@ -174,13 +195,14 @@ function session(key, machine, chapters, endTs, withRaw = true) {
 // -------------------------------------------------------------------------- hand-written items
 
 const base = (id, seq_from, seq_to, ts) => ({ id, seq_from, seq_to, actor: 'root', ts, streaming: false });
-const userMsg = (id, seq, ts, text) => ({ ...base(id, seq, seq, ts), kind: 'message', role: 'user', content: [{ kind: 'text', text }] });
-const agentMsg = (id, seq, ts, text) => ({ ...base(id, seq, seq, ts), kind: 'message', role: 'agent', content: [{ kind: 'text', text }] });
+const userMsg = (id, seq, ts, text, origin) => ({ ...base(id, seq, seq, ts), kind: 'message', role: 'user', content: [{ kind: 'text', text }], origin });
+const agentMsg = (id, seq, ts, text) => ({ ...base(id, seq, seq, ts), kind: 'message', role: 'agent', content: [{ kind: 'text', text }], origin: null });
+const inject = (origin, label, source = null) => ({ kind: 'inject', origin, label, source });
 const run = (id, from, to, ts, trigger, outcome = 'completed') => ({ ...base(id, from, to, ts), kind: 'run', trigger, state: 'settled', outcome, error: null });
 
 /** A dialog withdrawn when its run settled (pi resolved it itself); no recording shows one. */
 const withdrawnDialog = (s, ts) => [
-  userMsg('w.user', s + 1, ts, 'Deploy the pipeline, ask me for the region.'),
+  userMsg('w.user', s + 1, ts, 'Deploy the pipeline, ask me for the region.', { kind: 'user', device: PHONE }),
   run('w.run', s + 2, s + 9, ts + 400, { kind: 'user', device: PHONE }, 'cancelled'),
   {
     ...base('w.dialog', s + 4, s + 9, ts + 900),
@@ -197,7 +219,7 @@ const withdrawnDialog = (s, ts) => [
 const coordinator = (s, ts) => {
   const child = (n, name) => ({ daemon_id: AGENTD, session_id: sid(n), name });
   return [
-    userMsg('k.user', s + 1, ts, 'Sweep the context sizes: spawn one subagent per range and compare the results.'),
+    userMsg('k.user', s + 1, ts, 'Sweep the context sizes: spawn one subagent per range and compare the results.', { kind: 'user', device: LAPTOP }),
     run('k.run', s + 2, s + 30, ts + 300, { kind: 'user', device: LAPTOP }),
     {
       ...base('k.todo', s + 3, s + 3, ts + 600),
@@ -230,7 +252,25 @@ const coordinator = (s, ts) => {
       text: 'Yes, push them to `bench/results.json`.', reply_to: '01JAX000000000000000000901', expects_reply: false, outcome: 'delivered', late: false,
     },
     { ...base('k.future', s + 9, s + 9, ts + 2600), kind: 'unknown' },
-    agentMsg('k.reply', s + 10, ts + 2800, 'Both sweeps are running. The 64k–128k range is waiting for your approval.'),
+    // Input steered into the run: a workspace the user added, a peer's message, a child's
+    // report, the user's send-now.
+    userMsg(
+      'k.workspace', s + 10, ts + 2700,
+      '[controlroom] The user added the workspace buildbox:~/src/bench (root buildbox:/home/alice/src/bench, default shell "buildbox"). Your system prompt lists it from your next turn on.',
+      inject('workspace', 'workspaces', '01JAW000000000000000000013'),
+    ),
+    userMsg(
+      'k.peer', s + 11, ts + 2750,
+      '[controlroom] Message from session "migrate UI to Svelte 5 runes": heads-up, the benchmark page caches results for 10 minutes.',
+      inject('message', 'message: migrate UI to Svelte 5 runes', sid(9)),
+    ),
+    userMsg(
+      'k.child', s + 12, ts + 2780,
+      '[controlroom] Subagent "sweep: 8k–32k" reports: 8k and 16k are done, 32k is running.',
+      inject('child', 'subagent: sweep: 8k–32k', sid(13)),
+    ),
+    userMsg('k.steer', s + 13, ts + 2790, 'Skip 128k if it needs more than an hour.', { kind: 'steer', device: LAPTOP }),
+    agentMsg('k.reply', s + 14, ts + 2800, 'Both sweeps are running. The 64k–128k range is waiting for your approval.'),
   ];
 };
 
@@ -244,8 +284,13 @@ const jobs = (s, ts) => {
   });
   return [
     { ...base('j.tests', s + 1, s + 4, ts), kind: 'job', job: job('01JAJ000000000000000000901', 'tests', 'pnpm e2e --repeat-each 20', 'failed', 1, 2311, ts + 240_000) },
-    run('j.wake', s + 5, s + 9, ts + 241_000, { kind: 'inject', origin: 'job', label: 'job: tests (exit 1)' }),
-    agentMsg('j.reply', s + 6, ts + 242_000, 'Two failures, both in `e2e/queue.spec.ts`: the send-now race again.'),
+    userMsg(
+      'j.wakeMsg', s + 5, ts + 240_500,
+      '[controlroom] Background job update:\n- job 01JAJ000000000000000000901 `tests` exited with code 1 after 4m; 2311 lines in buildbox:/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000901.log.\nLogs are not in your context: read only what you need.',
+      inject('job', 'job: tests (exit 1)', '01JAJ000000000000000000901'),
+    ),
+    run('j.wake', s + 6, s + 9, ts + 241_000, { kind: 'inject', origin: 'job', label: 'job: tests (exit 1)' }),
+    agentMsg('j.reply', s + 7, ts + 242_000, 'Two failures, both in `e2e/queue.spec.ts`: the send-now race again.'),
     { ...base('j.lint', s + 10, s + 10, ts + 250_000), kind: 'job', job: job('01JAJ000000000000000000902', 'typecheck', 'pnpm check --watch', 'running', null, 48, null) },
   ];
 };
@@ -271,13 +316,56 @@ const fileDecisions = (s, ts) => {
     },
   });
   return [
-    userMsg('f.user', s + 1, ts, 'Build the deploy bundle with nix.'),
+    userMsg('f.user', s + 1, ts, 'Build the deploy bundle with nix.', { kind: 'user', device: LAPTOP }),
     run('f.run', s + 2, s + 9, ts + 300, { kind: 'user', device: LAPTOP }),
     request('f.always', s + 3, ts + 900, '/home/alice/.cache/nix/fetcher-cache-v4.sqlite', 'read_write', 'allow-always', 'Always allow (devbox)'),
     request('f.never', s + 5, ts + 1800, '/home/alice/.bash_history', 'read', 'never', 'Never (devbox)'),
     agentMsg('f.reply', s + 8, ts + 2600, 'The bundle is built.'),
     // Then the user turned the session's sandbox off.
     { ...base('f.sandbox', s + 10, s + 10, ts + 3000), kind: 'session_info', title: null, model: null, thinking: null, sandbox: 'off' },
+  ];
+};
+
+/**
+ * After the sandbox went off: notices that ride along into the user's next run (the sandbox level,
+ * todo edits), a late tool result and an answered question that wake the agent.
+ */
+const wakes = (s, ts) => {
+  const late = inject('tool_late', 'late result: bash `./deploy.sh --dry-run`', 'call_d41');
+  const answered = inject('answer', 'answer: Which environment?', 'n.question');
+  return [
+    userMsg('n.user', s + 1, ts, 'Now run the deploy dry-run.', { kind: 'queue', device: LAPTOP }),
+    run('n.run', s + 2, s + 6, ts + 300, { kind: 'queue', device: LAPTOP }),
+    userMsg(
+      'n.sandbox', s + 3, ts + 400,
+      '[controlroom] The user changed the sandbox level: it is now off (your shells, jobs and file tools on the hosts run unsandboxed). Your shells restart under it (their variables are lost); background jobs already running keep the old level until they end.',
+      inject('workspace', 'sandbox level'),
+    ),
+    userMsg('n.todo', s + 4, ts + 450, '[controlroom] The user changed your todo list:\n- added "check the rollback script"', inject('todo', 'todo edits')),
+    agentMsg('n.reply', s + 5, ts + 2000, 'The dry-run stalled: devbox stopped answering.'),
+    userMsg(
+      'n.late', s + 7, ts + 60_000,
+      '[controlroom] devbox is reachable again. Your earlier call call_d41 (bash `./deploy.sh --dry-run`) failed because devbox was unreachable; it ran once on devbox and ended with exit 0:\ndry-run ok',
+      late,
+    ),
+    run('n.lateRun', s + 8, s + 10, ts + 60_100, { kind: 'inject', origin: 'tool_late', label: late.label }),
+    {
+      ...base('n.question', s + 9, s + 12, ts + 60_500),
+      kind: 'request',
+      request: {
+        id: 'n.question', kind: 'question', blocking: false, state: 'answered', title: 'Which environment?', detail: null, body: null, options: [],
+        questions: [{ id: 'q1', text: 'Which environment?', options: [{ label: 'staging', description: null }, { label: 'production', description: null }], multi: false, free_text: true }],
+        answer: { response: { kind: 'answers', answers: [{ question_id: 'q1', selected: ['staging'], text: null }] }, label: 'staging', by: PHONE, at: ts + 90_000 },
+        origin_child: null, created_at: ts + 60_500,
+      },
+    },
+    userMsg(
+      'n.answer', s + 13, ts + 90_100,
+      '[controlroom] The user answered your question n.question ("Which environment?"):\n- Which environment?\n  → staging',
+      answered,
+    ),
+    run('n.answerRun', s + 14, s + 16, ts + 90_200, { kind: 'inject', origin: 'answer', label: answered.label }),
+    agentMsg('n.answerReply', s + 15, ts + 91_000, 'Deploying to staging.'),
   ];
 };
 
@@ -294,19 +382,39 @@ const build = (n, chapters, withRaw) => {
 const LONG = ['plain-text', 'tool-calls', 'thinking', 'steer', 'nested-tool', 'retry-success', 'parallel-tools'];
 const timelines = Object.fromEntries([
   // Streams a permission dialog live after a backlog (answer it from the timeline).
-  build(4, [{ name: 'plain-text', trigger: { kind: 'user', device: LAPTOP } }, 'steer', 'tool-calls', { name: 'permission-dialog', live: true }]),
+  // Its steer is a send-now from the laptop.
+  build(4, [
+    { name: 'plain-text', trigger: { kind: 'user', device: LAPTOP } },
+    { name: 'steer', origins: [{ kind: 'user', device: LAPTOP }, { kind: 'steer', device: LAPTOP }] },
+    'tool-calls',
+    { name: 'permission-dialog', live: true },
+  ]),
   // A subagent streaming thinking, text and nested tools (also its parent's live tail).
   build(13, ['plain-text', { name: 'thinking', live: true }, { name: 'nested-tool', live: true }]),
-  build(9, ['nested-tool', 'parallel-tools', 'model-thinking', 'error-stop', 'queue-when-idle']),
+  // Its first message is from before origins existed (`origin: null`).
+  build(9, [
+    { name: 'nested-tool', origins: [] },
+    'parallel-tools',
+    'model-thinking',
+    'error-stop',
+    { name: 'queue-when-idle', origins: [{ kind: 'user', device: PHONE }, { kind: 'steer', device: PHONE }, { kind: 'queue', device: PHONE }] },
+  ]),
   // Dialogs answered, expired and withdrawn; then the agent was killed.
   build(8, ['extension-dialogs', 'extension-dialog-timeout', 'abort-dialog', { synthetic: withdrawnDialog }, 'crash-sigkill']),
   build(7, ['retry-success', { name: 'retry-exhausted', trigger: { kind: 'auto_continue' } }]),
-  build(3, ['compact', { synthetic: jobs }, 'length-stop']),
-  build(2, ['abort-text', 'abort-tool', 'abort-then-prompt', { name: 'follow-up', trigger: { kind: 'queue', device: LAPTOP } }, 'steer-during-tool']),
+  build(3, [{ name: 'compact', origins: [{ kind: 'user', device: null }, { kind: 'queue', device: LAPTOP }] }, { synthetic: jobs }, 'length-stop']),
+  build(2, [
+    'abort-text',
+    'abort-tool',
+    { name: 'abort-then-prompt', origins: [{ kind: 'user', device: null }, { kind: 'user', device: LAPTOP }] },
+    { name: 'follow-up', trigger: { kind: 'queue', device: LAPTOP }, origins: Array(3).fill({ kind: 'queue', device: LAPTOP }) },
+    { name: 'steer-during-tool', origins: [{ kind: 'user', device: null }, { kind: 'steer', device: PHONE }] },
+  ]),
   build(11, [{ synthetic: coordinator }, 'plain-text']),
   build(18, [{ name: 'plain-text', trigger: { kind: 'schedule', schedule_id: '01JAY000000000000000000001', name: 'Inbox triage' } }, 'sigterm-idle']),
   // File requests answered "Always allow" and "Never".
-  build(15, [{ synthetic: fileDecisions }]),
+  // Then notices, a late tool result and an answer (one of each injection the runtime writes).
+  build(15, [{ synthetic: fileDecisions }, { synthetic: wakes }]),
   // A long timeline (windowing).
   build(6, Array.from({ length: 40 }, (_, i) => LONG[i % LONG.length]), false),
 ]);

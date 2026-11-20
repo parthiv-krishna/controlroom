@@ -25,7 +25,7 @@ function rpc() {
   return { subscribe, unsubscribe, resolveAll: () => resolvers.splice(0).forEach((r) => r()) };
 }
 const message = (id: string, seq: number, text: string): TimelineItem => ({
-  id, seq_from: seq, seq_to: seq, actor: 'root', ts: 0, streaming: true, kind: 'message', role: 'agent', content: text ? [{ kind: 'text', text }] : [],
+  id, seq_from: seq, seq_to: seq, actor: 'root', ts: 0, streaming: true, kind: 'message', role: 'agent', content: text ? [{ kind: 'text', text }] : [], origin: null,
 });
 const tick = () => new Promise((r) => setTimeout(r, 0));
 

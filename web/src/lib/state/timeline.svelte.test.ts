@@ -5,7 +5,7 @@ import type { TimelineItem } from '../protocol';
 import { Timeline } from './timeline.svelte';
 
 const msg = (id: string, seq: number): TimelineItem => ({
-  id, seq_from: seq, seq_to: seq, actor: 'root', ts: 0, streaming: true, kind: 'message', role: 'agent', content: [],
+  id, seq_from: seq, seq_to: seq, actor: 'root', ts: 0, streaming: true, kind: 'message', role: 'agent', content: [], origin: null,
 });
 
 describe('Timeline reactivity', () => {
