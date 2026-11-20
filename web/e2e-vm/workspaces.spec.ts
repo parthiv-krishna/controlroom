@@ -51,7 +51,7 @@ test('a session with workspaces on two machines, then from Unassigned to a task'
   await task.getByRole('combobox', { name: 'Projects' }).press('Enter');
   await task.getByRole('button', { name: /Create$/ }).click();
   await expect(task).toHaveCount(0);
-  await expect(header(page).getByRole('button', { name: '◆ Ship the web app' })).toBeVisible();
+  await expect(header(page).getByRole('button', { name: 'Task Ship the web app' })).toBeVisible();
 
   // Now it is in the project, and no longer Unassigned.
   await rail.getByRole('button', { name: 'Web' }).click();

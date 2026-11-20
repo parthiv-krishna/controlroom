@@ -1,9 +1,11 @@
 <script lang="ts">
   // The project rail: ∗ all projects, each project (a group of tasks) as its two-letter code with
-  // its stoplight, ○ Unassigned (sessions no task's project claims), ＋ new project, ⚙ settings.
+  // its stoplight, ○ Unassigned (sessions no task's project claims), ＋ new project, machine status and
+  // ⚙ settings.
   import { useApp } from '../app/app.svelte';
   import { UNASSIGNED, health, projectCode, scopeName, type Scope } from '../model/projects';
   import Icon from '../ui/Icon.svelte';
+  import MachineStatus from './MachineStatus.svelte';
   import Stoplight from '../ui/Stoplight.svelte';
 
   const app = useApp();
@@ -23,6 +25,7 @@
   {/each}
   <button class="code add" title="New project" aria-label="New project" onclick={() => (app.view.modal = { kind: 'project', id: null })}><Icon name="plus" size={16} /></button>
   <span class="sp"></span>
+  <MachineStatus />
   <button class="code add" title="Settings" aria-label="Settings" onclick={() => app.openSettings()}><Icon name="gear" size={18} /></button>
 </nav>
 

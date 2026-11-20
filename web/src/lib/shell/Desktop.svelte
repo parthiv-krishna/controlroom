@@ -11,7 +11,6 @@
   import TasksPane from '../tasks/TasksPane.svelte';
   import Icon from '../ui/Icon.svelte';
   import Stoplight from '../ui/Stoplight.svelte';
-  import MachineStatus from './MachineStatus.svelte';
   import Rail from './Rail.svelte';
 
   const app = useApp();
@@ -92,7 +91,6 @@
   <SessionList />
   <header class="top">
     {#if cur}<SessionHeader s={cur} {detail} />{:else}<span class="sp"></span>{/if}
-    <MachineStatus />
   </header>
   {#if prefs.topPin || view.topPeek}
     <section class="boardp" class:pinned={prefs.topPin} class:overlay={!prefs.topPin} aria-label="Tasks">

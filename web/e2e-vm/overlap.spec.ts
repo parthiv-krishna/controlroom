@@ -8,13 +8,13 @@ test('a second session on the same directory warns about the overlap', async ({ 
   await login(page, 'Laptop');
   await newSession(page, { workspaces: [{ machine: 'devbox', path: '~/work/api' }], name: 'notes', level: 'Strict', overlap: 'two' });
   const overlap = header(page).locator('[data-overlap]');
-  await expect(overlap).toContainText('shared with two');
-  await expect(overlap).toHaveAttribute('title', /^devbox:~\/work\/api/);
+  await expect(overlap).toHaveAttribute('title', /^devbox:~\/work\/api is shared with two/);
 
   await openSession(page, 'two');
-  await expect(overlap).toContainText('shared with notes');
+  await expect(overlap).toHaveAttribute('title', /is shared with notes/);
   // The warning links the other session.
-  await overlap.getByRole('button', { name: 'notes' }).click();
+  await overlap.getByRole('button', { name: 'Shared with notes' }).click();
+  await overlap.getByRole('dialog').getByRole('button', { name: 'notes' }).click();
   await expect(header(page).locator('.et.heading')).toHaveText('notes');
 
   await sessionAction(page, 'Archive');

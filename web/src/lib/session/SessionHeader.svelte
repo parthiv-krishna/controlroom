@@ -1,8 +1,8 @@
 <script lang="ts">
-  // The session header, two lines. First: the editable title, status, parent, task chips and a ⋯
-  // menu (schedules, link to task, mark read/unread, raw, archive). Second: its workspaces
-  // (`machine:path` pills with each machine's availability, and a warning when another open session
-  // shares a directory), badges, options and the usage statusline.
+  // The session header, two lines. First: the editable title (it shrinks last), status and a ⋯ menu
+  // (schedules, link to task, mark read/unread, raw, archive). Second, wrapping: its workspaces
+  // (`machine:path` pills with each machine's availability and a ⚠ when another open session shares
+  // the directory), badges, options, parent and task chips, and the usage statusline.
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import { displayName } from '../model/filters';
@@ -43,8 +43,6 @@
   <div class="title">
     <EditableTitle heading value={displayName(s)} editKey={key} onsave={(name) => app.client.call('session.update', { ...onSession(s), name })} />
     <span class="status" title={statusTitle(s, app.client.feed.machines)}><StatusIcon kind={statusKind(s)} /> {statusLabel(s)}</span>
-    {#if parent}{@const p = parent}<button class="parent" title="Open the parent session" onclick={() => app.open(p)}>↑ {displayName(p)}</button>{/if}
-    {#each tasks as t (t.id)}<button class="task" title="Task: {columnLabel(t.status)}" onclick={() => app.openTask(t.id)}>◆ {t.title}</button>{/each}
     <span class="sp"></span>
     <ActionMenu label="Session actions" {actions} />
   </div>
@@ -52,17 +50,23 @@
     <Workspaces {s} />
     <SessionBadges {s} {detail} />
     <AgentOptions {s} />
+    {#if parent}{@const p = parent}<button class="chip parent" title="Parent session: {displayName(p)}" onclick={() => app.open(p)}>↑ {displayName(p)}</button>{/if}
+    {#each tasks as t (t.id)}<button class="chip task" title="Task: {t.title} ({columnLabel(t.status)})" aria-label="Task {t.title}" onclick={() => app.openTask(t.id)}><span aria-hidden="true">◆</span><span class="tt"> {t.title}</span></button>{/each}
     <Statusline {s} />
   </div>
 </div>
 
 <style>
   .head { flex: 1; min-width: 0; }
+  /* The title shrinks last: status and ⋯ never wrap below it. */
   .title { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .title > :global(.et) { flex: 0 1 auto; }
+  .title > :global(.et) { flex: 0 1 auto; min-width: 0; }
   .status { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; white-space: nowrap; }
-  .parent { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); cursor: pointer; }
-  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; }
-  .task { flex: 0 1 auto; min-width: 40px; font: inherit; font-size: 12px; padding: 1px 8px; border-radius: 5px; background: var(--bg3); border: none; color: var(--fg); cursor: pointer; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .task:hover { background: color-mix(in srgb, var(--accent) 15%, var(--bg3)); }
+  .title > :global(.am) { flex: none; }
+  .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 6px; min-width: 0; }
+  .chip { font: inherit; font-size: 12px; padding: 1px 8px; border-radius: 5px; background: var(--bg3); border: none; color: var(--fg); cursor: pointer; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip:hover { background: color-mix(in srgb, var(--accent) 15%, var(--bg3)); }
+  .parent { color: var(--muted); }
+  /* A phone shows a task as ◆ (its name in the tooltip). */
+  @media (max-width: 760px) { .tt { display: none; } }
 </style>
