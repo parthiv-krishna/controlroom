@@ -6,7 +6,7 @@ use controlroom_protocol::agentd::{
     IfBusy, InitialPrompt, OptionValue, PromptResult, SessionCreateParams, SessionMarkReadParams,
     SessionOpParams, SessionPromptParams, SessionSetOptionParams, SessionsEvent,
 };
-use controlroom_protocol::ids::{OpId, RemotePath, Rev, Seq, SessionId};
+use controlroom_protocol::ids::{OpId, RemotePath, Rev, Seq, SessionId, UnixMillis};
 use controlroom_protocol::session::{
     ContextUsage, OptionChoice, OptionControl, PromptOrigin, RunOutcome, SessionOption,
     SessionState, SessionUsage, StartedBy,
@@ -417,6 +417,7 @@ pub(super) fn usage_turn() -> Vec<FakeStep> {
             },
             cost: Some(0.5),
             reply: true,
+            provider: Some("mock".into()),
         },
         FakeStep::Usage {
             tokens: TokenUsage {
@@ -427,6 +428,7 @@ pub(super) fn usage_turn() -> Vec<FakeStep> {
             },
             cost: Some(0.25),
             reply: false,
+            provider: Some("mock-work".into()),
         },
         FakeStep::Text("ok".into()),
     ]
@@ -455,8 +457,21 @@ async fn usage_adds_up_on_the_summary_and_survives_a_restart() {
         latest_cache_hit: Some(0.75),
     };
     assert_eq!(h.summary(id).usage, expected);
+    let by_provider = |h: &Harness| {
+        let since = [UnixMillis(0), UnixMillis(i64::MAX)];
+        h.rt.provider_usage(&since)
+            .into_iter()
+            .map(|(p, sums)| (p, sums.iter().map(|s| (s.tokens.input, s.cost)).collect()))
+            .collect::<Vec<(String, Vec<(u64, f64)>)>>()
+    };
+    let per_account = vec![
+        ("mock".to_owned(), vec![(20, 1.0), (0, 0.0)]),
+        ("mock-work".to_owned(), vec![(200, 0.5), (0, 0.0)]),
+    ];
+    assert_eq!(by_provider(&h), per_account);
     let h = h.restart().await;
     assert_eq!(h.summary(id).usage, expected, "rebuilt once by the re-fold");
+    assert_eq!(by_provider(&h), per_account);
 }
 
 #[tokio::test]

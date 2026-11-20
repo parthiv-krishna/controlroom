@@ -159,6 +159,9 @@ const TABLE: &[Entry] = &[
     models_change("models.login_input", false),
     plain("models.login_wait"),
     models_change("models.login_cancel", false),
+    models_change("models.add_account", false),
+    models_change("models.rename_account", false),
+    plain("models.accounts"),
 ];
 
 /// Whether `method` is passed through to the agent daemon.

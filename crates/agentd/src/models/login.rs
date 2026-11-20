@@ -8,8 +8,9 @@
 //!   listener on the server) and `{"cancel": true}`.
 //!
 //! pi stores the credential in the agent daemon's agent dir's `auth.json`, where
-//! `controlroom-agentd login` puts it too. A sign-in that isn't finished within
-//! [`LOGIN_TIMEOUT`] is stopped (`timed_out`); starting another one cancels it.
+//! `controlroom-agentd login` puts it too; an added account's in its own directory. A sign-in
+//! that isn't finished within [`LOGIN_TIMEOUT`] is stopped (`timed_out`); starting another one
+//! cancels it.
 
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError};

@@ -93,20 +93,6 @@ fn is_secret_field(name: &str) -> bool {
 }
 
 fn fake_oauth(entry: &Value, claims: &[String]) -> Map<String, Value> {
-    let real_claims = entry
-        .get("access")
-        .and_then(Value::as_str)
-        .and_then(jwt_payload);
-    let mut payload = Map::new();
-    if let Some(real) = &real_claims {
-        for claim in claims {
-            if let Some(v) = real.get(claim) {
-                payload.insert(claim.clone(), v.clone());
-            }
-        }
-    }
-    payload.insert("exp".into(), json!(FAR_FUTURE_MS / 1000));
-
     let mut fake = Map::new();
     // Non-token metadata (e.g. an enterprise domain) is kept; token fields are not.
     if let Some(obj) = entry.as_object() {
@@ -116,15 +102,32 @@ fn fake_oauth(entry: &Value, claims: &[String]) -> Map<String, Value> {
             }
         }
     }
-    let access = entry.get("access").and_then(Value::as_str);
-    let synthetic = access
-        .and_then(marked_placeholder)
-        .unwrap_or_else(|| unsigned_jwt(&payload));
+    let access = entry.get("access").and_then(Value::as_str).unwrap_or("");
     fake.insert("type".into(), "oauth".into());
-    fake.insert("access".into(), synthetic.into());
+    fake.insert("access".into(), synthetic_access(access, claims).into());
     fake.insert("refresh".into(), PLACEHOLDER.into());
     fake.insert("expires".into(), json!(FAR_FUTURE_MS));
     fake
+}
+
+/// What stands in for an OAuth access token inside the sandbox: for an opaque token pi tells
+/// apart by a marker, the placeholder behind its type prefix (as [`stand_in`]); otherwise an
+/// unsigned JWT carrying only the `claims` copied from the real token (e.g. an account id pi
+/// reads from it) and a far-future expiry.
+pub fn synthetic_access(access: &str, claims: &[String]) -> String {
+    if let Some(marked) = marked_placeholder(access) {
+        return marked;
+    }
+    let mut payload = Map::new();
+    if let Some(real) = jwt_payload(access) {
+        for claim in claims {
+            if let Some(v) = real.get(claim) {
+                payload.insert(claim.clone(), v.clone());
+            }
+        }
+    }
+    payload.insert("exp".into(), json!(FAR_FUTURE_MS / 1000));
+    unsigned_jwt(&payload)
 }
 
 /// What stands in for `credential` inside the sandbox: [`PLACEHOLDER`], behind the type prefix

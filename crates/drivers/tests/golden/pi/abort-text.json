@@ -47,7 +47,7 @@
   {"seq": 16,
    "ops": [],
    "events": [
-     {"cost":0.0,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":0,"output":0}}
+     {"cost":0.0,"event":"usage","provider":"mock","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":0,"output":0}}
    ]},
   {"seq": 19,
    "ops": [

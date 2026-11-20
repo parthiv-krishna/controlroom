@@ -5,14 +5,16 @@
 //! provider's token endpoint is not on any route). controlroomd is the only refresher: the
 //! helper runs pi's own locked refresh against the user's real `auth.json`, so it coordinates
 //! with the user's pi processes, and prints the access token, valid for at least the requested
-//! time (nono caches it for the route's TTL).
+//! time (nono caches it for the route's TTL). An account added in Settings › Models refreshes
+//! against its own `auth.json` ([`OAuthAccount`]), never the user's or another account's.
 
 use std::process::Command;
 use std::time::Duration;
 
 use super::process::{self, RunError};
-use super::{CredentialError, CredentialManifest, Secret};
+use super::{CredentialError, CredentialManifest, OAuthAccount, Secret};
 use crate::names::Name;
+use crate::paths::AbsPath;
 
 /// The helper's own deadline is 50 s (pi waits up to 30 s for the lock and 15 s for the
 /// refresh); this bounds a helper that hangs regardless.
@@ -32,6 +34,36 @@ pub fn fresh_oauth_token(
     if !manifest.oauth_providers.iter().any(|p| p == name) {
         return Err(CredentialError::UnknownProvider(name.to_owned()));
     }
+    run_helper(manifest, name, &manifest.agent_dir, name, valid_for_secs)
+}
+
+/// Gets the access token of `provider`, an account signed in with its own `auth.json`
+/// (`account`), refreshed there if it would expire within `valid_for_secs`.
+pub fn fresh_account_token(
+    manifest: &CredentialManifest,
+    provider: &Name,
+    account: &OAuthAccount,
+    valid_for_secs: u32,
+) -> Result<Secret, CredentialError> {
+    run_helper(
+        manifest,
+        provider.as_str(),
+        &account.agent_dir,
+        &account.provider,
+        valid_for_secs,
+    )
+}
+
+/// Runs the manifest's helper for `signed_in` (pi's provider id) in `agent_dir`, on behalf of
+/// the session's `provider`.
+fn run_helper(
+    manifest: &CredentialManifest,
+    provider: &str,
+    agent_dir: &AbsPath,
+    signed_in: &str,
+    valid_for_secs: u32,
+) -> Result<Secret, CredentialError> {
+    let name = provider;
     let helper = manifest
         .oauth_helper
         .as_ref()
@@ -39,12 +71,12 @@ pub fn fresh_oauth_token(
     let mut command = Command::new(helper.as_path());
     command
         .arg("--agent-dir")
-        .arg(manifest.agent_dir.as_str())
+        .arg(agent_dir.as_str())
         .arg("--provider")
-        .arg(name)
+        .arg(signed_in)
         .arg("--valid-for-secs")
         .arg(valid_for_secs.to_string())
-        .env("PI_CODING_AGENT_DIR", manifest.agent_dir.as_str());
+        .env("PI_CODING_AGENT_DIR", agent_dir.as_str());
     let failed = |problem: String| CredentialError::OAuth {
         provider: name.to_owned(),
         problem,
@@ -90,6 +122,7 @@ mod tests {
             oauth_providers: vec!["sub".into()],
             oauth_helper: Some(AbsPath::from_path(&helper).unwrap()),
             stored_keys: None,
+            oauth_accounts: Default::default(),
         };
         (t, manifest)
     }
@@ -146,6 +179,35 @@ mod tests {
         let (_t, m) = manifest_with_helper("exit 0");
         let err = fresh_oauth_token(&m, &name("sub"), 360).unwrap_err();
         assert!(err.to_string().contains("printed no token"), "{err}");
+    }
+
+    #[test]
+    fn accounts_refresh_in_their_own_dir_only() {
+        let (t, mut m) = manifest_with_helper("printf work-token");
+        let work = OAuthAccount {
+            agent_dir: AbsPath::new("/var/lib/controlroom-agent/models/accounts/sub-work").unwrap(),
+            provider: "sub".into(),
+        };
+        m.oauth_accounts.insert("sub-work".into(), work.clone());
+        let args = || std::fs::read_to_string(t.path().join("args")).unwrap();
+        let token = super::super::resolve_credential(&m, &name("sub-work"), 360).unwrap();
+        assert_eq!(token.expose(), "work-token");
+        assert_eq!(
+            args().lines().collect::<Vec<_>>(),
+            [
+                "--agent-dir",
+                work.agent_dir.as_str(),
+                "--provider",
+                "sub",
+                "--valid-for-secs",
+                "360",
+                work.agent_dir.as_str()
+            ]
+        );
+        // The provider's own sign-in refreshes in the user's agent dir, never the account's.
+        super::super::resolve_credential(&m, &name("sub"), 360).unwrap();
+        assert!(!args().contains("accounts"), "{}", args());
+        assert!(args().contains("/home/alice/.pi/agent"));
     }
 
     #[test]

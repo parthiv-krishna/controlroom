@@ -28,11 +28,11 @@ use std::os::unix::fs::symlink;
 
 use serde_json::{Map, Value};
 
-pub use auth::{FAR_FUTURE_MS, FakeAuth, fake_auth, stand_in, unsigned_jwt};
+pub use auth::{FAR_FUTURE_MS, FakeAuth, fake_auth, stand_in, synthetic_access, unsigned_jwt};
 pub use models::sanitize_models;
 pub use settings::session_settings;
 
-use crate::credential::{CredentialManifest, StoredKeys, models_api_key_providers};
+use crate::credential::{CredentialManifest, OAuthAccount, StoredKeys, models_api_key_providers};
 use crate::fsutil::{PathIoError, at, copy_tree, create_private_dir, write_atomic};
 use crate::layout::SessionLayout;
 use crate::paths::AbsPath;
@@ -73,10 +73,16 @@ pub struct ManagedProviders {
     pub key_providers: Vec<String>,
     /// The key store `controlroomd credential` reads their keys from.
     pub key_store: Option<AbsPath>,
-    /// Stand-ins other than [`PLACEHOLDER`] for stored keys, by provider ([`stand_in`]): a
-    /// pasted subscription token's keeps its type prefix, so pi takes its subscription path.
+    /// Accounts signed in with their own `auth.json`, by provider id. pi only knows sign-ins
+    /// for its own provider ids, so the session sees an API key: the stand-in in
+    /// [`Self::stand_ins`] ([`synthetic_access`]).
+    pub oauth_accounts: BTreeMap<String, OAuthAccount>,
+    /// Stand-ins other than [`PLACEHOLDER`] for stored keys and signed-in accounts, by provider
+    /// ([`stand_in`], [`synthetic_access`]): a subscription token's keeps its type prefix, so pi
+    /// takes its subscription path; a JWT's keeps the claims pi reads.
     pub stand_ins: BTreeMap<String, String>,
-    /// `models.json` provider entries (custom gateways), without real keys.
+    /// `models.json` provider entries (custom gateways, accounts), without real keys. An entry
+    /// without an `apiKey` gets its stand-in in `auth.json`.
     pub models: Map<String, Value>,
     /// `settings.json` values that override the user's (the defaults of new sessions).
     pub settings: Map<String, Value>,
@@ -91,6 +97,8 @@ pub struct BuiltAgentDir {
     pub oauth_providers: Vec<String>,
     /// Providers whose key comes from the key store.
     pub stored_key_providers: Vec<String>,
+    /// Accounts signed in with their own `auth.json` ([`ManagedProviders::oauth_accounts`]).
+    pub oauth_account_providers: Vec<String>,
 }
 
 /// Errors building the session directories.
@@ -159,6 +167,13 @@ pub fn build_session_dirs(
                 path,
                 providers: built.stored_key_providers.clone(),
             }),
+            oauth_accounts: spec
+                .managed
+                .oauth_accounts
+                .iter()
+                .filter(|(p, _)| built.oauth_account_providers.contains(p))
+                .map(|(p, account)| (p.clone(), account.clone()))
+                .collect(),
         };
         let bytes = serde_json::to_vec_pretty(&manifest).expect("manifest serializes");
         write_atomic(layout.credential_manifest().as_path(), &bytes, 0o600)?;
@@ -204,21 +219,37 @@ pub fn build_agent_config(
     api_key_providers.extend(fake.api_key_providers.iter().cloned());
     api_key_providers.sort();
     api_key_providers.dedup();
-    // Stored keys, unless the user's config already has a credential for the provider. A
-    // managed `models.json` entry (a gateway) carries its placeholder key itself.
+    // Stored keys and signed-in accounts, unless the user's config already has a credential for
+    // the provider. A managed `models.json` entry with an `apiKey` (a gateway) carries its
+    // placeholder itself.
     let mut stored_key_providers = Vec::new();
-    for provider in &managed.key_providers {
+    let mut oauth_account_providers = Vec::new();
+    let providers = managed
+        .key_providers
+        .iter()
+        .map(|p| (p, false))
+        .chain(managed.oauth_accounts.keys().map(|p| (p, true)));
+    for (provider, signed_in) in providers {
         let configured =
             api_key_providers.contains(provider) || fake.oauth_providers.contains(provider);
-        if !configured {
-            if !managed.models.contains_key(provider) {
-                let stand_in = managed
-                    .stand_ins
-                    .get(provider)
-                    .map_or(PLACEHOLDER, String::as_str);
-                fake.auth
-                    .insert(provider.clone(), placeholder_key(stand_in));
-            }
+        if configured {
+            continue;
+        }
+        let keyed_entry = managed
+            .models
+            .get(provider)
+            .is_some_and(|entry| entry.get("apiKey").is_some());
+        if !keyed_entry {
+            let stand_in = managed
+                .stand_ins
+                .get(provider)
+                .map_or(PLACEHOLDER, String::as_str);
+            fake.auth
+                .insert(provider.clone(), placeholder_key(stand_in));
+        }
+        if signed_in {
+            oauth_account_providers.push(provider.clone());
+        } else {
             stored_key_providers.push(provider.clone());
         }
     }
@@ -227,6 +258,7 @@ pub fn build_agent_config(
         api_key_providers,
         oauth_providers: fake.oauth_providers,
         stored_key_providers,
+        oauth_account_providers,
     })
 }
 

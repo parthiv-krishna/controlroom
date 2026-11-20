@@ -282,3 +282,203 @@ fn a_pasted_subscription_token_is_printed_as_is() {
     );
     assert_eq!(out.stdout, token.as_bytes());
 }
+
+/// Two accounts of each of two providers in Settings › Models: Anthropic's first account has
+/// an API key and its `work` account a pasted subscription token; ChatGPT's first account is
+/// signed in with the agent daemon's pi `auth.json` and its `work` account with its own. Each
+/// account gets its own route, stand-in and credential through `controlroom-agentd
+/// credential`, and an account's token is refreshed in its own directory only.
+#[test]
+fn two_accounts_of_a_provider_resolve_to_their_own_credentials() {
+    use controlroom_agentd::config::sandbox as sandbox_config;
+    use controlroom_agentd::dirs::Dirs;
+    use controlroom_agentd::models::merge;
+    use controlroom_agentd::models::store::{Store, StoredProvider};
+    use controlroom_sandbox::agent_dir::PLACEHOLDER;
+    use controlroom_sandbox::credential::KeyStore;
+    use serde_json::json;
+
+    let t = tempfile::tempdir().expect("tempdir");
+    let root = AbsPath::from_path(t.path()).expect("utf-8 tempdir");
+    let dirs = Dirs::under(root.join("state"));
+    let store = Store::new(dirs.models());
+    let mut keys = KeyStore::default();
+    keys.insert("anthropic", "sk-ant-api03-personal");
+    keys.insert("anthropic-work", "sk-ant-oat01-work-secret");
+    store.save_keys(&keys).expect("save keys");
+    let mut stored = store.load().expect("load");
+    for (id, base) in [
+        ("anthropic-work", "anthropic"),
+        ("openai-codex-work", "openai-codex"),
+    ] {
+        stored.providers.insert(
+            id.into(),
+            StoredProvider {
+                account_of: Some(base.into()),
+                name: Some("work".into()),
+                ..StoredProvider::default()
+            },
+        );
+    }
+    store.save(&stored).expect("save");
+    let model = |api: &str, url: &str| json!([{"id": "m1", "api": api, "baseUrl": url}]);
+    store
+        .save_definitions(
+            &[
+                (
+                    "anthropic".to_owned(),
+                    model("anthropic-messages", "https://api.anthropic.com")
+                        .as_array()
+                        .cloned()
+                        .expect("array"),
+                ),
+                (
+                    "openai-codex".to_owned(),
+                    model("openai-codex-responses", "https://chatgpt.com/backend-api")
+                        .as_array()
+                        .cloned()
+                        .expect("array"),
+                ),
+            ]
+            .into(),
+        )
+        .expect("definitions");
+    // The ChatGPT sign-ins: the first account's in the agent daemon's pi auth.json, the work
+    // account's in its own directory.
+    let oauth = |account: &str| {
+        let claims = json!({"https://api.openai.com/auth": {"chatgpt_account_id": account}});
+        let access = controlroom_sandbox::agent_dir::unsigned_jwt(claims.as_object().expect("obj"));
+        json!({"openai-codex": {"type": "oauth", "access": access, "refresh": "r", "expires": 1}})
+    };
+    std::fs::create_dir_all(dirs.pi_agent_dir().as_path()).expect("mkdir");
+    std::fs::write(
+        dirs.pi_agent_dir().join("auth.json").as_path(),
+        oauth("acct-personal").to_string(),
+    )
+    .expect("auth");
+    let work_dir = store
+        .create_account_dir("openai-codex-work")
+        .expect("account dir");
+    std::fs::write(
+        work_dir.join("auth.json").as_path(),
+        oauth("acct-work").to_string(),
+    )
+    .expect("work auth");
+    // The OAuth helper prints a token naming the directory it refreshed in.
+    let helper = root.join("controlroom-pi-oauth");
+    let script = format!(
+        "#!/bin/sh\necho \"$@\" >> {root}/helper-args\ncase \"$2\" in *accounts*) printf work-token;; *) printf personal-token;; esac\n"
+    );
+    let status = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(r#"printf '%s' "$1" > "$2" && chmod 755 "$2""#)
+        .arg("sh")
+        .arg(&script)
+        .arg(helper.as_path())
+        .status()
+        .expect("write helper");
+    assert!(status.success());
+
+    let mut sandbox = sandbox_config::SandboxConfig::default()
+        .resolve(None, &dirs.pi_agent_dir())
+        .expect("sandbox");
+    merge::apply(&dirs, &mut sandbox);
+    sandbox.agent_dir.oauth_helper = Some(helper);
+    let mut routes: Vec<(String, String, String)> = sandbox
+        .routes
+        .iter()
+        .map(|r| {
+            (
+                r.provider.as_str().to_owned(),
+                r.upstream.as_str().to_owned(),
+                r.inject_header.clone().unwrap_or_default(),
+            )
+        })
+        .collect();
+    routes.sort();
+    let route = |p: &str, u: &str, h: &str| (p.to_owned(), u.to_owned(), h.to_owned());
+    assert_eq!(
+        routes,
+        [
+            route("anthropic", "https://api.anthropic.com", "x-api-key"),
+            route(
+                "anthropic-work",
+                "https://api.anthropic.com",
+                "Authorization"
+            ),
+            route("openai-codex", "https://chatgpt.com", "Authorization"),
+            route("openai-codex-work", "https://chatgpt.com", "Authorization"),
+        ]
+    );
+    assert!(sandbox.agent_dir.oauth_claims.contains_key("openai-codex"));
+
+    let layout = SessionLayout::new(dirs.state(), &SessionId::new(SESSION).expect("id"));
+    build_session_dirs(&layout, &sandbox.agent_dir).expect("build session dirs");
+    let read = |name: &str| -> serde_json::Value {
+        let text = std::fs::read_to_string(layout.agent().join(name).as_path()).expect("read");
+        assert!(
+            !text.contains("secret") && !text.contains("personal"),
+            "{text}"
+        );
+        serde_json::from_str(&text).expect("json")
+    };
+    let auth = read("auth.json");
+    assert_eq!(auth["anthropic"]["key"], PLACEHOLDER);
+    assert_eq!(
+        auth["anthropic-work"]["key"],
+        format!("sk-ant-oat01-{PLACEHOLDER}")
+    );
+    // Each ChatGPT account's stand-in carries its own account id, which pi sends.
+    let account_id = |token: &str| {
+        let payload = token.split('.').nth(1).expect("jwt");
+        let bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, payload)
+                .expect("base64");
+        let claims: serde_json::Value = serde_json::from_slice(&bytes).expect("claims");
+        claims["https://api.openai.com/auth"]["chatgpt_account_id"].clone()
+    };
+    assert_eq!(
+        account_id(auth["openai-codex"]["access"].as_str().expect("s")),
+        "acct-personal"
+    );
+    assert_eq!(auth["openai-codex-work"]["type"], "api_key");
+    assert_eq!(
+        account_id(auth["openai-codex-work"]["key"].as_str().expect("s")),
+        "acct-work"
+    );
+    let models = read("models.json");
+    assert_eq!(
+        models["providers"]["anthropic-work"]["name"],
+        "Anthropic (work)"
+    );
+    assert_eq!(
+        models["providers"]["openai-codex-work"]["models"][0]["api"],
+        "openai-codex-responses"
+    );
+
+    let credential = |provider: &str| {
+        let out = controlroomd(dirs.state(), &[SESSION, provider]);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).expect("utf-8")
+    };
+    assert_eq!(credential("anthropic"), "sk-ant-api03-personal");
+    assert_eq!(credential("anthropic-work"), "sk-ant-oat01-work-secret");
+    assert_eq!(credential("openai-codex"), "personal-token");
+    assert_eq!(credential("openai-codex-work"), "work-token");
+    let args = std::fs::read_to_string(root.join("helper-args").as_path()).expect("args");
+    let calls: Vec<&str> = args.lines().collect();
+    assert_eq!(
+        calls,
+        [
+            format!(
+                "--agent-dir {} --provider openai-codex --valid-for-secs 600",
+                dirs.pi_agent_dir()
+            ),
+            format!("--agent-dir {work_dir} --provider openai-codex --valid-for-secs 600"),
+        ]
+    );
+}

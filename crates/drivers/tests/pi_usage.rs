@@ -27,6 +27,7 @@ fn reports(lines: &[Value]) -> Vec<(TokenUsage, Option<f64>, bool)> {
                 tokens,
                 cost,
                 reply,
+                ..
             } = event
             {
                 reports.push((tokens, cost, reply));
@@ -101,8 +102,33 @@ fn a_reply_without_tokens_is_reported_but_makes_no_usage_item() {
         vec![DriverEvent::Usage {
             tokens: TokenUsage::default(),
             cost: Some(0.0),
-            reply: true
+            reply: true,
+            provider: None,
         }]
     );
     assert!(out.ops.is_empty());
+}
+
+#[test]
+fn usage_is_attributed_to_the_replys_provider() {
+    let reply = json!({"type": "message_end", "message": {
+        "role": "assistant", "content": [], "stopReason": "stop", "provider": "anthropic-work",
+        "model": "m", "usage": usage(10, 5, 0, 0, 0.5)
+    }});
+    // A tool's model call: the session's current model's provider (not known yet here).
+    let tool_result = json!({"type": "message_end", "message": {
+        "role": "toolResult", "toolCallId": "c1", "toolName": "t", "content": [],
+        "isError": false, "usage": usage(7, 3, 0, 0, 0.25)
+    }});
+    let mut driver = PiDriver::new();
+    let providers: Vec<Option<String>> = [reply, tool_result]
+        .iter()
+        .zip(1..)
+        .flat_map(|(line, seq)| driver.fold(&out_line(seq, &line.to_string())).events)
+        .filter_map(|event| match event {
+            DriverEvent::Usage { provider, .. } => Some(provider),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(providers, [Some("anthropic-work".to_owned()), None]);
 }

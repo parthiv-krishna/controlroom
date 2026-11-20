@@ -14,12 +14,20 @@
 //! **Sign-in** drives pi's own login flow on the server: `models.login_start` returns the first
 //! step, `models.login_input` answers a step (a choice, or the pasted redirect URL),
 //! `models.login_wait` returns once the step changes (long poll), `models.login_cancel` stops.
+//!
+//! **Accounts:** a preset or a gateway can have several named accounts (`models.add_account`,
+//! `models.rename_account`), each with its own key or sign-in. The first account is the provider
+//! itself (named `default` until renamed); each added one is a provider of its own for pi (e.g.
+//! `anthropic-work`, [`ModelProvider::account_of`]) with the same API and models, so a session
+//! switches accounts by switching models, and usage is counted per account
+//! ([`ModelProvider::usage`]). Every `models.*` method taking a `provider` takes an account's.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ids::{LoginId, UnixMillis};
 use crate::session::DeviceRef;
+use crate::timeline::TokenUsage;
 
 /// Where a provider's configuration comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -109,8 +117,8 @@ pub struct SignedIn {
     pub account: Option<String>,
 }
 
-/// One model provider as Settings › Models shows it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// One model provider (or one account of a provider) as Settings › Models shows it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ModelProvider {
     /// pi's provider id, e.g. `"anthropic"`.
     pub id: String,
@@ -137,6 +145,86 @@ pub struct ModelProvider {
     /// Set when the server's configuration also defines this provider: it wins, and what is
     /// stored here is ignored until removed.
     pub clash: Option<String>,
+    /// The account's name, for a provider that can have several accounts (the first is named
+    /// `default` until renamed).
+    #[serde(default)]
+    pub account: Option<String>,
+    /// For an added account: the provider it is an account of (its first account).
+    #[serde(default)]
+    pub account_of: Option<String>,
+    /// More accounts can be added to this provider (`models.add_account`).
+    #[serde(default)]
+    pub can_add_account: bool,
+    /// What sessions on this server used through this provider (this account).
+    #[serde(default)]
+    pub usage: Option<AccountUsage>,
+}
+
+/// Tokens and cost over a period.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS)]
+pub struct UsageTotals {
+    /// Token totals.
+    pub tokens: TokenUsage,
+    /// Cost in USD as the provider's prices give it; 0 when none was reported.
+    pub cost: f64,
+}
+
+/// An account's usage by the agent daemon's sessions (deleted sessions no longer count), in
+/// hourly buckets: the last 24 hours, the last 7 days, and all time.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, TS)]
+pub struct AccountUsage {
+    /// The last 24 hours.
+    pub day: UsageTotals,
+    /// The last 7 days.
+    pub week: UsageTotals,
+    /// All time.
+    pub total: UsageTotals,
+}
+
+/// One account of a provider with several, for labeling models by account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModelAccount {
+    /// The account's pi provider id (the provider's own for its first account).
+    pub provider: String,
+    /// The provider it is an account of (its first account's id).
+    pub of: String,
+    /// The account's name.
+    pub name: String,
+}
+
+/// Result of `models.accounts`: the accounts of every provider that has more than one. Cheap:
+/// no pi run, no secret.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModelsAccounts {
+    /// The accounts, each provider's first one first.
+    pub accounts: Vec<ModelAccount>,
+}
+
+/// Params of `models.add_account`: add a named account to a provider, without a credential yet
+/// (then `models.set_key` or `models.login_start` with its id).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModelsAddAccountParams {
+    /// The provider (a preset or a gateway; its first account's id).
+    pub provider: String,
+    /// The new account's name: 1-24 lowercase letters, digits and dashes, unique among the
+    /// provider's accounts.
+    pub name: String,
+    /// The device making the change (filled in by the controller).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
+}
+
+/// Params of `models.rename_account`. The account keeps its provider id, so sessions, defaults
+/// and usage keep following it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ModelsRenameAccountParams {
+    /// The account's provider id.
+    pub provider: String,
+    /// Its new name (as for [`ModelsAddAccountParams::name`]).
+    pub name: String,
+    /// The device making the change (filled in by the controller).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
 }
 
 /// A model new sessions can start with.
@@ -165,7 +253,7 @@ pub struct ModelDefaults {
 }
 
 /// Result of every `models.*` method except sign-in: the whole Settings › Models state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ModelsState {
     /// The providers: presets, gateways and the server's.
     pub providers: Vec<ModelProvider>,
@@ -208,7 +296,8 @@ pub struct ModelsSetGatewayParams {
     pub by: Option<DeviceRef>,
 }
 
-/// Params of `models.remove` (a key or a gateway), `models.sign_out` and `models.test`.
+/// Params of `models.remove` (a key, a gateway, or an added account with its credential),
+/// `models.sign_out` and `models.test`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ModelsProviderParams {
     /// The provider.

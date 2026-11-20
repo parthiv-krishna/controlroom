@@ -2,7 +2,8 @@
 import type { DeviceRef } from "./DeviceRef";
 
 /**
- * Params of `models.remove` (a key or a gateway), `models.sign_out` and `models.test`.
+ * Params of `models.remove` (a key, a gateway, or an added account with its credential),
+ * `models.sign_out` and `models.test`.
  */
 export type ModelsProviderParams = { 
 /**

@@ -280,6 +280,22 @@ impl Runtime {
         })
     }
 
+    /// The usage of every session (deleted ones excepted) per provider id (an account in
+    /// Settings › Models): for each provider, one total per `since`, counting whole hours (the
+    /// hour holding the time and later).
+    pub fn provider_usage(
+        &self,
+        since: &[controlroom_protocol::UnixMillis],
+    ) -> std::collections::BTreeMap<String, Vec<controlroom_protocol::agentd::UsageTotals>> {
+        self.inner.with_core(|core| {
+            let mut sums = std::collections::BTreeMap::new();
+            for session in core.sessions.values() {
+                crate::usage::sum_since(&mut sums, &session.derived.usage_by_provider, since);
+            }
+            sums
+        })
+    }
+
     /// `sessions.subscribe`.
     pub fn subscribe_sessions(&self, since: Option<Rev>) -> Result<SessionsSubscription, RpcError> {
         self.inner.with_core(|core| {

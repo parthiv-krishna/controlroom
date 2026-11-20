@@ -2,8 +2,10 @@
 
 use controlroom_protocol::ErrorData;
 use controlroom_protocol::agentd::{
-    AuthHeader, Gateway, KeyKind, LoginStartParams, ModelDefaults, ModelsProviderParams,
-    ModelsSetDefaultsParams, ModelsSetGatewayParams, ModelsSetKeyParams, ProviderSource,
+    AuthHeader, Gateway, KeyKind, LoginStartParams, LoginStep, LoginWaitParams, ModelDefaults,
+    ModelProvider, ModelsAddAccountParams, ModelsProviderParams, ModelsRenameAccountParams,
+    ModelsSetDefaultsParams, ModelsSetGatewayParams, ModelsSetKeyParams, ModelsState,
+    ProviderSource, UsageTotals,
 };
 use controlroom_protocol::ids::DeviceId;
 use controlroom_protocol::session::DeviceRef;
@@ -29,15 +31,29 @@ fn fixture() -> Fixture {
     super::test_support::write_executable(
         &helper,
         r#"#!/bin/sh
-# list: one model per provider with a credential in the generated auth.json or models.json.
+# login: fails at once, naming its arguments.
+if [ "$1" = login ]; then
+  printf '{"step": {"kind": "failed", "message": "login %s"}}\n' "$*"
+  exit 1
+fi
+# list: one model per provider with a credential in the generated auth.json or models.json,
+# and a definition per `--definitions` provider.
 [ "$1" = list ] || exit 2
 providers=$(cat "$3/auth.json" "$3/models.json" 2>/dev/null | tr -d ' \n')
 printf '{"providers": [{"id": "anthropic", "name": "Anthropic", "oauth": true}], "models": ['
 sep=""
-for p in anthropic openai mock gw; do
+for p in anthropic anthropic-work openai openai-codex-work mock gw; do
   case "$providers" in *"\"$p\":"*) printf '%s{"provider": "%s", "id": "%s-model", "name": "M", "reasoning": false}' "$sep" "$p" "$p"; sep=",";; esac
 done
-printf ']}'
+printf '], "definitions": {'
+shift 3
+sep=""
+while [ "$1" = --definitions ]; do
+  printf '%s"%s": [{"id": "%s-model", "api": "x", "baseUrl": "https://api.example.com"}]' "$sep" "$2" "$2"
+  sep=","
+  shift 2
+done
+printf '}}'
 "#,
     );
     std::fs::create_dir_all(dirs.config().as_path()).unwrap();
@@ -428,4 +444,300 @@ async fn stored_tokens_are_reclassified() {
     let ctx = f.models.context().unwrap();
     let request = super::probe_target(&ctx, "anthropic").unwrap().unwrap();
     assert_eq!(request.header, "Authorization");
+}
+
+fn add_account(provider: &str, name: &str) -> ModelsAddAccountParams {
+    ModelsAddAccountParams {
+        provider: provider.into(),
+        name: name.into(),
+        by: laptop(),
+    }
+}
+
+fn rename(provider: &str, name: &str) -> ModelsRenameAccountParams {
+    ModelsRenameAccountParams {
+        provider: provider.into(),
+        name: name.into(),
+        by: laptop(),
+    }
+}
+
+fn row<'a>(state: &'a ModelsState, id: &str) -> &'a ModelProvider {
+    state.providers.iter().find(|p| p.id == id).unwrap()
+}
+
+/// The credential stored before accounts existed is the provider's account `default`; more
+/// accounts are added, set up, renamed and removed, each with its own key.
+#[tokio::test]
+async fn accounts_are_added_renamed_and_removed() {
+    let f = fixture();
+    // Before accounts: one key, no names.
+    std::fs::create_dir_all(f.dirs.models().as_path()).unwrap();
+    std::fs::write(
+        f.dirs.models().join("keys.json").as_path(),
+        json!({"anthropic": "sk-ant-api03-personal"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        f.dirs.models().join("providers.json").as_path(),
+        json!({"providers": {"anthropic": {"key": {"last4": "onal", "added_at": 1, "added_by": null}}}})
+            .to_string(),
+    )
+    .unwrap();
+    let state = f.models.list().await.unwrap();
+    let first = row(&state, "anthropic");
+    assert_eq!(first.account.as_deref(), Some("default"));
+    assert_eq!(
+        (first.account_of.as_deref(), first.can_add_account),
+        (None, true)
+    );
+    assert_eq!(first.key.as_ref().unwrap().last4, "onal");
+    assert_eq!(
+        row(&state, "mock").account,
+        None,
+        "the server's own provider"
+    );
+    assert!(f.models.accounts().unwrap().accounts.is_empty());
+
+    // Add `work`: a provider of its own, offered pi's Anthropic models once it has a key.
+    let state = f
+        .models
+        .add_account(add_account("anthropic", "work"))
+        .await
+        .unwrap();
+    let work = row(&state, "anthropic-work");
+    assert_eq!(work.account.as_deref(), Some("work"));
+    assert_eq!(work.account_of.as_deref(), Some("anthropic"));
+    assert_eq!(work.source, ProviderSource::Ui);
+    assert!(work.takes_key && work.can_sign_in && !work.can_add_account);
+    assert_eq!(work.token_prefix.as_deref(), Some("sk-ant-oat"));
+    assert!(work.key.is_none());
+    let ids: Vec<&str> = state.providers.iter().map(|p| p.id.as_str()).collect();
+    assert_eq!(
+        &ids[..2],
+        ["anthropic", "anthropic-work"],
+        "after its provider"
+    );
+    let definitions =
+        std::fs::read_to_string(f.dirs.models().join("definitions.json").as_path()).unwrap();
+    assert!(definitions.contains("anthropic-model"), "{definitions}");
+    for name in ["work", "default", "Bad Name"] {
+        assert!(
+            f.models
+                .add_account(add_account("anthropic", name))
+                .await
+                .is_err(),
+            "{name}"
+        );
+    }
+    let token = "sk-ant-oat01-test-work-abcd";
+    let state = f
+        .models
+        .set_key(key("anthropic-work", token))
+        .await
+        .unwrap();
+    let work = row(&state, "anthropic-work");
+    assert_eq!(work.key.as_ref().unwrap().kind, KeyKind::SubscriptionToken);
+    assert!(state.models.iter().any(|m| m.provider == "anthropic-work"));
+    assert!(!serde_json::to_string(&state).unwrap().contains(token));
+    let keys = std::fs::read_to_string(f.dirs.models().join("keys.json").as_path()).unwrap();
+    assert!(keys.contains("sk-ant-api03-personal") && keys.contains(token));
+    let ctx = f.models.context().unwrap();
+    let request = super::probe_target(&ctx, "anthropic-work")
+        .unwrap()
+        .unwrap();
+    assert_eq!(request.header, "Authorization");
+    let request = super::probe_target(&ctx, "anthropic").unwrap().unwrap();
+    assert_eq!(request.header, "x-api-key");
+
+    // Rename both; the ids stay.
+    f.models
+        .rename_account(rename("anthropic", "personal"))
+        .await
+        .unwrap();
+    let state = f
+        .models
+        .rename_account(rename("anthropic-work", "acme"))
+        .await
+        .unwrap();
+    assert_eq!(
+        row(&state, "anthropic").account.as_deref(),
+        Some("personal")
+    );
+    assert_eq!(
+        row(&state, "anthropic-work").account.as_deref(),
+        Some("acme")
+    );
+    assert!(
+        f.models
+            .rename_account(rename("anthropic-work", "personal"))
+            .await
+            .is_err()
+    );
+    assert!(f.models.rename_account(rename("mock", "x")).await.is_err());
+    let accounts: Vec<(String, String)> = f
+        .models
+        .accounts()
+        .unwrap()
+        .accounts
+        .into_iter()
+        .map(|a| (a.provider, a.name))
+        .collect();
+    assert_eq!(
+        accounts,
+        [
+            ("anthropic".to_owned(), "personal".to_owned()),
+            ("anthropic-work".to_owned(), "acme".to_owned())
+        ]
+    );
+
+    // Accounts only for presets and gateways, never of an account, never a taken id.
+    assert!(
+        f.models
+            .add_account(add_account("mock", "work"))
+            .await
+            .is_err()
+    );
+    assert!(
+        f.models
+            .add_account(add_account("anthropic-work", "x"))
+            .await
+            .is_err()
+    );
+    let state = f
+        .models
+        .add_account(add_account("openai", "codex"))
+        .await
+        .unwrap();
+    assert!(
+        state.providers.iter().any(|p| p.id == "openai-codex-2"),
+        "pi's openai-codex is taken"
+    );
+    f.models.remove(provider("openai-codex-2")).await.unwrap();
+
+    // Removing an account removes its key and the defaults naming it.
+    f.models
+        .set_defaults(ModelsSetDefaultsParams {
+            defaults: ModelDefaults {
+                provider: Some("anthropic-work".into()),
+                model: Some("anthropic-work-model".into()),
+                thinking: None,
+            },
+            by: laptop(),
+        })
+        .await
+        .unwrap();
+    let state = f.models.remove(provider("anthropic-work")).await.unwrap();
+    assert!(state.providers.iter().all(|p| p.id != "anthropic-work"));
+    assert_eq!(state.defaults, ModelDefaults::default());
+    let keys = std::fs::read_to_string(f.dirs.models().join("keys.json").as_path()).unwrap();
+    assert!(!keys.contains(token));
+    assert!(f.models.accounts().unwrap().accounts.is_empty());
+    // The first account's key goes; its name stays.
+    let state = f.models.remove(provider("anthropic")).await.unwrap();
+    let first = row(&state, "anthropic");
+    assert!(first.key.is_none());
+    assert_eq!(first.account.as_deref(), Some("personal"));
+}
+
+/// An added account signs in with its own directory: its sign-in shows, is tested by a fresh
+/// token, and reaches the credential manifest; the provider's own sign-in is separate.
+#[tokio::test]
+async fn an_account_signs_in_with_its_own_dir() {
+    let f = fixture();
+    let state = f
+        .models
+        .add_account(add_account("openai-codex", "work"))
+        .await
+        .unwrap();
+    let work = row(&state, "openai-codex-work");
+    assert!(work.can_sign_in && !work.takes_key && work.signed_in.is_none());
+    let start = LoginStartParams {
+        provider: "openai-codex-work".into(),
+        by: laptop(),
+    };
+    let login = f.models.login_start(start).await.unwrap();
+    let login = f
+        .models
+        .login_wait(LoginWaitParams {
+            login_id: login.login_id,
+            after: login.seq,
+        })
+        .await
+        .unwrap();
+    let account_dir = f.dirs.models().join("accounts/openai-codex-work");
+    let LoginStep::Failed { message } = login.step else {
+        panic!("{:?}", login.step);
+    };
+    assert_eq!(
+        message,
+        format!("login login --agent-dir {account_dir} --provider openai-codex")
+    );
+
+    // pi signed in there (as the helper would).
+    std::fs::write(
+        account_dir.join("auth.json").as_path(),
+        json!({"openai-codex": {"type": "oauth", "access": "a", "refresh": "r", "expires": 1, "email": "alice@example.com"}})
+            .to_string(),
+    )
+    .unwrap();
+    let state = f.models.list().await.unwrap();
+    let work = row(&state, "openai-codex-work");
+    assert_eq!(
+        work.signed_in.as_ref().unwrap().account.as_deref(),
+        Some("alice@example.com")
+    );
+    assert!(row(&state, "openai-codex").signed_in.is_none());
+    let ctx = f.models.context().unwrap();
+    assert!(
+        super::probe_target(&ctx, "openai-codex-work")
+            .unwrap()
+            .is_none()
+    );
+    let manifest = f.models.manifest(&ctx).unwrap();
+    assert_eq!(
+        manifest.oauth_accounts["openai-codex-work"],
+        controlroom_sandbox::credential::OAuthAccount {
+            agent_dir: account_dir.clone(),
+            provider: "openai-codex".into()
+        }
+    );
+    assert!(manifest.oauth_providers.is_empty());
+    // A key is refused while signed in; removing the account removes its sign-in.
+    assert!(
+        f.models
+            .set_key(key("openai-codex-work", "k"))
+            .await
+            .is_err()
+    );
+    f.models
+        .remove(provider("openai-codex-work"))
+        .await
+        .unwrap();
+    assert!(!account_dir.as_path().exists());
+}
+
+/// Each account's usage, from the sessions' usage by provider.
+#[tokio::test]
+async fn usage_per_account() {
+    let f = fixture();
+    let models = Models::new(f.dirs.clone()).with_usage(std::sync::Arc::new(|since| {
+        let totals = |cost: f64| UsageTotals {
+            cost,
+            ..UsageTotals::default()
+        };
+        assert_eq!(since.len(), 3);
+        [(
+            "anthropic".to_owned(),
+            vec![totals(1.0), totals(2.0), totals(3.0)],
+        )]
+        .into()
+    }));
+    let state = models.list().await.unwrap();
+    let usage = row(&state, "anthropic").usage.unwrap();
+    assert_eq!(
+        (usage.day.cost, usage.week.cost, usage.total.cost),
+        (1.0, 2.0, 3.0)
+    );
+    assert!(row(&state, "openai").usage.is_none());
 }

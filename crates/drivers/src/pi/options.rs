@@ -66,6 +66,11 @@ impl Options {
         options
     }
 
+    /// The current model's provider.
+    pub(crate) fn provider(&self) -> Option<&str> {
+        self.model.as_ref().map(|m| m.provider.as_str())
+    }
+
     /// The context window of a model by provider and id, else of the current model.
     pub(crate) fn context_window(&self, provider: Option<&str>, id: Option<&str>) -> Option<u64> {
         let named = self

@@ -212,6 +212,9 @@ pub enum DriverEvent {
         cost: Option<f64>,
         /// An agent reply: its cache hit rate becomes the session's latest.
         reply: bool,
+        /// The provider (pi's id) that served it, when known: the reply's own, else the
+        /// session's current model's. Usage is counted per provider (account) by it.
+        provider: Option<String>,
     },
     /// The agent's options (model, thinking level, ...) changed.
     Options(Vec<SessionOption>),

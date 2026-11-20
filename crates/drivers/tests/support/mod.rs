@@ -210,7 +210,10 @@ pub fn event_json(event: &DriverEvent) -> Value {
             tokens,
             cost,
             reply,
-        } => json!({"event": "usage", "tokens": tokens, "cost": cost, "reply": reply}),
+            provider,
+        } => {
+            json!({"event": "usage", "tokens": tokens, "cost": cost, "reply": reply, "provider": provider})
+        }
         DriverEvent::Options(options) => json!({"event": "options", "options": options}),
         DriverEvent::Title(title) => json!({"event": "title", "title": title}),
         DriverEvent::Exited {

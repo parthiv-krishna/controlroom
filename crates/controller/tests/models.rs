@@ -81,13 +81,25 @@ async fn models_pass_through_with_the_device_and_keys_stay_out_of_logs() {
             "models.login_cancel",
             json!({"login_id": "01HZY3K6W8Q9X2V4N7B5C1D3EB"}),
         ),
+        (
+            "models.add_account",
+            json!({"provider": "anthropic", "name": "work"}),
+        ),
+        (
+            "models.rename_account",
+            json!({"provider": "anthropic-work", "name": "acme"}),
+        ),
+        ("models.accounts", json!({})),
     ] {
         laptop.ok(method, params).await;
         let sent = agentd.calls(method);
         assert_eq!(sent.len(), 1, "{method}");
         let filled = sent[0].get("by").map(|by| by["device_id"].clone());
-        let expected =
-            (!matches!(method, "models.list" | "models.login_wait")).then(|| json!("laptop"));
+        let expected = (!matches!(
+            method,
+            "models.list" | "models.login_wait" | "models.accounts"
+        ))
+        .then(|| json!("laptop"));
         assert_eq!(filled, expected, "{method}");
     }
     // Malformed params never reach the agent daemon.

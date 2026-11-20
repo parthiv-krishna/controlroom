@@ -50,6 +50,8 @@ pub enum FakeStep {
         cost: Option<f64>,
         /// An agent reply (not a tool's or a summary's model call).
         reply: bool,
+        /// The provider that served it.
+        provider: Option<String>,
     },
     /// Report a new session title.
     Title(String),
@@ -430,12 +432,14 @@ impl FakeAgent {
                     tokens,
                     cost,
                     reply,
+                    provider,
                 }) => emit(
                     out,
                     &Output::Usage {
                         tokens,
                         cost,
                         reply,
+                        provider,
                     },
                 ),
                 Step::Script(FakeStep::Title(title)) => emit(out, &Output::Title { title }),

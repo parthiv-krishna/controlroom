@@ -39,7 +39,7 @@
      {"item":{"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-16","kind":"usage","scope":"turn","seq_from":16,"seq_to":16,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000346},"op":"upsert"}
    ],
    "events": [
-     {"cost":0.00012399999999999998,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
+     {"cost":0.00012399999999999998,"event":"usage","provider":"mock","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12}},
      {"context":{"cost":0.00012399999999999998,"size":null,"used":112},"event":"context"}
    ]},
   {"seq": 17,
@@ -87,7 +87,7 @@
   {"seq": 29,
    "ops": [],
    "events": [
-     {"cost":0.0,"event":"usage","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":0,"output":0}}
+     {"cost":0.0,"event":"usage","provider":"mock","reply":true,"tokens":{"cache_read":0,"cache_write":0,"input":0,"output":0}}
    ]},
   {"seq": 32,
    "ops": [

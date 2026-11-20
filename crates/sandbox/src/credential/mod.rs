@@ -6,20 +6,23 @@
 //! credential host-side, so it never enters the sandbox:
 //!
 //! - [`api_key`]: API keys, resolved from the user's real pi config as pi would;
-//! - [`oauth`]: OAuth access tokens, refreshed by pi itself through the bundle's helper.
+//! - [`oauth`]: OAuth access tokens, refreshed by pi itself through the bundle's helper, from
+//!   the user's real `auth.json` or, for an account added in Settings › Models, from the
+//!   account's own ([`OAuthAccount`]), so refreshes never cross accounts.
 
 mod api_key;
 mod key_store;
 mod oauth;
 mod process;
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
 pub use api_key::{models_api_key_providers, resolve_api_key, resolve_config_value};
 pub use key_store::{KeyStore, StoredKeys, resolve_stored_key};
-pub use oauth::fresh_oauth_token;
+pub use oauth::{fresh_account_token, fresh_oauth_token};
 
 use crate::layout::SessionLayout;
 use crate::names::Name;
@@ -41,6 +44,20 @@ pub struct CredentialManifest {
     /// API keys added in Settings › Models (the user's own config wins on a clash).
     #[serde(default)]
     pub stored_keys: Option<StoredKeys>,
+    /// Accounts added in Settings › Models that are signed in, by their provider id (e.g.
+    /// `anthropic-work`): each has its own `auth.json`.
+    #[serde(default)]
+    pub oauth_accounts: BTreeMap<String, OAuthAccount>,
+}
+
+/// An account's own sign-in: pi's `auth.json` in a directory of its own, holding the OAuth
+/// credential under the provider pi signed in to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OAuthAccount {
+    /// The account's directory (its `auth.json`, refreshed under pi's lock).
+    pub agent_dir: AbsPath,
+    /// The provider pi signed in to (e.g. `anthropic` for the account `anthropic-work`).
+    pub provider: String,
 }
 
 /// A resolved credential. `Debug` does not print it.
@@ -110,8 +127,8 @@ pub fn load_manifest(layout: &SessionLayout) -> Result<CredentialManifest, Crede
 }
 
 /// `provider`'s credential: a fresh OAuth access token, valid for at least `valid_for_secs`, if
-/// the user's `auth.json` stores OAuth for it (pi prefers a stored credential), else its API
-/// key from the user's config, else its key from the key store.
+/// the user's `auth.json` stores OAuth for it (pi prefers a stored credential) or it is a
+/// signed-in account, else its API key from the user's config, else its key from the key store.
 pub fn resolve_credential(
     manifest: &CredentialManifest,
     provider: &Name,
@@ -123,6 +140,8 @@ pub fn resolve_credential(
         .any(|p| p == provider.as_str())
     {
         fresh_oauth_token(manifest, provider, valid_for_secs)
+    } else if let Some(account) = manifest.oauth_accounts.get(provider.as_str()) {
+        fresh_account_token(manifest, provider, account, valid_for_secs)
     } else if manifest
         .api_key_providers
         .iter()
@@ -162,6 +181,7 @@ mod tests {
                 AbsPath::new("/nix/store/aaaa-controlroom-pi/bin/controlroom-pi-oauth").unwrap(),
             ),
             stored_keys: None,
+            oauth_accounts: Default::default(),
         };
         std::fs::write(
             layout.credential_manifest().as_path(),
@@ -180,6 +200,7 @@ mod tests {
             oauth_providers: vec!["sub".into()],
             oauth_helper: None,
             stored_keys: None,
+            oauth_accounts: Default::default(),
         };
         let sub = Name::new("sub").unwrap();
         assert!(matches!(
@@ -210,6 +231,7 @@ mod tests {
                 path: dir.join("keys.json"),
                 providers: vec!["anthropic".into()],
             }),
+            oauth_accounts: Default::default(),
         };
         let get = |p: &str| resolve_credential(&m, &Name::new(p).unwrap(), 600);
         assert_eq!(get("gateway").unwrap().expose(), "from-models");

@@ -258,6 +258,7 @@ fn merges_managed_providers_and_the_user_config_wins() {
                 "ui-gw".into(),
             ],
             key_store: Some(store.clone()),
+            oauth_accounts: BTreeMap::new(),
             // A pasted subscription token's stand-in keeps its type prefix.
             stand_ins: [("anthropic".into(), format!("sk-ant-oat01-{PLACEHOLDER}"))].into(),
             models: serde_json::from_value(json!({
@@ -309,6 +310,97 @@ fn merges_managed_providers_and_the_user_config_wins() {
             providers: vec!["anthropic".into(), "openai".into(), "ui-gw".into()],
         })
     );
+}
+
+#[test]
+fn accounts_get_their_own_stand_ins_and_sign_ins() {
+    let f = fixture();
+    let store = f.bundle.join("keys.json");
+    let account_dir = f.bundle.join("accounts/openai-codex-work");
+    let codex_access = unsigned_jwt(
+        &serde_json::from_value(json!({
+            "https://api.openai.com/auth": {"chatgpt_account_id": "acct-work"},
+            "email": "alice@example.com"
+        }))
+        .unwrap(),
+    );
+    let claims = ["https://api.openai.com/auth".to_owned()];
+    let entry = |api: &str| json!({"name": "Account", "api": api, "models": [{"id": "m1", "baseUrl": "https://api.example.com"}]});
+    let spec = AgentDirSpec {
+        managed: ManagedProviders {
+            key_providers: vec!["anthropic-work".into()],
+            key_store: Some(store.clone()),
+            oauth_accounts: [(
+                "openai-codex-work".into(),
+                OAuthAccount {
+                    agent_dir: account_dir.clone(),
+                    provider: "openai-codex".into(),
+                },
+            )]
+            .into(),
+            stand_ins: [
+                (
+                    "anthropic-work".into(),
+                    stand_in("sk-ant-oat01-test-secret"),
+                ),
+                (
+                    "openai-codex-work".into(),
+                    synthetic_access(&codex_access, &claims),
+                ),
+            ]
+            .into(),
+            models: serde_json::from_value(json!({
+                "anthropic-work": entry("anthropic-messages"),
+                "openai-codex-work": entry("openai-codex-responses"),
+            }))
+            .unwrap(),
+            ..ManagedProviders::default()
+        },
+        ..spec(&f)
+    };
+    let built = build_session_dirs(&f.layout, &spec).unwrap();
+    assert_eq!(built.stored_key_providers, ["anthropic-work"]);
+    assert_eq!(built.oauth_account_providers, ["openai-codex-work"]);
+    let agent = f.layout.agent();
+    let auth = read_json(agent.join("auth.json"));
+    // pi only signs in to its own provider ids: accounts get API-key stand-ins.
+    assert_eq!(
+        auth["anthropic-work"],
+        json!({"type": "api_key", "key": format!("sk-ant-oat01-{PLACEHOLDER}")})
+    );
+    let codex = auth["openai-codex-work"]["key"].as_str().unwrap();
+    let payload = codex.split('.').nth(1).unwrap();
+    let claims: Value = serde_json::from_slice(
+        &base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, payload)
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        claims,
+        json!({"https://api.openai.com/auth": {"chatgpt_account_id": "acct-work"}, "exp": FAR_FUTURE_MS / 1000})
+    );
+    let models = read_json(agent.join("models.json"));
+    assert_eq!(
+        models["providers"]["anthropic-work"]["api"],
+        "anthropic-messages"
+    );
+    assert!(
+        models["providers"]["anthropic-work"]
+            .get("apiKey")
+            .is_none()
+    );
+    let manifest = crate::credential::load_manifest(&f.layout).unwrap();
+    assert_eq!(
+        manifest.stored_keys.unwrap().providers,
+        ["anthropic-work".to_owned()]
+    );
+    assert_eq!(
+        manifest.oauth_accounts["openai-codex-work"].agent_dir,
+        account_dir
+    );
+    assert_eq!(manifest.oauth_providers, Vec::<String>::new());
+    let text = fs::read_to_string(agent.join("auth.json").as_path()).unwrap();
+    assert!(!text.contains("secret") && !text.contains("alice@"));
 }
 
 #[test]

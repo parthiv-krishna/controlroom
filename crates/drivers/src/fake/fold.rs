@@ -353,10 +353,12 @@ impl FakeDriver {
                 tokens,
                 cost,
                 reply,
+                provider,
             } => out.events.push(DriverEvent::Usage {
                 tokens,
                 cost,
                 reply,
+                provider,
             }),
             Output::Title { title } => out.events.push(DriverEvent::Title(title)),
         }

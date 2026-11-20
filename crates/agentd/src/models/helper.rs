@@ -3,7 +3,9 @@
 //! login flows, so the agent daemon never reimplements pi's provider logic.
 //!
 //! ```text
-//! controlroom-pi-models list   --agent-dir DIR               JSON: providers and models
+//! controlroom-pi-models list   --agent-dir DIR [--definitions ID]...
+//!                                                             JSON: providers and models (and
+//!                                                             the model definitions of IDs)
 //! controlroom-pi-models logout --agent-dir DIR --provider ID
 //! controlroom-pi-models login  --agent-dir DIR --provider ID  JSON lines (see `super::login`)
 //! ```
@@ -40,6 +42,10 @@ pub struct Catalog {
     pub providers: Vec<CatalogProvider>,
     /// The models of providers that have credentials.
     pub models: Vec<ModelChoice>,
+    /// pi's definitions of every model of the providers asked for (`models.json` `models`
+    /// entries), by provider.
+    #[serde(default)]
+    pub definitions: super::store::Definitions,
 }
 
 /// The models helper.
@@ -71,9 +77,18 @@ impl Helper {
         command
     }
 
-    /// The providers and models of the config in `agent_dir`.
-    pub async fn list(&self, agent_dir: &AbsPath) -> Result<Catalog, String> {
-        let out = run(self.command("list", agent_dir)).await?;
+    /// The providers and models of the config in `agent_dir`, with the model definitions of
+    /// `definitions` (providers that have added accounts).
+    pub async fn list(
+        &self,
+        agent_dir: &AbsPath,
+        definitions: &[String],
+    ) -> Result<Catalog, String> {
+        let mut command = self.command("list", agent_dir);
+        for provider in definitions {
+            command.arg("--definitions").arg(provider);
+        }
+        let out = run(command).await?;
         serde_json::from_str(&out).map_err(|e| format!("the models helper's list: {e}"))
     }
 
@@ -124,11 +139,19 @@ mod tests {
 echo '{"providers": [{"id": "anthropic", "name": "Anthropic", "oauth": true}],
        "models": [{"provider": "anthropic", "id": "m1", "name": "M1", "reasoning": true}]}'"#,
         );
-        let catalog = ok.list(&dir).await.unwrap();
+        let catalog = ok.list(&dir, &[]).await.unwrap();
         assert!(catalog.providers[0].oauth);
         assert_eq!(catalog.models[0].id, "m1");
+        assert!(catalog.definitions.is_empty());
+        let defs = helper(
+            t.path(),
+            r#"[ "$4 $5" = "--definitions anthropic" ] || exit 9
+echo '{"providers": [], "models": [], "definitions": {"anthropic": [{"id": "m1"}]}}'"#,
+        );
+        let catalog = defs.list(&dir, &["anthropic".into()]).await.unwrap();
+        assert_eq!(catalog.definitions["anthropic"][0]["id"], "m1");
         let failing = helper(t.path(), "echo 'no pi here' >&2; exit 1");
-        assert_eq!(failing.list(&dir).await.unwrap_err(), "no pi here");
+        assert_eq!(failing.list(&dir, &[]).await.unwrap_err(), "no pi here");
         assert_eq!(failing.logout(&dir, "x").await.unwrap_err(), "no pi here");
     }
 }

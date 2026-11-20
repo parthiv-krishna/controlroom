@@ -155,6 +155,9 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         AgentdRequest::ModelsLoginInput(p) => json(models.login_input(p).await),
         AgentdRequest::ModelsLoginWait(p) => json(models.login_wait(p).await),
         AgentdRequest::ModelsLoginCancel(p) => json(models.login_cancel(p).await),
+        AgentdRequest::ModelsAddAccount(p) => json(models.add_account(p).await),
+        AgentdRequest::ModelsRenameAccount(p) => json(models.rename_account(p).await),
+        AgentdRequest::ModelsAccountsList(_) => json(models.accounts()),
 
         AgentdRequest::HostOpsRespond(p) => {
             runtime.hostops_respond(&p.id, p.outcome);

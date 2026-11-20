@@ -220,6 +220,7 @@ mod tests {
             oauth_providers: Vec::new(),
             oauth_helper: None,
             stored_keys: None,
+            oauth_accounts: Default::default(),
         };
         (t, m)
     }

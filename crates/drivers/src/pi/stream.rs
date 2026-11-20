@@ -124,7 +124,7 @@ impl PiDriver {
     /// streamed, finishes the rest, records the stop reason and reports usage.
     pub(super) fn on_message_end(&mut self, at: At, message: Message, out: &mut FoldOut) {
         if let Message::ToolResult { usage: Some(usage) } = &message {
-            report_usage(usage, false, out);
+            report_usage(usage, false, self.options.provider(), out);
         }
         let Message::Assistant {
             content,
@@ -487,7 +487,7 @@ impl PiDriver {
         model: Option<&str>,
         out: &mut FoldOut,
     ) {
-        report_usage(usage, true, out);
+        report_usage(usage, true, provider.or(self.options.provider()), out);
         let total = if usage.total_tokens > 0 {
             usage.total_tokens
         } else {
@@ -520,12 +520,14 @@ impl PiDriver {
     }
 }
 
-/// Reports one model call's usage to the runtime (`reply`: an agent reply).
-pub(super) fn report_usage(usage: &Usage, reply: bool, out: &mut FoldOut) {
+/// Reports one model call's usage to the runtime (`reply`: an agent reply), served by
+/// `provider`.
+pub(super) fn report_usage(usage: &Usage, reply: bool, provider: Option<&str>, out: &mut FoldOut) {
     out.events.push(DriverEvent::Usage {
         tokens: usage.tokens(),
         cost: usage.cost.as_ref().map(|cost| cost.total),
         reply,
+        provider: provider.map(str::to_owned),
     });
 }
 

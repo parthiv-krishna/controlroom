@@ -266,6 +266,12 @@ pub mod methods {
         ModelsLoginWait = "models.login_wait" (LoginWaitParams) -> LoginState;
         /// Pass-through: cancel a sign-in.
         ModelsLoginCancel = "models.login_cancel" (LoginCancelParams) -> LoginState;
+        /// Pass-through: add a named account to a provider.
+        ModelsAddAccount = "models.add_account" (ModelsAddAccountParams) -> ModelsState;
+        /// Pass-through: rename an account.
+        ModelsRenameAccount = "models.rename_account" (ModelsRenameAccountParams) -> ModelsState;
+        /// Pass-through: the accounts of providers with several.
+        ModelsAccountsList = "models.accounts" (NoParams) -> ModelsAccounts;
         /// List a directory on a machine (its host daemon, with the user's own access).
         FsList = "fs.list" (OnMachine<FsListParams>) -> FsListResult;
         /// Re-run a machine's or the server's doctor checks.

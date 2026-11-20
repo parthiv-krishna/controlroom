@@ -165,6 +165,12 @@ pub mod methods {
         ModelsLoginWait = "models.login_wait" (LoginWaitParams) -> LoginState;
         /// Cancel a sign-in.
         ModelsLoginCancel = "models.login_cancel" (LoginCancelParams) -> LoginState;
+        /// Add a named account to a provider.
+        ModelsAddAccount = "models.add_account" (ModelsAddAccountParams) -> ModelsState;
+        /// Rename an account.
+        ModelsRenameAccount = "models.rename_account" (ModelsRenameAccountParams) -> ModelsState;
+        /// The accounts of providers with several (cheap; for labeling models).
+        ModelsAccountsList = "models.accounts" (NoParams) -> ModelsAccounts;
 
         /// Start carrying host requests (controller only).
         HostOpsSubscribe = "hostops.subscribe" (NoParams) -> HostOpsSubscribeResult;

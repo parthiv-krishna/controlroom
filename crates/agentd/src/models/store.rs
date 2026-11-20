@@ -2,8 +2,14 @@
 //!
 //! - `providers.json`: the providers managed here (key metadata, gateways), the last test of
 //!   each provider and the defaults of new sessions. No secrets.
-//! - `keys.json` (0600): the API keys ([`KeyStore`]). Read only by the agent daemon's user, when
-//!   a key is stored and by `controlroom-agentd credential`; no API returns a key.
+//! - `keys.json` (0600): the API keys ([`KeyStore`]), by provider id (an added account's own).
+//!   Read only by the agent daemon's user, when a key is stored and by
+//!   `controlroom-agentd credential`; no API returns a key.
+//! - `accounts/<id>/auth.json` (0700 dir): the sign-in of an added account, written and
+//!   refreshed by pi under its lock, keyed by the provider pi signed in to.
+//! - `definitions.json`: pi's model definitions of providers that have added accounts (copied
+//!   from pi's catalog by the models helper), so a launch can define each account's provider
+//!   without running pi. No secrets.
 //!
 //! These files are the agent daemon's own: the NixOS module's per-start copies of pi's
 //! `models.json` and `settings.json` never touch them.
@@ -27,7 +33,16 @@ pub struct StoredProvider {
     pub gateway: Option<Gateway>,
     /// The last test (of any provider, the server's too).
     pub test: Option<ProviderTest>,
+    /// For an added account: the provider it is an account of.
+    pub account_of: Option<String>,
+    /// The account's name; unset for a provider's first account until renamed
+    /// ([`DEFAULT_ACCOUNT`]).
+    pub name: Option<String>,
 }
+
+/// The name of a provider's first account until it is renamed: the credential stored before
+/// accounts existed becomes this account, unchanged.
+pub const DEFAULT_ACCOUNT: &str = "default";
 
 impl StoredProvider {
     /// Whether nothing is left to keep.
@@ -50,13 +65,50 @@ impl Stored {
     /// Sets each stored key's kind from the key itself, so keys stored before kinds existed (or
     /// before a provider took subscription tokens) are described as what they are.
     pub fn classify_keys(&mut self, keys: &KeyStore) {
+        let bases: BTreeMap<String, String> = self
+            .providers
+            .keys()
+            .map(|id| (id.clone(), self.base_of(id).to_owned()))
+            .collect();
         for (id, provider) in &mut self.providers {
             if let (Some(described), Some(key)) = (&mut provider.key, keys.get(id)) {
-                described.kind = super::presets::key_kind(id, key.expose());
+                described.kind = super::presets::key_kind(&bases[id], key.expose());
             }
         }
     }
+
+    /// The provider `id` is an account of: itself unless it is an added account.
+    pub fn base_of<'a>(&'a self, id: &'a str) -> &'a str {
+        self.providers
+            .get(id)
+            .and_then(|p| p.account_of.as_deref())
+            .unwrap_or(id)
+    }
+
+    /// Whether `id` is an added account.
+    pub fn is_account(&self, id: &str) -> bool {
+        self.base_of(id) != id
+    }
+
+    /// The accounts added to `base`, by id.
+    pub fn accounts_of<'a>(&'a self, base: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+        self.providers
+            .iter()
+            .filter(move |(_, p)| p.account_of.as_deref() == Some(base))
+            .map(|(id, _)| id.as_str())
+    }
+
+    /// `id`'s account name.
+    pub fn account_name(&self, id: &str) -> String {
+        self.providers
+            .get(id)
+            .and_then(|p| p.name.clone())
+            .unwrap_or_else(|| DEFAULT_ACCOUNT.to_owned())
+    }
 }
+
+/// pi's model definitions (`models.json` `models` entries) by provider id.
+pub type Definitions = BTreeMap<String, Vec<serde_json::Value>>;
 
 /// The files of `<state>/models/`.
 #[derive(Debug, Clone)]
@@ -111,6 +163,58 @@ impl Store {
     /// The directory for pi's view of the providers ([`super::catalog`]).
     pub fn catalog_dir(&self) -> AbsPath {
         self.dir.join("catalog")
+    }
+
+    /// The directory of an added account's sign-in (its `auth.json`).
+    pub fn account_dir(&self, id: &str) -> AbsPath {
+        self.dir.join("accounts").join(id)
+    }
+
+    /// Creates the account directory of `id` (and its parent) privately.
+    pub fn create_account_dir(&self, id: &str) -> Result<AbsPath, String> {
+        self.create()?;
+        let parent = self.dir.join("accounts");
+        create_private_dir(&parent).map_err(|e| format!("{parent}: {e}"))?;
+        let dir = self.account_dir(id);
+        create_private_dir(&dir).map_err(|e| format!("{dir}: {e}"))?;
+        Ok(dir)
+    }
+
+    /// Removes the account directory of `id` with its sign-in.
+    pub fn remove_account_dir(&self, id: &str) -> Result<(), String> {
+        let dir = self.account_dir(id);
+        match std::fs::remove_dir_all(dir.as_path()) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("{dir}: {e}")),
+            _ => Ok(()),
+        }
+    }
+
+    /// An added account's `auth.json`; missing or unreadable is empty.
+    pub fn account_auth(&self, id: &str) -> serde_json::Map<String, serde_json::Value> {
+        std::fs::read(self.account_dir(id).join("auth.json").as_path())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    /// Reads `definitions.json`; missing or unreadable is empty.
+    pub fn definitions(&self) -> Definitions {
+        std::fs::read(self.definitions_path().as_path())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    /// Writes `definitions.json`.
+    pub fn save_definitions(&self, definitions: &Definitions) -> Result<(), String> {
+        self.create()?;
+        let path = self.definitions_path();
+        let bytes = serde_json::to_vec_pretty(definitions).map_err(|e| e.to_string())?;
+        write_private_file(&path, &bytes).map_err(|e| format!("{path}: {e}"))
+    }
+
+    fn definitions_path(&self) -> AbsPath {
+        self.dir.join("definitions.json")
     }
 
     fn create(&self) -> Result<(), String> {

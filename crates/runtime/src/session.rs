@@ -143,6 +143,8 @@ pub(crate) struct Derived {
     pub context: Option<ContextUsage>,
     /// Cumulative usage (see `usage`).
     pub usage: SessionUsage,
+    /// Usage per provider, by hour (see `usage`).
+    pub usage_by_provider: crate::usage::ByProvider,
     pub title: Option<String>,
     pub process: Process,
     pub preview: PreviewSource,

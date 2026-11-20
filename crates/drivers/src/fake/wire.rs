@@ -233,6 +233,9 @@ pub enum Output {
         cost: Option<f64>,
         /// An agent reply (not a tool's or a summary's model call).
         reply: bool,
+        /// The provider that served it.
+        #[serde(default)]
+        provider: Option<String>,
     },
     /// The session title changed.
     Title {

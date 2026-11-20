@@ -40,7 +40,10 @@ import type { MachinesAddConfirmResult } from "./MachinesAddConfirmResult";
 import type { MachinesAddResult } from "./MachinesAddResult";
 import type { MachinesConfirmHostKeyParams } from "./MachinesConfirmHostKeyParams";
 import type { MachinesSetSettingsParams } from "./MachinesSetSettingsParams";
+import type { ModelsAccounts } from "./ModelsAccounts";
+import type { ModelsAddAccountParams } from "./ModelsAddAccountParams";
 import type { ModelsProviderParams } from "./ModelsProviderParams";
+import type { ModelsRenameAccountParams } from "./ModelsRenameAccountParams";
 import type { ModelsSetDefaultsParams } from "./ModelsSetDefaultsParams";
 import type { ModelsSetGatewayParams } from "./ModelsSetGatewayParams";
 import type { ModelsSetKeyParams } from "./ModelsSetKeyParams";
@@ -485,6 +488,18 @@ export type UiMethods = {
    * Pass-through: cancel a sign-in.
    */
   "models.login_cancel": { params: LoginCancelParams, result: LoginState },
+  /**
+   * Pass-through: add a named account to a provider.
+   */
+  "models.add_account": { params: ModelsAddAccountParams, result: ModelsState },
+  /**
+   * Pass-through: rename an account.
+   */
+  "models.rename_account": { params: ModelsRenameAccountParams, result: ModelsState },
+  /**
+   * Pass-through: the accounts of providers with several.
+   */
+  "models.accounts": { params: NoParams, result: ModelsAccounts },
   /**
    * List a directory on a machine (its host daemon, with the user's own access).
    */

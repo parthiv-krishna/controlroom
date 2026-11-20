@@ -220,7 +220,7 @@ impl PiDriver {
         let error = error.or_else(|| aborted.then(|| "Compaction aborted".to_owned()));
         let result = result.unwrap_or_default();
         if let Some(usage) = &result.usage {
-            super::stream::report_usage(usage, false, out);
+            super::stream::report_usage(usage, false, self.options.provider(), out);
         }
         let tokens_after = result.estimated_tokens_after;
         self.close_compaction(at, result.tokens_before, tokens_after, error.clone(), out);

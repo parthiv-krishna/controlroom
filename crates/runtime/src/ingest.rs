@@ -74,8 +74,9 @@ impl Core {
             session.derived.preview.apply(op);
         }
         let finished = finished_tool_ids(&out.ops);
+        let at = UnixMillis(i64::try_from(record.ts).unwrap_or(i64::MAX));
         for event in &out.events {
-            observe(session, event);
+            observe(session, event, at);
         }
         if seq > session.data.applied_seq {
             for event in &out.events {
@@ -235,7 +236,7 @@ impl Core {
 }
 
 /// In-memory consequences of an event.
-fn observe(session: &mut Session, event: &DriverEvent) {
+fn observe(session: &mut Session, event: &DriverEvent, at: UnixMillis) {
     let derived = &mut session.derived;
     let live = &mut session.live;
     match event {
@@ -276,7 +277,18 @@ fn observe(session: &mut Session, event: &DriverEvent) {
             tokens,
             cost,
             reply,
-        } => crate::usage::add(&mut derived.usage, tokens, *cost, *reply),
+            provider,
+        } => crate::usage::add(
+            &mut derived.usage,
+            &mut derived.usage_by_provider,
+            &crate::usage::Report {
+                tokens,
+                cost: *cost,
+                reply: *reply,
+                provider: provider.as_deref(),
+                at,
+            },
+        ),
         DriverEvent::Title(title) => derived.title = Some(title.clone()),
         DriverEvent::Exited { during_run, .. } => {
             derived.process.live = false;

@@ -2,7 +2,9 @@
 //! server's own configuration (spec §11.3).
 //!
 //! - [`presets`]: the providers offered, with their verified routes;
-//! - [`store`]: what is stored (`<state>/models/`: metadata, and the 0600 key store);
+//! - [`accounts`]: several named accounts of a provider, each a provider of its own for pi;
+//! - [`store`]: what is stored (`<state>/models/`: metadata, the 0600 key store, the added
+//!   accounts' sign-ins);
 //! - [`server`]: what the server's configuration declares (read-only; it wins on a clash);
 //! - [`merge`]: what a launch gets from here (routes, claims, keys, gateways, defaults);
 //! - [`helper`], [`login`]: pi's own model list and sign-in, through the bundle's helper;
@@ -12,6 +14,7 @@
 //! start of existing ones; running agents are never restarted for them. Every change is logged
 //! with the device that made it; keys are never logged or returned.
 
+pub mod accounts;
 pub mod helper;
 pub mod login;
 pub mod merge;
@@ -24,13 +27,15 @@ pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use controlroom_protocol::agentd::{
-    KeyKind, LoginCancelParams, LoginInputParams, LoginStartParams, LoginState, LoginStep,
-    LoginWaitParams, ModelProvider, ModelsProviderParams, ModelsSetDefaultsParams,
+    AccountUsage, KeyKind, LoginCancelParams, LoginInputParams, LoginStartParams, LoginState,
+    LoginStep, LoginWaitParams, ModelProvider, ModelsAccounts, ModelsAddAccountParams,
+    ModelsProviderParams, ModelsRenameAccountParams, ModelsSetDefaultsParams,
     ModelsSetGatewayParams, ModelsSetKeyParams, ModelsState, ProviderSource, ProviderTest,
     SignedIn, StoredKey,
 };
@@ -38,15 +43,17 @@ use controlroom_protocol::session::DeviceRef;
 use controlroom_protocol::{ErrorData, Resource, RpcError, UnixMillis};
 use controlroom_sandbox::agent_dir::{AgentDirSpec, build_agent_config};
 use controlroom_sandbox::credential::{
-    CredentialManifest, KeyStore, StoredKeys, resolve_credential,
+    CredentialManifest, KeyStore, OAuthAccount, StoredKeys, resolve_credential,
 };
 use controlroom_sandbox::{AbsPath, Name};
+use serde_json::{Map, Value};
 
+use self::accounts::UsageSource;
 use self::helper::{Catalog, Helper};
 use self::login::{LOGIN_TIMEOUT, Logins};
 use self::probe::ProbeRequest;
-use self::server::ServerConfig;
-use self::store::{Store, Stored};
+use self::server::{ServerConfig, signed_in_as};
+use self::store::{Store, Stored, StoredProvider};
 use crate::config::sandbox::{self as sandbox_config, SandboxSettings};
 use crate::dirs::{Dirs, create_private_dir, home};
 use crate::launch::find_program;
@@ -76,6 +83,8 @@ pub struct Models {
     catalog: tokio::sync::Mutex<Option<CachedCatalog>>,
     /// The helpers, once found (looked up again while missing).
     programs: Mutex<Programs>,
+    /// The sessions' usage per provider, when sessions run here.
+    usage: Option<UsageSource>,
 }
 
 #[derive(Default)]
@@ -96,6 +105,30 @@ struct Context {
     server: ServerConfig,
     stored: Stored,
     keys: KeyStore,
+    /// The added accounts' own `auth.json`, by account id.
+    account_auth: BTreeMap<String, Map<String, Value>>,
+    /// Usage per provider id.
+    usage: BTreeMap<String, AccountUsage>,
+}
+
+impl Context {
+    /// `id`'s sign-in: in the agent daemon's pi `auth.json`, or for an added account in its own.
+    fn sign_in(&self, id: &str) -> Option<SignedIn> {
+        if self.stored.is_account(id) {
+            let entry = self.account_auth.get(id)?.get(self.stored.base_of(id))?;
+            (entry.get("type").and_then(Value::as_str) == Some("oauth")).then(|| SignedIn {
+                account: signed_in_as(entry),
+            })
+        } else {
+            (self.server.auth_type(id) == Some("oauth")).then(|| SignedIn {
+                account: self.server.account(id),
+            })
+        }
+    }
+
+    fn signed_in(&self, id: &str) -> bool {
+        self.sign_in(id).is_some()
+    }
 }
 
 impl Models {
@@ -109,7 +142,14 @@ impl Models {
             generation: Arc::new(AtomicU64::new(0)),
             catalog: tokio::sync::Mutex::new(None),
             programs: Mutex::new(Programs::default()),
+            usage: None,
         }
+    }
+
+    /// Reports each account's usage from `source` (the sessions').
+    pub fn with_usage(mut self, source: UsageSource) -> Self {
+        self.usage = Some(source);
+        self
     }
 
     /// `models.list`.
@@ -122,22 +162,23 @@ impl Models {
     pub async fn set_key(&self, p: ModelsSetKeyParams) -> Result<ModelsState, RpcError> {
         let key = valid_key(&p.key)?;
         let id = p.provider.as_str();
-        let kind = presets::check_key(id, key).map_err(invalid)?;
         let _write = self.writes.lock().await;
         let ctx = self.context()?;
+        let base = ctx.stored.base_of(id).to_owned();
+        let kind = presets::check_key(&base, key).map_err(invalid)?;
         refuse_server_declared(&ctx.server, id)?;
         let is_gateway = ctx
             .stored
             .providers
-            .get(id)
+            .get(&base)
             .is_some_and(|s| s.gateway.is_some());
-        let preset = presets::preset(id);
+        let preset = presets::preset(&base);
         if !is_gateway && preset.and_then(|p| p.api_key).is_none() {
             return Err(invalid(format!(
-                "{id} doesn't take an API key here; add it as a custom gateway"
+                "{base} doesn't take an API key here; add it as a custom gateway"
             )));
         }
-        if ctx.server.auth_type(id) == Some("oauth") {
+        if ctx.signed_in(id) {
             return Err(invalid(format!(
                 "signed in to {id}, which pi prefers over a key; sign out first"
             )));
@@ -174,6 +215,12 @@ impl Models {
         let _write = self.writes.lock().await;
         let ctx = self.context()?;
         refuse_server_declared(&ctx.server, id)?;
+        if ctx.stored.is_account(id) {
+            return Err(invalid(format!(
+                "{id} is an account of {}; edit that gateway",
+                ctx.stored.base_of(id)
+            )));
+        }
         merge::gateway_route(id, &gateway)
             .map_err(invalid)?
             .resolve(ctx.sandbox.allow_loopback_upstreams)
@@ -197,21 +244,52 @@ impl Models {
         self.list().await
     }
 
-    /// `models.remove`: a stored key, or a gateway with its key.
+    /// `models.remove`: a stored key, a gateway with its key, or an added account with its key
+    /// or sign-in. A provider's first account keeps its name.
     pub async fn remove(&self, p: ModelsProviderParams) -> Result<ModelsState, RpcError> {
         let id = p.provider.as_str();
         let _write = self.writes.lock().await;
         let ctx = self.context()?;
         let mut stored = ctx.stored;
         let mut keys = ctx.keys;
-        let had_key = keys.remove(id);
+        let account = stored.is_account(id);
         let entry = stored.providers.remove(id).unwrap_or_default();
-        if !had_key && entry.key.is_none() && entry.gateway.is_none() {
+        if entry.gateway.is_some() && stored.accounts_of(id).next().is_some() {
+            return Err(invalid(format!(
+                "the gateway {id} has other accounts; remove them first"
+            )));
+        }
+        let had_key = keys.remove(id);
+        if !account && !had_key && entry.key.is_none() && entry.gateway.is_none() {
             return Err(not_found(Resource::Provider, id));
+        }
+        if account {
+            self.store.remove_account_dir(id).map_err(internal)?;
+            if stored.defaults.provider.as_deref() == Some(id) {
+                stored.defaults.provider = None;
+                stored.defaults.model = None;
+            }
+        } else if entry.name.is_some() {
+            let name = entry.name;
+            stored.providers.insert(
+                id.to_owned(),
+                StoredProvider {
+                    name,
+                    ..StoredProvider::default()
+                },
+            );
         }
         self.store.save_keys(&keys).map_err(internal)?;
         self.store.save(&stored).map_err(internal)?;
-        self.changed(&p.by, id, "removed");
+        self.changed(
+            &p.by,
+            id,
+            if account {
+                "account removed"
+            } else {
+                "removed"
+            },
+        );
         self.list().await
     }
 
@@ -220,14 +298,87 @@ impl Models {
         let id = p.provider.as_str();
         let _write = self.writes.lock().await;
         let ctx = self.context()?;
-        if ctx.server.auth_type(id) != Some("oauth") {
+        if !ctx.signed_in(id) {
             return Err(invalid(format!("not signed in to {id}")));
         }
-        let agent_dir = agent_dir(&ctx.sandbox)?;
+        let (dir, signed_in) = self.login_dir(&ctx, id)?;
         let helper = self.models_helper(&ctx.sandbox)?;
-        helper.logout(&agent_dir, id).await.map_err(internal)?;
+        helper.logout(&dir, &signed_in).await.map_err(internal)?;
         self.changed(&p.by, id, "signed out");
         self.list().await
+    }
+
+    /// `models.add_account`: a named account of a preset or gateway, without a credential yet.
+    pub async fn add_account(&self, p: ModelsAddAccountParams) -> Result<ModelsState, RpcError> {
+        let name = accounts::valid_name(&p.name).map_err(invalid)?;
+        let base = p.provider.as_str();
+        let _write = self.writes.lock().await;
+        let ctx = self.context()?;
+        if ctx.stored.is_account(base) {
+            return Err(invalid(format!(
+                "{base} is an account; add accounts to {}",
+                ctx.stored.base_of(base)
+            )));
+        }
+        if !accounts::can_have_accounts(&ctx.stored, base) {
+            return Err(invalid(format!(
+                "{base} can't have accounts here (presets and gateways can)"
+            )));
+        }
+        refuse_duplicate_name(&ctx.stored, base, None, &name)?;
+        let known: Vec<String> = match self.catalog(&ctx).await {
+            Ok(catalog) => catalog.providers.into_iter().map(|p| p.id).collect(),
+            Err(_) => Vec::new(),
+        };
+        let id = accounts::new_id(base, &name, |id| {
+            presets::preset(id).is_some()
+                || ctx.stored.providers.contains_key(id)
+                || ctx.keys.contains(id)
+                || ctx.server.declares(id).is_some()
+                || ctx.server.auth.contains_key(id)
+                || known.iter().any(|k| k == id)
+        });
+        Name::new(&id).map_err(|e| invalid(e.to_string()))?;
+        let mut stored = ctx.stored;
+        stored.providers.insert(
+            id.clone(),
+            StoredProvider {
+                account_of: Some(base.to_owned()),
+                name: Some(name.clone()),
+                ..StoredProvider::default()
+            },
+        );
+        self.store.save(&stored).map_err(internal)?;
+        self.changed(&p.by, &id, &format!("account {name} added to {base}"));
+        self.list().await
+    }
+
+    /// `models.rename_account`.
+    pub async fn rename_account(
+        &self,
+        p: ModelsRenameAccountParams,
+    ) -> Result<ModelsState, RpcError> {
+        let name = accounts::valid_name(&p.name).map_err(invalid)?;
+        let id = p.provider.as_str();
+        let _write = self.writes.lock().await;
+        let mut stored = self.context()?.stored;
+        let base = stored.base_of(id).to_owned();
+        if !stored.is_account(id) && !accounts::can_have_accounts(&stored, id) {
+            return Err(not_found(Resource::Provider, id));
+        }
+        refuse_duplicate_name(&stored, &base, Some(id), &name)?;
+        stored.providers.entry(id.to_owned()).or_default().name = Some(name.clone());
+        self.store.save(&stored).map_err(internal)?;
+        self.changed(&p.by, id, &format!("account renamed to {name}"));
+        self.list().await
+    }
+
+    /// `models.accounts`.
+    pub fn accounts(&self) -> Result<ModelsAccounts, RpcError> {
+        let stored = self.store.load().map_err(internal)?;
+        Ok(ModelsAccounts {
+            accounts: accounts::list(&stored),
+        })
     }
 
     /// `models.set_defaults`.
@@ -303,12 +454,14 @@ impl Models {
                 "{id} has an API key here, which a sign-in would replace; remove it first"
             )));
         }
-        let agent_dir = agent_dir(&ctx.sandbox)?;
-        create_private_dir(&agent_dir).map_err(internal)?;
-        let mut command = self
-            .models_helper(&ctx.sandbox)?
-            .command("login", &agent_dir);
-        command.arg("--provider").arg(id);
+        let (dir, signed_in) = self.login_dir(&ctx, id)?;
+        if ctx.stored.is_account(id) {
+            self.store.create_account_dir(id).map_err(internal)?;
+        } else {
+            create_private_dir(&dir).map_err(internal)?;
+        }
+        let mut command = self.models_helper(&ctx.sandbox)?.command("login", &dir);
+        command.arg("--provider").arg(&signed_in);
         let generation = self.generation.clone();
         let (provider, by) = (id.to_owned(), device(&p.by));
         let state = self
@@ -354,12 +507,38 @@ impl Models {
         let keys = self.store.keys().map_err(internal)?;
         let mut stored = self.store.load().map_err(internal)?;
         stored.classify_keys(&keys);
+        let account_auth = stored
+            .providers
+            .iter()
+            .filter(|(_, p)| p.account_of.is_some())
+            .map(|(id, _)| (id.clone(), self.store.account_auth(id)))
+            .collect();
+        let usage = self
+            .usage
+            .as_ref()
+            .map(|source| accounts::usage(source, UnixMillis::now()))
+            .unwrap_or_default();
         Ok(Context {
             server: ServerConfig::load(&sandbox),
             stored,
             keys,
+            account_auth,
+            usage,
             sandbox,
         })
+    }
+
+    /// Where `id` signs in, and the provider pi signs in to there: the agent daemon's agent dir
+    /// for a provider's first account, its own directory for an added one.
+    fn login_dir(&self, ctx: &Context, id: &str) -> Result<(AbsPath, String), RpcError> {
+        if ctx.stored.is_account(id) {
+            Ok((
+                self.store.account_dir(id),
+                ctx.stored.base_of(id).to_owned(),
+            ))
+        } else {
+            Ok((agent_dir(&ctx.sandbox)?, id.to_owned()))
+        }
     }
 
     /// Logs a change and invalidates the model list.
@@ -387,8 +566,44 @@ impl Models {
         catalog
     }
 
+    /// pi's catalog of the merged config. Also keeps the model definitions of presets with
+    /// added accounts up to date, which the accounts' providers are defined with: when they
+    /// changed, the catalog is asked again with them.
     async fn fresh_catalog(&self, ctx: &Context) -> Result<Catalog, String> {
         let helper = self.models_helper(&ctx.sandbox).map_err(|e| e.message)?;
+        let mut bases: Vec<String> = ctx
+            .stored
+            .providers
+            .values()
+            .filter_map(|p| p.account_of.clone())
+            .filter(|base| presets::preset(base).is_some())
+            .collect();
+        bases.sort();
+        bases.dedup();
+        let catalog = self.list_catalog(ctx, &helper, &bases).await?;
+        let mut definitions = self.store.definitions();
+        let changed = bases
+            .iter()
+            .any(|base| catalog.definitions.get(base) != definitions.get(base));
+        if !changed {
+            return Ok(catalog);
+        }
+        for base in &bases {
+            match catalog.definitions.get(base) {
+                Some(models) => definitions.insert(base.clone(), models.clone()),
+                None => definitions.remove(base),
+            };
+        }
+        self.store.save_definitions(&definitions)?;
+        self.list_catalog(ctx, &helper, &[]).await
+    }
+
+    async fn list_catalog(
+        &self,
+        ctx: &Context,
+        helper: &Helper,
+        definitions: &[String],
+    ) -> Result<Catalog, String> {
         let mut sandbox = ctx.sandbox.clone();
         merge::apply(&self.dirs, &mut sandbox);
         let dir = self.store.catalog_dir();
@@ -397,7 +612,7 @@ impl Models {
             ..sandbox.agent_dir
         };
         build_agent_config(&dir, &spec).map_err(|e| e.to_string())?;
-        helper.list(&dir).await
+        helper.list(&dir, definitions).await
     }
 
     async fn state(&self, ctx: &Context) -> ModelsState {
@@ -430,6 +645,18 @@ impl Models {
             .filter(|p| ctx.server.declares(p).is_none())
             .map(str::to_owned)
             .collect();
+        let oauth_accounts = ctx
+            .account_auth
+            .keys()
+            .filter(|id| ctx.signed_in(id))
+            .map(|id| {
+                let account = OAuthAccount {
+                    agent_dir: self.store.account_dir(id),
+                    provider: ctx.stored.base_of(id).to_owned(),
+                };
+                (id.clone(), account)
+            })
+            .collect();
         Ok(CredentialManifest {
             agent_dir,
             api_key_providers,
@@ -439,6 +666,7 @@ impl Models {
                 path: self.store.keys_path(),
                 providers: stored,
             }),
+            oauth_accounts,
         })
     }
 
@@ -466,7 +694,8 @@ impl Models {
     }
 }
 
-/// The rows of Settings › Models: presets, gateways, the server's providers, other sign-ins.
+/// The rows of Settings › Models: presets, gateways, the server's providers, other sign-ins,
+/// each provider followed by the accounts added to it.
 fn rows(ctx: &Context, catalog: Option<&Catalog>) -> Vec<ModelProvider> {
     let mut ids: Vec<String> = presets::PRESETS.iter().map(|p| p.id.to_owned()).collect();
     let mut more: Vec<String> = ctx
@@ -477,26 +706,37 @@ fn rows(ctx: &Context, catalog: Option<&Catalog>) -> Vec<ModelProvider> {
         .map(|(id, _)| id.clone())
         .chain(ctx.server.declared())
         .chain(ctx.server.signed_in())
-        .filter(|id| !ids.contains(id))
+        .filter(|id| !ids.contains(id) && !ctx.stored.is_account(id))
         .collect();
     more.sort();
     more.dedup();
     ids.extend(more);
-    ids.iter().map(|id| row(ctx, catalog, id)).collect()
+    ids.iter()
+        .flat_map(|id| std::iter::once(id.as_str()).chain(ctx.stored.accounts_of(id)))
+        .map(|id| row(ctx, catalog, id))
+        .collect()
 }
 
 fn row(ctx: &Context, catalog: Option<&Catalog>, id: &str) -> ModelProvider {
-    let preset = presets::preset(id);
+    let account = ctx.stored.is_account(id);
+    let base = ctx.stored.base_of(id);
+    let preset = presets::preset(base);
     let stored = ctx.stored.providers.get(id).cloned().unwrap_or_default();
+    let base_gateway = ctx
+        .stored
+        .providers
+        .get(base)
+        .and_then(|p| p.gateway.as_ref());
     let declared = ctx.server.declares(id);
-    let managed = stored.key.is_some() || stored.gateway.is_some();
+    let managed = stored.key.is_some() || stored.gateway.is_some() || account;
     let label = preset
         .map(|p| p.label.to_owned())
         .or_else(|| {
-            let c = catalog?.providers.iter().find(|p| p.id == id)?;
+            let c = catalog?.providers.iter().find(|p| p.id == base)?;
             Some(c.name.clone())
         })
-        .unwrap_or_else(|| id.to_owned());
+        .unwrap_or_else(|| base.to_owned());
+    let can_have_accounts = accounts::can_have_accounts(&ctx.stored, base);
     ModelProvider {
         id: id.to_owned(),
         label,
@@ -506,51 +746,57 @@ fn row(ctx: &Context, catalog: Option<&Catalog>, id: &str) -> ModelProvider {
             (None, false) => ProviderSource::None,
         },
         takes_key: declared.is_none()
-            && (preset.and_then(|p| p.api_key).is_some() || stored.gateway.is_some()),
-        token_prefix: presets::pasted_token(id)
+            && (preset.and_then(|p| p.api_key).is_some() || base_gateway.is_some()),
+        token_prefix: presets::pasted_token(base)
             .filter(|_| declared.is_none())
             .map(|t| t.prefix.to_owned()),
         can_sign_in: can_sign_in(ctx, catalog, id),
         key: stored.key,
-        signed_in: (ctx.server.auth_type(id) == Some("oauth")).then(|| SignedIn {
-            account: ctx.server.account(id),
-        }),
+        signed_in: ctx.sign_in(id),
         gateway: stored.gateway,
         test: stored.test,
         clash: declared
             .filter(|_| managed)
             .map(|why| format!("The server's config wins: {why}")),
+        account: can_have_accounts.then(|| ctx.stored.account_name(id)),
+        account_of: account.then(|| base.to_owned()),
+        can_add_account: !account && can_have_accounts,
+        usage: ctx.usage.get(id).copied(),
     }
 }
 
-/// Whether pi can sign in to `id` and sessions could then use it: a subscription preset, or a
-/// server-declared provider pi has a sign-in for.
+/// Whether pi can sign in to `id` and sessions could then use it: a subscription preset (or an
+/// account of one), or a server-declared provider pi has a sign-in for.
 fn can_sign_in(ctx: &Context, catalog: Option<&Catalog>, id: &str) -> bool {
-    let preset = presets::preset(id).and_then(|p| p.subscription).is_some();
-    let server = ctx.server.route(id).is_some()
+    let base = ctx.stored.base_of(id);
+    let preset = presets::preset(base).and_then(|p| p.subscription).is_some();
+    let server = !ctx.stored.is_account(id)
+        && ctx.server.route(id).is_some()
         && catalog.is_some_and(|c| c.providers.iter().any(|p| p.id == id && p.oauth));
     preset || server
 }
 
-/// What `models.test` requests for `id`: `None` for a sign-in (a fresh token is the test).
+/// What `models.test` requests for `id` (a provider, or an account of one): `None` for a
+/// sign-in (a fresh token is the test).
 fn probe_target(ctx: &Context, id: &str) -> Result<Option<ProbeRequest>, RpcError> {
-    if ctx.server.auth_type(id) == Some("oauth") {
+    if ctx.signed_in(id) {
         return Ok(None);
     }
+    let base = ctx.stored.base_of(id);
     let url = |origin: &str, path: &str| format!("{}{path}", origin.trim_end_matches('/'));
     let stored = ctx.stored.providers.get(id);
     let declared = ctx.server.declares(id).is_some();
-    let preset = presets::preset(id).and_then(|p| p.api_key);
+    let preset = presets::preset(base).and_then(|p| p.api_key);
     if let Some(route) = ctx.server.route(id) {
         // The server's route; the preset's test path, or a gateway's model list.
         let path = match (preset, ctx.server.models.get(id)) {
             (Some((_, probe)), _) => probe.path.to_owned(),
             (None, Some(provider)) => {
-                let base = provider
+                let base_url = provider
                     .get("baseUrl")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let (_, path) = merge::split_base_url(base).map_err(invalid)?;
+                let (_, path) = merge::split_base_url(base_url).map_err(invalid)?;
                 format!("{path}/models")
             }
             (None, None) => return Err(unsupported(format!("no test for {id}"))),
@@ -577,7 +823,12 @@ fn probe_target(ctx: &Context, id: &str) -> Result<Option<ProbeRequest>, RpcErro
     if declared {
         return Err(unsupported(format!("{id} has no route on this server")));
     }
-    if let Some(gateway) = stored.and_then(|s| s.gateway.as_ref()) {
+    if let Some(gateway) = ctx
+        .stored
+        .providers
+        .get(base)
+        .and_then(|s| s.gateway.as_ref())
+    {
         let (header, format) = presets::gateway_header(gateway.auth_header)
             .ok_or_else(|| invalid("unknown auth header style"))?;
         return Ok(Some(ProbeRequest {
@@ -596,7 +847,7 @@ fn probe_target(ctx: &Context, id: &str) -> Result<Option<ProbeRequest>, RpcErro
             .collect()
     };
     if stored.and_then(|s| s.key.as_ref()).map(|k| k.kind) == Some(KeyKind::SubscriptionToken)
-        && let Some(sub) = presets::preset(id).and_then(|p| p.subscription)
+        && let Some(sub) = presets::preset(base).and_then(|p| p.subscription)
         && let Some(token) = sub.pasted
     {
         return Ok(Some(ProbeRequest {
@@ -623,6 +874,26 @@ fn agent_dir(sandbox: &SandboxSettings) -> Result<AbsPath, RpcError> {
         .user_agent_dir
         .clone()
         .ok_or_else(|| internal("no pi agent dir"))
+}
+
+/// Refuses `name` for an account of `base` when another of its accounts (than `except`) has
+/// it.
+fn refuse_duplicate_name(
+    stored: &Stored,
+    base: &str,
+    except: Option<&str>,
+    name: &str,
+) -> Result<(), RpcError> {
+    let taken = std::iter::once(base)
+        .chain(stored.accounts_of(base))
+        .filter(|id| Some(*id) != except)
+        .any(|id| stored.account_name(id) == name);
+    if taken {
+        return Err(invalid(format!(
+            "{base} already has an account named {name}"
+        )));
+    }
+    Ok(())
 }
 
 fn refuse_server_declared(server: &ServerConfig, id: &str) -> Result<(), RpcError> {

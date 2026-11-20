@@ -944,6 +944,64 @@ fn models_wire_shapes() {
             "gateway": {"base_url": "https://llm.example.com/v1", "models": ["m1"], "auth_header": "x_api_key"}
         }),
     );
+    golden(
+        &ModelsAddAccountParams {
+            provider: "anthropic".into(),
+            name: "work".into(),
+            by: None,
+        },
+        json!({"provider": "anthropic", "name": "work"}),
+    );
+    golden(
+        &ModelsRenameAccountParams {
+            provider: "anthropic-work".into(),
+            name: "acme".into(),
+            by: None,
+        },
+        json!({"provider": "anthropic-work", "name": "acme"}),
+    );
+    golden(
+        &ModelsAccounts {
+            accounts: vec![ModelAccount {
+                provider: "anthropic-work".into(),
+                of: "anthropic".into(),
+                name: "work".into(),
+            }],
+        },
+        json!({"accounts": [{"provider": "anthropic-work", "of": "anthropic", "name": "work"}]}),
+    );
+    let totals = |cost: f64| UsageTotals {
+        tokens: TokenUsage {
+            input: 10,
+            output: 2,
+            cache_read: 0,
+            cache_write: 0,
+        },
+        cost,
+    };
+    golden(
+        &AccountUsage {
+            day: totals(0.5),
+            week: totals(1.0),
+            total: totals(2.0),
+        },
+        json!({
+            "day": {"tokens": {"input": 10, "output": 2, "cache_read": 0, "cache_write": 0}, "cost": 0.5},
+            "week": {"tokens": {"input": 10, "output": 2, "cache_read": 0, "cache_write": 0}, "cost": 1.0},
+            "total": {"tokens": {"input": 10, "output": 2, "cache_read": 0, "cache_write": 0}, "cost": 2.0}
+        }),
+    );
+    // A provider row from before accounts decodes without them.
+    let old: ModelProvider = serde_json::from_value(json!({
+        "id": "anthropic", "label": "Anthropic", "source": "ui", "takes_key": true,
+        "can_sign_in": true, "key": null, "signed_in": null, "gateway": null, "test": null,
+        "clash": null
+    }))
+    .unwrap();
+    assert_eq!(
+        (old.account, old.account_of, old.can_add_account, old.usage),
+        (None, None, false, None)
+    );
     // Newer steps, sources and header styles decode as unknown.
     let step: LoginStep = serde_json::from_value(json!({"kind": "passkey"})).unwrap();
     assert_eq!(step, LoginStep::Unknown);

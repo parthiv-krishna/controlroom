@@ -128,17 +128,22 @@ impl ServerConfig {
     /// The account of `provider`'s sign-in, when the credential names one: an `email` field,
     /// or an `email` claim of its access token (top level or one object deep).
     pub fn account(&self, provider: &str) -> Option<String> {
-        let entry = self.auth.get(provider)?;
-        if let Some(email) = entry.get("email").and_then(Value::as_str) {
-            return Some(email.to_owned());
-        }
-        let claims = entry
-            .get("access")
-            .and_then(Value::as_str)
-            .and_then(jwt_payload)?;
-        let email = |v: &Value| v.get("email").and_then(Value::as_str).map(str::to_owned);
-        email(&claims).or_else(|| claims.as_object()?.values().find_map(email))
+        signed_in_as(self.auth.get(provider)?)
     }
+}
+
+/// The account an OAuth credential (an `auth.json` entry) names: an `email` field, or an
+/// `email` claim of its access token (top level or one object deep).
+pub fn signed_in_as(entry: &Value) -> Option<String> {
+    if let Some(email) = entry.get("email").and_then(Value::as_str) {
+        return Some(email.to_owned());
+    }
+    let claims = entry
+        .get("access")
+        .and_then(Value::as_str)
+        .and_then(jwt_payload)?;
+    let email = |v: &Value| v.get("email").and_then(Value::as_str).map(str::to_owned);
+    email(&claims).or_else(|| claims.as_object()?.values().find_map(email))
 }
 
 /// The payload of a JWT, unverified.

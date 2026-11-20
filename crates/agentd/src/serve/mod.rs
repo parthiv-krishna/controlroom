@@ -176,7 +176,10 @@ async fn serve_async(dirs: Dirs, instance: instance::Instance) -> anyhow::Result
         runtime: runtime.clone(),
         dirs: dirs.clone(),
         controllers: controller::Controllers::default(),
-        models: crate::models::Models::new(dirs.clone()),
+        models: crate::models::Models::new(dirs.clone()).with_usage(Arc::new({
+            let runtime = runtime.clone();
+            move |since| runtime.provider_usage(since)
+        })),
         capabilities: vec![
             Capability::TODOS,
             Capability::JOBS,

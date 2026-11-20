@@ -144,7 +144,7 @@ impl PiDriver {
             Out::EntryAppended {
                 entry:
                     Entry::Usage { usage: Some(usage) } | Entry::BranchSummary { usage: Some(usage) },
-            } => stream::report_usage(&usage, false, out),
+            } => stream::report_usage(&usage, false, self.options.provider(), out),
             Out::EntryAppended { .. } | Out::Unknown => {}
         }
     }
