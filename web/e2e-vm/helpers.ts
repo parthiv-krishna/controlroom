@@ -116,7 +116,9 @@ export function header(page: Page): Locator {
 /** Picks an action from the session header's ⋯ menu. */
 export async function sessionAction(page: Page, name: string | RegExp): Promise<void> {
   await header(page).getByRole('button', { name: 'Session actions' }).click();
-  await header(page).getByRole('menu').getByRole(/^Schedules/.test(String(name)) ? 'menuitemcheckbox' : 'menuitem', { name }).click();
+  // Some actions are toggles (Schedules is a menuitemcheckbox); match either role by name.
+  const menu = header(page).getByRole('menu');
+  await menu.getByRole('menuitem', { name }).or(menu.getByRole('menuitemcheckbox', { name })).click();
 }
 
 /** The open session's timeline. */
