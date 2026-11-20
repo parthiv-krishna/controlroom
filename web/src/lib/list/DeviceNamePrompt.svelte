@@ -1,6 +1,5 @@
 <script lang="ts">
-  // First load: an unobtrusive inline "Name this device" bar, pre-filled with a guess from the user
-  // agent. Skipping keeps the guess.
+  // First load: a one-time "Name this device" card at the bottom of the session list, pre-filled with a guess from the user agent. Skipping keeps the guess.
   import { useApp } from '../app/app.svelte';
 
   const client = useApp().client;
@@ -29,7 +28,7 @@
 </div>
 
 <style>
-  .devname { margin: 10px 12px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg2); display: flex; flex-direction: column; gap: 6px; }
+  .devname { flex: none; margin: 8px; padding: 8px 10px; border: 1px solid var(--line); border-left: 4px solid var(--info); border-radius: 8px; background: var(--bg2); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
   .row { display: flex; gap: 6px; align-items: center; }
   input { flex: 1; min-width: 0; padding: 4px 8px; font-size: 13px; }
 </style>

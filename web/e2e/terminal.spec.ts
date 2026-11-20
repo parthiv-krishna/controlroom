@@ -67,7 +67,7 @@ test('keys: Ctrl-h/j/k/l navigate unless a pass-through program is in the foregr
   await dock.locator('.xterm').click();
   await page.keyboard.type('vim');
   await page.keyboard.press('Enter');
-  await expect(dock.locator('.meta.pass')).toContainText('vim in the foreground · Ctrl-h/j/k/l go to it');
+  await expect(dock.locator('.meta.pass')).toHaveText('Ctrl-h/j/k/l go to vim');
   await page.keyboard.press('Control+k');
   expect(await inTerminal(page)).toBe(true);
   await page.keyboard.type(':q');
@@ -176,7 +176,7 @@ test('your terminals: "+" opens one sandboxed, or unsandboxed after a confirm; t
   await dock.locator('.xterm').click();
   await page.keyboard.type('vim');
   await page.keyboard.press('Enter');
-  await expect(dock.locator('.meta')).toContainText('vim in the foreground');
+  await expect(dock.locator('.meta')).toContainText('vim');
   await tabs.getByRole('button', { name: 'End terminal buildbox' }).click();
   const ask = page.getByRole('alertdialog', { name: 'End terminal buildbox?' });
   await expect(ask).toContainText('vim is still running in it.');

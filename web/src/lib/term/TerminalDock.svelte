@@ -104,7 +104,7 @@
     connecting: 'Connecting…',
     live: '',
     detached: '',
-    offline: 'Connection lost · reconnecting…',
+    offline: 'Reconnecting…',
     ended: '',
     signed_out: 'Signed out',
   };
@@ -132,7 +132,7 @@
             {@const raw = isUnsandboxed(shell)}
             <span class="tabw" class:mine class:raw class:on>
               <!-- The tab's text starts with its badge or name: no whitespace before them. -->
-              <button class="tab" role="tab" aria-selected={on} title="{g.label} · {shell.cwd}" onclick={() => pick(shell)}
+              <button class="tab" role="tab" aria-selected={on} title="{g.label}: {shell.cwd}" onclick={() => pick(shell)}
                 >{#if mine}<span class="who">{raw ? 'unsandboxed' : 'you'}</span>{' '}{/if}{tabLabel(shell)}
                 {#if !mine}
                   {#if shell.state.state === 'waiting_input'}<span class="mark wait">⌨ input</span>
@@ -158,12 +158,10 @@
     {:else if st.open && cur}
       {#if isUnsandboxed(cur)}
         {@const where = whereOf(cur)}
-        <div class="banner unsandboxed" role="status">UNSANDBOXED · your terminal, as {where.user ?? 'your SSH user'} on {where.machine}</div>
-      {:else if isMine(cur)}
-        <div class="banner mine" role="status">Your terminal · sandboxed like the agent's shells · the agent can't see it</div>
+        <div class="banner unsandboxed" role="status">UNSANDBOXED: your terminal as {where.user ?? 'your SSH user'} on {where.machine}</div>
       {/if}
       {#if !isMine(cur) && cur.state.state === 'waiting_input'}
-        <div class="banner wait" role="status">⌨ <b>Waiting for input</b> <span class="small">· passwords aren't echoed</span></div>
+        <div class="banner wait" role="status" title="Passwords aren't echoed">⌨ <b>Waiting for input</b></div>
       {/if}
       {#if status.state === 'detached'}
         <div class="banner" role="status">⚠ {status.reason}</div>
@@ -173,8 +171,8 @@
         <div class="banner" role="status">{STATUS[status.state]}</div>
       {/if}
       {#if fg}
-        <div class="meta small" class:pass={passesKeys(fg)}>
-          {fg} in the foreground · {passesKeys(fg) ? 'Ctrl-h/j/k/l go to it' : 'Ctrl-h/j/k/l move between panes'} · Ctrl-\ then a key always goes to the terminal
+        <div class="meta small" class:pass={passesKeys(fg)} title="Ctrl-\ then a key always goes to the terminal">
+          {passesKeys(fg) ? `Ctrl-h/j/k/l go to ${fg}` : `${fg}: Ctrl-h/j/k/l move between panes`}
         </div>
       {/if}
       {#key cur.name}
@@ -213,7 +211,6 @@
   .banner { padding: 4px 12px; font-size: 12.5px; background: #22252c; color: #d7dae0; display: flex; align-items: center; gap: 6px; flex: none; }
   .banner.wait { background: color-mix(in srgb, var(--warn) 30%, #22252c); }
   .banner.unsandboxed { background: var(--bad); color: #fff; font-weight: 600; letter-spacing: 0.02em; }
-  .banner.mine { color: #9aa0ab; }
   .meta { padding: 2px 12px; color: #9aa0ab; background: #16181d; flex: none; }
   .meta.pass { color: #8fb4ff; }
 </style>

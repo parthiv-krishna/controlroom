@@ -69,7 +69,7 @@
     </button>
     <span class="measure" aria-hidden="true"><span class="parts" bind:this={measure}>{#each parts as p (p.key)}<span data-part={p.key}>{p.text}</span>{/each}</span></span>
     {#if open}
-      <div class="pop" role="dialog" aria-label="Session usage" use:dismissable={{ close, anchor: root }}>
+      <div class="pop" role="dialog" aria-label="Session usage" title="Totals for the whole session" use:dismissable={{ close, anchor: root }}>
         <table>
           <tbody>
             {#each parts as p (p.key)}
@@ -77,7 +77,6 @@
             {/each}
           </tbody>
         </table>
-        <div class="note">Tokens and cost add up over the whole session, across every agent run.</div>
       </div>
     {/if}
   </span>
@@ -103,5 +102,4 @@
   th { font-weight: 600; }
   td:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
   td.p { font: 11.5px var(--mono); color: var(--muted); white-space: nowrap; }
-  .note { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
 </style>

@@ -44,7 +44,7 @@
     >
       <div class="ch"><span class="cl">{c.icon} {c.label}</span><span class="muted">{list.length}</span><button class="btn xs ghost" aria-label="Add task to {c.label}" onclick={() => app.newTask(c.id)}>+</button></div>
       <div class="cb">
-        {#each list as t (t.id)}<TaskCard {t} onmove={(status) => move(t, status)} />{:else}<div class="drop">drop here</div>{/each}
+        {#each list as t (t.id)}<TaskCard {t} onmove={(status) => move(t, status)} />{:else}<div class="drop" aria-hidden="true"></div>{/each}
       </div>
     </section>
   {/each}

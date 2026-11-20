@@ -71,6 +71,7 @@
   <button class="mbtn" class:open={view.menu === 'group'} aria-expanded={view.menu === 'group'} title="Group by (gr)" onclick={() => (view.menu = view.menu === 'group' ? null : 'group')}>
     <span class="muted">Group</span> {groupLabel} <span class="caret">▾</span>
   </button>
+  <button class="new" title="New session (n)" aria-label="New session" onclick={() => app.newSession()}>+</button>
   {#if view.menu === 'filter'}
     <div class="menu fmenu" role="dialog" aria-label="Filter" use:dismissable={{ close: () => (view.menu = null), anchor: bar }}>
       <div class="sections">
@@ -99,14 +100,13 @@
     </div>
   {/if}
 </div>
-<div class="chips">
-  <button class="new" onclick={() => app.newSession()} aria-label="New session">+ Session</button>
+{#if n}<div class="chips">
   {#each FACETS as [k] (k)}
     {#each view.filters[k] as v (v)}
       <span class="fchip"><span class="muted">{facetLabel(k)}</span><span class="v">{chipLabel(k, v)}</span><button aria-label="Remove filter" onclick={() => remove(k, v)}>×</button></span>
     {/each}
   {/each}
-</div>
+</div>{/if}
 
 <style>
   .bar { display: flex; gap: 6px; align-items: center; position: relative; }
@@ -131,7 +131,7 @@
   .gmenu { right: 0; padding: 5px; min-width: 160px; display: flex; flex-direction: column; }
   .chk { width: 14px; }
   .chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 8px; }
-  .new { display: inline-flex; align-items: center; gap: 4px; background: var(--fg); color: var(--bg); border: 1px solid var(--fg); border-radius: 8px; padding: 4px 11px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; }
+  .new { display: grid; place-items: center; width: 28px; height: 28px; flex: none; background: var(--fg); color: var(--bg); border: 1px solid var(--fg); border-radius: 8px; padding: 0; font: inherit; font-size: 16px; font-weight: 500; cursor: pointer; }
   .new:hover { opacity: 0.88; }
   .fchip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; background: var(--bg3); border-radius: 999px; padding: 1px 3px 1px 9px; max-width: 100%; }
   .fchip .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
@@ -142,6 +142,6 @@
     .fmenu, .gmenu { position: fixed; left: 0; right: 0; bottom: 0; top: auto; margin: 0; border-radius: 16px 16px 0 0; z-index: 90; padding-bottom: env(safe-area-inset-bottom); }
     .fmenu { max-height: 70dvh; }
     .sections button, .opts label, .gmenu button { min-height: 44px; font-size: 15px; }
-    .new { padding: 8px 12px; font-size: 14px; }
+    .new { width: 38px; height: 38px; font-size: 18px; }
   }
 </style>

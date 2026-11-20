@@ -1,6 +1,7 @@
 <script lang="ts">
-  // One session row: status icon and name; hovering shows a one-line preview and archive (or ↺
-  // undo). Chips: context when filling up, todo progress, idle-with-jobs, subagent roll-up, fold.
+  // One session row: status icon and name; the open row shows a one-line preview (elsewhere it is
+  // the tooltip); hovering shows archive (or ↺ undo). Chips (each with a tooltip): context when
+  // filling up, todo progress, idle-with-jobs, subagent roll-up, fold.
   // Rows drag onto a task (card or group header) to link the session.
   import { useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
@@ -48,7 +49,7 @@
   role="option"
   tabindex="-1"
   aria-selected={on}
-  title={ancestor ? "Parent of a match" : undefined}
+  title={ancestor ? "Parent of a match" : s.preview || undefined}
   draggable="true"
   data-session={s.id}
   ondragstart={dragstart}
@@ -60,11 +61,11 @@
     <div class="name">
       <span class="nm">{displayName(s)}</span>
       {#if s.context && ctxLevel(s.context.used, s.context.size) !== 'ok'}<ContextMeter usage={s.context} compact />{/if}
-      {#if s.todo}<span class="mini" title="Todo · auto-continue {s.todo.auto_continue}">{s.todo.done}/{s.todo.total}</span>{/if}
-      {#if idleJobs}<span class="mini jobs" title="{s.live_work.jobs} jobs running">⚙ {s.live_work.jobs}</span>{/if}
-      {#if ru.approvals}<span class="ru approvals" title="{ru.approvals} subagent(s) need you">↳ ⚑{ru.approvals}</span>
-      {:else if ru.questions}<span class="ru questions" title="{ru.questions} subagent question(s)">↳ ?{ru.questions}</span>
-      {:else if ru.problems}<span class="ru problems" title="{ru.problems} subagent(s) failed">↳ ✕{ru.problems}</span>{/if}
+      {#if s.todo}<span class="mini" title="Todos done: {s.todo.done} of {s.todo.total}">{s.todo.done}/{s.todo.total}</span>{/if}
+      {#if idleJobs}<span class="mini jobs" title="{s.live_work.jobs} background job{s.live_work.jobs === 1 ? '' : 's'} running">⚙ {s.live_work.jobs}</span>{/if}
+      {#if ru.approvals}<span class="ru approvals" title="Subagents that need your approval: {ru.approvals}">↳ ⚑{ru.approvals}</span>
+      {:else if ru.questions}<span class="ru questions" title="Subagents asking a question: {ru.questions}">↳ ?{ru.questions}</span>
+      {:else if ru.problems}<span class="ru problems" title="Subagents that failed: {ru.problems}">↳ ✕{ru.problems}</span>{/if}
       {#if kids}<button class="fold" aria-expanded={!folded} aria-label="{folded ? 'Show' : 'Hide'} subagents" onclick={() => onfold?.()}>{folded ? '▸' : '▾'} {kids}</button>{/if}
     </div>
     <div class="prev">{s.preview}</div>
@@ -91,8 +92,10 @@
   .name { display: flex; align-items: center; gap: 4px; font-weight: 450; }
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .att-approval .name, .att-problem .name, .unread .name { font-weight: 600; }
-  .prev { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-height: 0; opacity: 0; transition: max-height 0.15s ease, opacity 0.15s ease; }
-  .row:hover .prev, .row.on .prev { max-height: 20px; opacity: 1; margin-top: 2px; }
+  /* The preview shows on the open row only (hovering never changes a row's height; the row's
+     tooltip has it). */
+  .prev { display: none; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+  .row.on .prev { display: block; }
   .mini { font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 0 5px; border-radius: 5px; background: var(--bg3); color: var(--muted); flex: none; }
   .mini.jobs { background: none; color: var(--info); border: 1px dashed color-mix(in srgb, var(--info) 50%, var(--line)); }
   .ru { font-size: 10.5px; font-weight: 650; padding: 0 5px; border-radius: 5px; flex: none; }
@@ -105,7 +108,7 @@
   .row:hover .arch { display: grid; }
   .arch:hover { color: var(--fg); }
   @media (hover: none) {
-    .prev { max-height: 20px; opacity: 1; margin-top: 2px; }
+    .prev { display: block; }
     .row:hover .arch { display: none; }
   }
   @media (max-width: 760px) { .row { padding-top: 11px; padding-bottom: 11px; } }

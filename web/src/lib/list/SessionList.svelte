@@ -56,7 +56,6 @@
       {/if}
     </div>
   {/if}
-  {#if !app.client.device.named}<DeviceNamePrompt />{/if}
   <div class="lh"><FilterBar /></div>
   <div class="rows" role="listbox" aria-label="Session list">
     {#each listing.groups as g (g.key)}
@@ -105,6 +104,7 @@
       <div class="empty">Nothing matches.</div>
     {/each}
   </div>
+  {#if !app.client.device.named}<DeviceNamePrompt />{/if}
 </section>
 
 <style>

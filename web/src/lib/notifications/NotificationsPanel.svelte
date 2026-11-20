@@ -37,7 +37,7 @@
 {#snippet head(s: FeedSession)}
   {@const t = tasksFor(app.ctx, s)[0]}
   <div class="ch"><StatusIcon kind={statusKind(s)} /><b>{displayName(s)}</b><span class="t">{ago(s.updated_at)}</span></div>
-  <div class="sub">{t ? `${t.title} · ` : ''}{machinesOf(s).map((id) => app.client.feed.machines.get(id)?.name ?? '?').join(', ')}</div>
+  <div class="sub">{t ? `${t.title}, ` : ''}{machinesOf(s).map((id) => app.client.feed.machines.get(id)?.name ?? '?').join(', ')}</div>
 {/snippet}
 
 <aside class="np" class:overlay aria-label="Notifications" data-pane="notifications">
@@ -89,7 +89,7 @@
     {/each}
     {#each unreachable as { machine, sessions } (machine.id)}
       <div class="off">
-        <StatusIcon kind="offline" /><span><b>{machine.name}</b> {connLabel(machine)} · {sessions} session{sessions === 1 ? '' : 's'} with a workspace there</span>
+        <StatusIcon kind="offline" /><span title="{sessions} session{sessions === 1 ? '' : 's'} with a workspace there"><b>{machine.name}</b> {connLabel(machine)}</span>
         {#if machine.connectivity.state === 'incompatible'}
           <button class="btn sm" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: machine.id })}>Upgrade</button>
         {:else}

@@ -17,7 +17,7 @@
   const reorder = (q: QueueItem, to_index: number) => app.client.call('queue.reorder', { ...onSession(s), queue_id: q.id, to_index });
 </script>
 
-<div class="queue" aria-label="Queue">
+<div class="queue" class:one={items.length === 1} aria-label="Queue">
   <div class="qh">
     <b>Queue</b> <span class="muted">({s.queue.len})</span>
     {#if s.queue.paused}<span class="paused">paused</span><button class="btn xs primary" disabled={!online} onclick={() => app.client.call('queue.resume', onSession(s))}>Resume</button>{/if}
@@ -33,11 +33,13 @@
       {#if q.sending}
         <span class="chip sendchip" title="Sending"><span class="spin"></span> sending</span>
       {:else}
+        <span class="ra">
         <button class="btn xs" disabled={!online} onclick={() => app.client.call('queue.send_now', { ...onSession(s), queue_id: q.id })}>⚡ Send now</button>
         <button class="btn xs ghost" title="Move up" aria-label="Move up" disabled={!online || i === 0} onclick={() => reorder(q, i - 1)}>↑</button>
         <button class="btn xs ghost" title="Move down" aria-label="Move down" disabled={!online || i === items.length - 1} onclick={() => reorder(q, i + 1)}>↓</button>
         <button class="btn xs ghost" title="Edit" aria-label="Edit" disabled={!online} onclick={() => edit(q)}>✎</button>
         <button class="btn xs ghost" title="Remove" aria-label="Remove" disabled={!online} onclick={() => app.client.call('queue.remove', { ...onSession(s), queue_id: q.id })}>✕</button>
+        </span>
       {/if}
     </div>
   {/each}
@@ -53,5 +55,9 @@
   .i { color: var(--muted); width: 16px; }
   .text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sendchip { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, var(--line)); }
+  /* Row actions show on hover (or focus); a single item keeps them. */
+  .ra { display: inline-flex; gap: 4px; visibility: hidden; }
+  .item:hover .ra, .item:focus-within .ra, .one .ra { visibility: visible; }
+  @media (hover: none) { .ra { visibility: visible; } }
   @media (max-width: 760px) { .queue { width: auto; margin: 0 12px; } }
 </style>

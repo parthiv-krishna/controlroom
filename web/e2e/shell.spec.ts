@@ -125,7 +125,7 @@ test('phone: list, full-screen conversation with its panels, back', async ({ bro
 test('offline: a push deep link pre-renders, then "can\'t reach server"', async ({ page }) => {
   await page.goto(`/?offline#/s/${S.flaky}?n=flaky%20e2e%20tests&m=devbox&st=Working`);
   await expect(page.getByRole('heading', { name: 'flaky e2e tests' })).toBeVisible();
-  await expect(page.getByText('devbox · Working')).toBeVisible();
+  await expect(page.getByText('Working on devbox')).toBeVisible();
   await expect(page.getByText("Can't reach server")).toBeVisible();
 });
 

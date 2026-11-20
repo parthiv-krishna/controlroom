@@ -20,7 +20,7 @@
     <div class="card">
       <div class="small muted">Notification</div>
       <h2>{link.name ?? 'Session'}</h2>
-      <div class="muted">{link.machine ?? ''}{link.state ? ` · ${link.state}` : ''}</div>
+      <div class="muted">{[link.state, link.machine && `on ${link.machine}`].filter(Boolean).join(' ')}</div>
     </div>
   {/if}
   <div class="msg">
@@ -28,7 +28,7 @@
       <span class="spin"></span><b>Connecting…</b>
     {:else}
       <span class="spin"></span>
-      <div><b>Can't reach server</b><div class="small muted">Retrying automatically{since ? ` · since ${ago(since, now)}` : ''}</div></div>
+      <div><b>Can't reach server</b><div class="small muted">Retrying{since ? ` since ${ago(since, now)}` : ''}</div></div>
     {/if}
   </div>
 </div>

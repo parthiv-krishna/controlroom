@@ -21,7 +21,7 @@
 
 {#each away as machine (machine.id)}
   {#if machine.connectivity.state === 'unreachable'}
-    <div class="banner warn" data-machine-banner={machine.name} title="Tool calls there wait up to {duration(machine.grace_s * 1000)}">⚠ <b>{machine.name}</b> unreachable · {ago(machine.last_seen)} <button class="btn sm" aria-label="Retry connecting to {machine.name}" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: machine.id })}>Retry</button></div>
+    <div class="banner warn" data-machine-banner={machine.name} title="Tool calls there wait up to {duration(machine.grace_s * 1000)}">⚠ <b>{machine.name}</b> unreachable since {ago(machine.last_seen)} <button class="btn sm" aria-label="Retry connecting to {machine.name}" disabled={!app.client.online} onclick={() => app.client.call('machines.reconnect', { machine_id: machine.id })}>Retry</button></div>
   {:else if machine.connectivity.state === 'action_required'}
     <div class="banner act"><MachineFix m={machine} compact /></div>
   {:else if machine.connectivity.state === 'incompatible'}

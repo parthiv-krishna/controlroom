@@ -34,7 +34,10 @@ test('composer: Enter queues while busy, Esc stops; queue items show sending and
   await start(page, S.flaky);
   const queue = page.getByLabel('Queue');
   await expect(queue.getByText('sending')).toBeVisible();
-  await queue.getByRole('button', { name: '⚡ Send now' }).first().click();
+  // Row actions show on hover.
+  const row = queue.locator('.item').filter({ hasNotText: 'sending' }).first();
+  await row.hover();
+  await row.getByRole('button', { name: '⚡ Send now' }).click();
   const composer = page.getByLabel('Message');
   await composer.fill('Also check the retry logic');
   await expect(page.getByRole('button', { name: '↵ Queue' })).toBeVisible();
@@ -83,7 +86,7 @@ test('notifications: blocking and non-blocking tiers; Dismiss answers declined',
   await expect(panel.getByText('Questions', { exact: true })).toBeVisible();
   await expect(panel.getByText('Failed or stopped')).toBeVisible();
   await expect(panel.getByText('Finished')).toBeVisible();
-  await expect(panel.getByText(/gpubox.*1 session with a workspace there/)).toBeVisible();
+  await expect(panel.locator('[title="1 session with a workspace there"]')).toContainText('gpubox');
   await panel.locator('[data-request="req-12"]').getByRole('button', { name: 'Dismiss' }).click();
   const [call] = await calls(page, 'request.respond');
   expect(call.params).toMatchObject({ id: S.blog, response: { kind: 'dismiss' } });

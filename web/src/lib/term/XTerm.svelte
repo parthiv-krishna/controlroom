@@ -153,7 +153,7 @@
 
 <!-- data-term-pass is PASS_ATTR (keys.ts): the global key handler leaves Ctrl-h/j/k/l to us. -->
 <div class="xt" data-term-pass={passing ? '' : undefined}>
-  {#if prefix}<span class="xt-prefix">Ctrl-\ · the next key goes to the terminal</span>{/if}
+  {#if prefix}<span class="xt-prefix">Ctrl-\: the next key goes to the terminal</span>{/if}
   <div class="xt-host" bind:this={host} aria-label="Terminal {target.shell}"></div>
 </div>
 
