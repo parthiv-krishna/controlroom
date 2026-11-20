@@ -1,21 +1,22 @@
 <script lang="ts">
-  // The shared todo list after a change.
+  // A change of the shared todo list, as one line ("Todo: 2 done, 1 added"); the list itself is in
+  // the todo panel, which a click opens.
+  import { useApp } from '../../app/app.svelte';
+  import { todoDelta } from '../../model/todos';
   import type { ItemOf } from '../../state/timeline.svelte';
+  import { useTimeline } from '../context';
 
   let { item }: { item: ItemOf<'todo'> } = $props();
-  const MARK = { pending: '☐', in_progress: '◐', done: '☑', blocked: '⊘', skipped: '–', unknown: '?' } as const;
+  const app = useApp();
+  const ctx = useTimeline();
+  const delta = $derived(todoDelta(ctx.timeline.todosBefore.get(item.id) ?? [], item.items));
 </script>
 
-<div class="todo">
-  <div class="muted small">Todo list</div>
-  {#each item.items as t (t.id)}
-    <div class="t s-{t.status}"><span aria-hidden="true">{MARK[t.status]}</span> {t.text}{#if t.reason}{' '}<span class="muted">· {t.reason}</span>{/if}</div>
-  {/each}
-</div>
+<button class="todo" title="Show the todo panel" onclick={() => (app.view.panels['todo:' + ctx.s.id] = true)}>
+  <span aria-hidden="true">☑</span> Todo: {delta}
+</button>
 
 <style>
-  .todo { font-size: 13.5px; border-left: 2px solid var(--line); padding-left: 10px; }
-  .s-done, .s-skipped { color: var(--muted); }
-  .s-done { text-decoration: line-through; }
-  .s-blocked { color: var(--warn); }
+  .todo { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; padding: 0; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; text-align: left; }
+  .todo:hover { color: var(--fg); }
 </style>

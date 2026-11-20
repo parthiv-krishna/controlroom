@@ -30,7 +30,7 @@
       }
       case 'steer': {
         const d = device(t.device);
-        return { label: d ? `steer · ${d}` : 'steer', title: 'Steered' };
+        return { label: d ? `steered from ${d}` : 'steered', title: 'Steered' };
       }
       case 'inject':
         return { label: t.label || INJECT[t.origin], title: `Woken by an injected ${INJECT[t.origin]}` };
@@ -48,8 +48,9 @@
   }
   const t = $derived(trigger(item.trigger));
   const when = $derived(new Date(item.ts).toLocaleString());
-  /** Started by you, and running or ended normally. */
-  const quiet = $derived((item.trigger.kind === 'user' || item.trigger.kind === 'queue') && (item.outcome === null || item.outcome === 'completed'));
+  const normal = $derived(item.outcome === null || item.outcome === 'completed');
+  /** Running or ended normally, and started by you or announced by the event row before it. */
+  const quiet = $derived(normal && (item.trigger.kind === 'user' || item.trigger.kind === 'queue' || ctx.timeline.announced.has(item.id)));
 
   const retries = $derived((ctx.timeline.retries.get(item.id) ?? []).map((c) => c.item).filter((r) => r.kind === 'retry'));
   const attempts = $derived(retries.reduce((n, r) => Math.max(n, r.attempt), 0));
@@ -67,7 +68,7 @@
 {/snippet}
 
 {#if quiet}
-  <div class="run quiet" class:bare={!retries.length} title="{t.title} · {when}">{@render retried()}</div>
+  <div class="run quiet" class:bare={!retries.length} title="{t.title}, {when}">{@render retried()}</div>
 {:else}
   <div class="run o-{item.outcome ?? 'none'}" class:running={item.state === 'running'} title={when}>
     <span class="trig t-{item.trigger.kind}" title={t.title}>{t.label}</span>

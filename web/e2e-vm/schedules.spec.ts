@@ -17,16 +17,19 @@ test('a schedule runs now and shows in the overview', async ({ page }) => {
   await panel.getByLabel('Schedule message').fill('Check inbox/ and report');
   await panel.getByRole('button', { name: 'Save' }).click();
   const row = panel.locator('[data-schedule]').filter({ hasText: 'Inbox' });
-  await expect(row).toContainText('Weekdays 09:00 · Europe/Berlin');
+  await expect(row.locator('[data-when]')).toHaveText('Weekdays 09:00');
+  await expect(row.locator('[data-when]')).toHaveAttribute('title', 'Time zone: Europe/Berlin');
   await expect(row).toContainText(/next \w{3} 09:00/);
 
   await row.getByRole('button', { name: 'Run now' }).click();
   await expect(row.getByRole('button', { name: 'fired' })).toBeVisible();
   const tl = timeline(page);
-  await expect(tl.locator('.msg.r-user').last()).toHaveText('Check inbox/ and report');
   await expect(tl.locator('.msg.r-agent').last()).toHaveText('Inbox is empty.');
-  // The run is badged with the schedule (the daemon maps the prompt's origin to its trigger).
-  await expect(tl.locator('.trig.t-schedule').last()).toHaveText('schedule: Inbox');
+  // The prompt is an event row naming the schedule; what the agent was told opens on click.
+  const event = tl.locator('[data-event="schedule"]').last();
+  await expect(event.getByRole('button')).toHaveText('◷Schedule Inbox');
+  await event.getByRole('button').click();
+  await expect(event.locator('.text')).toHaveText('Check inbox/ and report');
 
   await page.getByRole('button', { name: 'Settings' }).click();
   const settings = page.getByRole('dialog', { name: 'Settings' });
@@ -38,5 +41,5 @@ test('a schedule runs now and shows in the overview', async ({ page }) => {
   await expect(listed).toHaveClass(/\boff\b/);
   await page.getByRole('button', { name: 'Close settings' }).click();
   await expect(row).toHaveClass(/\boff\b/);
-  await expect(row).toContainText('disabled');
+  await expect(row).toContainText('off');
 });

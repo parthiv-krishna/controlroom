@@ -9,6 +9,7 @@
   import { useTimeline } from './context';
   import CompactionItem from './items/CompactionItem.svelte';
   import ErrorItem from './items/ErrorItem.svelte';
+  import EventItem from './items/EventItem.svelte';
   import JobItem from './items/JobItem.svelte';
   import MessageItem from './items/MessageItem.svelte';
   import NoticeItem from './items/NoticeItem.svelte';
@@ -21,13 +22,12 @@
   import ThinkingItem from './items/ThinkingItem.svelte';
   import TodoItem from './items/TodoItem.svelte';
   import ToolCallItem from './items/ToolCallItem.svelte';
-  import UnknownItem from './items/UnknownItem.svelte';
-  import UsageItem from './items/UsageItem.svelte';
 
   let { cell, depth = 0 }: { cell: ItemCell; depth?: number } = $props();
   const app = useApp();
   const ctx = useTimeline();
   const it = $derived(cell.item);
+  const event = $derived(ctx.timeline.events.get(cell.id));
   const actor = $derived.by(() => {
     if (it.actor === 'root') return null;
     const child = app.client.feed.sessions.get(it.actor);
@@ -49,11 +49,10 @@
 <div class="item k-{it.kind}" class:active={ctx.active === it.id} data-item={it.id} data-kind={it.kind} onclick={select}>
   {#if actor}<span class="actor" title="From a subagent">◆ {actor}</span>{/if}
   {#if it.kind === 'run'}<RunItem item={it} />
-  {:else if it.kind === 'message'}<MessageItem item={it} />
+  {:else if it.kind === 'message'}{#if event}<EventItem item={it} origin={event} />{:else}<MessageItem item={it} />{/if}
   {:else if it.kind === 'thinking'}<ThinkingItem item={it} />
   {:else if it.kind === 'tool_call'}<ToolCallItem item={it} {depth} />
   {:else if it.kind === 'request'}<RequestItem item={it} />
-  {:else if it.kind === 'usage'}<UsageItem item={it} />
   {:else if it.kind === 'compaction'}<CompactionItem item={it} />
   {:else if it.kind === 'retry'}<RetryItem item={it} />
   {:else if it.kind === 'notice'}<NoticeItem item={it} />
@@ -62,8 +61,7 @@
   {:else if it.kind === 'todo'}<TodoItem item={it} />
   {:else if it.kind === 'subagent'}<SubagentItem item={it} />
   {:else if it.kind === 'job'}<JobItem item={it} />
-  {:else if it.kind === 'session_message'}<SessionMessageItem item={it} />
-  {:else}<UnknownItem />{/if}
+  {:else if it.kind === 'session_message'}<SessionMessageItem item={it} />{/if}
   <button class="more" title={details} aria-label={details} onclick={() => ctx.showRaw(it)}>⋯</button>
 </div>
 

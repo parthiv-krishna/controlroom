@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SandboxLevel, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
+import type { MessageOrigin, RunTrigger, SandboxLevel, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
 import { MAX_ITEMS, MAX_RAW, RawFrames, Timeline } from './timeline.svelte';
 
 const base = { actor: 'root', ts: 0, streaming: false } as const;
@@ -82,14 +82,15 @@ describe('Timeline', () => {
     expect(t.children.get('parent')!.map((c) => c.item.id)).toEqual(['child']);
   });
 
-  it("keeps a turn's usage but leaves it out of the rows; a session's usage stays", () => {
+  it("keeps usage but leaves it out of the rows (the header has the totals)", () => {
     const usage = (id: string, seq: number, scope: 'turn' | 'session'): TimelineItem => ({
       ...base, id, seq_from: seq, seq_to: seq, kind: 'usage', scope, tokens: { input: 1, output: 1, cache_read: 0, cache_write: 0 }, cost: null, context: null,
     });
     const t = new Timeline();
     t.apply([up(msg('a', 1)), up(usage('u1', 2, 'turn')), up(msg('b', 3)), up(usage('u2', 4, 'session'))], 0);
-    expect(ids(t)).toEqual(['a', 'b', 'u2']);
+    expect(ids(t)).toEqual(['a', 'b']);
     expect(t.get('u1')?.item.kind).toBe('usage');
+    expect(t.get('u2')?.item.kind).toBe('usage');
     expect(t.size).toBe(4);
   });
 
@@ -168,6 +169,42 @@ describe('Timeline folding', () => {
     expect(ids(t)).toEqual(['m', 'i3']);
     expect(t.infoChanges.get('i3')).toEqual({ model: 'B' });
     expect(t.rowOf('i1')?.id).toBe('m');
+  });
+
+  it('marks system-written messages as events, and the runs they announce', () => {
+    const user = (id: string, seq: number, origin: MessageOrigin | null): TimelineItem => ({ ...msg(id, seq), role: 'user', origin }) as TimelineItem;
+    const runBy = (id: string, seq: number, trigger: RunTrigger, outcome: 'completed' | 'failed' = 'completed'): TimelineItem => ({ ...run(id, seq), trigger, outcome }) as TimelineItem;
+    const t = new Timeline();
+    t.apply([
+      up(user('p', 1, { kind: 'user', device: null })), up(runBy('r1', 2, { kind: 'user', device: null })),
+      up(user('s', 3, { kind: 'schedule', schedule_id: 'y', name: 'Inbox' })), up(runBy('r2', 4, { kind: 'schedule', schedule_id: 'y', name: 'Inbox' })),
+      // No origin (an older transcript): the run's trigger tells.
+      up(user('j', 5, null)), up(runBy('r3', 6, { kind: 'inject', origin: 'job', label: 'job: tests (exit 1)' }, 'failed')),
+    ], 0);
+    expect([...t.events.keys()]).toEqual(['s', 'j']);
+    expect(t.events.get('j')).toMatchObject({ kind: 'inject', origin: 'job', label: 'job: tests (exit 1)' });
+    expect([...t.announced]).toEqual(['r2', 'r3']);
+  });
+
+  it("folds a job wake into its job's row", () => {
+    const job: TimelineItem = { ...base, id: 'job', seq_from: 1, seq_to: 1, kind: 'job', job: { id: 'J', name: 'tests', command: 't', cwd: '~', machine_id: null, workspace_id: null, status: 'failed', exit: 1, signal: null, started_at: 0, ended_at: 1, timeout_s: null, log_path: 'x', lines: 0, follow: null } };
+    const wake = { ...msg('w', 2), role: 'user', origin: { kind: 'inject', origin: 'job', label: 'job: tests (exit 1)', source: 'J' } } as TimelineItem;
+    const t = new Timeline();
+    t.apply([up(job), up(wake), up(msg('m', 3))], 0);
+    expect(ids(t)).toEqual(['job', 'm']);
+    expect(t.wakes.get('J')?.map((c) => c.id)).toEqual(['w']);
+    expect(t.rowOf('w')?.id).toBe('job');
+  });
+
+  it('knows the todo list before each todo item', () => {
+    const todo = (id: string, seq: number, items: string[]): TimelineItem => ({
+      ...base, id, seq_from: seq, seq_to: seq, kind: 'todo',
+      items: items.map((x) => ({ id: x, text: x, status: 'pending', reason: null, updated_by: { kind: 'agent' }, updated_at: 0 })),
+    });
+    const t = new Timeline();
+    t.apply([up(todo('t1', 1, ['a'])), up(todo('t2', 2, ['a', 'b']))], 0);
+    expect(t.todosBefore.get('t1')).toEqual([]);
+    expect(t.todosBefore.get('t2')?.map((x) => x.id)).toEqual(['a']);
   });
 
   it('always shows a new sandbox level, even the first one', () => {

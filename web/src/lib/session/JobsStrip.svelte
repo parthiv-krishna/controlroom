@@ -51,7 +51,7 @@
   const kind = (j: Job) => (j.status === 'running' ? 'working' : j.status === 'succeeded' ? 'complete' : j.status === 'timed_out' ? 'idle' : 'stopped');
   const took = (j: Job) => duration((j.ended_at ?? now) - j.started_at);
   const wakeIn = (j: Job) => (j.follow?.next_wake_at != null ? Math.max(0, Math.ceil((j.follow.next_wake_at - now) / 1000)) : null);
-  const followText = (j: Job) => (j.follow ? `following${j.follow.pattern ? ` /${j.follow.pattern}/` : ''} · ${j.follow.buffer_seconds}s` : 'wakes on exit');
+  const followText = (j: Job) => (j.follow ? `following${j.follow.pattern ? ` /${j.follow.pattern}/` : ''}` : 'wakes on exit');
 </script>
 
 <div class="jobs" aria-label="Background jobs">
@@ -69,19 +69,18 @@
   <div class="detail">
     <div class="dh">
       <code>{job.command}</code><span class="sp"></span>
-      <span class="muted small">{#if job.machine_id}on {app.client.feed.machines.get(job.machine_id)?.name ?? 'a removed machine'} · {/if}{STATUS[job.status]}{job.exit !== null ? ` · exit ${job.exit}` : ''}{job.signal ? ` · ${job.signal}` : ''}{job.timeout_s ? ` · timeout ${duration(job.timeout_s * 1000)}` : ''} · {took(job)} · {job.lines} lines</span>
+      <span class="muted small" title={[job.machine_id ? `On ${app.client.feed.machines.get(job.machine_id)?.name ?? 'a removed machine'}` : '', job.signal ? `Signal ${job.signal}` : '', job.timeout_s ? `Timeout ${duration(job.timeout_s * 1000)}` : '', `${job.lines} lines`].filter(Boolean).join('\n')}>{STATUS[job.status]}{job.exit !== null && job.exit !== 0 ? ` (exit ${job.exit})` : ''}, {took(job)}</span>
       {#if job.status === 'running'}<button class="btn xs danger" disabled={!online} onclick={() => app.client.call('job.kill', { ...onSession(s), job_id: job.id })}>Kill</button>{/if}
       <button class="btn xs ghost" aria-label="Close" onclick={() => (app.view.jobOpen[key] = null)}>✕</button>
     </div>
     <div class="meta">
       {#if job.status === 'running'}
-        <span class="follow" class:on={!!job.follow} title={job.follow ? 'Wakes on output and exit' : 'Wakes on exit'}>{followText(job)}</span>
+        <span class="follow" class:on={!!job.follow} title={job.follow ? `Wakes on output (after ${job.follow.buffer_seconds}s) and exit` : 'Wakes on exit'}>{followText(job)}</span>
         {#if wakeIn(job) !== null}<span class="wake">next wake in {wakeIn(job)}s</span>{/if}
         {#if job.follow}<button class="btn xs ghost" disabled={!online} onclick={() => app.client.call('job.unfollow', { ...onSession(s), job_id: job.id })}>Unfollow</button>{/if}
       {/if}
       <span class="sp"></span>
-      <code class="path" title={log}>{log}</code>
-      <button class="btn xs" onclick={() => app.copy(log)}>Copy</button>
+      <button class="btn xs ghost" title={log} onclick={() => app.copy(log)}>Copy log path</button>
     </div>
     <pre class="log" aria-label="Log tail">{logs ? logs.lines.join('\n') || '(no output yet)' : '…'}</pre>
   </div>
@@ -101,7 +100,6 @@
   .follow { border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; color: var(--muted); }
   .follow.on { color: var(--info); }
   .wake { color: var(--info); font-variant-numeric: tabular-nums; }
-  .path { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
   .log { background: var(--bg3); border-radius: 6px; padding: 6px 10px; max-height: 160px; overflow: auto; font-size: 12px; }
   @media (max-width: 760px) { .jobs, .detail { width: auto; margin-left: 12px; margin-right: 12px; } }
 </style>

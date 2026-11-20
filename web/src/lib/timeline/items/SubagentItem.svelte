@@ -1,7 +1,7 @@
 <script lang="ts">
-  // A subagent (child session): its title, state, outcome and result (its usage is in its own
-  // header). A child on this controller's machines can be opened, and its live tail followed here
-  // (a second subscription).
+  // A subagent (child session): its title and state (or outcome), one line; its result opens on
+  // click (its usage is in its own header). A child on this controller's machines can be opened, and
+  // its live tail followed here (a second subscription).
   import { useApp } from '../../app/app.svelte';
   import type { ItemOf } from '../../state/timeline.svelte';
   import Markdown from '../../ui/Markdown.svelte';
@@ -14,17 +14,18 @@
   const ctx = useTimeline();
   const target = $derived(peerSession(app, item.child));
   const live = $derived(ctx.isOpen(item.id, false));
+  const shown = $derived(ctx.isOpen(item.id + ':result', false));
 </script>
 
 <div class="sub st-{item.state}">
   <div class="head">
     <span aria-hidden="true">◆</span>
     {#if target}<button class="linkish" onclick={() => app.open(target)}>{item.title}</button>{:else}<b>{item.title}</b>{/if}
-    <span class="muted small">{item.agent}</span>
-    <span class="state">{#if item.state === 'working' || item.state === 'starting'}<span class="spin"></span>{/if} {item.state.replace('_', ' ')}{#if item.outcome} · {item.outcome}{/if}</span>
+    <span class="state">{#if item.state === 'working' || item.state === 'starting'}<span class="spin"></span>{/if} {item.outcome && item.outcome !== 'completed' ? item.outcome.replace('_', ' ') : item.state.replace('_', ' ')}</span>
+    {#if item.result}<button class="btn ghost xs" aria-expanded={shown} onclick={() => ctx.toggle(item.id + ':result', false)}>result</button>{/if}
     {#if target}<button class="btn ghost xs" aria-expanded={live} onclick={() => ctx.toggle(item.id, false)}>{live ? 'hide live' : 'live'}</button>{/if}
   </div>
-  {#if item.result}<div class="result"><Markdown text={item.result} /></div>{/if}
+  {#if item.result && shown}<div class="result"><Markdown text={item.result} /></div>{/if}
   {#if live && target}<ChildTail child={target} />{/if}
 </div>
 

@@ -101,19 +101,15 @@
     <div class="row" class:off={!x.enabled} data-schedule={x.id}>
       <input type="checkbox" checked={x.enabled} aria-label="Enable {x.name}" disabled={!online || !supported || (closed && !x.enabled)} onchange={(e) => app.client.call('schedules.update', { schedule_id: x.id, enabled: e.currentTarget.checked })} />
       <div class="main">
-        <div><b>{x.name}</b> <span class="when">{humanSchedule(x.spec)} · {x.timezone}</span></div>
-        <div class="small muted msg">“{x.message}”</div>
+        <div title="“{x.message}”\nIf busy: {x.if_busy === 'queue' ? 'queue the message' : 'skip'}. After downtime: {x.missed === 'run_once' ? 'run once' : 'skip missed runs'}."><b>{x.name}</b>{' '}<span class="when" data-when title="Time zone: {x.timezone}">{humanSchedule(x.spec)}</span></div>
         <div class="small">
-          {#if x.enabled && x.next_run}next {formatIn(x.next_run, x.timezone)} <span class="muted">({inTime(x.next_run, now)})</span>{:else}<span class="muted">disabled</span>{/if}
-          {#if last}{' '}<span class="muted">· last</span> <button class="out o-{last.outcome}" title="Show recent runs" onclick={() => (history = history === x.id ? null : x.id)}>{runText(last)}</button> <span class="muted">{ago(last.until ?? last.at, now)}</span>{/if}
-          {' '}<span class="muted">· if busy: {x.if_busy} · after downtime: {x.missed === 'run_once' ? 'run once' : 'skip'}</span>
+          {#if x.enabled && x.next_run}<span title={inTime(x.next_run, now)}>next {formatIn(x.next_run, x.timezone)}</span>{:else}<span class="muted">off</span>{/if}
+          {#if last}{', '}<button class="out o-{last.outcome}" title="Last run {ago(last.until ?? last.at, now)}: show recent runs" onclick={() => (history = history === x.id ? null : x.id)}>{runText(last)}</button>{/if}
+          {#if x.pending_run}{', '}<span class="pending" data-pending title="The {formatIn(x.pending_run, x.timezone)} run is retried until the next run, then missed.">waiting for the machine</span>{/if}
         </div>
-        {#if x.pending_run}
-          <div class="small pending" data-pending>The {formatIn(x.pending_run, x.timezone)} run is waiting for the machine; it is retried until the next run, then missed.</div>
-        {/if}
         {#if history === x.id}
           <div class="hist small">
-            {#each x.recent_runs as r (`${r.at}:${r.outcome}`)}<div><span class="out o-{r.outcome}">{runText(r)}</span> <span class="muted">{runWhen(r, x.timezone)}{r.detail ? ` · ${r.detail}` : ''}</span></div>{:else}<div class="muted">No runs yet</div>{/each}
+            {#each x.recent_runs as r (`${r.at}:${r.outcome}`)}<div><span class="out o-{r.outcome}">{runText(r)}</span>{' '}<span class="muted">{runWhen(r, x.timezone)}</span>{#if r.detail}{': '}<span class="muted">{r.detail}</span>{/if}</div>{:else}<div class="muted">No runs yet</div>{/each}
           </div>
         {/if}
       </div>
@@ -163,7 +159,6 @@
   .row input { margin-top: 3px; }
   .main { flex: 1; min-width: 0; }
   .when { font-size: 12px; color: var(--muted); }
-  .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .out { background: none; border: none; padding: 0; font: inherit; cursor: pointer; text-decoration: underline dotted; color: inherit; }
   .o-missed, .o-failed { color: var(--bad); }
   .o-fired { color: var(--ok); }

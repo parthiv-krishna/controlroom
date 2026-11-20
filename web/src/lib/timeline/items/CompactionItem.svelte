@@ -4,16 +4,14 @@
   import type { ItemOf } from '../../state/timeline.svelte';
 
   let { item }: { item: ItemOf<'compaction'> } = $props();
-  const REASON = { threshold: 'automatic', manual: 'manual', overflow: 'context overflow', unknown: '' } as const;
   const tokens = (n: number | null) => (n === null ? '?' : compact(n));
 </script>
 
-<div class="cmp c-{item.phase}">
-  {#if item.phase === 'running'}<span class="spin"></span> Compacting context{#if item.tokens_before !== null} · {tokens(item.tokens_before)} tokens{/if}
+<div class="cmp c-{item.phase}" title={item.reason === 'unknown' ? undefined : `Reason: ${item.reason}`}>
+  {#if item.phase === 'running'}<span class="spin"></span> Compacting context
   {:else if item.phase === 'done'}↓ Context compacted {tokens(item.tokens_before)} → {tokens(item.tokens_after)}
-  {:else if item.phase === 'failed'}✕ Compaction failed{#if item.error}: {item.error}{/if}
+  {:else if item.phase === 'failed'}✕ {item.error?.startsWith('Compaction failed') ? item.error : `Compaction failed${item.error ? `: ${item.error}` : ''}`}
   {:else}Compaction{/if}
-  {#if REASON[item.reason]}<span class="muted small">· {REASON[item.reason]}</span>{/if}
 </div>
 
 <style>

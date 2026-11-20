@@ -12,7 +12,11 @@
 //   extension's "ready" at each agent start) shows once with a count, and a session-info item
 //   shows only the values that changed (the first ones are what the header already shows); a new
 //   sandbox level (the user changed it) always shows.
-import type { RawFrame, Request, SandboxLevel, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
+// - Text the system wrote for the agent (a schedule's prompt, a job wake, a notice) is an event: a
+//   user message with such an origin (or, for messages without one, followed by a run with such a
+//   trigger) shows as one line naming its source; the run it started then shows only when it didn't
+//   end normally. A todo item knows the list before it, to show what changed.
+import type { MessageOrigin, RawFrame, Request, RunTrigger, SandboxLevel, Todo, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
 
 /** Items kept per timeline; older ones are trimmed (the protocol has no paging yet). */
 export const MAX_ITEMS = 5000;
@@ -41,10 +45,27 @@ const before = (a: ItemCell, seqFrom: number, arrival: number): boolean =>
   a.item.seq_from < seqFrom || (a.item.seq_from === seqFrom && a.arrival < arrival);
 
 /**
- * Items kept but not shown in the reading view: a turn's usage (the header's statusline has the
- * session's totals; the raw view still has each turn's).
+ * Items kept but not shown in the reading view: usage (the header's statusline has the session's
+ * totals; the raw view still has each one) and kinds this UI doesn't know (their records are in the
+ * raw view).
  */
-export const hiddenInTimeline = (item: TimelineItem): boolean => item.kind === 'usage' && item.scope === 'turn';
+export const hiddenInTimeline = (item: TimelineItem): boolean => item.kind === 'usage' || item.kind === 'unknown';
+
+/** An event's source: what a message the system wrote for the agent came from. */
+export type EventOrigin = Extract<MessageOrigin, { kind: 'schedule' | 'inject' | 'auto_continue' }>;
+
+/** A user message's origin when the system wrote it (not the user), else null. */
+export function eventOrigin(origin: MessageOrigin | null): EventOrigin | null {
+  return origin && (origin.kind === 'schedule' || origin.kind === 'inject' || origin.kind === 'auto_continue') ? origin : null;
+}
+
+/** The origin a run's trigger implies for the message before it (for messages without an origin). */
+function triggerOrigin(t: RunTrigger): EventOrigin | null {
+  if (t.kind === 'schedule') return { kind: 'schedule', schedule_id: t.schedule_id, name: t.name };
+  if (t.kind === 'auto_continue') return { kind: 'auto_continue' };
+  if (t.kind === 'inject' && t.origin !== 'user') return { kind: 'inject', origin: t.origin, label: t.label, source: null };
+  return null;
+}
 
 /** The title, model and thinking level a session-info item reports, and a new sandbox level. */
 export type SessionInfo = Partial<Record<'title' | 'model' | 'thinking', string>> & { sandbox?: SandboxLevel };
@@ -73,6 +94,14 @@ export class Timeline {
   requests = $state.raw<ReadonlyMap<string, Request>>(new Map());
   /** The values a shown session-info item changed, by its id. */
   infoChanges = $state.raw<ReadonlyMap<string, SessionInfo>>(new Map());
+  /** Messages shown as events, with their origin, by id. */
+  events = $state.raw<ReadonlyMap<string, EventOrigin>>(new Map());
+  /** Runs an event row already announces, by id (shown only when they don't end normally). */
+  announced = $state.raw<ReadonlySet<string>>(new Set());
+  /** Job wakes folded into their job's row (the job item shows the outcome), by job id. */
+  wakes = $state.raw<ReadonlyMap<string, readonly ItemCell[]>>(new Map());
+  /** The todo list before each todo item (empty for the first), by the item's id. */
+  todosBefore = $state.raw<ReadonlyMap<string, readonly Todo[]>>(new Map());
   /** Raw transcript frames (only while a raw view asks for them). */
   readonly raw = new RawFrames();
 
@@ -153,7 +182,7 @@ export class Timeline {
     }
     cell.item = item;
     // Notices and session info are folded by their content; requests are collected by state.
-    if (item.kind === 'notice' || item.kind === 'session_info' || item.kind === 'request' || old.kind !== item.kind) return true;
+    if (item.kind === 'notice' || item.kind === 'session_info' || item.kind === 'request' || item.kind === 'todo' || old.kind !== item.kind) return true;
     return parentOf(old) !== parentOf(item);
   }
 
@@ -206,8 +235,14 @@ export class Timeline {
     const repeats = new Map<string, number>();
     const infoChanges = new Map<string, SessionInfo>();
     const hosts = new Map<string, ItemCell>();
-    // Per actor: its current run, the notices seen, and the session info known so far.
+    const events = new Map<string, EventOrigin>();
+    const announced = new Set<string>();
+    const todosBefore = new Map<string, readonly Todo[]>();
+    // Per actor: its current run, the notices seen, the session info known so far, its last user
+    // message not yet followed by a run, and its last todo list.
     const runs = new Map<string, ItemCell>();
+    const pending = new Map<string, ItemCell>();
+    const todos = new Map<string, readonly Todo[]>();
     const notices = new Map<string, ItemCell>();
     const known = new Map<string, SessionInfo>();
     for (const cell of this.order) {
@@ -220,8 +255,26 @@ export class Timeline {
         continue;
       }
       if (hiddenInTimeline(item)) continue;
-      if (item.kind === 'run') runs.set(item.actor, cell);
-      else if (item.kind === 'retry') {
+      if (item.kind === 'run') {
+        runs.set(item.actor, cell);
+        const before = pending.get(item.actor);
+        pending.delete(item.actor);
+        if (before) {
+          const implied = events.has(before.id) ? null : triggerOrigin(item.trigger);
+          if (implied) events.set(before.id, implied);
+          if (events.has(before.id)) announced.add(cell.id);
+        }
+      } else if (item.kind === 'message') {
+        if (item.role === 'user') {
+          const origin = eventOrigin(item.origin);
+          if (origin) events.set(cell.id, origin);
+          // Only a message without an origin takes one from its run's trigger.
+          pending.set(item.actor, cell);
+        } else pending.delete(item.actor);
+      } else if (item.kind === 'todo') {
+        todosBefore.set(cell.id, todos.get(item.actor) ?? []);
+        todos.set(item.actor, item.items);
+      } else if (item.kind === 'retry') {
         const run = runs.get(item.actor);
         if (run) {
           const list = retries.get(run.id);
@@ -260,14 +313,32 @@ export class Timeline {
       }
       rows.push(cell);
     }
+    // A job wake whose job has a row of its own folds into it.
+    const jobs = new Map<string, ItemCell>();
+    for (const cell of rows) if (cell.item.kind === 'job') jobs.set(cell.item.job.id, cell);
+    const wakes = new Map<string, ItemCell[]>();
+    const shown = rows.filter((cell) => {
+      const ev = events.get(cell.id);
+      const job = ev?.kind === 'inject' && ev.origin === 'job' && ev.source ? jobs.get(ev.source) : undefined;
+      if (!job || !ev || ev.kind !== 'inject' || !ev.source) return true;
+      const list = wakes.get(ev.source);
+      if (list) list.push(cell);
+      else wakes.set(ev.source, [cell]);
+      hosts.set(cell.id, job);
+      return false;
+    });
+    this.wakes = wakes;
     this.tools = tools;
     this.hosts = hosts;
-    this.rows = rows;
+    this.rows = shown;
     this.children = children;
     this.requests = requests;
     this.retries = retries;
     this.repeats = repeats;
     this.infoChanges = infoChanges;
+    this.events = events;
+    this.announced = announced;
+    this.todosBefore = todosBefore;
   }
 }
 
