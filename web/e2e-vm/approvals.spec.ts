@@ -22,7 +22,7 @@ test('git push approvals across two tabs', async ({ page, browser }) => {
   for (const p of [page, other]) {
     await expect(card(p)).toHaveClass(/\bpending\b/);
     await expect(card(p).locator('pre.code')).toContainText('git push origin HEAD:allowed');
-    await expect(card(p)).toContainText('remote origin · branch HEAD:allowed');
+    await expect(card(p)).toContainText('To HEAD:allowed on origin');
     await expect(header(p).locator('.status')).toHaveText('Needs approval');
   }
   const noted = notes.locator('.card.k-blocking', { hasText: 'push' });
