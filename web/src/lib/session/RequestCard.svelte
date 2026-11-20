@@ -19,7 +19,9 @@
   let { req, s, compact = false }: { req: Request; s: FeedSession; compact?: boolean } = $props();
   const app = useApp();
 
-  const KIND: Record<Request['kind'], string> = { permission: 'Permission', question: 'Question', dialog: 'Dialog', sandbox: 'Sandbox', contact: 'Contact', spawn: 'Spawn', terminal_input: 'Input', privileged: 'Privileged', unknown: 'Request' };
+  // The kind is named only where the title doesn't make it obvious (a sandbox request names a
+  // path, socket or endpoint; a privileged command runs outside the sandbox).
+  const KIND: Partial<Record<Request['kind'], string>> = { sandbox: 'Sandbox', privileged: 'Privileged' };
   // A rolled-up request is answered on the child session.
   const targetId = $derived(req.origin_child ?? s.id);
   const child = $derived(req.origin_child ? app.client.feed.sessions.get(req.origin_child) : undefined);
@@ -140,7 +142,7 @@
 <div class="rq rq-{req.kind}" class:blocking={req.blocking} class:pending class:compact data-request={req.id}>
   <div class="head">
     <span class="flag"><Icon name={req.blocking ? 'flag' : 'flagOutline'} size={13} /></span>
-    <span class="kind">{KIND[req.kind]}</span>
+    {#if KIND[req.kind]}<span class="kind">{KIND[req.kind]}</span>{/if}
     <b class="title">{req.title}</b>
   </div>
   {#if req.origin_child}
@@ -200,7 +202,7 @@
   {:else}
     <div class="res">
       {#if req.state === 'answered' && req.answer}
-        → {req.answer.label}{#if req.answer.by}<span class="muted">{' · '}{deviceLabel(req.answer.by)}</span>{/if}
+        → {req.answer.label}{#if req.answer.by}<span class="muted"> by {deviceLabel(req.answer.by)}</span>{/if}
       {:else if req.state === 'withdrawn'}⊘ withdrawn by the agent
       {:else}expired{/if}
     </div>

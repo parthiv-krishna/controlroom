@@ -67,24 +67,23 @@
     {#if pop === 'sandbox'}
       <div class="pop" role="dialog" aria-label="Sandbox" use:dismissable={{ close, anchor: sandboxAnchor }} use:fitInView>
         <b>Sandbox: {levelLabel(sb.level)}</b>
-        <div class="small muted">{sb.explicit ? 'Chosen for this session' : 'From the machine and project defaults'}{#if sb.looser_than_default} · looser than the defaults ({levelLabel(sb.default_level)}){/if}</div>
+        <div class="small muted">{sb.explicit ? 'Chosen for this session' : 'From the machine and project defaults'}{#if sb.looser_than_default}, looser than the defaults ({levelLabel(sb.default_level)}){/if}</div>
         {#if sb.level === 'off'}<div class="off">{OFF_WARNING}</div>{/if}
         <div class="levels" role="radiogroup" aria-label="Sandbox level">
           {#each choices as c (c.value)}
             <button role="radio" aria-checked={choice === c.value} class:on={choice === c.value} class:danger={c.value === 'off'} title={c.hint} disabled={!canChange} onclick={() => setLevel(c.value)}>{c.label}</button>
           {/each}
         </div>
-        <div class="small muted">A new level restarts the agent and its shells.</div>
         <div class="sec-h">Grants</div>
         {#each sb.grants as g (g.id)}
           <div class="grant">
             <span class="gk">{g.kind}</span><code>{g.value}</code>{#if g.access}<span class="muted small">{g.access.replace('_', ' ')}</span>{/if}
             <span class="scope" class:standing={g.scope === 'standing'}>{SCOPE[g.scope]}</span><span class="muted small">{ago(g.granted_at)}</span>
             <span class="sp"></span>
-            <button class="btn xs ghost bad-t" disabled={!app.client.online} onclick={() => revoke(g)}>{g.scope === 'standing' ? 'Remove · restarts agent' : 'Revoke'}</button>
+            <button class="btn xs ghost bad-t" disabled={!app.client.online} onclick={() => revoke(g)}>{g.scope === 'standing' ? 'Remove' : 'Revoke'}</button>
           </div>
         {:else}
-          <div class="small muted">No grants. Allowed sandbox requests appear here.</div>
+          <div class="small muted">None</div>
         {/each}
         <button class="linkish small" onclick={() => { pop = null; app.openSettings('sandbox'); }}>Sandbox defaults…</button>
       </div>
@@ -102,12 +101,11 @@
               <span class="pn">{p.peer.name}</span><span class="rel">{REL[p.relation]}{p.task ? `: ${p.task}` : ''}</span>
             </button>
           {/each}
-          <div class="small muted">Anything else needs your approval.</div>
         </div>
       {/if}
     </span>
   {/if}
-  {#if idleLive}<span class="sbx live" title="No run is active; this work starts the next turn when it finishes">◷ idle · {liveText} running</span>{/if}
+  {#if idleLive}<span class="sbx live" title="No run is active; this work starts the next turn when it finishes">◷ {liveText} running</span>{/if}
 </span>
 
 <style>

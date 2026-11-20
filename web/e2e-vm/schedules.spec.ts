@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { header, login, openSession, timeline } from './helpers';
+import { sessionAction, login, openSession, timeline } from './helpers';
 
 // A schedule on the session: added in the Schedules panel, "Run now" sends its message to pi
 // through the server's scheduler and the agent daemon (the mock model answers), and
@@ -8,7 +8,7 @@ import { header, login, openSession, timeline } from './helpers';
 test('a schedule runs now and shows in the overview', async ({ page }) => {
   await login(page, 'Laptop');
   await openSession(page, 'two');
-  await header(page).getByRole('button', { name: 'Schedules' }).click();
+  await sessionAction(page, /^Schedules/);
   const panel = page.locator('[data-pane="schedules"]');
   await panel.getByRole('button', { name: '+ Schedule' }).click();
   await panel.getByLabel('Schedule name').fill('Inbox');

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { header, lastReply, login, newSession, sessionRow, settled, toolCalls } from './helpers';
+import { header, sessionAction, lastReply, login, newSession, sessionRow, settled, toolCalls } from './helpers';
 
 // One session with workspaces on both machines: pi (on the server, under nono) reads a file on
 // devbox, edits one on buildbox, and runs commands in each machine's named shell, whose state
@@ -43,7 +43,7 @@ test('a session with workspaces on two machines, then from Unassigned to a task'
   await expect(project).toHaveCount(0);
   await rail.getByRole('button', { name: 'Unassigned' }).click();
   await sessionRow(page, 'two').click();
-  await header(page).getByRole('button', { name: '◆ link to task' }).click();
+  await sessionAction(page, 'Link to task…');
   await page.getByRole('dialog', { name: 'Link to tasks' }).getByRole('button', { name: '+ New task' }).click();
   const task = page.getByRole('dialog', { name: 'New task' });
   await task.getByPlaceholder('What needs doing?').fill('Ship the web app');

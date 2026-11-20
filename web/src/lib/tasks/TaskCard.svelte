@@ -1,7 +1,8 @@
 <script lang="ts">
-  // A task card: project badge, priority, title, checklist count, linked sessions (status icons),
-  // roll-up counts and a suggested column move (never applied automatically). Cards drag between
-  // columns; a session row dropped on a card links the session.
+  // A task card: project badge, priority, title, checklist count, linked sessions (status icons;
+  // the border marks one that needs you or failed), an unreachable-machine count and a suggested
+  // column move (never applied automatically). Cards drag between columns; a session row dropped
+  // on a card links the session.
   import { useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
   import { statusKind } from '../model/status';
@@ -78,11 +79,6 @@
     </div>
   {/if}
   <div class="foot">
-    {#if r.approvals}<span class="rp" title="need you"><StatusIcon kind="attention" />{r.approvals}</span>{/if}
-    {#if r.questions}<span class="rp" title="questions"><StatusIcon kind="asking" />{r.questions}</span>{/if}
-    {#if r.problems}<span class="rp" title="failed or stopped"><StatusIcon kind="stopped" />{r.problems}</span>{/if}
-    {#if r.working}<span class="rp" title="working"><StatusIcon kind="working" />{r.working}</span>{/if}
-    {#if r.unread}<span class="rp" title="finished, unread"><StatusIcon kind="complete" />{r.unread}</span>{/if}
     {#if r.unreachable}<span class="rp" title="a machine is unreachable"><StatusIcon kind="offline" />{r.unreachable}</span>{/if}
     {#if !t.links.length && t.status !== 'done'}<button class="btn xs ghost start" title="Start a session for this task" onclick={() => app.startTask(t)}>▶ start</button>{/if}
   </div>

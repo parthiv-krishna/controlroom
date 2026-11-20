@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Machine status at the top right: one button that opens Settings › Machines. ✓ connected (a
-  // subtle ↑ when a compatible update is available), broken chain unreachable, orb connecting, the
-  // flag only when the user must act (incompatible, action required).
+  // Machine status at the top right: one button that opens Settings › Machines. Only machines that
+  // need a look are named (unreachable, connecting, incompatible, action required, or a compatible
+  // update available); the healthy rest is a quiet "✓ N". Each machine's tooltip has the details.
   import { useApp } from '../app/app.svelte';
   import { ago, connKind, connLabel } from '../model/status';
   import type { Machine } from '../protocol';
@@ -9,27 +9,36 @@
 
   const app = useApp();
   const update = (m: Machine) => m.connectivity.state === 'connected' && m.update_available;
+  const healthy = (m: Machine) => m.connectivity.state === 'connected' && !m.update_available;
+  const machines = $derived(app.client.feed.machineList);
+  const flagged = $derived(machines.filter((m) => !healthy(m)));
+  const ok = $derived(machines.filter(healthy));
   function title(m: Machine): string {
     switch (m.connectivity.state) {
       case 'connected':
-        return update(m) ? `${m.name} · Update available: ${m.version ?? '?'} → ${app.client.hello?.server_version ?? 'newer'}` : `${m.name} · connected · controlroomd ${m.version ?? ''}`;
+        return update(m) ? `${m.name}: update available (${m.version ?? '?'} → ${app.client.hello?.server_version ?? 'newer'})` : `${m.name}: connected, controlroomd ${m.version ?? ''}`;
       case 'unreachable':
-        return `${m.name} · unreachable · last seen ${ago(m.last_seen)}`;
+        return `${m.name}: unreachable, last seen ${ago(m.last_seen)}`;
       case 'incompatible':
-        return `${m.name} · daemon ${m.version ?? ''} is outdated: upgrade required`;
+        return `${m.name}: daemon ${m.version ?? ''} is outdated, upgrade required`;
       default:
-        return `${m.name} · ${connLabel(m)}`;
+        return `${m.name}: ${connLabel(m)}`;
     }
   }
 </script>
 
-<button class="machines" title="Machines" aria-label="Machines" onclick={() => app.openSettings('machines')}>
-  {#each app.client.feed.machineList as m (m.id)}
-    <span class="m" class:act={m.connectivity.state !== 'connected'} title={title(m)}>
-      <StatusIcon kind={connKind(m)} />{#if update(m)}<span class="up" aria-label="update available">↑</span>{/if}<span class="name">{m.name}</span>
-    </span>
-  {/each}
-</button>
+{#if machines.length}
+  <button class="machines" title="Machines" aria-label="Machines" onclick={() => app.openSettings('machines')}>
+    {#each flagged as m (m.id)}
+      <span class="m act" title={title(m)}>
+        <StatusIcon kind={connKind(m)} />{#if update(m)}<span class="up" aria-label="update available">↑</span>{/if}<span class="name">{m.name}</span>
+      </span>
+    {/each}
+    {#if ok.length}
+      <span class="m" title={ok.map((m) => m.name).join(', ')} data-healthy>✓ {ok.length}</span>
+    {/if}
+  </button>
+{/if}
 
 <style>
   .machines { display: flex; align-items: center; gap: 2px; background: none; border: 1px solid transparent; border-radius: 9px; padding: 3px 6px; font: inherit; color: inherit; cursor: pointer; flex: none; }

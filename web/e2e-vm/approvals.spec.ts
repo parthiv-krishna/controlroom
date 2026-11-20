@@ -30,7 +30,7 @@ test('git push approvals across two tabs', async ({ page, browser }) => {
 
   // Allowed once on the laptop: the desktop sees who answered, and the run finishes.
   await card(page).getByRole('button', { name: 'Allow once' }).click();
-  for (const p of [page, other]) await expect(card(p).locator('.res')).toHaveText('→ Allow once · Laptop');
+  for (const p of [page, other]) await expect(card(p).locator('.res')).toHaveText('→ Allow once by Laptop');
   await expect(noted).toHaveCount(0);
   await expect(timeline(page).locator('.msg.r-agent').last()).toHaveText('Pushed.');
 
@@ -45,7 +45,7 @@ test('git push approvals across two tabs', async ({ page, browser }) => {
   await card(other).getByRole('button', { name: 'Deny with reason' }).click();
   await card(other).getByLabel('Reason').fill('not this branch');
   await card(other).getByLabel('Reason').press('Enter');
-  for (const p of [page, other]) await expect(card(p).locator('.res')).toHaveText('→ Deny · Desktop');
+  for (const p of [page, other]) await expect(card(p).locator('.res')).toHaveText('→ Deny by Desktop');
   await expect(timeline(page).locator('.msg.r-agent').last()).toHaveText('The push was denied.');
   await context.close();
 });

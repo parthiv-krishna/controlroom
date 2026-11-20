@@ -42,6 +42,15 @@ nix/                 rust.nix, web.nix (more later)
 - UI: `cd web && pnpm install && pnpm check && pnpm test && pnpm build`.
   After changing `web/pnpm-lock.yaml`, set the `pnpmDeps` hash in `nix/web.nix` to `""`, build `.#web-dist`, and copy the reported hash back.
 
+## UI copy
+
+- Terse labels; no explanatory paragraphs in prime space (use a tooltip, Help or a first-use hint).
+- Full aria-labels, even where the visible label is short or an icon.
+- Never chain facts with " · ". Drop what isn't needed; show the rest as separate elements, a real phrase, or a tooltip.
+- Show each state once, in the place it is acted on.
+- Text the system writes for the agent (schedule prompts, job wakes, notices) is not text for the user:
+  render it as a one-line event naming its source, with the full text on expand.
+
 ## Process rules
 
 - Work only in your assigned worktree and branch. Commit to your own branch; the supervisor rebases and merges.

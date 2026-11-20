@@ -151,7 +151,6 @@
     });
   });
 
-  const openRaw = () => (app.view.raw[key] = { from: null, to: null, item: null });
 </script>
 
 {#if raw && feed}
@@ -161,7 +160,6 @@
     <div class="fresh" role="separator" aria-label="Started fresh"><span>Started fresh</span></div>
   {/snippet}
   <div class="timeline" data-pane="session" tabindex="-1" aria-label="Timeline" bind:this={scroller} onscroll={onScroll}>
-    <div class="bar"><button class="btn ghost xs" onclick={openRaw} disabled={!feed}>raw</button></div>
     <div class="body">
       {#if timeline.trimmed}<div class="muted small trimmed">{timeline.trimmed} earlier items not kept</div>{/if}
       {#if !rows.length}
@@ -187,8 +185,6 @@
   .timeline { flex: 1; overflow-y: auto; min-height: 0; outline: none; position: relative; font-size: 15px; line-height: 1.6; }
   /* A short timeline sits at the bottom, next to the composer. */
   .body { padding: 4px 40px 16px; max-width: 900px; width: 100%; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
-  .bar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: flex-end; padding: 4px 8px 0; height: 0; overflow: visible; }
-  .bar .btn { background: var(--bg2); font-family: var(--mono); }
   .row { padding: 7px 0; }
   /* A quiet run is only a small gap between turns. */
   .row:has(:global(.run.bare)) { padding: 0; }

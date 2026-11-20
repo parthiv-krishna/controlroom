@@ -116,7 +116,7 @@ test('a file request: access, path, where; terse options with full names; answer
   const card = page.getByRole('main').locator('[data-request="req-path-1"]').first();
   await expect(card).toContainText('read-write');
   await expect(card).toContainText('/home/alice/.cache/nix/fetcher-cache-v4.sqlite-shm');
-  await expect(card.locator('[data-where]')).toHaveText(/outside the workspace · on devbox/);
+  await expect(card.locator('[data-where]')).toHaveText('Outside the workspace on devbox');
   const always = card.getByRole('button', { name: 'Always allow read-write access to /home/alice/.cache/nix/fetcher-cache-v4.sqlite-shm on devbox, in new sessions too' });
   await expect(always).toHaveText('Always allow (devbox)');
   await expect(card.getByRole('button', { name: /^Never allow .* on devbox/ })).toHaveText('Never (devbox)');

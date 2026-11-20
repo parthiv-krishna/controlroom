@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { header, login, newSession, openSession } from './helpers';
+import { header, sessionAction, login, newSession, openSession } from './helpers';
 
 // A second session on devbox:~/work/api (where "two" works): allowed, with a warning in the
 // new-session dialog and, once the server sees the overlap, in both sessions' headers.
@@ -17,7 +17,7 @@ test('a second session on the same directory warns about the overlap', async ({ 
   await overlap.getByRole('button', { name: 'notes' }).click();
   await expect(header(page).locator('.et.heading')).toHaveText('notes');
 
-  await header(page).getByRole('button', { name: 'Archive' }).click();
+  await sessionAction(page, 'Archive');
   // Its agent is live (idle): archiving stops it.
   await page.getByRole('alertdialog', { name: 'Stop and archive?' }).getByRole('button', { name: 'Stop and archive' }).click();
   await expect(header(page).locator('.status')).toHaveText('Archived');

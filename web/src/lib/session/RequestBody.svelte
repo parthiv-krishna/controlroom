@@ -29,7 +29,7 @@
   <div class="line"><span class="acc">{body.access.replace('_', '-')}</span> <code>{body.path}</code></div>
   {#if body.in_workspace !== null || body.machine}
     <div class="small muted" data-where>
-      {#if body.in_workspace !== null}{body.in_workspace ? 'in the workspace' : 'outside the workspace'}{/if}{#if body.in_workspace !== null && body.machine}{' · '}{/if}{#if body.machine}on <b>{body.machine}</b>{/if}
+      {#if body.in_workspace !== null}{body.in_workspace ? 'In the workspace' : 'Outside the workspace'}{#if body.machine}{' '}on <b>{body.machine}</b>{/if}{:else}On <b>{body.machine}</b>{/if}
     </div>
   {/if}
 {:else if body.kind === 'endpoint'}
@@ -41,26 +41,28 @@
   {/if}
 {:else if body.kind === 'git_push'}
   <pre class="code">{body.command}</pre>
-  <div class="small"><span class="muted">remote</span> {body.remote} · <span class="muted">branch</span> <b>{body.branch}</b></div>
+  <div class="small">To <b>{body.branch}</b> on {body.remote}</div>
   {#if body.force}<div class="warn">⚠ force-push rewrites {body.branch}</div>{/if}
 {:else if body.kind === 'contact'}
   <div class="line">contact <b>{body.peer.name}</b></div>
   {#if body.reason}<div class="reason">“{body.reason}”</div>{/if}
 {:else if body.kind === 'spawn'}
-  <div class="line"><span class="acc">spawn</span> {body.agent} on <b>{body.machine}</b> · {body.title}</div>
+  <div class="line">{body.agent} on <b>{body.machine}</b></div>
   {#if !compact}<div class="small muted">in <code>{body.cwd}</code></div>{/if}
 {:else if body.kind === 'terminal_input'}
   <pre class="code">$ {body.command}</pre>
-  <div class="line" data-shell={body.shell}>{#if session}<OpenTerminal {session} shell={body.shell} {open} />{:else}<b class="shell">{body.shell}</b>{/if} on <b>{body.machine}</b>: type in its terminal</div>
+  <div class="line" data-shell={body.shell}>Type in terminal {#if session}<OpenTerminal {session} shell={body.shell} {open} />{:else}<b class="shell">{body.shell}</b>{/if}{#if body.shell !== body.machine}{' '}on <b>{body.machine}</b>{/if}</div>
 {:else if body.kind === 'privileged'}
   <pre class="code">$ {body.command}</pre>
-  <div class="line"><span class="acc">unsandboxed</span> on <b>{body.machine}</b>{#if body.cwd && !compact} · in <code>{body.cwd}</code>{/if}</div>
+  <div class="line"><span class="acc">unsandboxed</span> on <b>{body.machine}</b></div>
+  {#if body.cwd && !compact}<div class="small muted">in <code>{body.cwd}</code></div>{/if}
   {#if body.reason}<div class="reason">“{body.reason}”</div>{/if}
 {/if}
 
 <style>
   .code { background: var(--bg3); border-radius: 6px; padding: 6px 10px; font-size: 12.5px; }
-  .line { font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .line { font-size: 13px; display: flex; align-items: center; gap: 0 4px; flex-wrap: wrap; }
+  .acc + * { margin-left: 4px; }
   .acc { font: 650 10.5px var(--mono); text-transform: uppercase; padding: 1px 6px; border-radius: 5px; background: var(--bg3); }
   .warn { color: var(--warn); font-size: 12.5px; }
   .reason { color: var(--muted); font-style: italic; font-size: 13px; }

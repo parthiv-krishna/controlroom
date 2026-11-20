@@ -172,7 +172,7 @@ test('a command waiting for terminal input names its shell; a privileged command
   await start(page, S.jobs);
   const input = page.locator('[data-request="req-term-1"]').first();
   await expect(input).toContainText('git rebase -i HEAD~3');
-  await expect(input.locator('[data-shell="buildbox"]')).toContainText('type in its terminal');
+  await expect(input.locator('[data-shell="buildbox"]')).toHaveText('Type in terminal buildbox');
 
   await start(page, S.deploy);
   const privileged = page.locator('[data-request="req-priv-1"]').first();

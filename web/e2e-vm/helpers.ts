@@ -113,6 +113,12 @@ export function header(page: Page): Locator {
   return page.locator('[data-pane="header"]');
 }
 
+/** Picks an action from the session header's ⋯ menu. */
+export async function sessionAction(page: Page, name: string | RegExp): Promise<void> {
+  await header(page).getByRole('button', { name: 'Session actions' }).click();
+  await header(page).getByRole('menu').getByRole(/^Schedules/.test(String(name)) ? 'menuitemcheckbox' : 'menuitem', { name }).click();
+}
+
 /** The open session's timeline. */
 export function timeline(page: Page): Locator {
   return page.locator('[data-pane="session"][aria-label="Timeline"]');
