@@ -202,7 +202,7 @@
   {:else}
     <div class="res">
       {#if req.state === 'answered' && req.answer}
-        → {req.answer.label}{#if req.answer.by}<span class="muted"> by {deviceLabel(req.answer.by)}</span>{/if}
+        → {req.answer.label}{#if req.answer.by}{' '}<span class="muted">by {deviceLabel(req.answer.by)}</span>{/if}
       {:else if req.state === 'withdrawn'}⊘ withdrawn by the agent
       {:else}expired{/if}
     </div>

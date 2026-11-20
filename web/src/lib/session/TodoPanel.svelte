@@ -84,7 +84,7 @@
     <span class="bar"><span style:width="{counted.length ? (done / counted.length) * 100 : 0}%"></span></span>
     <span class="sp"></span>
     <span class="ac ac-{ac.status}" title={ac.reason ?? 'Runs again while todos remain'}>
-      Auto-continue <b>{AC[ac.status]}</b>{#if ac.status === 'on' || ac.status === 'budget'}<span class="muted"> · {ac.runs_used}/{ac.budget}</span>{/if}
+      Auto-continue <b>{AC[ac.status]}</b>{#if ac.status === 'on' || ac.status === 'budget'}{' '}<span class="muted">· {ac.runs_used}/{ac.budget}</span>{/if}
     </span>
     {#if ac.status === 'off'}<button class="btn xs" disabled={!online} onclick={() => setAuto({ auto_continue: true })}>Turn on</button>
     {:else if ac.status === 'on'}<button class="btn xs ghost" disabled={!online} onclick={() => setAuto({ auto_continue: false })}>Turn off</button>

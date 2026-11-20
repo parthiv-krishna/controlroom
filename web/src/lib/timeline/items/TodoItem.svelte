@@ -9,7 +9,7 @@
 <div class="todo">
   <div class="muted small">Todo list</div>
   {#each item.items as t (t.id)}
-    <div class="t s-{t.status}"><span aria-hidden="true">{MARK[t.status]}</span> {t.text}{#if t.reason}<span class="muted"> · {t.reason}</span>{/if}</div>
+    <div class="t s-{t.status}"><span aria-hidden="true">{MARK[t.status]}</span> {t.text}{#if t.reason}{' '}<span class="muted">· {t.reason}</span>{/if}</div>
   {/each}
 </div>
 

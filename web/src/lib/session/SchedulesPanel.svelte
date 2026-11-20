@@ -105,8 +105,8 @@
         <div class="small muted msg">“{x.message}”</div>
         <div class="small">
           {#if x.enabled && x.next_run}next {formatIn(x.next_run, x.timezone)} <span class="muted">({inTime(x.next_run, now)})</span>{:else}<span class="muted">disabled</span>{/if}
-          {#if last}<span class="muted"> · last</span> <button class="out o-{last.outcome}" title="Show recent runs" onclick={() => (history = history === x.id ? null : x.id)}>{runText(last)}</button> <span class="muted">{ago(last.until ?? last.at, now)}</span>{/if}
-          <span class="muted"> · if busy: {x.if_busy} · after downtime: {x.missed === 'run_once' ? 'run once' : 'skip'}</span>
+          {#if last}{' '}<span class="muted">· last</span> <button class="out o-{last.outcome}" title="Show recent runs" onclick={() => (history = history === x.id ? null : x.id)}>{runText(last)}</button> <span class="muted">{ago(last.until ?? last.at, now)}</span>{/if}
+          {' '}<span class="muted">· if busy: {x.if_busy} · after downtime: {x.missed === 'run_once' ? 'run once' : 'skip'}</span>
         </div>
         {#if x.pending_run}
           <div class="small pending" data-pending>The {formatIn(x.pending_run, x.timezone)} run is waiting for the machine; it is retried until the next run, then missed.</div>
