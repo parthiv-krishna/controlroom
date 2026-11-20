@@ -107,6 +107,7 @@ export type * from "./MediatedCommand";
 export type * from "./MediationAction";
 export type * from "./MessageDirection";
 export type * from "./MessageId";
+export type * from "./MessageOrigin";
 export type * from "./MessageOutcome";
 export type * from "./MessageRole";
 export type * from "./MissedPolicy";

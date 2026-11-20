@@ -81,7 +81,7 @@ impl Core {
             todos: Vec::new(),
             injections: Vec::new(),
             auto: Default::default(),
-            triggers: Vec::new(),
+            lines: Vec::new(),
         };
         let driver = self.agents.driver(driver);
         self.insert_session(Session::new(data, driver, self.machines.clone()));

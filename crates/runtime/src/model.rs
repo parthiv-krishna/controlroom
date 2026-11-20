@@ -11,7 +11,7 @@ use controlroom_protocol::session::{
     AgentSession, AutoContinueStatus, ContentPart, DriverKind, PromptOrigin, QueueItem, Request,
     RequestKind, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec, StartedBy, Todo, TodoStatus,
 };
-use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
+use controlroom_protocol::timeline::{InjectOrigin, MessageOrigin, RunTrigger};
 use serde::{Deserialize, Serialize};
 
 use crate::hosts::{LateCall, ShellRecord, WorkspaceRecord};
@@ -222,8 +222,8 @@ pub(crate) struct SessionData {
     /// Items waiting to be delivered into the agent's next turn, in order.
     pub injections: Vec<Injection>,
     pub auto: AutoContinue,
-    /// Triggers of the newest run-starting lines, oldest first.
-    pub triggers: Vec<TriggerEntry>,
+    /// Who sent the newest user-role lines and why, oldest first (see [`LineEntry`]).
+    pub lines: Vec<LineEntry>,
     /// Background jobs, oldest first (job ids are ULIDs).
     pub jobs: BTreeMap<JobId, JobRecord>,
 }
@@ -291,6 +291,9 @@ pub(crate) struct Injection {
     pub origin: InjectOrigin,
     /// Shown as the run's trigger, e.g. "answer: Which database?".
     pub label: String,
+    /// What it is about, by id (see [`MessageOrigin::Inject`]).
+    #[serde(default)]
+    pub source: Option<String>,
     pub content: Vec<ContentPart>,
     /// Starts a run when the agent is idle.
     pub wake: bool,
@@ -317,6 +320,7 @@ impl Injection {
             id: ulid::Ulid::generate().to_string(),
             origin,
             label,
+            source: None,
             content: vec![ContentPart::text(text)],
             wake,
             created_at: now,
@@ -334,13 +338,20 @@ impl Injection {
         }
     }
 
-    /// The run trigger when it starts a run.
-    pub(crate) fn trigger(&self) -> RunTrigger {
+    /// Names what it is about (see [`MessageOrigin::Inject`]).
+    pub(crate) fn about(mut self, source: impl Into<String>) -> Self {
+        self.source = Some(source.into());
+        self
+    }
+
+    /// The origin of its message.
+    pub(crate) fn message_origin(&self) -> MessageOrigin {
         match self.origin {
-            InjectOrigin::Continue => RunTrigger::AutoContinue,
-            origin => RunTrigger::Inject {
+            InjectOrigin::Continue => MessageOrigin::AutoContinue,
+            origin => MessageOrigin::Inject {
                 origin,
                 label: self.label.clone(),
+                source: self.source.clone(),
             },
         }
     }
@@ -419,18 +430,24 @@ impl Default for AutoContinue {
     }
 }
 
-/// The trigger of a run-starting line the runtime wrote, by its tag. The driver only knows the
-/// tag's kind; the runtime puts the real trigger (device, schedule, injection origin) on the
-/// run item. Persisted, so a re-fold after a restart shows the same trigger.
+/// Who sent a user-role line the runtime wrote and why, by its tag. The driver only knows the
+/// tag's kind; the runtime puts the line's origin (device, schedule, injection) on its message
+/// item and, should the line start a run, the trigger on the run item (see `attribution`).
+/// Persisted (column `run_triggers`), so a re-fold after a restart shows the same.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct TriggerEntry {
+pub(crate) struct LineEntry {
     pub tag: String,
+    /// Derived from the origin when recorded; kept on its own for entries from before origins.
     pub trigger: RunTrigger,
+    /// `None` in entries recorded before message origins existed.
+    #[serde(default)]
+    pub origin: Option<MessageOrigin>,
 }
 
-/// Run triggers kept per session: the newest few (only runs not yet settled and checkpointed
-/// can need them).
-pub(crate) const TRIGGERS_KEPT: usize = 32;
+/// Line entries kept per session: the newest few. Only lines whose run or message isn't
+/// checkpointed yet need theirs; a line pi holds in its queue (a steer during a long tool
+/// call) needs it until pi delivers it, past the lines written meanwhile.
+pub(crate) const LINES_KEPT: usize = 64;
 
 /// A stable string for a tag (part 0 lines start runs).
 pub(crate) fn tag_key(tag: &LineTag) -> String {
@@ -442,24 +459,30 @@ pub(crate) fn tag_key(tag: &LineTag) -> String {
 }
 
 impl SessionData {
-    /// The trigger recorded for a run-starting line.
-    pub(crate) fn trigger_for(&self, tag: &LineTag) -> Option<&RunTrigger> {
+    fn line(&self, tag: &LineTag) -> Option<&LineEntry> {
         let key = tag_key(tag);
-        self.triggers
-            .iter()
-            .rev()
-            .find(|e| e.tag == key)
-            .map(|e| &e.trigger)
+        self.lines.iter().rev().find(|e| e.tag == key)
     }
 
-    /// Records the trigger of a run-starting line (keeping the newest few).
-    pub(crate) fn record_trigger(&mut self, tag: &LineTag, trigger: RunTrigger) {
-        self.triggers.push(TriggerEntry {
+    /// The trigger recorded for a line, should it start a run.
+    pub(crate) fn trigger_for(&self, tag: &LineTag) -> Option<&RunTrigger> {
+        self.line(tag).map(|e| &e.trigger)
+    }
+
+    /// The origin recorded for a line's message.
+    pub(crate) fn origin_for(&self, tag: &LineTag) -> Option<&MessageOrigin> {
+        self.line(tag).and_then(|e| e.origin.as_ref())
+    }
+
+    /// Records who sent a user-role line about to be written (keeping the newest few).
+    pub(crate) fn record_line(&mut self, tag: &LineTag, origin: MessageOrigin) {
+        self.lines.push(LineEntry {
             tag: tag_key(tag),
-            trigger,
+            trigger: crate::attribution::run_trigger(&origin),
+            origin: Some(origin),
         });
-        let excess = self.triggers.len().saturating_sub(TRIGGERS_KEPT);
-        self.triggers.drain(..excess);
+        let excess = self.lines.len().saturating_sub(LINES_KEPT);
+        self.lines.drain(..excess);
     }
 
     /// Todo entries still to do: pending or in progress.

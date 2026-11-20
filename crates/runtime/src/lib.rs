@@ -30,13 +30,15 @@
 //!
 //! Agent runtime primitives (spec §8): `inject` (the single delivery path into the agent's
 //! next turn), `questions` (non-blocking `ask_user`), `todos` (the shared list), `auto`
-//! (auto-continue), `triggers` (run triggers from the runtime's own knowledge), `items`
-//! (daemon-made timeline items) and `agent` (the agent API the daemon's agent socket serves).
+//! (auto-continue), `attribution` (message origins and run triggers from the runtime's own
+//! knowledge), `items` (daemon-made timeline items) and `agent` (the agent API the daemon's
+//! agent socket serves).
 //!
 //! **Not yet here** (later phases add them as new modules and migrations): children, the
 //! mailbox and contact policy, `bash_privileged` and `terminal_read`.
 
 mod agent;
+mod attribution;
 mod auto;
 mod commands;
 mod core;
@@ -61,7 +63,6 @@ mod session;
 mod store;
 mod timeline;
 mod todos;
-mod triggers;
 mod usage;
 
 #[cfg(test)]

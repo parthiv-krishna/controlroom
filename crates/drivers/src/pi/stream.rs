@@ -37,6 +37,7 @@ impl PiDriver {
                     ItemBody::Message {
                         role: MessageRole::Notice,
                         content: content::from_user(&content),
+                        origin: None,
                     },
                     Life::Done,
                 );
@@ -184,6 +185,7 @@ impl PiDriver {
             TextKind::Text => ItemBody::Message {
                 role: MessageRole::Agent,
                 content: Vec::new(),
+                origin: None,
             },
             TextKind::Thinking => ItemBody::Thinking {
                 text: String::new(),

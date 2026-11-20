@@ -1,5 +1,6 @@
 //! Lines written to pi's stdin and pi's `response`s to them.
 
+use controlroom_protocol::ids::ItemId;
 use controlroom_protocol::session::{ContentPart, ContextUsage};
 use controlroom_protocol::timeline::{
     ItemBody, MessageRole, RunTrigger, TokenUsage, ToolKind, ToolOutput, ToolStatus, UsageScope,
@@ -236,6 +237,12 @@ impl PiDriver {
                     started,
                 });
             }
+            if let Some(tag) = &tag {
+                out.events.push(DriverEvent::UserMessage {
+                    item: ItemId::new(item.clone()),
+                    tag: tag.clone(),
+                });
+            }
             self.user_message(item, from, at, content, out);
         }
         if started {
@@ -267,6 +274,7 @@ impl PiDriver {
             ItemBody::Message {
                 role: MessageRole::User,
                 content,
+                origin: None,
             },
             Life::Done,
         );

@@ -127,6 +127,62 @@ pub enum RunTrigger {
     Unknown,
 }
 
+/// Where a user-role message came from, so a client can render machine-written input (schedule
+/// prompts, job wakes, nudges, notices) as compact rows tied to their source. Set by the agent
+/// daemon on the message items of the lines it writes; `null` on agent messages, on messages
+/// it can't attribute (an extension's, or from before origins existed).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MessageOrigin {
+    /// A prompt the user sent to an idle agent.
+    User {
+        /// The sending device.
+        #[serde(default)]
+        device: Option<DeviceRef>,
+    },
+    /// A prompt the user queued, delivered from the queue.
+    Queue {
+        /// The device that queued it.
+        #[serde(default)]
+        device: Option<DeviceRef>,
+    },
+    /// A send-now delivered into the running run (a steer).
+    Steer {
+        /// The sending device.
+        #[serde(default)]
+        device: Option<DeviceRef>,
+    },
+    /// A controller schedule's prompt.
+    Schedule {
+        /// The schedule.
+        schedule_id: ScheduleId,
+        /// Its name when it fired.
+        #[serde(default)]
+        name: String,
+    },
+    /// Input the agent daemon wrote for the agent: a job wake, a child's result, a peer's
+    /// message, a question's answer, a late tool result, a workspace or sandbox notice, the
+    /// user's todo edits.
+    Inject {
+        /// What kind of injection.
+        origin: InjectOrigin,
+        /// A short label, e.g. `"job: tests (exit 0)"`.
+        #[serde(default)]
+        label: String,
+        /// What it is about, by id: the job (`job`, when the wake covers one job), the child
+        /// session (`child`), the sending session (`message`), the question's request
+        /// (`answer`), the tool call (`tool_late`), the workspace or machine (`workspace`,
+        /// when the notice is about one). `null` otherwise.
+        #[serde(default)]
+        source: Option<String>,
+    },
+    /// An auto-continue nudge (open todo entries remain).
+    AutoContinue,
+    /// An origin this build doesn't know.
+    #[serde(other)]
+    Unknown,
+}
+
 /// Whether a run is still going.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -364,6 +420,9 @@ pub enum ItemBody {
         role: MessageRole,
         /// Its content.
         content: Vec<ContentPart>,
+        /// Where a user message came from; `null` for other roles and unattributed messages.
+        #[serde(default)]
+        origin: Option<MessageOrigin>,
     },
     /// The agent's reasoning.
     Thinking {

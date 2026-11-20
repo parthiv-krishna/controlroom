@@ -286,6 +286,7 @@ fn steers_reaching_an_idle_agent() {
                 ItemBody::Message {
                     role: MessageRole::Agent,
                     content,
+                    ..
                 } => content.iter().find_map(|c| match c {
                     ContentPart::Text { text } => Some(text.as_str()),
                     _ => None,

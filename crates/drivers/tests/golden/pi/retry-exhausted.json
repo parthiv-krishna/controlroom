@@ -11,10 +11,11 @@
    "events": []},
   {"seq": 4,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","origin":null,"role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},"op":"upsert"}
    ],
    "events": [
-     {"event":"ready"}
+     {"event":"ready"},
+     {"event":"user_message","item":"user-2","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 5,
    "ops": [
@@ -78,7 +79,7 @@
    ]}
 ],
 "timeline": [
-  {"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},
+  {"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","origin":null,"role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000001},
   {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000321},
   {"actor":"root","error":"503: {\"code\":503,\"message\":\"service unavailable\",\"type\":\"mock_error\"}","id":"run-5","kind":"run","outcome":"failed","seq_from":5,"seq_to":32,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000324},
   {"actor":"root","attempt":2,"delay_ms":40,"error":"503: {\"code\":503,\"message\":\"service unavailable\",\"type\":\"mock_error\"}","id":"retry-15","kind":"retry","max_attempts":2,"phase":"gave_up","seq_from":15,"seq_to":31,"streaming":false,"ts":1700000000356}

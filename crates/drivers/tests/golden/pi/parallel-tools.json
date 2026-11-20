@@ -11,10 +11,11 @@
    "events": []},
   {"seq": 4,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","origin":null,"role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},"op":"upsert"}
    ],
    "events": [
-     {"event":"ready"}
+     {"event":"ready"},
+     {"event":"user_message","item":"user-2","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 5,
    "ops": [
@@ -74,7 +75,7 @@
    "events": []},
   {"seq": 32,
    "ops": [
-     {"item":{"actor":"root","content":[],"id":"msg-31.0","kind":"message","role":"agent","seq_from":32,"seq_to":32,"streaming":true,"ts":1700000000402},"op":"upsert"}
+     {"item":{"actor":"root","content":[],"id":"msg-31.0","kind":"message","origin":null,"role":"agent","seq_from":32,"seq_to":32,"streaming":true,"ts":1700000000402},"op":"upsert"}
    ],
    "events": []},
   {"seq": 33,
@@ -114,13 +115,13 @@
    ]}
 ],
 "timeline": [
-  {"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},
+  {"actor":"root","content":[{"kind":"text","text":"Do the scripted thing."}],"id":"user-2","kind":"message","origin":null,"role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},
   {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000311},
   {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":39,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000314},
   {"actor":"root","duration_ms":6,"exit":null,"id":"msg-11.0","input":"{\n  \"path\": \"notes.txt\"\n}","kind":"tool_call","name":"read","output":{"kind":"text","text":"alpha\nbeta\ngamma\n"},"parent_tool_call_id":null,"seq_from":12,"seq_to":24,"status":"completed","streaming":false,"title":"Read notes.txt","tool_call_id":"call_a","tool_kind":"read","ts":1700000000345},
   {"actor":"root","duration_ms":5,"exit":null,"id":"msg-11.1","input":"{\n  \"path\": \"src/main.txt\"\n}","kind":"tool_call","name":"read","output":{"kind":"text","text":"fn main() {}\n"},"parent_tool_call_id":null,"seq_from":15,"seq_to":23,"status":"completed","streaming":false,"title":"Read src/main.txt","tool_call_id":"call_b","tool_kind":"read","ts":1700000000348},
   {"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-20","kind":"usage","scope":"turn","seq_from":20,"seq_to":20,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000349},
-  {"actor":"root","content":[{"kind":"text","text":"Read both files."}],"id":"msg-31.0","kind":"message","role":"agent","seq_from":32,"seq_to":35,"streaming":false,"ts":1700000000402},
+  {"actor":"root","content":[{"kind":"text","text":"Read both files."}],"id":"msg-31.0","kind":"message","origin":null,"role":"agent","seq_from":32,"seq_to":35,"streaming":false,"ts":1700000000402},
   {"actor":"root","context":{"cost":0.00024799999999999996,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-36","kind":"usage","scope":"turn","seq_from":36,"seq_to":36,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000403}
 ],
 "view": {"last_outcome":"completed","last_seq":40,"last_ts":1700000000443,"native":null,"open_requests":[],"open_tools":0,"options":[],"ready":false,"run_active":false,"unanswered":[]}}

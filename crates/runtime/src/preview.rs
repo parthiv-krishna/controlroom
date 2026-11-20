@@ -36,6 +36,7 @@ impl PreviewSource {
                 ItemBody::Message {
                     role: MessageRole::Agent,
                     content,
+                    ..
                 } => {
                     let text = content
                         .iter()

@@ -7,6 +7,7 @@ import type { ItemId } from "./ItemId";
 import type { Job } from "./Job";
 import type { MessageDirection } from "./MessageDirection";
 import type { MessageId } from "./MessageId";
+import type { MessageOrigin } from "./MessageOrigin";
 import type { MessageOutcome } from "./MessageOutcome";
 import type { MessageRole } from "./MessageRole";
 import type { NoticeLevel } from "./NoticeLevel";
@@ -78,7 +79,11 @@ role: MessageRole,
 /**
  * Its content.
  */
-content: Array<ContentPart>, } | { "kind": "thinking", 
+content: Array<ContentPart>, 
+/**
+ * Where a user message came from; `null` for other roles and unattributed messages.
+ */
+origin: MessageOrigin | null, } | { "kind": "thinking", 
 /**
  * The reasoning text.
  */

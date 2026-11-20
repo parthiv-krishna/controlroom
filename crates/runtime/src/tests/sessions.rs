@@ -171,7 +171,7 @@ async fn create_prompt_reply_idle() {
         .backlog
         .iter()
         .filter_map(|item| match &item.body {
-            ItemBody::Message { role, content } => Some((*role, content.clone())),
+            ItemBody::Message { role, content, .. } => Some((*role, content.clone())),
             _ => None,
         })
         .collect();

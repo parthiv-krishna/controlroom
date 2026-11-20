@@ -17,7 +17,7 @@ use controlroom_protocol::session::{
     RequestState, SessionDetail, SessionState,
 };
 use controlroom_protocol::session::{SessionSummary, SessionUsage};
-use controlroom_protocol::timeline::{RawFrame, RawStream, RunTrigger, TimelineOp};
+use controlroom_protocol::timeline::{MessageOrigin, RawFrame, RawStream, RunTrigger, TimelineOp};
 use controlroom_transcript::{Body, Record};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::task::AbortHandle;
@@ -148,8 +148,10 @@ pub(crate) struct Derived {
     pub title: Option<String>,
     pub process: Process,
     pub preview: PreviewSource,
-    /// Run items with the trigger the runtime recorded for them (see `triggers`).
+    /// Run items with the trigger the runtime recorded for them (see `attribution`).
     pub run_triggers: HashMap<ItemId, RunTrigger>,
+    /// User messages with the origin the runtime recorded for them (see `attribution`).
+    pub message_origins: HashMap<ItemId, MessageOrigin>,
 }
 
 /// What the machine and session feeds last saw.

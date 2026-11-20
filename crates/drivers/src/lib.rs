@@ -32,7 +32,7 @@ pub use fake::FakeDriver;
 pub use pi::PiDriver;
 
 use controlroom_protocol::agentd::OptionValue;
-use controlroom_protocol::ids::{OpId, QueueId, RequestId};
+use controlroom_protocol::ids::{ItemId, OpId, QueueId, RequestId};
 use controlroom_protocol::session::{
     ContentPart, ContextUsage, DriverKind, Request, Response, RunOutcome, SessionOption,
 };
@@ -176,6 +176,15 @@ pub enum DriverEvent {
     /// line, before the other events of that record. This is how the runtime learns, from the
     /// transcript alone, which of its writes the agent was given (exactly-once after a crash).
     Written {
+        /// The line.
+        tag: LineTag,
+    },
+    /// A user message item shows a tagged line (a prompt, steer, follow-up or injection):
+    /// reported when the item first appears, so the runtime can put the line's origin on it, in
+    /// that op and every later one of the item. Never reported for messages without a line.
+    UserMessage {
+        /// The message item.
+        item: ItemId,
         /// The line.
         tag: LineTag,
     },

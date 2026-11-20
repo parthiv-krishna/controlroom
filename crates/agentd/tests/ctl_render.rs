@@ -82,6 +82,7 @@ fn message(role: MessageRole, text: &str) -> ItemBody {
     ItemBody::Message {
         role,
         content: vec![ContentPart::text(text)],
+        origin: None,
     }
 }
 

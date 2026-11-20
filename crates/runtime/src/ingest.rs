@@ -55,7 +55,7 @@ impl Core {
         let session = self.session_mut(id)?;
         let before = session.data.clone();
         let mut out = session.fold(record);
-        crate::triggers::enrich(session, &mut out);
+        crate::attribution::enrich(session, &mut out);
         if let Body::Meta(_) = &record.body {
             session.derived.process = crate::session::Process {
                 meta_seq: Some(seq),
@@ -201,7 +201,8 @@ impl Core {
             | DriverEvent::Context(_)
             | DriverEvent::Usage { .. }
             | DriverEvent::Options(_)
-            | DriverEvent::Title(_) => {}
+            | DriverEvent::Title(_)
+            | DriverEvent::UserMessage { .. } => {}
         }
     }
 
@@ -305,7 +306,8 @@ fn observe(session: &mut Session, event: &DriverEvent, at: UnixMillis) {
         | DriverEvent::NativeSession(_)
         | DriverEvent::Accepted { .. }
         | DriverEvent::Rejected { .. }
-        | DriverEvent::Options(_) => {}
+        | DriverEvent::Options(_)
+        | DriverEvent::UserMessage { .. } => {}
     }
 }
 

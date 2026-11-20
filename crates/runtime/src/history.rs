@@ -12,7 +12,7 @@ pub(crate) fn export(items: &[TimelineItem]) -> String {
     let mut out = String::from("# Earlier conversation\n");
     for item in items {
         match &item.body {
-            ItemBody::Message { role, content } => {
+            ItemBody::Message { role, content, .. } => {
                 let who = match role {
                     MessageRole::User => "User",
                     MessageRole::Agent => "Agent",

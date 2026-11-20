@@ -89,7 +89,7 @@ impl Core {
             Ok(lines) => {
                 // A steer can start the run too, if the active one settles before the agent
                 // reads the line.
-                session.data.record_trigger(&tag, injection.trigger());
+                session.data.record_line(&tag, injection.message_origin());
                 session.data.injections[index].delivery = Some(Delivery::Handed(via));
                 session.live.handed.insert(tag);
                 for line in lines {

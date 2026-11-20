@@ -75,7 +75,8 @@ impl Core {
         let now = self.clock.now();
         self.inject(
             id,
-            Injection::new(InjectOrigin::ToolLate, label, text, true, now),
+            Injection::new(InjectOrigin::ToolLate, label, text, true, now)
+                .about(late.call_id.as_str()),
         )
     }
 }

@@ -56,9 +56,11 @@
    ]},
   {"seq": 12,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"Answer something."}],"id":"user-11","kind":"message","role":"user","seq_from":11,"seq_to":12,"streaming":false,"ts":1700000000331},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Answer something."}],"id":"user-11","kind":"message","origin":null,"role":"user","seq_from":11,"seq_to":12,"streaming":false,"ts":1700000000331},"op":"upsert"}
    ],
-   "events": []},
+   "events": [
+     {"event":"user_message","item":"user-11","tag":{"op":"fixture-5","part":0}}
+   ]},
   {"seq": 13,
    "ops": [
      {"item":{"actor":"root","error":null,"id":"run-13","kind":"run","outcome":null,"seq_from":13,"seq_to":13,"state":"running","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000333},"op":"upsert"}
@@ -69,7 +71,7 @@
    ]},
   {"seq": 20,
    "ops": [
-     {"item":{"actor":"root","content":[],"id":"msg-19.0","kind":"message","role":"agent","seq_from":20,"seq_to":20,"streaming":true,"ts":1700000000360},"op":"upsert"}
+     {"item":{"actor":"root","content":[],"id":"msg-19.0","kind":"message","origin":null,"role":"agent","seq_from":20,"seq_to":20,"streaming":true,"ts":1700000000360},"op":"upsert"}
    ],
    "events": []},
   {"seq": 21,
@@ -197,9 +199,9 @@
 ],
 "timeline": [
   {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000329},
-  {"actor":"root","content":[{"kind":"text","text":"Answer something."}],"id":"user-11","kind":"message","role":"user","seq_from":11,"seq_to":12,"streaming":false,"ts":1700000000331},
+  {"actor":"root","content":[{"kind":"text","text":"Answer something."}],"id":"user-11","kind":"message","origin":null,"role":"user","seq_from":11,"seq_to":12,"streaming":false,"ts":1700000000331},
   {"actor":"root","error":null,"id":"run-13","kind":"run","outcome":"completed","seq_from":13,"seq_to":28,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000333},
-  {"actor":"root","content":[{"kind":"text","text":"Answer for the stats."}],"id":"msg-19.0","kind":"message","role":"agent","seq_from":20,"seq_to":24,"streaming":false,"ts":1700000000360},
+  {"actor":"root","content":[{"kind":"text","text":"Answer for the stats."}],"id":"msg-19.0","kind":"message","origin":null,"role":"agent","seq_from":20,"seq_to":24,"streaming":false,"ts":1700000000360},
   {"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-25","kind":"usage","scope":"turn","seq_from":25,"seq_to":25,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000364},
   {"actor":"root","context":{"cost":0.00012399999999999998,"size":128000,"used":112},"cost":0.00012399999999999998,"id":"usage-30","kind":"usage","scope":"session","seq_from":30,"seq_to":30,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000367},
   {"actor":"root","id":"error-38","kind":"error","seq_from":38,"seq_to":38,"streaming":false,"text":"pi rejected get_entries: Entry not found: no-such-entry","ts":1700000000373},

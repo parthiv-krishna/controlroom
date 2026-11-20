@@ -258,7 +258,10 @@ impl Core {
             return Ok(());
         }
         let wake = wake::compose(&fresh);
-        let injection = Injection::new(InjectOrigin::Job, wake.label, wake.text, true, now);
+        let mut injection = Injection::new(InjectOrigin::Job, wake.label, wake.text, true, now);
+        if let [one] = fresh.as_slice() {
+            injection = injection.about(one.job.to_string());
+        }
         self.inject(id, injection)
     }
 
@@ -315,7 +318,8 @@ impl Core {
                 text,
                 false,
                 now,
-            );
+            )
+            .about(machine.to_string());
             self.inject(id, injection)?;
         }
         Ok(())

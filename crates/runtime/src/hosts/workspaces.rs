@@ -387,7 +387,7 @@ impl Core {
         session.data.workspaces.push(record.clone());
         session.data.shells.push(shell);
         self.task(Task::OpenShells(id));
-        self.workspace_notice(id, text)?;
+        self.workspace_notice(id, record.id, text)?;
         let availability = self.machines.availability(&record.machine_id);
         Ok(record.to_workspace(false, availability))
     }
@@ -432,6 +432,7 @@ impl Core {
         )));
         self.workspace_notice(
             id,
+            workspace,
             format!(
                 "[controlroom] The user removed the workspace {machine}:{} and its shells; don't \
                  use paths there any more.",
@@ -440,8 +441,13 @@ impl Core {
         )
     }
 
-    /// A notice for the agent's next turn about its workspaces (doesn't wake it).
-    pub(crate) fn workspace_notice(&mut self, id: SessionId, text: String) -> Result<(), RpcError> {
+    /// A notice for the agent's next turn about one of its workspaces (doesn't wake it).
+    fn workspace_notice(
+        &mut self,
+        id: SessionId,
+        workspace: WorkspaceId,
+        text: String,
+    ) -> Result<(), RpcError> {
         let now = self.clock.now();
         let injection = Injection::new(
             InjectOrigin::Workspace,
@@ -449,7 +455,8 @@ impl Core {
             text,
             false,
             now,
-        );
+        )
+        .about(workspace.to_string());
         self.inject(id, injection)
     }
 

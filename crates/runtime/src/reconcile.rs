@@ -144,7 +144,7 @@ impl Core {
                     if delivered {
                         // It starts the next run if this one settles before the agent
                         // reads it.
-                        crate::triggers::record_steered_entry(&mut session.data, &head);
+                        crate::attribution::record_steered_entry(&mut session.data, &head);
                         session.data.queue[index].delivery = Some(Delivery::Handed(Via::Steer));
                     } else {
                         session.data.queue[index].no_steer = true;
@@ -180,7 +180,7 @@ impl Core {
         let delivered = self.write(id, &Intent::Prompt { content }, head.tag());
         if let Ok(session) = self.session_mut(id) {
             if delivered {
-                crate::triggers::record_queue_entry(&mut session.data, &head);
+                crate::attribution::record_queue_entry(&mut session.data, &head);
                 session.data.queue[index].delivery = Some(Delivery::Handed(Via::Prompt));
                 session.data.history_note = None;
             } else {

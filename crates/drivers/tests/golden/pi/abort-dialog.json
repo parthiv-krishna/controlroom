@@ -11,10 +11,11 @@
    "events": []},
   {"seq": 4,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"Run the guarded command."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Run the guarded command."}],"id":"user-2","kind":"message","origin":null,"role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},"op":"upsert"}
    ],
    "events": [
-     {"event":"ready"}
+     {"event":"ready"},
+     {"event":"user_message","item":"user-2","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 5,
    "ops": [
@@ -108,7 +109,7 @@
    ]}
 ],
 "timeline": [
-  {"actor":"root","content":[{"kind":"text","text":"Run the guarded command."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},
+  {"actor":"root","content":[{"kind":"text","text":"Run the guarded command."}],"id":"user-2","kind":"message","origin":null,"role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},
   {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000311},
   {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"cancelled","seq_from":5,"seq_to":32,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000314},
   {"actor":"root","duration_ms":null,"exit":null,"id":"msg-11.0","input":"echo fixture-guard","kind":"tool_call","name":"bash","output":{"kind":"terminal","text":"Operation aborted"},"parent_tool_call_id":null,"seq_from":12,"seq_to":23,"status":"cancelled","streaming":false,"title":"echo fixture-guard","tool_call_id":"call_guarded","tool_kind":"execute","ts":1700000000343},

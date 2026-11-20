@@ -114,7 +114,8 @@ impl FakeDriver {
         let Ok(input) = serde_json::from_str::<Input>(raw) else {
             return;
         };
-        if let Some(tag) = input.tag.to_tag() {
+        let tag = input.tag.to_tag();
+        if let Some(tag) = tag.clone() {
             self.view.unanswered.push(tag.clone());
             if matches!(input.command, Command::NewSession { .. }) {
                 self.switching = Some(tag.clone());
@@ -135,8 +136,15 @@ impl FakeDriver {
                     ItemBody::Message {
                         role: MessageRole::User,
                         content: vec![ContentPart::text(text)],
+                        origin: None,
                     },
                 );
+                if let Some(tag) = tag {
+                    out.events.push(DriverEvent::UserMessage {
+                        item: item.id.clone(),
+                        tag,
+                    });
+                }
                 out.ops.push(upsert(item, rec));
             }
             Command::Answer { request, response } => {
@@ -248,6 +256,7 @@ impl FakeDriver {
                         ItemBody::Message {
                             role: MessageRole::Agent,
                             content: vec![ContentPart::text(text)],
+                            origin: None,
                         },
                     );
                     self.message = Some(item.id.clone());

@@ -210,7 +210,7 @@ const TOOL_OUTPUT: Prefix = Prefix {
 /// The streamed text of an item, with how its lines start.
 fn streamed_text(body: &ItemBody) -> Option<(Prefix, String)> {
     match body {
-        ItemBody::Message { role, content } => {
+        ItemBody::Message { role, content, .. } => {
             let head = match role {
                 MessageRole::User => "user: ",
                 MessageRole::Agent => "agent: ",

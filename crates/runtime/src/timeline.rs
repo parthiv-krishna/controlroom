@@ -133,6 +133,7 @@ mod tests {
             body: ItemBody::Message {
                 role: MessageRole::Agent,
                 content: vec![ContentPart::text("he")],
+                origin: None,
             },
         };
         append_text(&mut item, "llo");
@@ -140,7 +141,8 @@ mod tests {
             item.body,
             ItemBody::Message {
                 role: MessageRole::Agent,
-                content: vec![ContentPart::text("hello")]
+                content: vec![ContentPart::text("hello")],
+                origin: None,
             }
         );
     }

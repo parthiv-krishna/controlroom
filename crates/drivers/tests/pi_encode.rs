@@ -7,7 +7,7 @@ use controlroom_drivers::{
     Driver, DriverEvent, EncodeError, Intent, LineTag, NativeRef, PiDriver, StartMode,
 };
 use controlroom_protocol::agentd::OptionValue;
-use controlroom_protocol::ids::{OpId, QueueId};
+use controlroom_protocol::ids::{ItemId, OpId, QueueId};
 use controlroom_protocol::session::{
     ContentPart, QuestionAnswer, RequestKind, RequestState, Response, RunOutcome,
 };
@@ -135,7 +135,16 @@ fn prompt_round_trip_starts_a_run_caused_by_its_tag() {
         "prompt",
         json!({"disposition": "started"}),
     );
-    assert_eq!(events, [DriverEvent::Ready]);
+    assert_eq!(
+        events,
+        [
+            DriverEvent::Ready,
+            DriverEvent::UserMessage {
+                item: ItemId::new("user-2"),
+                tag: tag.clone(),
+            },
+        ]
+    );
     assert!(!session.driver.view().run_active);
     assert_eq!(session.driver.view().unanswered, std::slice::from_ref(&tag));
 
@@ -301,6 +310,7 @@ fn a_send_now_racing_the_end_of_a_run_starts_the_next_run() {
         content: text("Change of plan."),
     };
     let lines = session.send(&steer, &tag);
+    let written = session.seq;
     assert_eq!(lines[0]["type"], "prompt");
     assert_eq!(lines[0]["streamingBehavior"], "steer");
     session.read(json!({"type": "agent_end", "messages": []}));
@@ -311,7 +321,14 @@ fn a_send_now_racing_the_end_of_a_run_starts_the_next_run() {
     let mut ops = Vec::new();
     let out = session.read(json!({"id": id, "type": "response", "command": "prompt",
         "success": true, "data": {"disposition": "started"}}));
-    assert_eq!(out.events, [], "accepted once the run is active");
+    assert_eq!(
+        out.events,
+        [DriverEvent::UserMessage {
+            item: ItemId::new(format!("user-{written}")),
+            tag: tag.clone(),
+        }],
+        "shown, and accepted once the run is active"
+    );
     ops.extend(out.ops);
     assert!(session.driver.view().run_starting);
     let out = session.read(json!({"type": "agent_start"}));
@@ -366,13 +383,21 @@ fn an_injection_racing_the_end_of_a_run_starts_the_next_run() {
         wake: true,
     };
     let lines = session.send(&inject, &tag);
+    let written = session.seq;
     session.read(json!({"type": "agent_end", "messages": []}));
     session.read(json!({"type": "agent_settled", "aborted": false}));
     assert!(!session.driver.view().run_active);
 
     let id = lines[0]["id"].as_str().expect("id").to_owned();
     let events = session.ok(&id, "prompt", json!({"disposition": "started"}));
-    assert_eq!(events, [], "accepted once the run is active");
+    assert_eq!(
+        events,
+        [DriverEvent::UserMessage {
+            item: ItemId::new(format!("user-{written}")),
+            tag: tag.clone(),
+        }],
+        "shown, and accepted once the run is active"
+    );
     assert!(session.driver.view().run_starting);
     let out = session.read(json!({"type": "agent_start"}));
     assert!(
@@ -407,7 +432,16 @@ fn accepted_steer_is_shown_and_moves_to_its_delivery() {
         "prompt",
         json!({"disposition": "queued"}),
     );
-    assert_eq!(out, [DriverEvent::Accepted { tag }]);
+    assert_eq!(
+        out,
+        [
+            DriverEvent::Accepted { tag: tag.clone() },
+            DriverEvent::UserMessage {
+                item: ItemId::new(format!("user-{written}")),
+                tag,
+            },
+        ]
+    );
     session.read(json!({"type": "turn_start"}));
     let out = session.read(json!({"type": "message_start", "message": {
         "role": "user", "content": [{"type": "text", "text": "Change of plan."}]

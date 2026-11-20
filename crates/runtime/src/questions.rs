@@ -119,7 +119,8 @@ impl Core {
         };
         let text = answer_text(request, &answer.response);
         let label = format!("answer: {}", request.title);
-        let injection = Injection::new(InjectOrigin::Answer, label, text, true, now);
+        let injection =
+            Injection::new(InjectOrigin::Answer, label, text, true, now).about(request.id.as_str());
         self.inject(id, injection)
     }
 }

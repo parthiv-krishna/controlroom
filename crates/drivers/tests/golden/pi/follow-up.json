@@ -11,10 +11,11 @@
    "events": []},
   {"seq": 4,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"First task."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"First task."}],"id":"user-2","kind":"message","origin":null,"role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},"op":"upsert"}
    ],
    "events": [
-     {"event":"ready"}
+     {"event":"ready"},
+     {"event":"user_message","item":"user-2","tag":{"op":"fixture-1","part":0}}
    ]},
   {"seq": 5,
    "ops": [
@@ -26,7 +27,7 @@
    ]},
   {"seq": 12,
    "ops": [
-     {"item":{"actor":"root","content":[],"id":"msg-11.0","kind":"message","role":"agent","seq_from":12,"seq_to":12,"streaming":true,"ts":1700000000346},"op":"upsert"}
+     {"item":{"actor":"root","content":[],"id":"msg-11.0","kind":"message","origin":null,"role":"agent","seq_from":12,"seq_to":12,"streaming":true,"ts":1700000000346},"op":"upsert"}
    ],
    "events": []},
   {"seq": 13,
@@ -53,10 +54,11 @@
    ]},
   {"seq": 18,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"Then do this."}],"id":"user-16","kind":"message","role":"user","seq_from":16,"seq_to":18,"streaming":false,"ts":1700000000349},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Then do this."}],"id":"user-16","kind":"message","origin":null,"role":"user","seq_from":16,"seq_to":18,"streaming":false,"ts":1700000000349},"op":"upsert"}
    ],
    "events": [
-     {"event":"accepted","tag":{"op":"fixture-3","part":0}}
+     {"event":"accepted","tag":{"op":"fixture-3","part":0}},
+     {"event":"user_message","item":"user-16","tag":{"op":"fixture-3","part":0}}
    ]},
   {"seq": 19,
    "ops": [],
@@ -65,10 +67,11 @@
    ]},
   {"seq": 21,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"And this."}],"id":"user-19","kind":"message","role":"user","seq_from":19,"seq_to":21,"streaming":false,"ts":1700000000349},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"And this."}],"id":"user-19","kind":"message","origin":null,"role":"user","seq_from":19,"seq_to":21,"streaming":false,"ts":1700000000349},"op":"upsert"}
    ],
    "events": [
-     {"event":"accepted","tag":{"op":"fixture-4","part":0}}
+     {"event":"accepted","tag":{"op":"fixture-4","part":0}},
+     {"event":"user_message","item":"user-19","tag":{"op":"fixture-4","part":0}}
    ]},
   {"seq": 22,
    "ops": [
@@ -95,12 +98,12 @@
    ]},
   {"seq": 29,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"Then do this."}],"id":"user-16","kind":"message","role":"user","seq_from":29,"seq_to":29,"streaming":false,"ts":1700000000349},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"Then do this."}],"id":"user-16","kind":"message","origin":null,"role":"user","seq_from":29,"seq_to":29,"streaming":false,"ts":1700000000349},"op":"upsert"}
    ],
    "events": []},
   {"seq": 32,
    "ops": [
-     {"item":{"actor":"root","content":[],"id":"msg-31.0","kind":"message","role":"agent","seq_from":32,"seq_to":32,"streaming":true,"ts":1700000000359},"op":"upsert"}
+     {"item":{"actor":"root","content":[],"id":"msg-31.0","kind":"message","origin":null,"role":"agent","seq_from":32,"seq_to":32,"streaming":true,"ts":1700000000359},"op":"upsert"}
    ],
    "events": []},
   {"seq": 33,
@@ -133,12 +136,12 @@
    ]},
   {"seq": 41,
    "ops": [
-     {"item":{"actor":"root","content":[{"kind":"text","text":"And this."}],"id":"user-19","kind":"message","role":"user","seq_from":41,"seq_to":41,"streaming":false,"ts":1700000000349},"op":"upsert"}
+     {"item":{"actor":"root","content":[{"kind":"text","text":"And this."}],"id":"user-19","kind":"message","origin":null,"role":"user","seq_from":41,"seq_to":41,"streaming":false,"ts":1700000000349},"op":"upsert"}
    ],
    "events": []},
   {"seq": 44,
    "ops": [
-     {"item":{"actor":"root","content":[],"id":"msg-43.0","kind":"message","role":"agent","seq_from":44,"seq_to":44,"streaming":true,"ts":1700000000404},"op":"upsert"}
+     {"item":{"actor":"root","content":[],"id":"msg-43.0","kind":"message","origin":null,"role":"agent","seq_from":44,"seq_to":44,"streaming":true,"ts":1700000000404},"op":"upsert"}
    ],
    "events": []},
   {"seq": 45,
@@ -183,17 +186,17 @@
    ]}
 ],
 "timeline": [
-  {"actor":"root","content":[{"kind":"text","text":"First task."}],"id":"user-2","kind":"message","role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},
+  {"actor":"root","content":[{"kind":"text","text":"First task."}],"id":"user-2","kind":"message","origin":null,"role":"user","seq_from":2,"seq_to":4,"streaming":false,"ts":1700000000000},
   {"actor":"root","id":"notice-3","kind":"notice","level":"info","seq_from":3,"seq_to":3,"streaming":false,"text":"fixture: ready","ts":1700000000315},
   {"actor":"root","error":null,"id":"run-5","kind":"run","outcome":"completed","seq_from":5,"seq_to":52,"state":"settled","streaming":false,"trigger":{"device":null,"kind":"user"},"ts":1700000000318},
-  {"actor":"root","content":[{"kind":"text","text":"First answer finished."}],"id":"msg-11.0","kind":"message","role":"agent","seq_from":12,"seq_to":24,"streaming":false,"ts":1700000000346},
+  {"actor":"root","content":[{"kind":"text","text":"First answer finished."}],"id":"msg-11.0","kind":"message","origin":null,"role":"agent","seq_from":12,"seq_to":24,"streaming":false,"ts":1700000000346},
   {"actor":"root","id":"error-15","kind":"error","seq_from":15,"seq_to":15,"streaming":false,"text":"pi rejected prompt: Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.","ts":1700000000349},
   {"actor":"root","context":{"cost":0.00012399999999999998,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-25","kind":"usage","scope":"turn","seq_from":25,"seq_to":25,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000354},
-  {"actor":"root","content":[{"kind":"text","text":"Then do this."}],"id":"user-16","kind":"message","role":"user","seq_from":29,"seq_to":29,"streaming":false,"ts":1700000000349},
-  {"actor":"root","content":[{"kind":"text","text":"Follow-up answer."}],"id":"msg-31.0","kind":"message","role":"agent","seq_from":32,"seq_to":36,"streaming":false,"ts":1700000000359},
+  {"actor":"root","content":[{"kind":"text","text":"Then do this."}],"id":"user-16","kind":"message","origin":null,"role":"user","seq_from":29,"seq_to":29,"streaming":false,"ts":1700000000349},
+  {"actor":"root","content":[{"kind":"text","text":"Follow-up answer."}],"id":"msg-31.0","kind":"message","origin":null,"role":"agent","seq_from":32,"seq_to":36,"streaming":false,"ts":1700000000359},
   {"actor":"root","context":{"cost":0.00024799999999999996,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-37","kind":"usage","scope":"turn","seq_from":37,"seq_to":37,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000360},
-  {"actor":"root","content":[{"kind":"text","text":"And this."}],"id":"user-19","kind":"message","role":"user","seq_from":41,"seq_to":41,"streaming":false,"ts":1700000000349},
-  {"actor":"root","content":[{"kind":"text","text":"Second follow-up answer."}],"id":"msg-43.0","kind":"message","role":"agent","seq_from":44,"seq_to":48,"streaming":false,"ts":1700000000404},
+  {"actor":"root","content":[{"kind":"text","text":"And this."}],"id":"user-19","kind":"message","origin":null,"role":"user","seq_from":41,"seq_to":41,"streaming":false,"ts":1700000000349},
+  {"actor":"root","content":[{"kind":"text","text":"Second follow-up answer."}],"id":"msg-43.0","kind":"message","origin":null,"role":"agent","seq_from":44,"seq_to":48,"streaming":false,"ts":1700000000404},
   {"actor":"root","context":{"cost":0.00037199999999999993,"size":null,"used":112},"cost":0.00012399999999999998,"id":"usage-49","kind":"usage","scope":"turn","seq_from":49,"seq_to":49,"streaming":false,"tokens":{"cache_read":0,"cache_write":0,"input":100,"output":12},"ts":1700000000405}
 ],
 "view": {"last_outcome":"completed","last_seq":53,"last_ts":1700000000417,"native":null,"open_requests":[],"open_tools":0,"options":[],"ready":false,"run_active":false,"unanswered":[]}}
