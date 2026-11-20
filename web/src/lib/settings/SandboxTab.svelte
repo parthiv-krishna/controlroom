@@ -9,6 +9,7 @@
   import { describeError } from '../api/errors';
   import { KNOWN_SOCKETS, LEVELS, PROC_GRANT, checkProfilePath, grantLimit } from '../model/sandbox';
   import type { MediationAction, NewGrant, PathAccess, ProfileChange, ProfileScope, SandboxProfile } from '../protocol';
+  import ActionMenu, { type MenuAction } from '../ui/ActionMenu.svelte';
   import Dropdown from '../ui/Dropdown.svelte';
 
   const app = useApp();
@@ -34,6 +35,23 @@
     return { machines, projects };
   });
 
+  type Kind = 'grant' | 'socket' | 'never' | 'domain' | 'command';
+  /** The rule input open on each card (only rules that exist show otherwise). */
+  let adding = $state<Record<string, Kind>>({});
+  const SOCKET_NOTE = 'Sandboxed programs can connect only to the Unix sockets listed here. nono can’t ask, so any other connection fails at once ("Permission denied" or "Operation not permitted").';
+  /** The "+ rule" menu: a rule input to open, then the one-click grants not yet there. */
+  function ruleActions(row: Row, paths: { value: string }[], sockets: { value: string }[]): MenuAction[] {
+    const open = (k: Kind) => () => (adding[row.key] = k);
+    return [
+      { label: 'Path grant…', run: open('grant') },
+      { label: 'Socket…', hint: SOCKET_NOTE, run: open('socket') },
+      { label: 'Never path…', hint: 'Denied without asking', run: open('never') },
+      { label: 'Domain…', run: open('domain') },
+      { label: 'Command…', hint: 'Ask or deny before it runs', run: open('command') },
+      ...(paths.some((g) => g.value === PROC_GRANT.path) ? [] : [{ label: PROC_GRANT.label, hint: PROC_GRANT.hint, aria: `Grant ${PROC_GRANT.label} on ${row.name}`, disabled: !online, run: () => void addGrant(row, PROC_GRANT.path, 'read') }]),
+      ...KNOWN_SOCKETS.filter((k) => !sockets.some((g) => g.value === k.path)).map((k) => ({ label: k.label, hint: `${k.path}: ${k.hint}`, aria: `Allow ${k.label} (${k.path}) on ${row.name}`, disabled: !online, run: () => void addSocket(row, k.path) })),
+    ];
+  }
   let domain = $state<Record<string, string>>({});
   let command = $state<Record<string, string>>({});
   let action = $state<Record<string, MediationAction>>({});
@@ -121,7 +139,7 @@
   }
 </script>
 
-<div class="small muted">Defaults for new sessions: the strictest level wins, grants add up.</div>
+<div class="small muted" title="The strictest level wins; grants add up">Defaults for new sessions</div>
 {#each [['Machines', rows.machines], ['Projects', rows.projects]] as [label, list] (label)}
   <div class="sec-h">{label}</div>
   {#each list as Row[] as row (row.key)}
@@ -134,57 +152,69 @@
         <Dropdown small label="Sandbox level for {row.name}" value={p?.level ?? 'none'} disabled={!online} options={[{ value: 'none', label: row.scope.kind === 'project' ? 'No minimum' : 'Default (strict)' }, ...LEVELS.map((l) => ({ value: l.value, label: l.label, hint: l.hint }))]} onchange={(v) => setLevel(row, v)} />
       </div>
       {#if p?.level === 'off'}<div class="off">New sessions here run without a sandbox.</div>{/if}
-      <div class="r">
-        <span class="l">Grants</span>
-        <div class="v">
-          {#each paths as g (g.id)}
-            <span class="chip-s" data-grant={g.value}><span class="gk">{g.kind}</span><code>{g.value}</code>{#if g.access}<span class="muted small">{g.access.replace('_', '-')}</span>{/if}<button aria-label="Remove grant {g.value} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
-          {/each}
-          <input class="in" placeholder="+ path" title="Absolute or ~/…; a directory includes everything under it" aria-label="Add path grant for {row.name}" aria-invalid={!!pathError[`${row.key}:grant`]} disabled={!online} bind:value={grantPath[row.key]} onkeydown={(e) => onEnter(e, () => void addGrant(row))} />
-          <Dropdown small label="Access for {row.name}" value={grantAccess[row.key] ?? 'read'} options={[{ value: 'read', label: 'read' }, { value: 'read_write', label: 'read-write' }]} onchange={(v) => (grantAccess[row.key] = v as PathAccess)} />
-          {#if !paths.some((g) => g.value === PROC_GRANT.path)}
-            <button class="hint" title={PROC_GRANT.hint} aria-label="Grant {PROC_GRANT.label} on {row.name}" disabled={!online} onclick={() => void addGrant(row, PROC_GRANT.path, 'read')}>+ {PROC_GRANT.label}</button>
-          {/if}
-          {#if pathError[`${row.key}:grant`]}<span class="err" role="alert">{pathError[`${row.key}:grant`]}</span>{/if}
+      {#if paths.length || adding[row.key] === 'grant'}
+        <div class="r">
+          <span class="l">Grants</span>
+          <div class="v">
+            {#each paths as g (g.id)}
+              <span class="chip-s" data-grant={g.value}><span class="gk">{g.kind}</span><code>{g.value}</code>{#if g.access}<span class="muted small">{g.access.replace('_', '-')}</span>{/if}<button aria-label="Remove grant {g.value} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
+            {/each}
+            {#if adding[row.key] === 'grant'}
+              <input class="in" placeholder="+ path" title="Absolute or ~/…; a directory includes everything under it" aria-label="Add path grant for {row.name}" aria-invalid={!!pathError[`${row.key}:grant`]} disabled={!online} bind:value={grantPath[row.key]} onkeydown={(e) => onEnter(e, () => void addGrant(row))} />
+              <Dropdown small label="Access for {row.name}" value={grantAccess[row.key] ?? 'read'} options={[{ value: 'read', label: 'read' }, { value: 'read_write', label: 'read-write' }]} onchange={(v) => (grantAccess[row.key] = v as PathAccess)} />
+            {/if}
+            {#if pathError[`${row.key}:grant`]}<span class="err" role="alert">{pathError[`${row.key}:grant`]}</span>{/if}
+          </div>
         </div>
-      </div>
-      <div class="r">
-        <span class="l" title="Unix sockets the sandbox may connect to">Sockets</span>
-        <div class="v">
-          {#each sockets as g (g.id)}
-            <span class="chip-s" data-socket={g.value}><code>{g.value}</code><button aria-label="Remove socket {g.value} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
-          {/each}
-          <input class="in" placeholder="+ socket" title="A Unix socket the sandbox may connect to (absolute or ~/…)" aria-label="Add socket for {row.name}" aria-invalid={!!pathError[`${row.key}:socket`]} disabled={!online} bind:value={socketPath[row.key]} onkeydown={(e) => onEnter(e, () => void addSocket(row))} />
-          {#each KNOWN_SOCKETS.filter((k) => !sockets.some((g) => g.value === k.path)) as k (k.path)}
-            <button class="hint" title="{k.path}: {k.hint}" aria-label="Allow {k.label} ({k.path}) on {row.name}" disabled={!online} onclick={() => void addSocket(row, k.path)}>+ {k.label}</button>
-          {/each}
-          <span class="note">Sandboxed programs can only connect to the sockets listed here; nono can’t ask, so any other connection fails at once (“Permission denied” or “Operation not permitted”).</span>
-          {#if pathError[`${row.key}:socket`]}<span class="err" role="alert">{pathError[`${row.key}:socket`]}</span>{/if}
+      {/if}
+      {#if sockets.length || adding[row.key] === 'socket'}
+        <div class="r">
+          <span class="l" title={SOCKET_NOTE}>Sockets <span class="q" aria-hidden="true">?</span></span>
+          <div class="v">
+            {#each sockets as g (g.id)}
+              <span class="chip-s" data-socket={g.value}><code>{g.value}</code><button aria-label="Remove socket {g.value} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
+            {/each}
+            {#if adding[row.key] === 'socket'}
+              <input class="in" placeholder="+ socket" title="A Unix socket the sandbox may connect to (absolute or ~/…)" aria-label="Add socket for {row.name}" aria-invalid={!!pathError[`${row.key}:socket`]} disabled={!online} bind:value={socketPath[row.key]} onkeydown={(e) => onEnter(e, () => void addSocket(row))} />
+            {/if}
+            {#if pathError[`${row.key}:socket`]}<span class="err" role="alert">{pathError[`${row.key}:socket`]}</span>{/if}
+          </div>
         </div>
-      </div>
-      <div class="r">
-        <span class="l" title="Denied without asking">Never</span>
-        <div class="v">
-          {#each p?.never ?? [] as n (n)}<span class="chip-s" data-never={n}><code>{n}</code><button aria-label="Remove never-path {n} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_never', path: n })}>×</button></span>{/each}
-          <input class="in" placeholder="+ path" title="Denied without asking; absolute or ~/…" aria-label="Add never-path for {row.name}" aria-invalid={!!pathError[`${row.key}:never`]} disabled={!online} bind:value={neverPath[row.key]} onkeydown={(e) => onEnter(e, () => addNever(row))} />
-          {#if pathError[`${row.key}:never`]}<span class="err" role="alert">{pathError[`${row.key}:never`]}</span>{/if}
+      {/if}
+      {#if p?.never.length || adding[row.key] === 'never'}
+        <div class="r">
+          <span class="l" title="Denied without asking">Never</span>
+          <div class="v">
+            {#each p?.never ?? [] as n (n)}<span class="chip-s" data-never={n}><code>{n}</code><button aria-label="Remove never-path {n} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_never', path: n })}>×</button></span>{/each}
+            {#if adding[row.key] === 'never'}
+              <input class="in" placeholder="+ path" title="Denied without asking; absolute or ~/…" aria-label="Add never-path for {row.name}" aria-invalid={!!pathError[`${row.key}:never`]} disabled={!online} bind:value={neverPath[row.key]} onkeydown={(e) => onEnter(e, () => addNever(row))} />
+            {/if}
+            {#if pathError[`${row.key}:never`]}<span class="err" role="alert">{pathError[`${row.key}:never`]}</span>{/if}
+          </div>
         </div>
-      </div>
-      <div class="r">
-        <span class="l">Domains</span>
-        <div class="v">
-          {#each p?.domains ?? [] as d (d)}<span class="chip-s"><code>{d}</code><button aria-label="Remove {d}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_domain', domain: d })}>×</button></span>{/each}
-          <input class="in" placeholder="+ domain" aria-label="Add allowed domain for {row.name}" disabled={!online} bind:value={domain[row.key]} onkeydown={(e) => onEnter(e, () => addDomain(row))} />
+      {/if}
+      {#if p?.domains.length || adding[row.key] === 'domain'}
+        <div class="r">
+          <span class="l">Domains</span>
+          <div class="v">
+            {#each p?.domains ?? [] as d (d)}<span class="chip-s"><code>{d}</code><button aria-label="Remove {d}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_domain', domain: d })}>×</button></span>{/each}
+            {#if adding[row.key] === 'domain'}<input class="in" placeholder="+ domain" aria-label="Add allowed domain for {row.name}" disabled={!online} bind:value={domain[row.key]} onkeydown={(e) => onEnter(e, () => addDomain(row))} />{/if}
+          </div>
         </div>
-      </div>
-      <div class="r">
-        <span class="l">Commands</span>
-        <div class="v">
-          {#each p?.mediated ?? [] as m (m.command)}<span class="chip-s"><code>{m.command}</code><span class="small">→ {m.action === 'deny' ? 'deny' : 'ask'}</span><button aria-label="Remove {m.command}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_mediated', command: m.command })}>×</button></span>{/each}
-          <input class="in" placeholder="+ command" aria-label="Add mediated command for {row.name}" disabled={!online} bind:value={command[row.key]} onkeydown={(e) => onEnter(e, () => addCommand(row))} />
-          <Dropdown small label="Action for {row.name}" value={action[row.key] ?? 'approve'} options={[{ value: 'approve', label: 'ask' }, { value: 'deny', label: 'deny' }]} onchange={(v) => (action[row.key] = v as MediationAction)} />
+      {/if}
+      {#if p?.mediated.length || adding[row.key] === 'command'}
+        <div class="r">
+          <span class="l">Commands</span>
+          <div class="v">
+            {#each p?.mediated ?? [] as m (m.command)}<span class="chip-s"><code>{m.command}</code><span class="small">→ {m.action === 'deny' ? 'deny' : 'ask'}</span><button aria-label="Remove {m.command}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_mediated', command: m.command })}>×</button></span>{/each}
+            {#if adding[row.key] === 'command'}
+              <input class="in" placeholder="+ command" aria-label="Add mediated command for {row.name}" disabled={!online} bind:value={command[row.key]} onkeydown={(e) => onEnter(e, () => addCommand(row))} />
+              <Dropdown small label="Action for {row.name}" value={action[row.key] ?? 'approve'} options={[{ value: 'approve', label: 'ask' }, { value: 'deny', label: 'deny' }]} onchange={(v) => (action[row.key] = v as MediationAction)} />
+            {/if}
+          </div>
         </div>
-      </div>
+      {/if}
+      <div class="add"><ActionMenu text="+ rule" label="Add a rule for {row.name}" actions={ruleActions(row, paths, sockets)} /></div>
     </div>
   {/each}
 {/each}
@@ -204,8 +234,7 @@
   .in { border: 1px dashed var(--line); border-radius: 6px; padding: 2px 6px; font-size: 12px; width: 190px; max-width: 100%; background: transparent; }
   .in[aria-invalid='true'] { border-color: var(--bad); }
   .err { color: var(--bad); font-size: 12px; flex-basis: 100%; }
-  .hint { border: 1px dashed var(--line); border-radius: 6px; padding: 1px 6px; font-size: 12px; background: transparent; color: var(--muted); cursor: pointer; max-width: 100%; }
-  .hint:hover:not(:disabled) { color: var(--fg); border-color: var(--muted); }
-  .note { color: var(--muted); font-size: 11.5px; flex-basis: 100%; }
+  .q { font-size: 10px; border: 1px solid var(--line); border-radius: 999px; padding: 0 4px; cursor: help; }
+  .add { align-self: flex-start; }
   @media (max-width: 760px) { .r { flex-direction: column; gap: 4px; } }
 </style>

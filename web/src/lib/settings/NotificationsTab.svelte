@@ -17,7 +17,6 @@
   });
   const push = $derived(app.client.hello?.push ?? null);
   const thisDevice = $derived(app.client.feed.devices.get(app.client.device.id));
-  const pushOn = $derived(app.client.feed.deviceList.filter((d) => d.push));
 
   const DELAYS: [string, number][] = [['None', 0], ['30 s', 30], ['1 min', 60], ['2 min', 120], ['5 min', 300]];
   const IDLE: [string, number][] = [['1 min', 60], ['2 min', 120], ['5 min', 300], ['10 min', 600]];
@@ -51,15 +50,13 @@
   <label class="check"><input type="checkbox" checked={p.questions} disabled={!online} onchange={(e) => set({ questions: e.currentTarget.checked })} /> Questions</label>
   <label class="check"><input type="checkbox" checked={p.turn_end} disabled={!online} onchange={(e) => set({ turn_end: e.currentTarget.checked })} /> Finished runs</label>
   <div class="sec-h">When</div>
-  <div class="settings">
+  <div class="settings" title="A push is dropped if it is answered first">
     <span>Delay</span><Dropdown small label="Push delay" value={String(p.delay_s)} disabled={!online} options={choices(DELAYS, p.delay_s)} onchange={(v) => set({ delay_s: Number(v) })} />
-    <span class="small muted">dropped if answered first</span>
   </div>
-  <label class="check"><input type="checkbox" checked={p.hold_while_active} disabled={!online} onchange={(e) => set({ hold_while_active: e.currentTarget.checked })} /> Hold while I'm active</label>
+  <label class="check" title="No push while you use any device"><input type="checkbox" checked={p.hold_while_active} disabled={!online} onchange={(e) => set({ hold_while_active: e.currentTarget.checked })} /> Hold while I'm active</label>
   {#if p.hold_while_active}
     <div class="settings sub">
       <span>Idle after</span><Dropdown small label="Idle after" value={String(p.idle_s)} disabled={!online} options={choices(IDLE, p.idle_s)} onchange={(v) => set({ idle_s: Number(v) })} />
-      <span class="small muted">no push while you use any device</span>
     </div>
   {/if}
 {/if}
@@ -75,7 +72,6 @@
       <button class="btn primary" disabled={!online} onclick={enable}>Enable</button>
     {/if}
   </div>
-  <div class="small muted">Push is on for {pushOn.length ? pushOn.map((d) => d.label).join(', ') : 'no devices'} · <button class="linkish" onclick={() => app.openSettings('devices')}>Devices…</button></div>
 {:else}
   <div class="small muted">Web Push isn't configured on the server.</div>
 {/if}

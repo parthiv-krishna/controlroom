@@ -24,10 +24,10 @@ test('a gateway added in Settings › Models runs a session', async ({ page }) =
   await form.getByRole('button', { name: 'Save gateway' }).click();
   const row = settings.locator('[data-provider="mock-ui"]');
   await expect(row.locator('[data-status]')).toHaveText(`key set …${key.slice(-4)}`);
-  await expect(row).toContainText('by Laptop');
+  await expect(row).toHaveAttribute('title', /added .* by Laptop/);
   await row.getByRole('button', { name: 'Test mock-ui' }).click();
   await expect(row.locator('[data-status]')).toHaveText('ok');
-  await expect(row).toContainText('HTTP 200 OK');
+  await expect(row).toHaveAttribute('title', /Test ok .*: HTTP 200 OK/);
 
   const defaults = settings.locator('[data-defaults]');
   await choose(defaults, 'Default provider', 'mock-ui');

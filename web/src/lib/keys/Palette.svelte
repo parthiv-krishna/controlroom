@@ -2,7 +2,7 @@
   // The command palette (⌘K / Ctrl-Shift-K, or `:` for ex commands): sessions and commands.
   // Ex commands: :approve, :new, :goto <session>, :task, :settings [tab], :help.
   import { newOpId, useApp } from '../app/app.svelte';
-  import type { SettingsTab } from '../app/view.svelte';
+  import { settingsTab } from '../app/view.svelte';
   import { displayName } from '../model/filters';
   import { machinesOf } from '../model/workspaces';
   import type { FeedSession } from '../protocol';
@@ -41,7 +41,7 @@
         else app.toasts.show(`No session matches “${a}”`, 'error');
       },
     },
-    { cmd: 'settings', args: '[tab]', what: 'Open settings', run: (a) => app.openSettings((a || 'machines') as SettingsTab) },
+    { cmd: 'settings', args: '[tab]', what: 'Open settings', run: (a) => app.openSettings(settingsTab(a || 'machines')) },
     { cmd: 'help', what: 'Keyboard help', run: () => (view.help = true) },
   ];
 

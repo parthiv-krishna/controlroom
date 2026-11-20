@@ -24,7 +24,7 @@
     if (!ok) return;
     const r = await app.client.call('keys.rotate', {});
     if (!r) return;
-    app.toasts.show(r.pending ? `Rotated on ${r.migrated} machines · ${r.pending} migrate when they reconnect` : `Rotated on ${r.migrated} machines`, 'ok');
+    app.toasts.show(r.pending ? `Rotated on ${r.migrated} machines; ${r.pending} more when they reconnect` : `Rotated on ${r.migrated} machines`, 'ok');
     void reload();
   }
   async function generate() {
@@ -54,7 +54,7 @@
 {#if keys}
   {@const k = keys.controlroom}
   <div class="pk">
-    <div class="h"><b>controlroom key</b><span class="muted small">{k.fingerprint} · used by {usedBy(null)}</span><span class="sp"></span><button class="btn sm" disabled={!online} onclick={rotate}>Rotate…</button></div>
+    <div class="h"><b>controlroom key</b><span class="muted small" title={k.fingerprint}>used by {usedBy(null)}</span><span class="sp"></span><button class="btn sm" disabled={!online} onclick={rotate}>Rotate…</button></div>
     <div class="line"><code>{k.public_key}</code><button class="btn xs" onclick={() => app.copy(k.public_key)}>Copy</button></div>
     <div class="ib"><div class="small muted">Run this once on each host:</div><div class="line"><code>{k.install_command}</code><button class="btn xs" onclick={() => app.copy(k.install_command)}>Copy</button></div></div>
     {#if k.retiring_machines}<div class="small warn-t">The previous key stays until {k.retiring_machines} offline machine(s) reconnect.</div>{/if}
@@ -63,7 +63,7 @@
   {#if advanced}
     {#each keys.additional as x (x.id)}
       <div class="key">
-        <b>{x.name}</b> <span class="muted small">{x.imported ? 'imported' : 'generated'} · {x.fingerprint} · used by {usedBy(x.id)}</span>
+        <b>{x.name}</b> <span class="muted small" title="{x.imported ? 'Imported' : 'Generated'}: {x.fingerprint}">used by {usedBy(x.id)}</span>
         <div class="line"><code>{x.public_key}</code><button class="btn xs" onclick={() => app.copy(x.public_key)}>Copy</button><button class="btn xs ghost bad-t" disabled={!online} onclick={() => remove(x.id, x.name)}>Delete</button></div>
       </div>
     {/each}

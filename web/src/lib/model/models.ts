@@ -8,7 +8,7 @@ export type Tone = 'ok' | 'bad' | 'warn' | 'muted';
 /** A stored key is a pasted subscription token (e.g. Anthropic's `sk-ant-oat…`) rather than an API key. */
 export const isToken = (key: StoredKey | null): boolean => key?.kind === 'subscription_token';
 
-/** The status chip: ok · test failed · signed in · from server config · key/token set …4f2a · not signed in · no key. */
+/** The status chip: ok, test failed, signed in, from server config, key/token set …4f2a, not signed in or no key. */
 export function providerStatus(p: ModelProvider): { text: string; tone: Tone } {
   if (p.test && !p.test.ok) return { text: 'test failed', tone: 'bad' };
   if (p.test?.ok) return { text: 'ok', tone: 'ok' };
@@ -19,18 +19,28 @@ export function providerStatus(p: ModelProvider): { text: string; tone: Tone } {
   return { text: p.can_sign_in ? 'not set up' : 'no key', tone: 'muted' };
 }
 
-/** The detail line under a provider: where it comes from, the key, the account, the last test. */
-export function providerDetail(p: ModelProvider, deviceLabel: (id: string, fallback: string) => string, now = Date.now()): string {
+/**
+ * The detail line under a provider: only what the status chip doesn't say (the signed-in account,
+ * the gateway's URL, a failed test's message). The key's history and a passing test's message are
+ * in providerHistory (the line's tooltip).
+ */
+export function providerDetail(p: ModelProvider): string {
   const parts: string[] = [];
-  if (p.source === 'server') parts.push('from server config');
-  if (p.signed_in) parts.push(p.signed_in.account ? `signed in as ${p.signed_in.account}` : 'signed in');
+  if (p.signed_in?.account) parts.push(`as ${p.signed_in.account}`);
+  if (p.gateway) parts.push(`${p.gateway.base_url} (${p.gateway.models.join(', ')})`);
+  if (p.test && !p.test.ok) parts.push(p.test.message);
+  return parts.join('; ');
+}
+
+/** Who added the key and when, and the last test: a provider row's tooltip, one fact per line. */
+export function providerHistory(p: ModelProvider, deviceLabel: (id: string, fallback: string) => string, now = Date.now()): string {
+  const lines: string[] = [];
   if (p.key) {
     const by = p.key.added_by ? ` by ${deviceLabel(p.key.added_by.device_id, p.key.added_by.label)}` : '';
-    parts.push(`${isToken(p.key) ? 'subscription token' : 'key'} …${p.key.last4} · added ${ago(p.key.added_at, now)}${by}`);
+    lines.push(`${isToken(p.key) ? 'Subscription token' : 'Key'} …${p.key.last4} added ${ago(p.key.added_at, now)}${by}`);
   }
-  if (p.gateway) parts.push(`${p.gateway.base_url} · ${p.gateway.models.join(', ')}`);
-  if (p.test) parts.push(`${p.test.ok ? 'test ok' : 'test failed'}: ${p.test.message} · ${ago(p.test.at, now)}`);
-  return parts.join(' · ');
+  if (p.test) lines.push(`Test ${p.test.ok ? 'ok' : 'failed'} ${ago(p.test.at, now)}: ${p.test.message}`);
+  return lines.join('\n');
 }
 
 /** Sign-in steps that end the flow. */

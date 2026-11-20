@@ -47,7 +47,7 @@
   {#if server}
     {@const ds = server}
     <div class="card" data-server>
-      <div class="h"><b>Server agents</b></div>
+      <div class="h"><b>Sessions</b></div>
       <div class="settings small">
         <span>Idle stop</span><Dropdown small label="Idle stop" value={String(ds.idle_timeout_h)} disabled={!online} options={[...new Set([...IDLE, ds.idle_timeout_h])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: `${h} h` }))} onchange={(v) => setServer({ idle_timeout_h: Number(v) })} />
         <span>Keep archived</span><Dropdown small label="Retention" value={String(ds.retention.delete_closed_after_days)} disabled={!online} options={RETENTION.map(([label, d]) => ({ value: String(d), label }))} onchange={(v) => setServer({ retention: { delete_closed_after_days: v === 'null' ? null : Number(v) } })} />
@@ -57,10 +57,10 @@
   {#each app.client.feed.machineList as m (m.id)}
     {@const st = m.connectivity.state}
     <div class="card c-{st}" data-machine={m.id}>
-      <div class="h"><span class="dot {st}"></span><b>{m.name}</b><span class="muted small">{m.user}@{m.host}:{m.port}</span><span class="sp"></span><span class="chip">{connLabel(m)}</span></div>
-      <div class="small muted">
-        controlroomd {m.version ?? '—'} · {m.arch ?? '?'} · {sessionsOn(m)} sessions · {st === 'connected' ? 'live' : `last seen ${ago(m.last_seen)}`}
-        {#if m.update_available && st === 'connected'} · update available ({m.version} → {app.client.hello?.server_version ?? 'newer'}){/if}
+      <div class="h"><span class="dot {st}"></span><b>{m.name}</b><span class="muted small">{m.user}@{m.host}:{m.port}</span><span class="sp"></span>{#if st !== 'action_required'}<span class="chip">{connLabel(m)}</span>{/if}</div>
+      <div class="small muted" data-version title="{m.arch ?? '?'}, {sessionsOn(m)} open session{sessionsOn(m) === 1 ? '' : 's'}">
+        controlroomd {m.version ?? '—'}{#if st !== 'connected'}, last seen {ago(m.last_seen)}{/if}
+        {#if m.update_available && st === 'connected'}<span class="upd">update available ({m.version} → {app.client.hello?.server_version ?? 'newer'})</span>{/if}
       </div>
       {#if st === 'action_required'}<MachineFix {m} />{:else if m.last_error}<div class="small warn-t" role="status">{m.last_error}</div>{/if}
       {#if m.bootstrap}<div class="small"><span class="spin"></span> {upgrading(m) ? 'Upgrading: ' : ''}{m.bootstrap.message}</div>{/if}
@@ -94,4 +94,5 @@
   .check { display: flex; align-items: center; gap: 8px; color: var(--muted); }
   .acts { display: flex; gap: 6px; flex-wrap: wrap; }
   .add { align-self: flex-start; }
+  .upd { margin-left: 8px; color: var(--info); }
 </style>

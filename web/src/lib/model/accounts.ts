@@ -30,7 +30,7 @@ export function modelProvider(value: string): string | null {
 /** A model choice's label, naming its account when its provider has several. */
 export function modelLabel(accounts: readonly ModelAccount[], value: string, label: string): string {
   const name = accountName(accounts, modelProvider(value));
-  return name ? `${label} · ${name}` : label;
+  return name ? `${label} (${name})` : label;
 }
 
 /** Whether a Settings › Models row's provider has several accounts. */
@@ -46,8 +46,8 @@ const tokenCount = (t: UsageTotals): number => t.tokens.input + t.tokens.output 
 /** One period's usage, tersely: `1.2M tok $0.420`. */
 const totals = (t: UsageTotals): string => `${formatTokens(tokenCount(t))} tok${t.cost ? ` $${t.cost.toFixed(3)}` : ''}`;
 
-/** An account's usage line: `24 h 1.2M tok $0.420 · 7 d … · all …`; null when it has none. */
+/** An account's usage line: `24 h 1.2M tok $0.420, 7 d …, all …`; null when it has none. */
 export function usageLine(u: AccountUsage | null): string | null {
   if (!u || (u.total.cost === 0 && tokenCount(u.total) === 0)) return null;
-  return `24 h ${totals(u.day)} · 7 d ${totals(u.week)} · all ${totals(u.total)}`;
+  return `24 h ${totals(u.day)}, 7 d ${totals(u.week)}, all ${totals(u.total)}`;
 }

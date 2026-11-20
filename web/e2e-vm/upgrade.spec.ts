@@ -28,7 +28,7 @@ test('auto-upgrade waits for the host call and keeps the shell', async ({ page }
   await expect(build).toHaveClass(/s-completed/);
   await expect(lastReply(page)).toHaveText('Built.');
   settings = await openMachines(page);
-  await expect(card).toContainText(new RegExp(`controlroomd ${escaped} ·`), { timeout: 120_000 });
+  await expect(card.locator('[data-version]')).toContainText(new RegExp(`controlroomd ${escaped}(\\s|,|$)`), { timeout: 120_000 });
   await expect(card.locator('.chip')).toHaveText('connected');
   await expect(card).not.toContainText('update available');
   await step('upgraded');

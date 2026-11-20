@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { M, S, calls, start } from './helpers';
 
 // Settings › Sandbox path grants and never-paths, and "Always allow" / "Never" on a file request.
@@ -10,12 +10,19 @@ async function openSandbox(page: Page) {
   return settings;
 }
 
+/** Opens a rule input on a Settings › Sandbox card through "+ rule". */
+async function addRule(card: Locator, name: string, rule: string) {
+  await card.getByRole('button', { name: `Add a rule for ${name}` }).click();
+  await card.getByRole('menuitem', { name: rule }).click();
+}
+
 const changes = async (page: Page) => (await calls(page, 'sandbox.set_profile')).map((c) => (c.params as { change: unknown }).change);
 
 test('sandbox tab: path grants with access, grants nono could never hold refused, and never-paths', async ({ page }) => {
   await start(page);
   const settings = await openSandbox(page);
   const devbox = settings.locator(`[data-profile="m:${M.devbox}"]`);
+  await addRule(devbox, 'devbox', 'Path grant…');
   const grant = devbox.getByLabel('Add path grant for devbox');
 
   // Relative paths and .. are refused before anything is sent.
@@ -52,11 +59,13 @@ test('sandbox tab: path grants with access, grants nono could never hold refused
   await grant.press('Enter');
   await expect.poll(async () => (await changes(page)).at(-1)).toEqual({ kind: 'add_grant', grant: { kind: 'path', value: '~/.bash_history', access: 'read' } });
   // The one-click process listing grant.
-  await devbox.getByRole('button', { name: 'Grant Process listing (/proc, read-only) on devbox' }).click();
+  await devbox.getByRole('button', { name: 'Add a rule for devbox' }).click();
+  await devbox.getByRole('menuitem', { name: 'Grant Process listing (/proc, read-only) on devbox' }).click();
   await expect.poll(async () => (await changes(page)).at(-1)).toEqual({ kind: 'add_grant', grant: { kind: 'path', value: '/proc', access: 'read' } });
 
   // Never-paths: listed, added and removed.
   await expect(devbox.locator('[data-never="~/.bash_history"]')).toBeVisible();
+  await addRule(devbox, 'devbox', 'Never path…');
   const never = devbox.getByLabel('Add never-path for devbox');
   await never.fill('~/.lesshst');
   await never.press('Enter');
@@ -75,15 +84,17 @@ test('sandbox tab: sockets, with one-click known sockets and none by default', a
   const settings = await openSandbox(page);
   const devbox = settings.locator(`[data-profile="m:${M.devbox}"]`);
   await expect(devbox.locator('[data-socket]')).toHaveCount(0);
-  const bus = devbox.getByRole('button', { name: 'Allow D-Bus system bus (/run/dbus/system_bus_socket) on devbox' });
-  await expect(bus).toHaveText('+ D-Bus system bus');
+  await devbox.getByRole('button', { name: 'Add a rule for devbox' }).click();
+  const bus = devbox.getByRole('menuitem', { name: 'Allow D-Bus system bus (/run/dbus/system_bus_socket) on devbox' });
+  await expect(bus).toHaveText('D-Bus system bus');
   await expect(bus).toHaveAttribute('title', /polkit/);
-  await expect(devbox.getByRole('button', { name: /^Allow systemd journal \(stdout\)/ })).toBeVisible();
-  await expect(devbox).toContainText('nono can’t ask');
+  await expect(devbox.getByRole('menuitem', { name: /^Allow systemd journal \(stdout\)/ })).toBeVisible();
+  await expect(devbox.getByRole('menuitem', { name: 'Socket…' })).toHaveAttribute('title', /nono can’t ask/);
   await bus.click();
   await expect.poll(async () => (await changes(page)).at(-1)).toEqual({ kind: 'add_grant', grant: { kind: 'socket', value: '/run/dbus/system_bus_socket', access: null } });
 
   // A typed socket, normalized; a relative one is refused.
+  await addRule(devbox, 'devbox', 'Socket…');
   const socket = devbox.getByLabel('Add socket for devbox');
   await socket.fill('run/app.sock');
   await socket.press('Enter');
@@ -96,7 +107,10 @@ test('sandbox tab: sockets, with one-click known sockets and none by default', a
   const buildbox = settings.locator(`[data-profile="m:${M.buildbox}"]`);
   await expect(buildbox.locator('[data-socket="/run/dbus/system_bus_socket"]')).toBeVisible();
   await expect(buildbox.locator('[data-grant="/run/dbus/system_bus_socket"]')).toHaveCount(0);
-  await expect(buildbox.getByRole('button', { name: /^Allow D-Bus system bus/ })).toHaveCount(0);
+  await expect(buildbox.locator('.l', { hasText: 'Sockets' })).toHaveAttribute('title', /nono can’t ask/);
+  await buildbox.getByRole('button', { name: 'Add a rule for buildbox' }).click();
+  await expect(buildbox.getByRole('menuitem', { name: /^Allow D-Bus system bus/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await buildbox.getByRole('button', { name: 'Remove socket /run/dbus/system_bus_socket on buildbox' }).click();
   await expect.poll(async () => (await changes(page)).at(-1)).toMatchObject({ kind: 'remove_grant', grant_id: '01JAG000000000000000000022' });
 });
@@ -144,6 +158,7 @@ test('sandbox: phone width', async ({ browser }) => {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await settings.getByRole('tab', { name: 'Sandbox' }).click();
+  await addRule(settings.locator(`[data-profile="m:${M.devbox}"]`), 'devbox', 'Path grant…');
   await expect(settings.getByLabel('Add path grant for devbox')).toBeVisible();
   // Nothing wider than the screen.
   const overflow = await settings.evaluate((el) =>

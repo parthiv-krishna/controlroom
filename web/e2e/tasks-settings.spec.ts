@@ -86,7 +86,7 @@ test('settings: tabs, the add-machine flow, devices and sandbox defaults', async
   await start(page);
   await page.getByRole('button', { name: 'Settings' }).click();
   const settings = page.getByRole('dialog', { name: 'Settings' });
-  await expect(settings.getByText('host key changed', { exact: true })).toBeVisible();
+  await expect(settings.locator('.fix').filter({ hasText: 'host key changed' })).toBeVisible();
 
   await settings.getByRole('button', { name: '+ Machine' }).click();
   await settings.getByPlaceholder('devbox.example.com').fill('newbox.example.com');
@@ -98,19 +98,21 @@ test('settings: tabs, the add-machine flow, devices and sandbox defaults', async
   await page.keyboard.press('Escape');
   await expect(settings.getByRole('heading', { name: 'Add machine' })).toBeVisible();
 
-  for (const tab of ['SSH keys', 'Notifications', 'Devices', 'Sandbox', 'Contacts', 'Schedules', 'Keyboard', 'Appearance']) {
+  for (const tab of ['Models', 'Sandbox', 'Notifications', 'General', 'Machines']) {
     await settings.getByRole('tab', { name: tab }).click();
     await expect(settings.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true');
   }
-  await settings.getByRole('tab', { name: 'Devices' }).click();
+  await settings.getByRole('tab', { name: 'Notifications' }).click();
   await expect(settings.locator('[data-device="device-phone"]')).toContainText('push on');
   await settings.getByRole('tab', { name: 'Sandbox' }).click();
+  await settings.locator(`[data-profile="m:${M.devbox}"]`).getByRole('button', { name: 'Add a rule for devbox' }).click();
+  await settings.getByRole('menuitem', { name: 'Domain…' }).click();
   await settings.getByLabel('Add allowed domain for devbox').fill('example.com');
   await settings.getByLabel('Add allowed domain for devbox').press('Enter');
   const [change] = await calls(page, 'sandbox.set_profile');
   expect(change.params).toMatchObject({ scope: { kind: 'machine', machine_id: M.devbox }, change: { kind: 'add_domain', domain: 'example.com' } });
 
-  await settings.getByRole('tab', { name: 'Appearance' }).click();
+  await settings.getByRole('tab', { name: 'General' }).click();
   await settings.getByRole('radio', { name: 'Dark' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await settings.getByRole('button', { name: 'Expand to full page' }).click();

@@ -13,7 +13,7 @@ test('a failed automatic upgrade is rolled back', async ({ page }) => {
     await expect(card.getByRole('status')).toContainText('automatic upgrade failed', { timeout: 120_000 });
     await expect(card.getByRole('status')).toContainText(`rolled back to versions/${version}`);
     await expect(card.locator('.chip')).toHaveText('connected');
-    await expect(card).toContainText(`controlroomd ${version} ·`);
+    await expect(card.locator('[data-version]')).toContainText(new RegExp(`controlroomd ${version.replace(/[.]/g, '\\.')}(\\s|,|$)`));
     await expect(card).toContainText('update available');
     await expect(card.getByRole('button', { name: /^Upgrade the daemon/ })).toBeVisible();
     await card.getByLabel('Auto-upgrade').uncheck();

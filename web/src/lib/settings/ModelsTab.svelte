@@ -7,7 +7,7 @@
   // listed under it. Changes apply to new sessions and restarts.
   import { useApp } from '../app/app.svelte';
   import { hasAccounts, providerName, usageLine } from '../model/accounts';
-  import { AUTH_HEADERS, THINKING_LEVELS, defaultProviders, isToken, parseModels, providerDetail, providerStatus } from '../model/models';
+  import { AUTH_HEADERS, THINKING_LEVELS, defaultProviders, isToken, parseModels, providerDetail, providerHistory, providerStatus } from '../model/models';
   import type { AuthHeader, ModelDefaults, ModelProvider, ModelsState } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
   import SignIn from './SignIn.svelte';
@@ -158,7 +158,7 @@
   {@const name = nameOf(p)}
   {@const multi = hasAccounts(p, all)}
   {@const usage = usageLine(p.usage)}
-  <div class="card" class:account={!!p.account_of} data-provider={p.id}>
+  <div class="card" class:account={!!p.account_of} data-provider={p.id} title={providerHistory(p, deviceLabel) || undefined}>
     <div class="h">
       <b>{p.label}</b>
       {#if multi}<span class="acct" data-account>{p.account}</span>{/if}
@@ -185,7 +185,7 @@
         {/if}
       </div>
     </div>
-    {#if providerDetail(p, deviceLabel)}<div class="small muted detail">{providerDetail(p, deviceLabel)}</div>{/if}
+    {#if providerDetail(p)}<div class="small muted detail">{providerDetail(p)}</div>{/if}
     {#if usage}<div class="small muted detail" data-usage title="Tokens and cost of this server's sessions">{usage}</div>{/if}
     {#if p.clash}<div class="small warn-t">{p.clash}</div>{/if}
     {#if keyFor === p.id}

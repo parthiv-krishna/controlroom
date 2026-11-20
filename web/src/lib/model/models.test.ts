@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelProvider } from '../protocol';
-import { defaultProviders, isFinal, parseModels, providerDetail, providerStatus } from './models';
+import { defaultProviders, isFinal, parseModels, providerDetail, providerHistory, providerStatus } from './models';
 
 const base: ModelProvider = {
   id: 'anthropic',
@@ -36,7 +36,7 @@ describe('providerStatus', () => {
     expect(providerStatus({ ...base, key, test: { ok: true, message: 'HTTP 200 OK', at: NOW } }).text).toBe('ok');
   });
 
-  it('details the key with its device, the account and the test', () => {
+  it('details only what the chip doesn\'t say; the history goes to the tooltip', () => {
     const p: ModelProvider = {
       ...base,
       source: 'ui',
@@ -44,10 +44,12 @@ describe('providerStatus', () => {
       test: { ok: false, message: 'HTTP 401 Unauthorized', at: NOW },
     };
     const label = (id: string, fallback: string) => (id === 'd1' ? 'Laptop' : fallback);
-    expect(providerDetail(p, label, NOW)).toBe('key …4f2a · added 1h ago by Laptop · test failed: HTTP 401 Unauthorized · just now');
-    expect(providerDetail({ ...base, signed_in: { account: 'alice@example.com' } }, label, NOW)).toBe('signed in as alice@example.com');
+    expect(providerDetail(p)).toBe('HTTP 401 Unauthorized');
+    expect(providerHistory(p, label, NOW)).toBe('Key …4f2a added 1h ago by Laptop\nTest failed just now: HTTP 401 Unauthorized');
+    expect(providerDetail({ ...base, signed_in: { account: 'alice@example.com' } })).toBe('as alice@example.com');
     const token = { kind: 'subscription_token', last4: 'abcd', added_at: NOW - 3_600_000, added_by: null } as const;
-    expect(providerDetail({ ...base, source: 'ui', key: token }, label, NOW)).toBe('subscription token …abcd · added 1h ago');
+    expect(providerDetail({ ...base, source: 'ui', key: token })).toBe('');
+    expect(providerHistory({ ...base, source: 'ui', key: token }, label, NOW)).toBe('Subscription token …abcd added 1h ago');
   });
 });
 

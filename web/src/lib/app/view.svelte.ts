@@ -35,17 +35,16 @@ export interface RawFocus {
   item: string | null;
 }
 
-export type SettingsTab =
-  | 'machines'
-  | 'keys'
-  | 'models'
-  | 'notifications'
-  | 'devices'
-  | 'sandbox'
-  | 'contacts'
-  | 'schedules'
-  | 'keyboard'
-  | 'appearance';
+export type SettingsTab = 'machines' | 'models' | 'sandbox' | 'notifications' | 'general';
+
+/** Older tab names (palette arguments, links) and the tab that holds them now. */
+const TAB_ALIASES: Record<string, SettingsTab> = { keys: 'machines', devices: 'notifications', contacts: 'sandbox', keyboard: 'general', appearance: 'general' };
+
+/** A tab by its name or an older one; machines for anything else. */
+export function settingsTab(name: string): SettingsTab {
+  const tabs: readonly string[] = ['machines', 'models', 'sandbox', 'notifications', 'general'];
+  return tabs.includes(name) ? (name as SettingsTab) : (TAB_ALIASES[name] ?? 'machines');
+}
 
 export class View {
   /** The rail's scope: a project, Unassigned, or everything (null). */

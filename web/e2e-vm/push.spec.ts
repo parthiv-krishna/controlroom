@@ -20,7 +20,8 @@ test('push is enabled on a device', async ({ browser }) => {
   const settings = page.getByRole('dialog', { name: 'Settings' });
   await settings.getByRole('tab', { name: 'Notifications' }).click();
   await settings.getByRole('button', { name: 'Enable', exact: true }).click();
-  await expect(settings).toContainText('Push is on for iPhone');
+  // The Devices section (in this tab) marks the device with push on.
+  await expect(settings.locator('[data-device]').filter({ hasText: 'iPhone' }).locator('.push')).toHaveText('push on');
   await expect(settings.getByRole('button', { name: 'Turn off' })).toBeVisible();
   await expect(settings.getByRole('checkbox', { name: "Hold while I'm active" })).toBeChecked();
   await choose(settings, 'Push delay', 'None');

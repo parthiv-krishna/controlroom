@@ -29,7 +29,7 @@
   <div class="row" data-device={d.device_id}>
     <div class="main">
       <div class="name"><EditableTitle value={d.label} editKey={d.device_id} onsave={(label) => rename(d, label)} />{#if d.device_id === me}<span class="this">this device</span>{/if}</div>
-      <div class="small muted">{d.device_id === me ? 'active now' : `last seen ${ago(d.last_seen)}`} · added {ago(d.created_at)}</div>
+      <div class="small muted" title="Added {ago(d.created_at)}">{d.device_id === me ? 'active now' : `last seen ${ago(d.last_seen)}`}</div>
     </div>
     <span class="push" class:on={d.push}>push {d.push ? 'on' : 'off'}</span>
     <button class="btn sm ghost bad-t" disabled={!app.client.online} onclick={() => remove(d)}>Remove</button>

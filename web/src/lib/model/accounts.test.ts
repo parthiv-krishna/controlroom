@@ -36,8 +36,8 @@ describe('accounts', () => {
   it('labels models and providers by account only where there are several', () => {
     expect(modelProvider('anthropic-work/m1')).toBe('anthropic-work');
     expect(modelProvider('large')).toBeNull();
-    expect(modelLabel(accounts, 'anthropic-work/m1', 'Model One')).toBe('Model One · work');
-    expect(modelLabel(accounts, 'anthropic/m1', 'Model One')).toBe('Model One · personal');
+    expect(modelLabel(accounts, 'anthropic-work/m1', 'Model One')).toBe('Model One (work)');
+    expect(modelLabel(accounts, 'anthropic/m1', 'Model One')).toBe('Model One (personal)');
     expect(modelLabel(accounts, 'openai/m2', 'Model Two')).toBe('Model Two');
     expect(providerName(rows[1], rows)).toBe('Anthropic (work)');
     expect(providerName(rows[0], rows)).toBe('Anthropic (personal)');
@@ -47,7 +47,7 @@ describe('accounts', () => {
   it('sums usage tersely', () => {
     const t = (n: number, cost: number) => ({ tokens: { input: n, output: n, cache_read: 0, cache_write: 0 }, cost });
     const usage: AccountUsage = { day: t(500, 0.1), week: t(6_000, 1.25), total: t(600_000, 0) };
-    expect(usageLine(usage)).toBe('24 h 1.0k tok $0.100 · 7 d 12k tok $1.250 · all 1.2M tok');
+    expect(usageLine(usage)).toBe('24 h 1.0k tok $0.100, 7 d 12k tok $1.250, all 1.2M tok');
     expect(usageLine({ day: t(0, 0), week: t(0, 0), total: t(0, 0) })).toBeNull();
     expect(usageLine(null)).toBeNull();
   });

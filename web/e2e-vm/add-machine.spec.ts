@@ -47,5 +47,6 @@ test('add a machine', async ({ page }) => {
   const card = machineCard(settings, host);
   await expect(card.locator('.chip')).toHaveText('connected');
   await expect(card).toContainText(`alice@${host}:22`);
-  await expect(card).toContainText(/controlroomd \S+ · x86_64/);
+  await expect(card.locator('[data-version]')).toContainText(/controlroomd \S+/);
+  await expect(card.locator('[data-version]')).toHaveAttribute('title', /^x86_64,/);
 });

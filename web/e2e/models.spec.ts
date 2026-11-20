@@ -22,7 +22,7 @@ test('models: statuses, add, replace and remove a key, test', async ({ page }) =
   const status = (id: string) => row(id).locator('[data-status]');
   await expect(status('anthropic')).toHaveText('not set up');
   await expect(status('openai')).toHaveText('key set …4f2a');
-  await expect(row('openai')).toContainText('Laptop (Firefox on Linux)');
+  await expect(row('openai')).toHaveAttribute('title', /Key …4f2a added .* by Laptop \(Firefox on Linux\)/);
   await expect(status('openrouter')).toHaveText('ok');
   await expect(status('openai-codex')).toHaveText('signed in');
   await expect(row('openai-codex')).toContainText('alice@example.com');
@@ -72,7 +72,7 @@ test('models: a pasted subscription token', async ({ page }) => {
   await row.getByRole('button', { name: 'Save' }).click();
   await expect.poll(async () => (await calls(page, 'models.set_key')).map((c) => c.params)).toEqual([{ provider: 'anthropic', key: token }]);
   await expect(row.locator('[data-status]')).toHaveText('token set …abcd');
-  await expect(row).toContainText('subscription token …abcd');
+  await expect(row).toHaveAttribute('title', /^Subscription token …abcd added/);
   await expect(row.getByRole('button', { name: 'Replace subscription token for Anthropic' })).toHaveText('Replace token');
   await expect(row.getByRole('button', { name: 'Remove subscription token for Anthropic' })).toBeVisible();
   await expect(row.getByRole('button', { name: 'Sign in to Anthropic' })).toBeDisabled();
@@ -188,8 +188,8 @@ test('models: named accounts (add, key, rename, remove, usage)', async ({ page }
   await expect(row('openrouter').locator('[data-account]')).toHaveText('default');
   await expect(row('openrouter-work').locator('[data-account]')).toHaveText('work');
   await expect(row('openrouter-work').locator('[data-status]')).toHaveText('key set …77aa');
-  await expect(row('openrouter').locator('[data-usage]')).toHaveText('24 h 165k tok $0.310 · 7 d 1.2M tok $2.400 · all 5.4M tok $9.750');
-  await expect(row('openrouter-work').locator('[data-usage]')).toHaveText('24 h 9.8k tok $0.070 · 7 d 56k tok $0.420 · all 56k tok $0.420');
+  await expect(row('openrouter').locator('[data-usage]')).toHaveText('24 h 165k tok $0.310, 7 d 1.2M tok $2.400, all 5.4M tok $9.750');
+  await expect(row('openrouter-work').locator('[data-usage]')).toHaveText('24 h 9.8k tok $0.070, 7 d 56k tok $0.420, all 56k tok $0.420');
   // A provider with one account doesn't name it.
   await expect(row('anthropic').locator('[data-account]')).toHaveCount(0);
 
@@ -233,8 +233,8 @@ test('models: the picker lists models per account and the statusline names the a
   const statusline = page.getByRole('button', { name: 'Session usage' }).first();
   await expect(statusline.locator('[data-part="account"]')).toHaveText('work');
   await header.getByLabel('Model').click();
-  await expect(page.getByRole('option', { name: 'Mock Router · default' })).toBeVisible();
-  await page.getByRole('option', { name: 'Mock Router · default' }).click();
+  await expect(page.getByRole('option', { name: 'Mock Router (default)' })).toBeVisible();
+  await page.getByRole('option', { name: 'Mock Router (default)' }).click();
   await expect.poll(async () => (await calls(page, 'session.set_option')).map((c) => (c.params as { value: string }).value)).toEqual(['openrouter/mock-router']);
 });
 

@@ -11,15 +11,14 @@
   import MachinesTab from './MachinesTab.svelte';
   import ModelsTab from './ModelsTab.svelte';
   import NotificationsTab from './NotificationsTab.svelte';
-  import OtherTabs from './OtherTabs.svelte';
+  import ContactsSection from './ContactsSection.svelte';
+  import GeneralTab from './GeneralTab.svelte';
   import SandboxTab from './SandboxTab.svelte';
 
   let { page }: { page: boolean } = $props();
   const app = useApp();
   const TABS: [SettingsTab, string][] = [
-    ['machines', 'Machines'], ['keys', 'SSH keys'], ['models', 'Models'], ['notifications', 'Notifications'],
-    ['devices', 'Devices'], ['sandbox', 'Sandbox'],
-    ['contacts', 'Contacts'], ['schedules', 'Schedules'], ['keyboard', 'Keyboard'], ['appearance', 'Appearance'],
+    ['machines', 'Machines'], ['models', 'Models'], ['sandbox', 'Sandbox'], ['notifications', 'Notifications'], ['general', 'General'],
   ];
   const tab = $derived(app.view.settings ?? 'machines');
   let adding = $state(false);
@@ -47,13 +46,11 @@
     {/each}
   </div>
   <div class="body" role="tabpanel">
-    {#if tab === 'machines'}<MachinesTab bind:adding bind:wizard />
-    {:else if tab === 'keys'}<KeysTab />
+    {#if tab === 'machines'}<MachinesTab bind:adding bind:wizard />{#if !adding}<div class="sec-h">SSH keys</div><KeysTab />{/if}
     {:else if tab === 'models'}<ModelsTab />
-    {:else if tab === 'notifications'}<NotificationsTab />
-    {:else if tab === 'devices'}<DevicesTab />
-    {:else if tab === 'sandbox'}<SandboxTab />
-    {:else}<OtherTabs {tab} />{/if}
+    {:else if tab === 'notifications'}<NotificationsTab /><div class="sec-h">Devices</div><DevicesTab />
+    {:else if tab === 'sandbox'}<SandboxTab /><div class="sec-h">Contact grants</div><ContactsSection />
+    {:else}<GeneralTab />{/if}
   </div>
 </Modal>
 

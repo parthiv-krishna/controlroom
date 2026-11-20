@@ -2,10 +2,9 @@ import { expect, test } from '@playwright/test';
 import { sessionAction, login, openSession, timeline } from './helpers';
 
 // A schedule on the session: added in the Schedules panel, "Run now" sends its message to pi
-// through the server's scheduler and the agent daemon (the mock model answers), and
-// Settings › Schedules lists it. It is disabled from the overview at the end, so it never fires
-// during later scenarios.
-test('a schedule runs now and shows in the overview', async ({ page }) => {
+// through the server's scheduler and the agent daemon (the mock model answers), and the timeline
+// shows it as an event row. It is disabled at the end, so it never fires during later scenarios.
+test('a schedule runs now, shows as an event, and is disabled from its row', async ({ page }) => {
   await login(page, 'Laptop');
   await openSession(page, 'two');
   await sessionAction(page, /^Schedules/);
@@ -31,15 +30,8 @@ test('a schedule runs now and shows in the overview', async ({ page }) => {
   await event.getByRole('button').click();
   await expect(event.locator('.text')).toHaveText('Check inbox/ and report');
 
-  await page.getByRole('button', { name: 'Settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
-  await settings.getByRole('tab', { name: 'Schedules' }).click();
-  const listed = settings.locator('[data-schedule]').filter({ hasText: 'Inbox' });
-  await expect(listed).toContainText('two');
-  await expect(listed).toContainText('last fired');
-  await listed.getByLabel('Enable Inbox').uncheck();
-  await expect(listed).toHaveClass(/\boff\b/);
-  await page.getByRole('button', { name: 'Close settings' }).click();
+  // Disabled from its row (it never fires during later scenarios).
+  await row.getByLabel('Enable Inbox').uncheck();
   await expect(row).toHaveClass(/\boff\b/);
   await expect(row).toContainText('off');
 });

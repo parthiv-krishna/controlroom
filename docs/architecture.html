@@ -389,7 +389,7 @@ It pauses with attention when only blocked items remain, after 3 runs with no pr
 <li><b>If the agent daemon is unreachable</b> at fire time, retry until the next scheduled time, then record <code>missed</code>. An unreachable workspace host doesn't block the prompt; the agent's tool calls there wait.</li>
 <li><b>After controller downtime</b> (<code>missed</code>): <code>skip</code> (default) or <code>run_once</code>.</li>
 <li><b>Closed sessions</b> disable their schedules.</li>
-<li><b>UI:</b> a <b>Schedules</b> panel on the session (add, edit, enable/disable, "run now", next and last run with outcome), a <b>Settings › Schedules</b> overview, and schedule-triggered runs badged in the timeline.</li>
+<li><b>UI:</b> a <b>Schedules</b> panel on the session (add, edit, enable/disable, "run now", next and last run with outcome), and schedule-triggered runs badged in the timeline.</li>
 <li><b>Not exposed to agents</b> in the first release; an agent can't schedule itself. Event triggers (file, webhook, git) come later with the same shape.</li>
 </ul>
 
@@ -630,7 +630,7 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <li><b>Device names:</b> each browser has a persistent <code>device_id</code> (localStorage) and a user-chosen <b>label</b> ("Laptop", "Phone").
 <ul>
 <li><b>First load:</b> an unobtrusive inline prompt "Name this device", pre-filled with a friendly guess derived from the user agent (e.g. "Firefox on Linux", "Safari on iPhone"). It's skippable, and the guess is kept if skipped.</li>
-<li><b>Settings › Devices:</b> lists all devices (label, last seen, push enabled, "this device"), with rename and remove. Removing a device <b>signs it out</b>: its login sessions are revoked and its open WebSockets closed, and its push subscription is dropped. This lets you cut off a lost phone. Removing <i>this</i> device asks to confirm "This signs out this browser". Login sessions record their <code>device_id</code>, so revocation can target them. <code>devices.register</code> keeps the server's label if one exists.</li>
+<li><b>Settings › Notifications, Devices:</b> lists all devices (label, last seen, push enabled, "this device"), with rename and remove. Removing a device <b>signs it out</b>: its login sessions are revoked and its open WebSockets closed, and its push subscription is dropped. This lets you cut off a lost phone. Removing <i>this</i> device asks to confirm "This signs out this browser". Login sessions record their <code>device_id</code>, so revocation can target them. <code>devices.register</code> keeps the server's label if one exists.</li>
 <li><b>Attribution always uses the full device label,</b> never "you": e.g. "Allowed · Laptop (Firefox on Linux)", "Answered · Phone". The same device gets the same treatment as any other. Records store <code>{device_id, label_at_time}</code>. The UI shows the device's <b>current</b> label, falling back to the stored label if the device was removed, so renames apply to history.</li>
 <li><b>Where labels appear:</b> push device lists and focus attribution.</li>
 <li><b>RPCs:</b> <code>devices.list</code>, <code>devices.register {device_id, label}</code> (idempotent; sent on <code>hello</code>), <code>devices.rename</code>, <code>devices.remove</code>. <code>notifications.subscribe</code> and <code>client.focus</code> reference the <code>device_id</code>.</li>
@@ -638,7 +638,7 @@ A session-level grant is added on top. (Resolved: yes.)</li>
 <li><b>Transport:</b> the offline queue only flushes requests still pending, and is cleared on close. Add a heartbeat. Gate actions on connectivity. Strip NUL before the Markdown renderer runs.</li>
 <li><b>Testing:</b> Playwright against the real <code>controlroom-web</code> plus <code>fake-agent</code> and pi-RPC fixtures. A small fixture-replay mock is kept for design work only. There is <b>no</b> second TypeScript implementation of the daemon.</li>
 <li><b>Future-feature placeholders</b> are kept: <code>openStream</code> and <code>resourceUrl</code>.</li>
-<li><b>Keyboard: vim-forward</b> (Settings \u203a Keyboard can turn each part off):
+<li><b>Keyboard: vim-forward</b> (Settings \u203a General can turn each part off):
 <ul>
 <li><b>Pane focus with <code>Ctrl-h/j/k/l</code></b>, like vim-tmux-navigator. It moves focus spatially between visible panes (rail, session list, timeline, todo, terminal, files, notifications, tasks board) and works from inside text fields, the editor and the terminal.
 <ul>
