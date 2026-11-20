@@ -19,7 +19,7 @@ fail() {
 }
 
 coproc MOCK_SERVER { exec "$NODE" "$MOCK" "$log"; }
-trap 'kill "$MOCK_SERVER_PID" 2>/dev/null || true; [ -n "${LOGIN_PID:-}" ] && kill "$LOGIN_PID" 2>/dev/null || true' EXIT
+trap 'kill "$MOCK_SERVER_PID" 2>/dev/null || true; [ -n "${login_pid:-}" ] && kill "$login_pid" 2>/dev/null || true' EXIT
 read -r port <&"${MOCK_SERVER[0]}" || fail "the mock didn't start"
 
 cat >"$agent/models.json" <<EOF
@@ -62,7 +62,9 @@ listed=$("$BUNDLE/bin/controlroom-pi-models" list --agent-dir "$account") || fai
 start_login() {
   local dir=${1:-$agent}
   coproc LOGIN { exec "$BUNDLE/bin/controlroom-pi-models" login --agent-dir "$dir" --provider mock-sub; }
-  LOGIN_PID=$!
+  # Kept apart from bash's LOGIN_PID, which bash unsets as soon as the coprocess exits (a
+  # sign-in that finishes quickly would leave `finish` waiting on an unset variable).
+  login_pid=$!
 }
 send() {
   printf '%s\n' "$1" >&"${LOGIN[1]}"
@@ -81,8 +83,8 @@ expect() {
 }
 finish() {
   local status=0
-  wait "$LOGIN_PID" || status=$?
-  LOGIN_PID=
+  wait "$login_pid" || status=$?
+  login_pid=
   [ "$status" = "$1" ] || fail "the sign-in exited $status, not $1"
 }
 signed_in() {
