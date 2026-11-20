@@ -1,7 +1,8 @@
-# The models helper (Settings › Models) against pi's own code: the model list of a config, and
-# sign-in and sign-out through pi's Radius OAuth flow pointed at a mock provider (never a real
-# provider or credential): device code, browser with the redirect URL pasted, a bad code, and a
-# cancel.
+# The models helper (Settings › Models) against pi's own code: the model list of a config (with
+# a provider's model definitions, which define an added account's provider), and sign-in and
+# sign-out through pi's Radius OAuth flow pointed at a mock provider (never a real provider or
+# credential): device code, browser with the redirect URL pasted, a bad code, a cancel, and two
+# accounts signed in independently, each in its own directory, refreshed there only.
 #
 # Inputs (environment): BUNDLE (controlroom-pi), NODE, JQ, MOCK (mock-oauth.mjs).
 
@@ -40,10 +41,27 @@ list=$(helper list) || fail "list failed"
 [ "$("$JQ" -r '.providers[] | select(.id == "google") | .oauth' <<<"$list")" = false ] || fail "google sign-in"
 [ "$("$JQ" -r '[.models[] | select(.provider == "gw") | .id] | join(",")' <<<"$list")" = gw-model ] || fail "models: $list"
 [ "$("$JQ" '[.models[] | select(.provider == "anthropic")] | length' <<<"$list")" = 0 ] || fail "unconfigured models listed"
+[ "$("$JQ" '.definitions | length' <<<"$list")" = 0 ] || fail "definitions unasked: $list"
 
-# One sign-in on a coprocess: `send` writes a line, `expect KIND` reads steps until one of KIND.
+# Model definitions: every model of a provider, as models.json entries pi takes for a provider
+# of its own (an added account).
+list=$(helper list --definitions anthropic --definitions gw) || fail "list --definitions failed"
+[ "$("$JQ" -r '.definitions.gw[0].id' <<<"$list")" = gw-model ] || fail "gw definitions: $list"
+"$JQ" -e '.definitions.anthropic | length > 0 and all(.api and .baseUrl and .id)' <<<"$list" >/dev/null ||
+  fail "anthropic definitions: $list"
+account=$work/account-check
+mkdir -p "$account"
+"$JQ" '{providers: {"anthropic-work": {name: "Anthropic (work)", models: .definitions.anthropic}}}' <<<"$list" >"$account/models.json"
+echo '{"anthropic-work": {"type": "api_key", "key": "controlroom-placeholder"}}' >"$account/auth.json"
+listed=$("$BUNDLE/bin/controlroom-pi-models" list --agent-dir "$account") || fail "account list failed"
+[ "$("$JQ" '[.models[] | select(.provider == "anthropic-work")] | length' <<<"$listed")" = \
+  "$("$JQ" '.definitions.anthropic | length' <<<"$list")" ] || fail "account models: $listed"
+
+# One sign-in on a coprocess (in DIR, the agent dir by default): `send` writes a line, `expect
+# KIND` reads steps until one of KIND.
 start_login() {
-  coproc LOGIN { exec "$BUNDLE/bin/controlroom-pi-models" login --agent-dir "$agent" --provider mock-sub; }
+  local dir=${1:-$agent}
+  coproc LOGIN { exec "$BUNDLE/bin/controlroom-pi-models" login --agent-dir "$dir" --provider mock-sub; }
   LOGIN_PID=$!
 }
 send() {
@@ -124,6 +142,34 @@ send '{"cancel": true}'
 expect failed
 [ "$("$JQ" -r '.step.message' <<<"$step")" = cancelled ] || fail "cancel: $step"
 finish 1
+
+# Two accounts sign in independently, each with pi's login in its own directory (as Settings ›
+# Models does for an added account); signing one out or refreshing it leaves the other alone.
+for name in personal work; do
+  mkdir -p "$work/accounts/$name"
+  cp "$agent/models.json" "$work/accounts/$name/"
+  start_login "$work/accounts/$name"
+  expect choose
+  send '{"input": "device-code"}'
+  expect device_code
+  expect 'done'
+  finish 0
+done
+personal_access=$("$JQ" -r '."mock-sub".access' "$work/accounts/personal/auth.json")
+work_access=$("$JQ" -r '."mock-sub".access' "$work/accounts/work/auth.json")
+[ -n "$personal_access" ] && [ "$personal_access" != "$work_access" ] || fail "accounts share a token"
+signed_in && fail "an account's sign-in reached the agent dir"
+work_before=$(cat "$work/accounts/work/auth.json")
+# The OAuth helper refreshes the personal account (expired here) in its own directory only.
+"$JQ" '."mock-sub".expires = 1' "$work/accounts/personal/auth.json" >"$work/expired.json"
+mv "$work/expired.json" "$work/accounts/personal/auth.json"
+refreshed=$("$BUNDLE/bin/controlroom-pi-oauth" --agent-dir "$work/accounts/personal" --provider mock-sub \
+  --valid-for-secs 600) || fail "refreshing the personal account failed"
+[ "$refreshed" != "$personal_access" ] || fail "not refreshed"
+[ "$(cat "$work/accounts/work/auth.json")" = "$work_before" ] || fail "refreshing one account touched the other"
+"$BUNDLE/bin/controlroom-pi-models" logout --agent-dir "$work/accounts/personal" --provider mock-sub ||
+  fail "signing the personal account out failed"
+[ "$("$JQ" -r '."mock-sub".type' "$work/accounts/work/auth.json")" = oauth ] || fail "the work account was signed out"
 
 # Usage errors.
 status=0

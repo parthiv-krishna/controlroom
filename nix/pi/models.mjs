@@ -1,13 +1,17 @@
 // controlroom-pi-models: Settings › Models asks pi itself (spec §11.3).
 //
-//   controlroom-pi-models list   --agent-dir DIR                prints {providers, models}
+//   controlroom-pi-models list   --agent-dir DIR [--definitions ID]...
+//                                                               prints {providers, models,
+//                                                               definitions}
 //   controlroom-pi-models logout --agent-dir DIR --provider ID  signs out (under pi's lock)
 //   controlroom-pi-models login  --agent-dir DIR --provider ID  signs in, over JSON lines
 //
 // The agent daemon runs this host-side. `list` reads DIR's config (the agent daemon builds one
 // with placeholder credentials) and prints every provider pi knows, whether pi can sign in to
-// it, and the models of the providers that have credentials. Nothing is written but auth.json,
-// by `login` and `logout`, through pi's own locked store.
+// it, and the models of the providers that have credentials. With `--definitions ID`, it also
+// prints every model of provider ID as a models.json `models` entry: an account added in
+// Settings › Models is a provider of its own for pi, defined with its provider's models. Nothing
+// is written but auth.json, by `login` and `logout`, through pi's own locked store.
 //
 // `login` drives pi's login flow for one provider. It prints `{"step": STEP}` lines (the
 // protocol's LoginStep: choose, open_url, device_code, input, progress, done, failed) and reads
@@ -46,7 +50,11 @@ let options;
 try {
   ({ values: options } = parseArgs({
     args: rest,
-    options: { "agent-dir": { type: "string" }, provider: { type: "string" } },
+    options: {
+      "agent-dir": { type: "string" },
+      provider: { type: "string" },
+      definitions: { type: "string", multiple: true, default: [] },
+    },
     strict: true,
   }));
 } catch (error) {
@@ -69,11 +77,26 @@ const runtime = await ModelRuntime.create({
   refreshOnCreate: false,
 }).catch((error) => fail(`loading pi's models: ${describe(error)}`));
 
+/** The fields of a model that a models.json `models` entry takes (pi's ModelDefinitionSchema). */
+const DEFINITION_FIELDS = [
+  "id", "name", "api", "baseUrl", "reasoning", "thinkingLevelMap", "input", "inputLimits", "cost",
+  "promptCache", "contextWindow", "maxTokens", "samplingParams", "samplingParamsByThinkingLevel",
+  "headers", "compat",
+];
+
+/** A model as a models.json `models` entry. */
+function definition(model) {
+  return Object.fromEntries(DEFINITION_FIELDS.filter((key) => model[key] !== undefined).map((key) => [key, model[key]]));
+}
+
 if (mode === "list") {
   const providers = runtime.getProviders().map((p) => ({ id: p.id, name: p.name, oauth: !!p.auth?.oauth }));
   const available = await runtime.getAvailable().catch((error) => fail(`listing models: ${describe(error)}`));
   const models = available.map((m) => ({ provider: m.provider, id: m.id, name: m.name ?? m.id, reasoning: !!m.reasoning }));
-  process.stdout.write(JSON.stringify({ providers, models }));
+  const definitions = Object.fromEntries(
+    options.definitions.map((id) => [id, (runtime.getProvider(id)?.getModels() ?? []).map(definition)]),
+  );
+  process.stdout.write(JSON.stringify({ providers, models, definitions }));
   process.exit(0);
 }
 

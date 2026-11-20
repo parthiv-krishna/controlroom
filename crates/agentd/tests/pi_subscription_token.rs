@@ -4,7 +4,10 @@
 //! API (the session's `models.json` points `anthropic` there, as the VM test's `pi-mock` does
 //! for its mock). pi must take its subscription path with the stand-in alone: `Authorization:
 //! Bearer sk-ant-oat01-controlroom-placeholder` (which nono's proxy replaces with the real token)
-//! and Claude Code's `anthropic-beta`, never `x-api-key`.
+//! and Claude Code's `anthropic-beta`, never `x-api-key`. With named accounts, each account is a
+//! provider of its own (defined with pi's model definitions from the bundle's models helper),
+//! and pi sends each account's stand-in: an API key's, a subscription token's, and a ChatGPT
+//! sign-in's synthetic token with that account's id.
 //!
 //! Needs the bundle, so it is `#[ignore]`d; the flake check `agentd-pi-subscription-token` runs
 //! it with `CR_TEST_PI_BUNDLE` set (or: `nix build -o /tmp/pi .#controlroom-pi` and
@@ -175,19 +178,22 @@ fn point_anthropic_at(agent: &AbsPath, origin: &str) {
 
 /// Runs one prompt with the bundle's launcher on `agent`, in an isolated home.
 fn run_pi(bundle: &Path, agent: &AbsPath, root: &Path) -> std::process::Output {
+    run_pi_with(bundle, agent, root, "anthropic", "mock-model")
+}
+
+/// Runs one prompt with `provider`'s `model`.
+fn run_pi_with(
+    bundle: &Path,
+    agent: &AbsPath,
+    root: &Path,
+    provider: &str,
+    model: &str,
+) -> std::process::Output {
     let home = root.join("home");
     std::fs::create_dir_all(&home).expect("mkdir home");
     let mut command = Command::new(bundle.join("bin/controlroom-pi"));
     command
-        .args([
-            "--",
-            "-p",
-            "hi",
-            "--provider",
-            "anthropic",
-            "--model",
-            "mock-model",
-        ])
+        .args(["--", "-p", "hi", "--provider", provider, "--model", model])
         .arg("--no-session")
         .current_dir(&home)
         .env_clear()
@@ -271,4 +277,171 @@ fn pi_sends_the_stand_in_as_a_subscription_token() {
         request.header("user-agent")
     );
     assert_eq!(request.header("x-app"), Some("cli"));
+}
+
+/// pi's model definitions of `providers` from the bundle's models helper, as Settings › Models
+/// fetches them for providers with added accounts.
+fn definitions(bundle: &Path, root: &AbsPath, providers: &[&str]) -> serde_json::Value {
+    let dir = root.join("catalog");
+    std::fs::create_dir_all(dir.as_path()).expect("mkdir catalog");
+    let mut command = Command::new(bundle.join("bin/controlroom-pi-models"));
+    command.args(["list", "--agent-dir", dir.as_str()]);
+    for provider in providers {
+        command.args(["--definitions", provider]);
+    }
+    let out = command
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", root.as_str())
+        .env("PI_CODING_AGENT_DIR", dir.as_str())
+        .env("PI_OFFLINE", "1")
+        .output()
+        .expect("run controlroom-pi-models");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let list: serde_json::Value = serde_json::from_slice(&out.stdout).expect("list JSON");
+    list["definitions"].clone()
+}
+
+/// Two accounts of Anthropic (the first with an API key, `work` with a pasted subscription
+/// token) and a signed-in ChatGPT account `work`, as a launch sets them up from Settings ›
+/// Models with pi's own model definitions: each account is a provider of its own for pi, which
+/// sends that account's stand-in (nono's proxy swaps in its credential on its route).
+#[test]
+#[ignore = "needs the controlroom-pi bundle (CR_TEST_PI_BUNDLE); run by the flake check agentd-pi-subscription-token"]
+fn pi_sends_each_accounts_stand_in() {
+    use controlroom_agentd::models::store::{Store, StoredProvider};
+
+    let bundle = std::env::var_os("CR_TEST_PI_BUNDLE")
+        .expect("CR_TEST_PI_BUNDLE is the controlroom-pi bundle");
+    let bundle = Path::new(&bundle);
+    let t = tempfile::tempdir().expect("tempdir");
+    let root = AbsPath::from_path(t.path()).expect("utf-8 tempdir");
+    let dirs = Dirs::under(root.join("state"));
+    let store = Store::new(dirs.models());
+    let mut keys = KeyStore::default();
+    keys.insert("anthropic", "sk-ant-api03-test-personal");
+    keys.insert("anthropic-work", TOKEN);
+    store.save_keys(&keys).expect("save keys");
+    let mut stored = store.load().expect("load");
+    for (id, base) in [
+        ("anthropic-work", "anthropic"),
+        ("openai-codex-work", "openai-codex"),
+    ] {
+        stored.providers.insert(
+            id.into(),
+            StoredProvider {
+                account_of: Some(base.into()),
+                name: Some("work".into()),
+                ..StoredProvider::default()
+            },
+        );
+    }
+    store.save(&stored).expect("save");
+    let defs = definitions(bundle, &root, &["anthropic", "openai-codex"]);
+    let as_list = |provider: &str| defs[provider].as_array().cloned().expect("definitions");
+    let (anthropic, codex) = (as_list("anthropic"), as_list("openai-codex"));
+    assert!(!anthropic.is_empty() && !codex.is_empty());
+    store
+        .save_definitions(
+            &[
+                ("anthropic".to_owned(), anthropic.clone()),
+                ("openai-codex".to_owned(), codex.clone()),
+            ]
+            .into(),
+        )
+        .expect("definitions");
+    let claims = json!({"https://api.openai.com/auth": {"chatgpt_account_id": "acct-work"}});
+    let access = controlroom_sandbox::agent_dir::unsigned_jwt(claims.as_object().expect("obj"));
+    let account_dir = store
+        .create_account_dir("openai-codex-work")
+        .expect("account dir");
+    std::fs::write(
+        account_dir.join("auth.json").as_path(),
+        json!({"openai-codex": {"type": "oauth", "access": access, "refresh": "r", "expires": 1}})
+            .to_string(),
+    )
+    .expect("account auth");
+
+    let mut sandbox = sandbox_config::SandboxConfig::default()
+        .resolve(None, &dirs.pi_agent_dir())
+        .expect("sandbox");
+    merge::apply(&dirs, &mut sandbox);
+    let layout = SessionLayout::new(dirs.state(), &SessionId::new(SESSION).expect("id"));
+    build_session_dirs(&layout, &sandbox.agent_dir).expect("build session dirs");
+    let agent = layout.agent();
+
+    // Point each provider at a mock of its own (a stand-in for its route's upstream).
+    let (personal_origin, personal) = mock_anthropic();
+    let (work_origin, work) = mock_anthropic();
+    let (codex_origin, codex_requests) = mock_anthropic();
+    let models_path = agent.join("models.json");
+    let mut models: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(models_path.as_path()).expect("models.json"))
+            .expect("models JSON");
+    let providers = models["providers"].as_object_mut().expect("providers");
+    providers.insert("anthropic".into(), json!({"baseUrl": personal_origin}));
+    for (id, origin) in [
+        ("anthropic-work", &work_origin),
+        ("openai-codex-work", &format!("{codex_origin}/backend-api")),
+    ] {
+        for model in providers[id]["models"].as_array_mut().expect("models") {
+            model["baseUrl"] = json!(origin);
+        }
+    }
+    std::fs::write(models_path.as_path(), models.to_string()).expect("write models.json");
+
+    let model = |defs: &[serde_json::Value]| defs[0]["id"].as_str().expect("id").to_owned();
+    for (provider, model) in [
+        ("anthropic", model(&anthropic)),
+        ("anthropic-work", model(&anthropic)),
+    ] {
+        let out = run_pi_with(bundle, &agent, t.path(), provider, &model);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{provider}: {stderr}");
+    }
+    let request = personal
+        .try_recv()
+        .expect("pi called the first account's mock");
+    assert_eq!(request.header("x-api-key"), Some(PLACEHOLDER));
+    assert_eq!(request.header("authorization"), None);
+    let request = work.try_recv().expect("pi called the work account's mock");
+    assert!(request.request_line.starts_with("POST /v1/messages"));
+    assert_eq!(
+        request.header("authorization"),
+        Some(format!("Bearer sk-ant-oat01-{PLACEHOLDER}").as_str())
+    );
+    assert_eq!(request.header("x-api-key"), None);
+    let beta = request.header("anthropic-beta").unwrap_or_default();
+    assert!(beta.contains("oauth-2025-04-20"), "{beta}");
+    assert_eq!(request.header("x-app"), Some("cli"));
+
+    // The ChatGPT account: its account id from its own stand-in. (The mock doesn't speak the
+    // Responses API, so only the request counts.)
+    let _ = run_pi_with(
+        bundle,
+        &agent,
+        t.path(),
+        "openai-codex-work",
+        &model(&codex),
+    );
+    let request = codex_requests
+        .try_recv()
+        .expect("pi called the ChatGPT account's mock");
+    assert!(
+        request
+            .request_line
+            .starts_with("POST /backend-api/codex/responses"),
+        "{}",
+        request.request_line
+    );
+    let auth = request.header("authorization").unwrap_or_default();
+    assert!(
+        auth.starts_with("Bearer ") && !auth.contains(&access),
+        "{auth}"
+    );
+    assert_eq!(request.header("chatgpt-account-id"), Some("acct-work"));
 }
