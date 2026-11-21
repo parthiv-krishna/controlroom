@@ -197,3 +197,81 @@ async fn a_job_survives_a_host_daemon_restart_and_wakes_once() {
     assert_eq!(job_messages(&timeline, "\"lint\"").len(), 1, "one wake");
     assert_eq!(held.runs(), 1);
 }
+
+/// A followed job that exits non-zero with matches no follow wake reported yet: its wake is one
+/// line naming them, and its message names the job (`origin: inject job`, the job as source), so
+/// the UI folds it into the job's row.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_followed_job_that_fails_wakes_once_naming_its_job() {
+    let mut world = World::start().await;
+    let app = world.devbox.dir("app");
+    let held = Held::new(&app, "validate");
+    let command = format!(
+        "{}; exit 1",
+        held.command("echo ok; echo FAIL one", "echo fine; echo FAIL two")
+    );
+    let run = (
+        "job.run",
+        json!({"call_id": "c_job", "command": command, "machine": "devbox",
+               "name": "Final validation"}),
+    );
+    world.agentd.scenario(&scenario(vec![
+        tool("c_job", "job", &[run]),
+        say("Validation runs."),
+        say("Saw the failure."),
+    ]));
+    let devbox = world.devbox.id.clone();
+    let id = world.create_session(&[(&devbox, "~/app")], json!({})).await;
+    world.prompt(&id, "validate").await;
+    let mut timeline = world.timeline(&id).await;
+    world
+        .until(&mut timeline, "the job", |t| t.tool_done("c_job"))
+        .await;
+    let job_id = timeline.tool_json("c_job")["job_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    held.started().await;
+    // A buffer longer than the test: the matches ride along with the exit.
+    world
+        .ui
+        .ok(
+            "job.follow",
+            json!({"op_id": op(), "id": id, "job_id": job_id, "pattern": "FAIL",
+                   "buffer_seconds": 600}),
+        )
+        .await;
+    let mark = world.turn_mark(&id);
+    held.release().await;
+    world
+        .until(&mut timeline, "the exit wake", |t| {
+            !wakes(t, "Final validation (exit 1)").is_empty()
+        })
+        .await;
+    world.wait_turn(&id, mark).await;
+
+    let messages: Vec<&Value> = timeline
+        .of_kind("message")
+        .into_iter()
+        .filter(|m| {
+            m["role"] == "user"
+                && m["content"][0]["text"]
+                    .as_str()
+                    .is_some_and(|t| t.starts_with("[controlroom] Job"))
+        })
+        .collect();
+    assert_eq!(messages.len(), 1, "one wake: {messages:#?}");
+    let text = messages[0]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains(&format!(
+            "{job_id} \"Final validation\" exited with code 1 after"
+        )) && text.ends_with("; followed lines not reported yet: 2, 4."),
+        "{text}"
+    );
+    assert!(!text.contains('\n'), "one line: {text}");
+    assert_eq!(
+        messages[0]["origin"],
+        json!({"kind": "inject", "origin": "job", "label": "job: Final validation (exit 1)",
+               "source": job_id})
+    );
+}

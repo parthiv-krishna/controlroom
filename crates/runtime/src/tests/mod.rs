@@ -19,6 +19,7 @@ mod requests;
 mod sandbox_level;
 mod sessions;
 mod terminals;
+mod wake_origins;
 mod workspaces;
 
 use std::collections::HashMap;

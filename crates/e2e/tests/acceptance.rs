@@ -337,6 +337,83 @@ async fn real_pi_under_nono_works_on_two_nono_confined_hosts() {
         "the model saw the wake"
     );
 
+    // 4. A followed job that fails while the agent runs a long command: the follow wake starts a
+    //    run, the exit wake is steered into it, and both messages name the job.
+    let job_gate = Held::new(&api, "validate");
+    let bash_gate = Held::new(&api, "long");
+    mock.push([
+        Reply::tool_call(
+            "call_validate",
+            "job",
+            json!({"action": "run", "name": "validate", "at": "devbox:~/src/api",
+                   "command": format!("{}; exit 1", job_gate.command("echo ok; echo FAIL one", "echo FAIL two"))}),
+        ),
+        Reply::text("Validation runs."),
+        Reply::tool_call(
+            "call_long",
+            "bash",
+            json!({"shell": "builder", "command": bash_gate.command("echo long", "echo long done")}),
+        ),
+        Reply::text("Long step done."),
+        Reply::text("Saw the exit."),
+    ]);
+    world.prompt(&id, "Validate.").await;
+    job_gate.started().await;
+    let mut timeline = world.timeline(&id).await;
+    world
+        .until(&mut timeline, "the validate job", |t| {
+            t.of_kind("job")
+                .iter()
+                .any(|j| j["job"]["name"] == "validate")
+        })
+        .await;
+    let job = timeline
+        .of_kind("job")
+        .into_iter()
+        .find(|j| j["job"]["name"] == "validate")
+        .map(|j| j["job"]["id"].as_str().unwrap().to_owned())
+        .unwrap();
+    world
+        .ui
+        .ok(
+            "job.follow",
+            json!({"op_id": controlroom_controller::test_support::op(), "id": id,
+                   "job_id": job, "pattern": "FAIL", "buffer_seconds": 1}),
+        )
+        .await;
+    bash_gate.started().await;
+    job_gate.release().await;
+    world
+        .until(&mut timeline, "the steered exit wake", |t| {
+            t.user_texts()
+                .iter()
+                .any(|m| m.contains("exited with code 1"))
+        })
+        .await;
+    let mark = world.turn_mark(&id);
+    bash_gate.release().await;
+    world.wait_turn(&id, mark).await;
+    let wakes: Vec<&Value> = timeline
+        .of_kind("message")
+        .into_iter()
+        .filter(|m| {
+            m["content"][0]["text"]
+                .as_str()
+                .is_some_and(|t| t.starts_with(&format!("[controlroom] Job {job}")))
+        })
+        .collect();
+    let origins: Vec<&Value> = wakes.iter().map(|m| &m["origin"]).collect();
+    let origin =
+        |label: &str| json!({"kind": "inject", "origin": "job", "label": label, "source": job});
+    assert_eq!(
+        origins,
+        [
+            &origin("job: validate (follow)"),
+            &origin("job: validate (exit 1)")
+        ],
+        "{wakes:#?}"
+    );
+
     world
         .ui
         .ok(
