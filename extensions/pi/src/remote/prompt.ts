@@ -76,21 +76,23 @@ export function workspacesSection(info: SessionInfo): string {
     info.workspaces.length === 1
       ? `A path without a machine means ${first.machine}.`
       : 'This session has several workspaces, so always name the machine: a path without one is refused.';
+  // Shells are listed without their cwd: it changes with every cd (a changed section is sent to
+  // the model again), and each bash result names it anyway.
+  const shells = info.shells.map((s) => `${s.name} (${s.machine})`);
   const lines = [
-    `You work on remote machines. Every file path is machine:path, e.g. ${workspaceDisplay(first)}/README.md.`,
-    `Relative paths resolve against that machine's workspace root; ~ is the remote home. ${paths}`,
+    `You work on remote machines. Every file path is machine:path, e.g. ${workspaceDisplay(first)}/README.md; relative paths resolve against that machine's workspace root, ~ is its home. ${paths}`,
     'Workspaces:',
     ...info.workspaces.map((w) => `- ${describeWorkspace(info, w)}`),
-    `Shells (bash {shell}; default "${primary.shell}"): state (cwd, env, venv) persists per shell. Each bash result starts with [shell · cwd · exit].`,
-    ...info.shells.map((s) => `- ${s.name}: on ${s.machine}, now in ${shown(info, s.machine, s.cwd)}`),
-    'Use shell_new to open another shell, e.g. for parallel work or a long-running server.',
+    `Shells keep cwd, env and venvs (bash {shell}, default "${primary.shell}"): ${shells.join(', ') || 'none yet'}.`,
   ];
   return lines.join('\n');
 }
 
+/** `devbox:~/src/api (primary; shell "devbox")`; the root only when it isn't the path as given. */
 function describeWorkspace(info: SessionInfo, w: WorkspaceInfo): string {
-  const root = w.root ? shown(info, w.machine, w.root) : 'not opened yet';
-  const parts = [`root ${root}`, `default shell "${w.shell}"`];
+  const root = w.root ? shown(info, w.machine, w.root) : null;
+  const parts = [`shell "${w.shell}"`];
+  if (root !== workspaceDisplay(w)) parts.unshift(`root ${root ?? 'not opened yet'}`);
   if (w.primary && info.workspaces.length > 1) parts.unshift('primary');
   if (w.availability.connectivity.state !== 'connected') {
     parts.push(`${w.machine} unreachable since ${new Date(w.availability.since).toISOString()}; calls there wait for it`);

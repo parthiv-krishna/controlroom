@@ -85,7 +85,7 @@ test('write reports the bytes written, the home shown as ~, and link drops', asy
   );
   const pi = await started(daemon, TWO);
   const out = await pi.run('write', { path: 'buildbox:~/work/web/notes.md', content: 'héllo\n' }, { callId: 'tc-w' });
-  assert.match(out.text, /^Successfully wrote 7 bytes to buildbox:~\/work\/web\/notes\.md\n\n\[The link to buildbox dropped 2 times during this call; the result came from the host's journal, so it ran once\.\]$/);
+  assert.match(out.text, /^Successfully wrote 7 bytes to buildbox:~\/work\/web\/notes\.md\n\n\[The link to buildbox dropped 2 times during this call; it still ran once\.]$/);
   assert.deepEqual(daemon.paramsOf('host.call').at(-1), {
     call_id: 'tc-w',
     machine: 'buildbox',

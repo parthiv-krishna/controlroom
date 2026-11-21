@@ -74,7 +74,7 @@ test('bash streams output and the waiting-for-input state into tool updates', as
   assert.equal(
     out.text,
     '[shell buildbox · buildbox:/tmp · exit 2]\nstep 1\nstep 2\n[The command waited for terminal input.]\n' +
-      "[The link to buildbox dropped once during this call; the result came from the host's journal, so it ran once.]",
+      "[The link to buildbox dropped once during this call; it still ran once.]",
   );
   assert.equal(out.isError, true);
   assert.equal(daemon.paramsOf('host.call').at(-1)!.machine, 'buildbox');

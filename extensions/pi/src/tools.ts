@@ -36,11 +36,10 @@ export const askUser: Tool<AskParams, AskDetails> = {
   name: 'ask_user',
   label: 'Ask user',
   description:
-    'Ask the user one or more questions. Never blocks: it returns at once with a question id, ' +
-    'and the answer arrives later as a message that wakes you. Keep working on other things ' +
-    'meanwhile. Offer short options when the answer is a choice. To withdraw an open question ' +
-    'that no longer matters, call it with {"withdraw": "<question id>"}.',
-  promptSnippet: 'ask_user: ask the user questions without blocking; the answer wakes you later',
+    'Ask the user one or more questions without blocking: it returns a question id at once, and the ' +
+    'answer arrives later as a message that wakes you. Offer short options when the answer is a choice. ' +
+    'Withdraw an open question that no longer matters with {"withdraw": "<question id>"}.',
+  promptSnippet: 'Ask the user questions without blocking; the answer wakes you later',
   parameters: {
     type: 'object',
     properties: {
@@ -139,10 +138,8 @@ export const todo: Tool<TodoParams, TodoDetails> = {
     "The session's shared todo list; the user sees and edits it too. Actions: list; add " +
     '{items}; update {id, text?, status?, reason?}; complete {id}; block {id, reason}. ' +
     'Statuses: pending, in_progress, done, blocked, skipped. An id is the entry id or its ' +
-    'number in the list. While pending or in-progress entries remain, controlroom restarts ' +
-    'you after your turn ends (auto-continue): mark entries done as you finish them, and block ' +
-    'them (with the reason) when you need the user.',
-  promptSnippet: 'todo: the shared todo list (list, add, update, complete, block)',
+    'number in the list.',
+  promptSnippet: 'The shared todo list (list, add, update, complete, block)',
   parameters: {
     type: 'object',
     properties: {
@@ -206,16 +203,14 @@ async function resolveId(client: AgentClient, id: string | number | undefined): 
   return entry.id;
 }
 
-const MARK: Record<string, string> = { pending: ' ', in_progress: '~', done: 'x', blocked: '!', skipped: '-' };
-
 /** The list as the model reads it. */
 export function renderTodos(todos: Todo[]): string {
   if (!todos.length) return 'The todo list is empty.';
   const open = todos.filter((t) => t.status === 'pending' || t.status === 'in_progress').length;
   const lines = todos.map((t, i) => {
     const by = t.updated_by.kind === 'user' ? ' (edited by the user)' : '';
-    const reason = t.reason ? ` - ${t.reason}` : '';
-    return `${i + 1}. [${MARK[t.status] ?? '?'}] ${t.text}${reason} {id: ${t.id}, ${t.status}}${by}`;
+    const reason = t.reason ? ` (${t.reason})` : '';
+    return `${i + 1}. [${t.status}] ${t.text}${reason} (id ${t.id})${by}`;
   });
   return `Todo list (${open} open):\n${lines.join('\n')}`;
 }
@@ -242,7 +237,7 @@ export const notifyUser: Tool<NotifyParams, NotifyDetails> = {
   description:
     "Show the user a short notice in the session's timeline (progress, a heads-up, a result " +
     'worth seeing). It asks nothing; use ask_user for questions.',
-  promptSnippet: 'notify_user: show the user a notice without asking anything',
+  promptSnippet: 'Show the user a notice without asking anything',
   parameters: {
     type: 'object',
     properties: {

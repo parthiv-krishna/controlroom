@@ -159,7 +159,7 @@ test('real pi drives the remote tools on two machines', { skip: !PI && 'set CONT
   // The system prompt: the workspaces, their instruction files as machine:path, no local cwd.
   const system = JSON.stringify(first.messages.filter((m) => m.role === 'system' || m.role === 'developer'));
   assert.match(system, /<workspaces>/);
-  assert.match(system, /- devbox:~\/src\/api \(primary; root devbox:~\/src\/api; default shell \\"devbox\\"\)/);
+  assert.match(system, /- devbox:~\/src\/api \(primary; shell \\"devbox\\"\)/);
   assert.match(system, /project_instructions path=\\"devbox:~\/src\/api\/AGENTS\.md\\"/);
   assert.match(system, /Run cargo test before committing\./);
   assert.match(system, /none on this machine: pi runs on the controlroom server/);

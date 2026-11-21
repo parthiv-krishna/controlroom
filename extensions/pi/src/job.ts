@@ -37,14 +37,14 @@ export const job: Tool<JobParams, JobDetails> = {
   name: 'job',
   label: 'Job',
   description:
-    "Background jobs for long-running commands (builds, test suites, servers, watchers), run on a workspace's machine under its sandbox; " +
+    "Background jobs for long-running commands (builds, test suites, servers), run on a workspace's machine under its sandbox; " +
     'they keep running while the link or the server is down. Actions: run {command, at? (machine:path, the working directory), ' +
-    'timeout? (seconds), name?} returns the job id and its log path at once; follow {job_id, buffer_seconds? (default 15), ' +
-    'pattern? (regex, e.g. "ERROR|FAIL|panicked"), from? ("unseen" default, or "now")} also wakes you when new or matching lines appear ' +
-    '(batched for buffer_seconds); unfollow {job_id}; status {job_id?}; kill {job_id}. The exit of a job always wakes you with its ' +
-    "exit code, duration, line count and log path. Output never enters your context: read the log (machine:path) with read or grep. Don't " +
-    'poll or sleep waiting for a job; work on something else or end your turn.',
-  promptSnippet: 'job: run long commands in the background (run, follow, unfollow, status, kill); their exit wakes you',
+    'timeout? (seconds), name?} returns the job id and its log path; follow {job_id, pattern? (regex, e.g. "ERROR|FAIL|panicked"), ' +
+    'buffer_seconds? (default 15), from? ("unseen" default, or "now")} also wakes you on new or matching lines, batched; ' +
+    'unfollow {job_id}; status {job_id?}; kill {job_id}. A job\'s exit always wakes you with its exit code, duration, line count and log path. ' +
+    "Output never enters your context: read only what you need from the log (machine:path), with read and an offset, grep, " +
+    "or tail/sed -n 'a,bp' in a shell. Don't poll or sleep waiting for a job.",
+  promptSnippet: 'Run long commands in the background (run, follow, unfollow, status, kill); their exit wakes you',
   parameters: {
     type: 'object',
     properties: {
@@ -76,9 +76,7 @@ export const job: Tool<JobParams, JobDetails> = {
           ...(params.name ? { name: params.name } : {}),
         });
         const log = shown(info, at.machine, started.log_path);
-        const said =
-          `Job ${started.job_id} started on ${at.machine}; its log is ${log}. Its exit will wake you. ` +
-          'Follow it to be woken on new or matching lines too. Keep working meanwhile, or end your turn.';
+        const said = `Job ${started.job_id} started; log ${log}.`;
         return { content: text(said), details: { action: 'run', jobs: [], log_path: log } };
       }
       case 'follow': {
@@ -90,21 +88,20 @@ export const job: Tool<JobParams, JobDetails> = {
           ...(params.pattern ? { pattern: params.pattern } : {}),
           ...(params.from ? { from: params.from } : {}),
         });
-        const info = await client.sessionInfo();
         const said = job.follow
-          ? `Following job ${job.id}: new ${job.follow.pattern ? `lines matching /${job.follow.pattern}/` : 'lines'} wake you after ${job.follow.buffer_seconds}s. ${describe(job, info)}`
-          : `Job ${job.id} has ended, so there is nothing to follow. ${describe(job, info)}`;
+          ? `Following job ${job.id}: ${job.follow.pattern ? `lines matching /${job.follow.pattern}/` : 'new lines'} wake you after ${job.follow.buffer_seconds}s.`
+          : `Job ${job.id} has ended. ${describe(job, await client.sessionInfo())}`;
         return { content: text(said), details: { action: 'follow', jobs: [job] } };
       }
       case 'unfollow': {
         const job = await client.call('job.unfollow', { call_id, job_id: needId(params) });
-        const said = `Not following job ${job.id}; its exit still wakes you. ${describe(job, await client.sessionInfo())}`;
+        const said = `Not following job ${job.id}; its exit still wakes you.`;
         return { content: text(said), details: { action: 'unfollow', jobs: [job] } };
       }
       case 'kill': {
         const job = await client.call('job.kill', { call_id, job_id: needId(params) });
         const said =
-          job.status === 'running' ? `Stopping job ${job.id} (SIGTERM, then SIGKILL).` : `Job ${job.id} had already ended. ${describe(job, await client.sessionInfo())}`;
+          job.status === 'running' ? `Stopping job ${job.id}.` : `Job ${job.id} had already ended. ${describe(job, await client.sessionInfo())}`;
         return { content: text(said), details: { action: 'kill', jobs: [job] } };
       }
       case 'status': {
@@ -131,7 +128,7 @@ export function describe(j: Job, info: SessionInfo): string {
     j.status === 'running'
       ? `running${j.follow ? `, followed${j.follow.pattern ? ` /${j.follow.pattern}/` : ''}` : ''}`
       : `${j.status.replace('_', ' ')}${j.exit !== null ? ` (exit ${j.exit})` : j.signal ? ` (${j.signal})` : ''}`;
-  return `Job ${j.id} \`${j.name}\`: ${outcome}, ${j.lines} line${j.lines === 1 ? '' : 's'}, log ${logDisplay(j, info)}`;
+  return `Job ${j.id} "${j.name}": ${outcome}, ${j.lines} line${j.lines === 1 ? '' : 's'} in ${logDisplay(j, info)}`;
 }
 
 /**

@@ -81,11 +81,14 @@ test('the system prompt carries the workspaces, their instruction files and skil
   const section = options.sections[WORKSPACES_SECTION];
   assert.match(section, /Every file path is machine:path, e\.g\. devbox:~\/src\/api\/README\.md/);
   assert.match(section, /several workspaces, so always name the machine/);
-  assert.match(section, /^- devbox:~\/src\/api \(primary; root devbox:~\/src\/api; default shell "devbox"\)$/m);
-  assert.match(section, /^- devbox:~\/src\/web \(root devbox:~\/src\/web; default shell "devbox-web"\)$/m);
+  assert.match(section, /^- devbox:~\/src\/api \(primary; shell "devbox"\)$/m);
+  assert.match(section, /^- devbox:~\/src\/web \(shell "devbox-web"\)$/m);
   assert.match(section, /^- buildbox:~\/work\/web \(.*buildbox unreachable since 2026-01-02T03:04:05\.000Z/m);
-  assert.match(section, /^- devbox: on devbox, now in devbox:~\/src\/api\/src$/m);
-  assert.match(section, /^- buildbox: on buildbox, now in buildbox:\/tmp$/m);
+  assert.match(section, /^Shells keep cwd, env and venvs \(bash \{shell\}, default "devbox"\): devbox \(devbox\), buildbox \(buildbox\)\.$/m);
+  // A shell's cwd changes with every cd: it stays out of the prompt (each bash result names it).
+  assert.doesNotMatch(section, /\/tmp/);
+  // pi's docs live on the server, which no tool reaches.
+  assert.match(options.sections.docs, /out of reach/);
   await pi.fire('session_shutdown', {});
 });
 
@@ -109,7 +112,7 @@ test('without session info the prompt says so and keeps the controlroom section'
   const pi = await started(daemon);
   const options = await prompt(pi);
   assert.match(options.sections[WORKSPACES_SECTION], /could not be loaded/);
-  assert.match(options.sections[SECTION], /Auto-continue/);
+  assert.match(options.sections[SECTION], /auto-continue/);
   assert.equal(options.cwd, CWD);
   await pi.fire('session_shutdown', {});
 });
@@ -149,7 +152,7 @@ test('todo actions map onto the agent API, numbers resolve to ids', async () => 
     return { result: { todos: list } };
   });
   const pi = await started(daemon);
-  assert.match((await pi.run('todo', { action: 'add', items: ['docs'] })).text, /3\. \[ \] docs/);
+  assert.match((await pi.run('todo', { action: 'add', items: ['docs'] })).text, /3\. \[pending\] docs \(id N0\)/);
   await pi.run('todo', { action: 'complete', id: 2 }, { callId: 'tc-2' });
   assert.deepEqual(daemon.paramsOf('todo.update').at(-1), { call_id: 'tc-2', todo_id: 'T2', status: 'done' });
   await pi.run('todo', { action: 'block', id: 'T1', reason: 'needs a key' });
@@ -203,13 +206,13 @@ test('job runs on a machine, follows, reports status and kills through the agent
   const pi = await started(daemon, TWO);
 
   const run = await pi.run('job', { action: 'run', command: 'npm test', name: 'tests', timeout: 600, at: 'buildbox:app' }, { callId: 'tc-run' });
-  assert.match(run.text, /Job J1 started on buildbox; its log is buildbox:~\/work\/web\/\.controlroom\/jobs\/J1\.log\. Its exit will wake you/);
+  assert.match(run.text, /^Job J1 started; log buildbox:~\/work\/web\/\.controlroom\/jobs\/J1\.log\.$/);
   assert.deepEqual(daemon.paramsOf('job.run').at(-1), { call_id: 'tc-run', command: 'npm test', machine: 'buildbox', cwd: 'app', timeout_s: 600, name: 'tests' });
   const follow = await pi.run('job', { action: 'follow', job_id: 'J1', pattern: 'FAIL' }, { callId: 'tc-f' });
-  assert.match(follow.text, /Following job J1: new lines matching \/FAIL\/ wake you after 15s/);
+  assert.match(follow.text, /^Following job J1: lines matching \/FAIL\/ wake you after 15s\.$/);
   assert.deepEqual(daemon.paramsOf('job.follow').at(-1), { call_id: 'tc-f', job_id: 'J1', pattern: 'FAIL' });
   const status = await pi.run('job', { action: 'status' });
-  assert.equal(status.text, 'Job J1 `tests`: running, followed /FAIL/, 12 lines, log buildbox:~/work/web/.controlroom/jobs/J1.log');
+  assert.equal(status.text, 'Job J1 "tests": running, followed /FAIL/, 12 lines in buildbox:~/work/web/.controlroom/jobs/J1.log');
   assert.match((await pi.run('job', { action: 'kill', job_id: 'J1' })).text, /Stopping job J1/);
   await assert.rejects(pi.run('job', { action: 'run' }), /needs a command/);
   await assert.rejects(pi.run('job', { action: 'run', command: 'make' }), /No directory given, and this session has several workspaces/);

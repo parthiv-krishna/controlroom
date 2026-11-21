@@ -10,7 +10,7 @@ import { AgentClient } from './client.ts';
 import { readEnv } from './env.ts';
 import { job } from './job.ts';
 import type { AgentState } from './protocol/AgentState.ts';
-import { PROMPT, SECTION } from './prompt.ts';
+import { DOCS, DOCS_SECTION, PROMPT, SECTION } from './prompt.ts';
 import { edit, read, write } from './remote/files.ts';
 import { type ContextFile, contextFiles, CWD, type PromptSkill, skills, WORKSPACES_SECTION, workspacesSection } from './remote/prompt.ts';
 import { find, grep, ls } from './remote/search.ts';
@@ -111,7 +111,7 @@ export function activate(
   pi.on('before_agent_start', async (event) => {
     const options = event.systemPromptOptions;
     if (!options) return;
-    const sections: Record<string, string> = { ...options.sections, [SECTION]: PROMPT };
+    const sections: Record<string, string> = { ...options.sections, [DOCS_SECTION]: DOCS, [SECTION]: PROMPT };
     options.sections = sections;
     options.cwd = CWD;
     const info = await client.sessionInfo().catch(() => null);

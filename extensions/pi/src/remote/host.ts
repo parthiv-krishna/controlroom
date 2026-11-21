@@ -81,7 +81,7 @@ export async function hostCall<O extends HostOp['op']>(
 export function linkDropNote(machine: string, drops: number): string {
   if (!drops) return '';
   const times = drops === 1 ? 'once' : `${drops} times`;
-  return `[The link to ${machine} dropped ${times} during this call; the result came from the host's journal, so it ran once.]`;
+  return `[The link to ${machine} dropped ${times} during this call; it still ran once.]`;
 }
 
 /** A host call's failure as a message the model can act on. */
