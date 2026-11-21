@@ -181,8 +181,8 @@ async fn past_the_grace_the_call_fails_and_its_late_result_is_injected() {
     assert_eq!(s.live_work.host_calls, 0);
     let prompt = h.host.prompts(id).pop().unwrap();
     assert!(
-        prompt.contains("Your earlier call c2 (bash `block g2`)")
-            && prompt.contains("it ran once on devbox and ended with exit 0"),
+        prompt.contains("devbox is back. Your call c2 (bash `block g2`)")
+            && prompt.contains("ran once and ended with exit 0"),
         "{prompt}"
     );
     assert_eq!(

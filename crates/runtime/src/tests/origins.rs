@@ -164,7 +164,7 @@ async fn prompts_queue_schedules_steers_and_wakes_name_their_origin() {
     );
     h.machines.job_exit(h.devbox, job, 0);
     h.wait_command(id, "the job wake", |c| {
-        super::host::steered_text(c).is_some_and(|t| t.contains("Background job update"))
+        super::host::steered_text(c).is_some_and(|t| t.contains("[controlroom] Job"))
     })
     .await;
     h.host.release(id, "busy");
@@ -187,7 +187,7 @@ async fn prompts_queue_schedules_steers_and_wakes_name_their_origin() {
         })
     );
     assert_eq!(
-        origin_of(&h, id, "Background job update").await,
+        origin_of(&h, id, "[controlroom] Job").await,
         Some(MessageOrigin::Inject {
             origin: InjectOrigin::Job,
             label: "job: build (exit 0)".into(),

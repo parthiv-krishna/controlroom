@@ -14,7 +14,7 @@ use super::host::steered_text;
 use super::jobs::{agent_op, follow, op, start, wait_job};
 use super::{Harness, caps};
 
-const WAKE: &str = "Background job update";
+const WAKE: &str = "[controlroom] Job";
 
 fn steering() -> Capabilities {
     Capabilities {
@@ -76,7 +76,7 @@ async fn an_exit_wake_while_idle_starts_a_run_with_metadata_only() {
     let log = format!("devbox:/home/alice/src/app/.controlroom/jobs/{job}.log");
     assert!(
         wakes[0].contains(&format!(
-            "job {job} `build` exited with code 0 after 1s; 3 lines in {log}."
+            "[controlroom] Job {job} \"build\" exited with code 0 after 1s; 3 lines in {log}."
         )),
         "{wakes:?}"
     );
@@ -132,11 +132,11 @@ async fn a_follow_wakes_after_its_buffer_and_merges_with_other_jobs() {
     h.rt.tick();
     let wakes = wait_wakes(&mut h, id, 1).await;
     assert!(
-        wakes[0].contains("2 lines matching /FAIL/ at lines 2-3"),
+        wakes[0].contains("2 lines matching /FAIL/ at 2-3;"),
         "{wakes:?}"
     );
     assert!(
-        wakes[0].contains("1 line new at line 1"),
+        wakes[0].contains("1 line new at 1;"),
         "lint's lines ride along: {wakes:?}"
     );
     assert_eq!(
@@ -148,7 +148,7 @@ async fn a_follow_wakes_after_its_buffer_and_merges_with_other_jobs() {
     h.machines.job_exit(devbox, e2e, 1);
     let wakes = wait_wakes(&mut h, id, 2).await;
     assert!(
-        wakes[1].contains("exited with code 1") && wakes[1].contains("not reported yet: line 4"),
+        wakes[1].contains("exited with code 1") && wakes[1].contains("not reported yet: 4."),
         "{wakes:?}"
     );
 }
@@ -168,14 +168,14 @@ async fn kills_wake_unless_the_agent_killed_the_job_and_a_lost_job_says_so() {
     h.rt.job_kill(op(id, theirs)).await.unwrap();
     let wakes = wait_wakes(&mut h, id, 1).await;
     assert!(
-        wakes[0].contains("`server` was killed by the user"),
+        wakes[0].contains("\"server\" was killed by the user"),
         "{wakes:?}"
     );
-    assert!(!wakes.iter().any(|w| w.contains("`mine`")));
+    assert!(!wakes.iter().any(|w| w.contains("\"mine\"")));
     h.machines.job_lost(h.devbox, rebooted);
     let wakes = wait_wakes(&mut h, id, 2).await;
     assert!(
-        wakes[1].contains("`soak` was lost (host rebooted)"),
+        wakes[1].contains("\"soak\" was lost (host rebooted)"),
         "{wakes:?}"
     );
     assert_eq!(job_now_status(&h, id, rebooted), Some(JobStatus::Lost));
@@ -212,7 +212,7 @@ async fn events_during_an_outage_wake_once_after_the_reconnect() {
     let wakes = wait_wakes(&mut h, id, 1).await;
     assert_eq!(wakes.len(), 1, "one merged wake: {wakes:?}");
     assert!(
-        wakes[0].contains("exited with code 0") && wakes[0].contains("lines 1, 3"),
+        wakes[0].contains("exited with code 0") && wakes[0].contains("not reported yet: 1, 3."),
         "{wakes:?}"
     );
     // A second connection resubscribes from the cursor: nothing is delivered again.
@@ -250,7 +250,7 @@ async fn a_job_that_exits_while_the_daemon_is_down_wakes_the_agent_once() {
         .await;
     let wakes = wait_wakes(&mut h, id, 1).await;
     assert!(
-        wakes[0].contains("`migrate` exited with code 0"),
+        wakes[0].contains("\"migrate\" exited with code 0"),
         "{wakes:?}"
     );
     // Another restart doesn't deliver it again.
@@ -337,7 +337,10 @@ async fn auto_continue_waits_for_a_job_whose_exit_wake_continues_the_work() {
     h.machines.reconnect(h.devbox);
     h.machines.job_exit(h.devbox, job, 0);
     let wakes = wait_wakes(&mut h, id, 1).await;
-    assert!(wakes[0].contains("`suite` exited with code 0"), "{wakes:?}");
+    assert!(
+        wakes[0].contains("\"suite\" exited with code 0"),
+        "{wakes:?}"
+    );
     assert_eq!(
         h.run_triggers(id).await[1],
         job_trigger("job: suite (exit 0)")

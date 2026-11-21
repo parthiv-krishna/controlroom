@@ -317,7 +317,7 @@ async fn real_pi_under_nono_works_on_two_nono_confined_hosts() {
         .until(&mut timeline, "the exit wake", |t| {
             t.user_texts()
                 .iter()
-                .any(|m| m.contains("`build` exited with code 0"))
+                .any(|m| m.contains("\"build\" exited with code 0"))
         })
         .await;
     let mark = world.turn_mark(&id);
@@ -328,7 +328,7 @@ async fn real_pi_under_nono_works_on_two_nono_confined_hosts() {
     let wakes: Vec<String> = timeline
         .user_texts()
         .into_iter()
-        .filter(|m| m.contains("Background job update"))
+        .filter(|m| m.starts_with("[controlroom] Job"))
         .collect();
     assert_eq!(wakes.len(), 1, "{wakes:#?}");
     let after = seen(&mock, from);

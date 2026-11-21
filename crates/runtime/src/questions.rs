@@ -25,9 +25,8 @@ use crate::model::{Injection, Raised};
 use crate::preview::one_line;
 
 /// What `ask_user` tells the model (spec §8).
-pub(crate) const REMINDER: &str = "Question sent; the user will answer asynchronously. Keep \
-     working on other items. End your turn only if you truly can't make progress; the answer \
-     will wake you.";
+pub(crate) const REMINDER: &str =
+    "The answer will wake you; keep working on what doesn't depend on it.";
 
 /// Questions per ask, and choices per question.
 const MAX_QUESTIONS: usize = 8;
@@ -168,13 +167,12 @@ fn questions(asked: &[AgentQuestion]) -> Result<Vec<Question>, RpcError> {
 /// The injected answer: every question with its answer, or "declined".
 fn answer_text(request: &Request, response: &Response) -> String {
     let head = format!(
-        "[controlroom] The user answered your question {} (\"{}\"):",
-        request.id, request.title
+        "[controlroom] The user answered your question {}:",
+        request.id
     );
     let Response::Answers { answers } = response else {
         return format!(
-            "[controlroom] The user dismissed your question {} (\"{}\"): declined. Decide on \
-             your own and carry on.",
+            "[controlroom] The user declined your question {} (\"{}\"); decide on your own.",
             request.id, request.title
         );
     };

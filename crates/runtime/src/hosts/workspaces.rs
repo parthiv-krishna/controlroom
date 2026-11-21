@@ -377,11 +377,9 @@ impl Core {
             record.root.clone().unwrap_or_else(|| record.path.clone()),
         );
         let text = format!(
-            "[controlroom] The user added the workspace {machine}:{} (root {machine}:{}, default \
-             shell \"{}\"). Your system prompt lists it from your next turn on.",
-            record.path,
-            record.root.as_ref().unwrap_or(&record.path),
-            record.shell
+            "[controlroom] The user added the workspace {machine}:{} (shell \"{}\"); \
+             <workspaces> lists it from your next turn.",
+            record.path, record.shell
         );
         let session = self.session_mut(id)?;
         session.data.workspaces.push(record.clone());
@@ -434,8 +432,7 @@ impl Core {
             id,
             workspace,
             format!(
-                "[controlroom] The user removed the workspace {machine}:{} and its shells; don't \
-                 use paths there any more.",
+                "[controlroom] The user removed the workspace {machine}:{} and its shells.",
                 record.path
             ),
         )

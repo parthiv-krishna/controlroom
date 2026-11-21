@@ -83,10 +83,10 @@ async fn a_job_wakes_once_across_a_link_cut_and_an_agentd_restart() {
             !wakes(t, "build (follow)").is_empty()
         })
         .await;
-    let follow = job_messages(&timeline, "is still running");
+    let follow = job_messages(&timeline, "is running");
     assert_eq!(follow.len(), 1, "one merged follow wake: {follow:#?}");
     assert!(
-        follow[0].contains("2 lines matching /ERROR/ at lines 2-3"),
+        follow[0].contains("2 lines matching /ERROR/ at 2-3;"),
         "{}",
         follow[0]
     );
@@ -109,7 +109,7 @@ async fn a_job_wakes_once_across_a_link_cut_and_an_agentd_restart() {
     world.prompt(&id, "one more").await;
     world
         .until(&mut timeline, "the quick job's exit wake", |t| {
-            !job_messages(t, "`quick` exited").is_empty()
+            !job_messages(t, "\"quick\" exited").is_empty()
         })
         .await;
     assert_eq!(wakes(&timeline, "build (exit 0)").len(), 1, "one exit run");
@@ -118,7 +118,7 @@ async fn a_job_wakes_once_across_a_link_cut_and_an_agentd_restart() {
         1,
         "one follow run"
     );
-    let build = format!("job {job_id} `build`");
+    let build = format!("{job_id} \"build\"");
     assert_eq!(
         job_messages(&timeline, &build).len(),
         2,
@@ -128,7 +128,7 @@ async fn a_job_wakes_once_across_a_link_cut_and_an_agentd_restart() {
     let exits = job_messages(&timeline, &format!("{build} exited with code 0"));
     assert_eq!(exits.len(), 1, "{exits:#?}");
     assert!(exits[0].contains("4 lines"), "{}", exits[0]);
-    assert_eq!(job_messages(&timeline, "Background job update").len(), 3);
+    assert_eq!(job_messages(&timeline, "").len(), 3);
     assert_eq!((first.runs(), second.runs()), (1, 1), "the job ran once");
 }
 
@@ -137,7 +137,7 @@ fn job_messages(timeline: &Timeline, needle: &str) -> Vec<String> {
     timeline
         .user_texts()
         .into_iter()
-        .filter(|t| t.starts_with("[controlroom] Background job update") && t.contains(needle))
+        .filter(|t| t.starts_with("[controlroom] Job") && t.contains(needle))
         .collect()
 }
 
@@ -183,7 +183,7 @@ async fn a_job_survives_a_host_daemon_restart_and_wakes_once() {
     let mut timeline = world.timeline(&id).await;
     world
         .until(&mut timeline, "the exit wake", |t| {
-            !job_messages(t, "`lint` exited with code 0").is_empty()
+            !job_messages(t, "\"lint\" exited with code 0").is_empty()
         })
         .await;
 
@@ -191,9 +191,9 @@ async fn a_job_survives_a_host_daemon_restart_and_wakes_once() {
     world.prompt(&id, "one more").await;
     world
         .until(&mut timeline, "the quick job's exit wake", |t| {
-            !job_messages(t, "`quick` exited").is_empty()
+            !job_messages(t, "\"quick\" exited").is_empty()
         })
         .await;
-    assert_eq!(job_messages(&timeline, "`lint`").len(), 1, "one wake");
+    assert_eq!(job_messages(&timeline, "\"lint\"").len(), 1, "one wake");
     assert_eq!(held.runs(), 1);
 }

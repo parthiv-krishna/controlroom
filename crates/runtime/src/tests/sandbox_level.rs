@@ -129,13 +129,10 @@ async fn a_new_level_restarts_the_agent_resumed_and_reopens_the_workspaces() {
         .await;
     let note = h.host.steers(id).remove(0);
     assert!(
-        note.starts_with("[controlroom] The user changed the sandbox level: it is now relaxed"),
+        note.starts_with("[controlroom] The user set the sandbox level to relaxed"),
         "{note}"
     );
-    assert!(
-        note.contains("jobs already running keep the old level"),
-        "{note}"
-    );
+    assert!(note.contains("running jobs keep the old level"), "{note}");
     h.host.release(id, "next");
     h.wait_state(id, SessionState::Idle).await;
 }
@@ -264,7 +261,9 @@ async fn a_stopped_agent_gets_the_level_when_it_starts() {
     // Without steering the note goes as the first prompt of the started agent's turn.
     let prompts = h.host.prompts(id);
     assert!(
-        prompts.iter().any(|p| p.contains("it is now relaxed")),
+        prompts
+            .iter()
+            .any(|p| p.contains("sandbox level to relaxed")),
         "{prompts:?}"
     );
 }

@@ -107,7 +107,7 @@ fn the_extension_drives_todos_a_question_and_auto_continue() {
         .map(|v| v["result"].to_string())
         .next()
         .unwrap();
-    assert!(reminder.contains("the answer will wake you"), "{reminder}");
+    assert!(reminder.contains("The answer will wake you"), "{reminder}");
 
     // The user edits the list (attributed to the device the controller names).
     let todos = client.call(
@@ -271,7 +271,7 @@ fn a_job_wake_steered_mid_run_names_its_job() {
             l["streamingBehavior"] == "steer"
                 && l["message"]
                     .as_str()
-                    .is_some_and(|m| m.contains("Background job update"))
+                    .is_some_and(|m| m.contains("[controlroom] Job"))
         })
     });
     env.release("hold");
@@ -292,7 +292,7 @@ fn a_job_wake_steered_mid_run_names_its_job() {
         .find(|item| {
             item["content"][0]["text"]
                 .as_str()
-                .is_some_and(|t| t.contains("Background job update"))
+                .is_some_and(|t| t.contains("[controlroom] Job"))
         })
         .expect("the wake's message");
     assert_eq!(

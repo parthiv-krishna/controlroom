@@ -28,7 +28,7 @@ use controlroom_protocol::timeline::{InjectOrigin, RunTrigger};
 use crate::core::Core;
 use crate::model::{AutoContinue, Due, Injection, Pause, SessionData};
 use crate::session::Session;
-use crate::todos::render_list;
+use crate::todos::render_open;
 
 impl Core {
     /// Starts a continue run when one is due and allowed (see the module docs). Called by the
@@ -235,12 +235,10 @@ pub(crate) fn info(session: &Session) -> AutoContinueInfo {
     }
 }
 
-/// The prompt of a continue run: the reason and the open entries.
+/// The prompt of a continue run: the open entries (how to work them is in the system prompt).
 fn continue_prompt(data: &SessionData) -> String {
     format!(
-        "[controlroom] Auto-continue: open todo items remain, so please continue with the next \
-         one. Mark items done (or blocked with a reason) as you go with the todo tool; if you \
-         can't make progress without the user, ask with ask_user or block the item.\n\n{}",
-        render_list(&data.todos)
+        "[controlroom] Auto-continue: continue with the next open item.\n{}",
+        render_open(&data.todos)
     )
 }

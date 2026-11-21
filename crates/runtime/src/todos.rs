@@ -283,13 +283,15 @@ pub(crate) fn rollup(data: &SessionData) -> Option<TodoRollup> {
     })
 }
 
-/// The list as text for the agent: `- [status] text (id)`.
-pub(crate) fn render_list(todos: &[Todo]) -> String {
-    if todos.is_empty() {
-        return "The todo list is empty.".into();
-    }
-    let mut out = String::from("Todo list:");
-    for (n, t) in todos.iter().enumerate() {
+/// The open entries (pending or in progress) as text for the agent, numbered by their place in
+/// the whole list (the `todo` tool takes that number): `2. [pending] text (id …)`.
+pub(crate) fn render_open(todos: &[Todo]) -> String {
+    let mut out = String::from("Open todo items:");
+    let open = todos
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| matches!(t.status, TodoStatus::Pending | TodoStatus::InProgress));
+    for (n, t) in open {
         out.push_str(&format!(
             "\n{}. [{}] {} (id {})",
             n + 1,
@@ -297,9 +299,6 @@ pub(crate) fn render_list(todos: &[Todo]) -> String {
             t.text,
             t.id
         ));
-        if let Some(reason) = &t.reason {
-            out.push_str(&format!(" ({reason})"));
-        }
     }
     out
 }

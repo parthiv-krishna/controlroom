@@ -1,5 +1,13 @@
 //! The text of job wakes. A wake carries only metadata and the log path, never log content: the
-//! agent reads what it needs from the file (spec §8).
+//! agent reads what it needs from the file (spec §8). How to read a log is said once, in the
+//! `job` tool's description, so a wake is one line per job:
+//!
+//! ```text
+//! [controlroom] Job 01J… "build" exited with code 1 after 3m 05s; 1234 lines in devbox:/…/01J….log; followed lines not reported yet: 81, 115, 186-189.
+//! ```
+//!
+//! A wake for several jobs (merged in one buffer window) lists one job per line under
+//! `[controlroom] Jobs:`.
 
 use controlroom_protocol::ids::{JobId, RemotePath};
 use controlroom_protocol::session::JobStatus;
@@ -53,26 +61,22 @@ pub(crate) fn compose(entries: &[WakeEntry]) -> Wake {
         .iter()
         .map(|e| format!("{} ({})", e.name, short_outcome(&e.kind)))
         .collect();
-    let label = match labels.as_slice() {
-        [one] => format!("job: {one}"),
-        many => format!("jobs: {}", many.join(", ")),
+    let (label, text) = match (labels.as_slice(), entries) {
+        ([one], [entry]) => (
+            format!("job: {one}"),
+            format!("[controlroom] Job {}", describe(entry)),
+        ),
+        (many, _) => {
+            let lines: Vec<String> = entries
+                .iter()
+                .map(|e| format!("- job {}", describe(e)))
+                .collect();
+            (
+                format!("jobs: {}", many.join(", ")),
+                format!("[controlroom] Jobs:\n{}", lines.join("\n")),
+            )
+        }
     };
-    let mut text = String::from("[controlroom] Background job update");
-    if entries.len() > 1 {
-        text.push('s');
-    }
-    text.push_str(":\n");
-    for entry in entries {
-        text.push_str("- ");
-        text.push_str(&describe(entry));
-        text.push('\n');
-    }
-    let (machine, path) = (&entries[0].machine, &entries[0].log_path);
-    text.push_str(&format!(
-        "Logs are not in your context: read only what you need, e.g. `read` {machine}:{path} \
-         with an offset, `grep` in it, or `tail -n 50 {path}` / `sed -n 'a,bp' {path}` in a \
-         shell on {machine}."
-    ));
     Wake { label, text }
 }
 
@@ -90,8 +94,9 @@ fn short_outcome(kind: &WakeKind) -> String {
     }
 }
 
+/// `<id> "<name>" <what happened>; <n> lines in <machine>:<path>[; …].`
 fn describe(entry: &WakeEntry) -> String {
-    let job = format!("job {} `{}`", entry.job, entry.name);
+    let job = format!("{} \"{}\"", entry.job, entry.name);
     let log = format!("{}:{}", entry.machine, entry.log_path);
     match &entry.kind {
         WakeKind::Exit {
@@ -101,7 +106,7 @@ fn describe(entry: &WakeEntry) -> String {
         } => {
             let how = match (end.status, end.exit, &end.signal, &end.lost) {
                 (JobStatus::Lost, .., lost) => format!(
-                    "was lost ({}); its outcome is unknown",
+                    "was lost ({}), outcome unknown,",
                     lost.as_deref().unwrap_or("its supervisor is gone")
                 ),
                 (JobStatus::TimedOut, ..) => "timed out and was stopped".to_owned(),
@@ -110,18 +115,15 @@ fn describe(entry: &WakeEntry) -> String {
                 (_, None, Some(signal), _) => format!("was killed by {signal}"),
                 _ => "ended".to_owned(),
             };
-            let mut text = format!(
-                "{job} {how} after {}; {} in {log}.",
+            let unreported = pending
+                .as_ref()
+                .map(|p| format!("; followed lines not reported yet: {}", ranges(p)))
+                .unwrap_or_default();
+            format!(
+                "{job} {how} after {}; {} in {log}{unreported}.",
                 duration(*duration_ms),
                 plural(entry.lines, "line")
-            );
-            if let Some(pending) = pending {
-                text.push_str(&format!(
-                    " Followed lines not reported yet: {}.",
-                    ranges(pending)
-                ));
-            }
-            text
+            )
         }
         WakeKind::Follow { pending, pattern } => {
             let what = match pattern {
@@ -129,7 +131,7 @@ fn describe(entry: &WakeEntry) -> String {
                 None => format!("{} new", plural(pending.count, "line")),
             };
             format!(
-                "{job} is still running: {what} at {} of {log} ({} so far).",
+                "{job} is running; {what} at {}; {} so far in {log}.",
                 ranges(pending),
                 plural(entry.lines, "line")
             )
@@ -137,7 +139,7 @@ fn describe(entry: &WakeEntry) -> String {
     }
 }
 
-/// `lines 3-5, 9` (at most [`MAX_RANGES`] ranges).
+/// `3-5, 9` (at most [`MAX_RANGES`] ranges).
 fn ranges(pending: &Pending) -> String {
     let mut parts: Vec<String> = pending
         .ranges
@@ -157,8 +159,7 @@ fn ranges(pending: &Pending) -> String {
             pending.ranges.len() - MAX_RANGES
         ));
     }
-    let word = if pending.count == 1 { "line" } else { "lines" };
-    format!("{word} {}", parts.join(", "))
+    parts.join(", ")
 }
 
 fn plural(n: u64, word: &str) -> String {
@@ -209,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn an_exit_wake_has_the_outcome_duration_lines_and_path() {
+    fn an_exit_wake_is_one_line_with_the_outcome_duration_lines_and_path() {
         let wake = compose(&[entry(
             "build",
             WakeKind::Exit {
@@ -219,15 +220,38 @@ mod tests {
             },
         )]);
         assert_eq!(wake.label, "job: build (exit 0)");
+        assert_eq!(
+            wake.text,
+            "[controlroom] Job 01J00000000000000000000000 \"build\" exited with code 0 after \
+             3m 05s; 1234 lines in devbox:/home/alice/app/.controlroom/jobs/build.log."
+        );
+    }
+
+    #[test]
+    fn an_exit_wake_lists_the_followed_lines_not_reported_yet() {
+        let mut pending = Pending::default();
+        for line in [81, 115, 186, 188, 189, 216, 218] {
+            pending.add(line);
+        }
+        let wake = compose(&[entry(
+            "validate",
+            WakeKind::Exit {
+                end: end(JobStatus::Failed, Some(1)),
+                duration_ms: 101_000,
+                pending: Some(pending),
+            },
+        )]);
+        assert_eq!(wake.label, "job: validate (exit 1)");
         assert!(
-            wake.text.contains(
-                "job 01J00000000000000000000000 `build` exited with code 0 after 3m 05s; \
-                 1234 lines in devbox:/home/alice/app/.controlroom/jobs/build.log."
+            wake.text.ends_with(
+                "exited with code 1 after 1m 41s; 1234 lines in \
+                 devbox:/home/alice/app/.controlroom/jobs/validate.log; followed lines not \
+                 reported yet: 81, 115, 186, 188-189, 216, 218."
             ),
             "{}",
             wake.text
         );
-        assert!(wake.text.contains("sed -n 'a,bp'"), "{}", wake.text);
+        assert!(!wake.text.contains('\n'), "{}", wake.text);
     }
 
     #[test]
@@ -254,11 +278,17 @@ mod tests {
             ),
         ]);
         assert_eq!(wake.label, "jobs: e2e (follow), tests (timed out)");
+        let lines: Vec<&str> = wake.text.lines().collect();
+        assert_eq!(lines[0], "[controlroom] Jobs:");
         assert!(
-            wake.text
-                .contains("13 lines matching /FAIL/ at lines 10-11, 20-21")
+            lines[1].starts_with(
+                "- job 01J00000000000000000000000 \"e2e\" is running; 13 lines matching /FAIL/ \
+                 at 10-11, 20-21"
+            ),
+            "{}",
+            lines[1]
         );
-        assert!(wake.text.contains("80-81, and 2 more ranges"));
-        assert!(wake.text.contains("timed out and was stopped after 2h 01m"));
+        assert!(lines[1].contains("80-81, and 2 more ranges; 1234 lines so far in devbox:"));
+        assert!(lines[2].contains("timed out and was stopped after 2h 01m"));
     }
 }

@@ -124,7 +124,7 @@ async fn a_question_never_blocks_and_its_answer_starts_a_run_when_idle() {
         )
         .await
         .unwrap();
-    assert!(result.reminder.starts_with("Question sent;"));
+    assert!(result.reminder.starts_with("The answer will wake you"));
     // The lighter tier: attention `question`, the session stays idle.
     let s = h.wait(id, "question", |s| !s.requests.is_empty()).await;
     assert_eq!(s.state, SessionState::Idle);

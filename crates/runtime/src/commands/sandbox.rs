@@ -138,8 +138,7 @@ fn note(level: SandboxLevel) -> String {
         }
     };
     format!(
-        "[controlroom] The user changed the sandbox level: it is now {name} ({means}). Your \
-         shells restart under it (their variables are lost); background jobs already running \
-         keep the old level until they end."
+        "[controlroom] The user set the sandbox level to {name} ({means}). Your shells restart \
+         (their variables are lost); running jobs keep the old level."
     )
 }

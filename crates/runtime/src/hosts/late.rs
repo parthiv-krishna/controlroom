@@ -88,8 +88,8 @@ fn late_text(
     outcome: Result<serde_json::Value, RpcError>,
 ) -> String {
     let head = format!(
-        "[controlroom] {machine} is reachable again. Your earlier call {} ({}) failed because \
-         {machine} was unreachable;",
+        "[controlroom] {machine} is back. Your call {} ({}), which failed while {machine} was \
+         unreachable,",
         late.call_id, late.what
     );
     match outcome.and_then(parse::<HostResult>) {
@@ -108,18 +108,16 @@ fn late_text(
             let skip = output.chars().count().saturating_sub(OUTPUT_CHARS);
             let tail: String = output.chars().skip(skip).collect();
             let cut = if skip > 0 {
-                format!(
-                    " (the output's last {OUTPUT_CHARS} characters; all of it is in {machine}:{log_path})"
-                )
+                format!(" (last {OUTPUT_CHARS} characters; all in {machine}:{log_path})")
             } else {
                 String::new()
             };
-            format!("{head} it ran once on {machine} and ended with {status}{cut}:\n{tail}")
+            format!("{head} ran once and ended with {status}{cut}:\n{tail}")
         }
-        Ok(_) => format!("{head} it completed on {machine}; repeat it if you need its result."),
+        Ok(_) => format!("{head} completed; repeat it if you need its result."),
         Err(e) => match e.data {
             Some(ErrorData::NotFound { .. }) => {
-                format!("{head} it never reached {machine}, so it didn't run.")
+                format!("{head} never reached {machine}, so it didn't run.")
             }
             Some(ErrorData::Lost { may_have_run }) => {
                 let ran = if may_have_run {
@@ -127,9 +125,9 @@ fn late_text(
                 } else {
                     "it had no effect"
                 };
-                format!("{head} {machine}'s daemon restarted while it ran: {ran}.")
+                format!("{head} was cut off by a daemon restart there: {ran}.")
             }
-            _ => format!("{head} its outcome is unknown: {}.", e.message),
+            _ => format!("{head} has an unknown outcome: {}.", e.message),
         },
     }
 }
@@ -166,7 +164,7 @@ mod tests {
         };
         let text = late_text("devbox", &late(), Ok(serde_json::to_value(result).unwrap()));
         assert!(
-            text.contains("it ran once on devbox and ended with exit 0:\nbuilt"),
+            text.contains("ran once and ended with exit 0:\nbuilt"),
             "{text}"
         );
         let never = RpcError::new(
