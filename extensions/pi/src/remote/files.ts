@@ -18,12 +18,9 @@ import { parseTarget, shown, type Target } from './target.ts';
  */
 const NOWHERE = '/';
 
-/** The description of a `machine:path` parameter. */
+/** The description of a `machine:path` parameter (how such paths resolve is in `<workspaces>`). */
 export function pathParam(what: string): { type: 'string'; description: string } {
-  return {
-    type: 'string',
-    description: `${what} as machine:path, e.g. devbox:~/src/api/README.md (~ is that machine's home; relative paths resolve against its workspace root)`,
-  };
+  return { type: 'string', description: `${what}, as machine:path` };
 }
 
 /** A file argument: a machine and a path are required. */

@@ -128,7 +128,7 @@ export const shellNew: Tool<ShellNewParams, ShellDetails> = {
     type: 'object',
     properties: {
       name: { type: 'string', description: 'The shell name, unique in this session (e.g. "devbox-tests")' },
-      at: pathParam('Its starting directory (default: the workspace, when the session has one)'),
+      at: pathParam('Its starting directory (default: the workspace, with one)'),
     },
     required: ['name'],
   },

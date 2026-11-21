@@ -50,7 +50,7 @@ export const job: Tool<JobParams, JobDetails> = {
     properties: {
       action: { type: 'string', enum: ['run', 'follow', 'unfollow', 'status', 'kill'] },
       command: { type: 'string', description: 'The shell command (run).' },
-      at: pathParam('The working directory (run; default: the workspace, when the session has one)'),
+      at: pathParam('The working directory (run; default: the workspace, with one)'),
       timeout: { type: 'integer', minimum: 1, description: 'Stop the job after this many seconds (run).' },
       name: { type: 'string', description: 'A short display name (run).' },
       job_id: { type: 'string', description: 'The job (follow, unfollow, kill; status of one job).' },

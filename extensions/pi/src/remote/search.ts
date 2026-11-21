@@ -65,7 +65,7 @@ export const grep: Tool<GrepParams, GrepDetails> = {
     type: 'object',
     properties: {
       pattern: { type: 'string', description: 'Search pattern (regex or literal string)' },
-      path: pathParam('Directory or file to search (default: the workspace, when the session has one)'),
+      path: pathParam('Directory or file to search (default: the workspace, with one)'),
       glob: { type: 'string', description: "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'" },
       ignoreCase: { type: 'boolean', description: 'Case-insensitive search (default: false)' },
       literal: { type: 'boolean', description: 'Treat pattern as literal string instead of regex (default: false)' },
@@ -125,7 +125,7 @@ export const find: Tool<FindParams, FindDetails> = {
     type: 'object',
     properties: {
       pattern: { type: 'string', description: "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'" },
-      path: pathParam('Directory to search in (default: the workspace, when the session has one)'),
+      path: pathParam('Directory to search in (default: the workspace, with one)'),
       limit: { type: 'number', description: `Maximum number of results (default: ${FIND_LIMIT})` },
     },
     required: ['pattern'],
@@ -165,7 +165,7 @@ export const ls: Tool<LsParams, LsDetails> = {
   parameters: {
     type: 'object',
     properties: {
-      path: pathParam('Directory to list (default: the workspace, when the session has one)'),
+      path: pathParam('Directory to list (default: the workspace, with one)'),
       limit: { type: 'number', description: `Maximum number of entries to return (default: ${LS_LIMIT})` },
     },
   },
