@@ -697,7 +697,10 @@ async fn a_level_change_reaches_the_agent_and_its_shells() {
         "the shell reset: {result}"
     );
     let after = seen(&mock, from);
-    assert!(after.contains("it is now off"), "the note: {after}");
+    assert!(
+        after.contains("set the sandbox level to off"),
+        "the note: {after}"
+    );
     assert!(
         after.contains("Tried."),
         "the conversation was resumed: {after}"
@@ -726,7 +729,10 @@ async fn a_level_change_reaches_the_agent_and_its_shells() {
     );
     assert!(result.contains("the sandbox level changed"), "{result}");
     let after = seen(&mock, from);
-    assert!(after.contains("it is now strict"), "the note: {after}");
+    assert!(
+        after.contains("set the sandbox level to strict"),
+        "the note: {after}"
+    );
 
     // The timeline has a divider per change, and file requests from the strict runs only.
     let levels = |t: &controlroom_e2e::session::Timeline| -> Vec<Value> {
