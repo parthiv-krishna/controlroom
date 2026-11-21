@@ -1,6 +1,6 @@
 <script lang="ts">
   // A background job on a workspace's machine, as one line: its name and how it is doing. The
-  // command, machine and timing are in the tooltip; a click opens it in the session's jobs strip
+  // command, machine and timing are in the tooltip; a click opens it in the session's Jobs sheet
   // (log file and tail, follow, kill). The wakes it sent the agent are folded in: "told" shows what
   // the agent was told.
   import { useApp } from '../../app/app.svelte';
@@ -30,7 +30,7 @@
 </script>
 
 <div class="jw">
-<button class="job j-{j.status}" title="{j.command}{machine ? `\non ${machine}` : ''}" onclick={() => (app.view.jobOpen[ctx.s.id] = j.id)}>
+<button class="job j-{j.status}" title="{j.command}{machine ? `\non ${machine}` : ''}" onclick={() => (app.view.modal = { kind: 'jobs', session: { id: ctx.s.id }, job: j.id })}>
   {#if j.status === 'running'}<span class="spin"></span>{:else}<span class="ic" aria-hidden="true">{ICON[j.status]}</span>{/if}
   <span>Job <b>{j.name}</b> {state}</span>
 </button>

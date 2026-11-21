@@ -196,6 +196,60 @@ describe('Timeline folding', () => {
     expect(t.rowOf('w')?.id).toBe('job');
   });
 
+  // The production shape: a wake from before messages carried their origin, steered into a run (so
+  // no run of its own names it). Its text names the job.
+  const PROD_WAKE =
+    '[controlroom] Background job update:\n- job 01M7YBVXAXS6WHB25K8J32K1BE `Final PaaS validation` exited with code 1 after 1m 41s; 220 lines in devbox:/home/alice/src/infra/.controlroom/jobs/01M7YBVXAXS6WHB25K8J32K1BE.log. Followed lines not reported yet: lines 81, 115, 186, 188-189, 216, 218. Logs are not in your context: read only what you need.';
+  const jobItem = (id: string, jobId: string, seq: number): TimelineItem => ({
+    ...base, id, seq_from: seq, seq_to: seq, kind: 'job',
+    job: { id: jobId, name: 'Final PaaS validation', command: 't', cwd: '~', machine_id: null, workspace_id: null, status: 'failed', exit: 1, signal: null, started_at: 0, ended_at: 1, timeout_s: null, log_path: 'x', lines: 220, follow: null },
+  });
+  const userText = (id: string, seq: number, text: string, origin: MessageOrigin | null = null) => ({ ...msg(id, seq, seq, text), role: 'user', origin }) as TimelineItem;
+  const runBy = (id: string, seq: number, trigger: RunTrigger): TimelineItem => ({ ...run(id, seq), trigger }) as TimelineItem;
+
+  it("folds a wake without an origin into its job's row by the job its text names", () => {
+    const t = new Timeline();
+    t.apply([up(jobItem('job', '01M7YBVXAXS6WHB25K8J32K1BE', 1)), up(msg('a', 2, 2, 'working')), up(userText('w', 3, PROD_WAKE)), up(msg('b', 4, 4, 'saw it'))], 0);
+    expect(ids(t)).toEqual(['job', 'a', 'b']);
+    expect(t.wakes.get('01M7YBVXAXS6WHB25K8J32K1BE')?.map((c) => c.id)).toEqual(['w']);
+    // The current one-line shape too.
+    const now = new Timeline();
+    const line = '[controlroom] Job 01M7YBVXAXS6WHB25K8J32K1BE "Final PaaS validation" exited with code 1 after 1m 41s; 220 lines in devbox:/x.log.';
+    now.apply([up(jobItem('job', '01M7YBVXAXS6WHB25K8J32K1BE', 1)), up(userText('w', 2, line))], 0);
+    expect(ids(now)).toEqual(['job']);
+  });
+
+  it("a wake without an origin that started a run takes the trigger's label and the text's job", () => {
+    const t = new Timeline();
+    t.apply([up(userText('w', 2, PROD_WAKE)), up(runBy('r', 3, { kind: 'inject', origin: 'job', label: 'job: Final PaaS validation (exit 1)' }))], 0);
+    expect(t.events.get('w')).toEqual({ kind: 'inject', origin: 'job', label: 'job: Final PaaS validation (exit 1)', source: '01M7YBVXAXS6WHB25K8J32K1BE' });
+    expect([...t.announced]).toEqual(['r']);
+  });
+
+  it('other system text without an origin is an event; text the user typed stays a message', () => {
+    const t = new Timeline();
+    t.apply([up(userText('n', 1, '[controlroom] The user changed your todo list:\n- added "docs"')), up(userText('u', 2, 'Background job update please'))], 0);
+    expect(t.events.get('n')).toMatchObject({ kind: 'inject', origin: 'unknown', label: 'The user changed your todo list:' });
+    expect(t.events.has('u')).toBe(false);
+  });
+
+  it('a wake for several jobs is one row naming them', () => {
+    const t = new Timeline();
+    const merged: MessageOrigin = { kind: 'inject', origin: 'job', label: 'jobs: e2e (follow), lint (exit 1)', source: null };
+    const text = '[controlroom] Jobs:\n- job 01J00000000000000000000001 …\n- job 01J00000000000000000000002 …';
+    t.apply([up(jobItem('j1', '01J00000000000000000000001', 1)), up(jobItem('j2', '01J00000000000000000000002', 2)), up(userText('w', 3, text, merged))], 0);
+    expect(ids(t)).toEqual(['j1', 'j2', 'w']);
+    expect(t.events.get('w')).toEqual(merged);
+  });
+
+  it("a message's origin arriving in place refolds the rows", () => {
+    const t = new Timeline();
+    t.apply([up(jobItem('job', 'J', 1)), up(userText('w', 2, 'plain'))], 0);
+    expect(ids(t)).toEqual(['job', 'w']);
+    t.apply([up(userText('w', 2, 'plain', { kind: 'inject', origin: 'job', label: 'job: x (exit 1)', source: 'J' }))], 2);
+    expect(ids(t)).toEqual(['job']);
+  });
+
   it('knows the todo list before each todo item', () => {
     const todo = (id: string, seq: number, items: string[]): TimelineItem => ({
       ...base, id, seq_from: seq, seq_to: seq, kind: 'todo',

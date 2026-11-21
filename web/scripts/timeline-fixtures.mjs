@@ -256,7 +256,7 @@ const coordinator = (s, ts) => {
     // report, the user's send-now.
     userMsg(
       'k.workspace', s + 10, ts + 2700,
-      '[controlroom] The user added the workspace buildbox:~/src/bench (root buildbox:/home/alice/src/bench, default shell "buildbox"). Your system prompt lists it from your next turn on.',
+      '[controlroom] The user added the workspace buildbox:~/src/bench (shell "buildbox"); <workspaces> lists it from your next turn.',
       inject('workspace', 'workspaces', '01JAW000000000000000000013'),
     ),
     userMsg(
@@ -274,7 +274,11 @@ const coordinator = (s, ts) => {
   ];
 };
 
-/** Jobs on buildbox: started and finished, with log files. */
+/**
+ * Jobs on buildbox: one whose exit wakes the idle agent (one line, folded into the job's row), one
+ * whose wake in the production shape (written before messages carried their origin) is steered
+ * into the user's run and folds by the job its text names, and one still running.
+ */
 const jobs = (s, ts) => {
   const ws = fixture.snapshot.sessions.find((x) => x.id === sid(3)).workspaces[0];
   const job = (id, name, command, status, exit, lines, ended) => ({
@@ -282,16 +286,27 @@ const jobs = (s, ts) => {
     status, exit, signal: status === 'killed' ? 'SIGKILL' : null,
     started_at: ts, ended_at: ended, timeout_s: null, log_path: `/home/alice/src/controlroom/.controlroom/jobs/${id}.log`, lines, follow: null,
   });
+  const PAAS = '01JAJ000000000000000000903';
   return [
     { ...base('j.tests', s + 1, s + 4, ts), kind: 'job', job: job('01JAJ000000000000000000901', 'tests', 'pnpm e2e --repeat-each 20', 'failed', 1, 2311, ts + 240_000) },
     userMsg(
       'j.wakeMsg', s + 5, ts + 240_500,
-      '[controlroom] Background job update:\n- job 01JAJ000000000000000000901 `tests` exited with code 1 after 4m; 2311 lines in buildbox:/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000901.log.\nLogs are not in your context: read only what you need.',
+      '[controlroom] Job 01JAJ000000000000000000901 "tests" exited with code 1 after 4m 00s; 2311 lines in buildbox:/home/alice/src/controlroom/.controlroom/jobs/01JAJ000000000000000000901.log.',
       inject('job', 'job: tests (exit 1)', '01JAJ000000000000000000901'),
     ),
     run('j.wake', s + 6, s + 9, ts + 241_000, { kind: 'inject', origin: 'job', label: 'job: tests (exit 1)' }),
     agentMsg('j.reply', s + 7, ts + 242_000, 'Two failures, both in `e2e/queue.spec.ts`: the send-now race again.'),
     { ...base('j.lint', s + 10, s + 10, ts + 250_000), kind: 'job', job: job('01JAJ000000000000000000902', 'typecheck', 'pnpm check --watch', 'running', null, 48, null) },
+    { ...base('j.paas', s + 11, s + 11, ts + 260_000), kind: 'job', job: job(PAAS, 'Final PaaS validation', './validate.sh --final', 'failed', 1, 220, ts + 361_000) },
+    userMsg('j.user', s + 12, ts + 300_000, 'Meanwhile, tidy the release notes.', { kind: 'user', device: LAPTOP }),
+    run('j.userRun', s + 13, s + 17, ts + 300_500, { kind: 'user', device: LAPTOP }),
+    agentMsg('j.notes', s + 14, ts + 330_000, 'Tidying the release notes.'),
+    userMsg(
+      'j.paasWake', s + 15, ts + 361_500,
+      `[controlroom] Background job update:\n- job ${PAAS} \`Final PaaS validation\` exited with code 1 after 1m 41s; 220 lines in buildbox:/home/alice/src/controlroom/.controlroom/jobs/${PAAS}.log. Followed lines not reported yet: lines 81, 115, 186, 188-189, 216, 218. Logs are not in your context: read only what you need, e.g. \`read\` buildbox:/home/alice/src/controlroom/.controlroom/jobs/${PAAS}.log with an offset, \`grep\` in it, or \`tail -n 50 /home/alice/src/controlroom/.controlroom/jobs/${PAAS}.log\` / \`sed -n 'a,bp' /home/alice/src/controlroom/.controlroom/jobs/${PAAS}.log\` in a shell on buildbox.`,
+      null,
+    ),
+    agentMsg('j.paasReply', s + 16, ts + 362_000, 'The PaaS validation failed at line 81: a missing route. Fixing it next.'),
   ];
 };
 
@@ -338,14 +353,14 @@ const wakes = (s, ts) => {
     run('n.run', s + 2, s + 6, ts + 300, { kind: 'queue', device: LAPTOP }),
     userMsg(
       'n.sandbox', s + 3, ts + 400,
-      '[controlroom] The user changed the sandbox level: it is now off (your shells, jobs and file tools on the hosts run unsandboxed). Your shells restart under it (their variables are lost); background jobs already running keep the old level until they end.',
+      '[controlroom] The user set the sandbox level to off (your shells, jobs and file tools on the hosts run unsandboxed). Your shells restart (their variables are lost); running jobs keep the old level.',
       inject('workspace', 'sandbox level'),
     ),
     userMsg('n.todo', s + 4, ts + 450, '[controlroom] The user changed your todo list:\n- added "check the rollback script"', inject('todo', 'todo edits')),
     agentMsg('n.reply', s + 5, ts + 2000, 'The dry-run stalled: devbox stopped answering.'),
     userMsg(
       'n.late', s + 7, ts + 60_000,
-      '[controlroom] devbox is reachable again. Your earlier call call_d41 (bash `./deploy.sh --dry-run`) failed because devbox was unreachable; it ran once on devbox and ended with exit 0:\ndry-run ok',
+      '[controlroom] devbox is back. Your call call_d41 (bash `./deploy.sh --dry-run`), which failed while devbox was unreachable, ran once and ended with exit 0:\ndry-run ok',
       late,
     ),
     run('n.lateRun', s + 8, s + 10, ts + 60_100, { kind: 'inject', origin: 'tool_late', label: late.label }),
@@ -361,7 +376,7 @@ const wakes = (s, ts) => {
     },
     userMsg(
       'n.answer', s + 13, ts + 90_100,
-      '[controlroom] The user answered your question n.question ("Which environment?"):\n- Which environment?\n  → staging',
+      '[controlroom] The user answered your question n.question:\n- Which environment?\n  → staging',
       answered,
     ),
     run('n.answerRun', s + 14, s + 16, ts + 90_200, { kind: 'inject', origin: 'answer', label: answered.label }),

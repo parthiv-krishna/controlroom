@@ -162,6 +162,13 @@ export class FixtureTransport implements Transport {
     else this.replies.set(method, [...(this.replies.get(method) ?? []), result]);
   }
 
+  /** Replaces a session's detail (e.g. its jobs), and sends it if the session is subscribed. */
+  setDetail(id: string, detail: SessionDetail): void {
+    this.fixture.details[id] = detail;
+    const sub = this.sessionSubs.get(id);
+    if (sub) this.hub.emit('session.events', { subscription_id: sub.id, id, head_seq: this.replays.get(id)?.head ?? 0, ops: [], detail });
+  }
+
   /** Plays a session's next `n` live timeline steps now; returns how many there were. */
   advance(id: string, n = 1): number {
     let done = 0;

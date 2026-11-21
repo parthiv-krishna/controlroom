@@ -1,8 +1,9 @@
 <script lang="ts">
-  // The open modal: new session, new task, project, start fresh, link to tasks, task detail.
+  // The open modal: new session, new task, project, start fresh, link to tasks, task detail, jobs.
   import { newOpId, useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
   import { TASK_COLUMNS } from '../model/tasks';
+  import JobsSheet from '../session/JobsSheet.svelte';
   import TaskDetail from '../tasks/TaskDetail.svelte';
   import Modal from '../ui/Modal.svelte';
   import NewSession from './NewSession.svelte';
@@ -43,6 +44,8 @@
       <button class="btn primary" disabled={!app.client.online} onclick={startFresh}><span class="kbd">↵</span> Start fresh</button>
     </div>
   </Modal>
+{:else if md?.kind === 'jobs' && session}
+  <JobsSheet s={session} jobs={app.detail(session)?.jobs ?? []} job={md.job} onclose={close} />
 {:else if md?.kind === 'link-tasks' && session}
   {@const s = session}
   <Modal label="Link to tasks" oncancel={close} onprimary={close}>

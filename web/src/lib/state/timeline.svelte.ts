@@ -13,9 +13,11 @@
 //   shows only the values that changed (the first ones are what the header already shows); a new
 //   sandbox level (the user changed it) always shows.
 // - Text the system wrote for the agent (a schedule's prompt, a job wake, a notice) is an event: a
-//   user message with such an origin (or, for messages without one, followed by a run with such a
-//   trigger) shows as one line naming its source; the run it started then shows only when it didn't
-//   end normally. A todo item knows the list before it, to show what changed.
+//   user message with such an origin shows as one line naming its source; the run it started then
+//   shows only when it didn't end normally. A message without an origin (from before messages
+//   carried one) takes it from the run it started, else from its "[controlroom]" text; a job wake
+//   names its job either way, so it folds into the job's row like any other. A todo item knows the
+//   list before it, to show what changed.
 import type { MessageOrigin, RawFrame, Request, RunTrigger, SandboxLevel, Todo, TimelineItem, TimelineOp, ToolOutput } from '../protocol';
 
 /** Items kept per timeline; older ones are trimmed (the protocol has no paging yet). */
@@ -57,6 +59,26 @@ export type EventOrigin = Extract<MessageOrigin, { kind: 'schedule' | 'inject' |
 /** A user message's origin when the system wrote it (not the user), else null. */
 export function eventOrigin(origin: MessageOrigin | null): EventOrigin | null {
   return origin && (origin.kind === 'schedule' || origin.kind === 'inject' || origin.kind === 'auto_continue') ? origin : null;
+}
+
+/** A job id in a wake's text (`[controlroom] Job 01J… "build" exited …`, or the older `- job 01J… \`build\` exited …`). */
+const JOB_IN_WAKE = /\bjob ([0-9A-HJKMNP-TV-Z]{26})\b/gi;
+/** A wake's first line, either shape. */
+const WAKE_HEAD = /^\[controlroom\] (?:Background job updates?:|Jobs?\b)/;
+
+/**
+ * The origin a user message without one implies by its text: the system's messages start with
+ * "[controlroom]", and a job wake names its jobs (one job is its source). Null for anything else.
+ */
+export function textOrigin(item: ItemOf<'message'>): EventOrigin | null {
+  const text = item.content.map((p) => (p.kind === 'text' ? p.text : '')).join('');
+  if (!text.startsWith('[controlroom]')) return null;
+  if (WAKE_HEAD.test(text)) {
+    const jobs = [...new Set([...text.matchAll(JOB_IN_WAKE)].map((m) => m[1].toUpperCase()))];
+    return { kind: 'inject', origin: 'job', label: jobs.length > 1 ? 'Job wakes' : 'Job wake', source: jobs.length === 1 ? jobs[0] : null };
+  }
+  const head = text.slice('[controlroom]'.length).trim().split('\n')[0];
+  return { kind: 'inject', origin: 'unknown', label: head.length > 80 ? `${head.slice(0, 79)}…` : head, source: null };
 }
 
 /** The origin a run's trigger implies for the message before it (for messages without an origin). */
@@ -183,6 +205,8 @@ export class Timeline {
     cell.item = item;
     // Notices and session info are folded by their content; requests are collected by state.
     if (item.kind === 'notice' || item.kind === 'session_info' || item.kind === 'request' || item.kind === 'todo' || old.kind !== item.kind) return true;
+    // A message's origin decides whether it is an event and which row it folds into.
+    if (item.kind === 'message' && old.kind === 'message' && JSON.stringify(item.origin) !== JSON.stringify(old.origin)) return true;
     return parentOf(old) !== parentOf(item);
   }
 
@@ -236,6 +260,8 @@ export class Timeline {
     const infoChanges = new Map<string, SessionInfo>();
     const hosts = new Map<string, ItemCell>();
     const events = new Map<string, EventOrigin>();
+    /** Messages whose origin was read from their text (a run's trigger names it better). */
+    const guessed = new Set<string>();
     const announced = new Set<string>();
     const todosBefore = new Map<string, readonly Todo[]>();
     // Per actor: its current run, the notices seen, the session info known so far, its last user
@@ -260,14 +286,18 @@ export class Timeline {
         const before = pending.get(item.actor);
         pending.delete(item.actor);
         if (before) {
-          const implied = events.has(before.id) ? null : triggerOrigin(item.trigger);
-          if (implied) events.set(before.id, implied);
+          const known = events.get(before.id);
+          const implied = !known || guessed.has(before.id) ? triggerOrigin(item.trigger) : null;
+          // The trigger's label, the text's job.
+          if (implied) events.set(before.id, implied.kind === 'inject' && known?.kind === 'inject' ? { ...implied, source: known.source } : implied);
           if (events.has(before.id)) announced.add(cell.id);
         }
       } else if (item.kind === 'message') {
         if (item.role === 'user') {
-          const origin = eventOrigin(item.origin);
+          const fromText = item.origin ? null : textOrigin(item);
+          const origin = eventOrigin(item.origin) ?? fromText;
           if (origin) events.set(cell.id, origin);
+          if (fromText) guessed.add(cell.id);
           // Only a message without an origin takes one from its run's trigger.
           pending.set(item.actor, cell);
         } else pending.delete(item.actor);

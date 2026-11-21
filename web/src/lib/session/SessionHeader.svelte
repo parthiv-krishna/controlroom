@@ -1,6 +1,6 @@
 <script lang="ts">
   // The session header, two lines. First: the editable title (it shrinks last), status and a ⋯ menu
-  // (schedules, link to task, mark read/unread, raw, archive). Second, wrapping: its workspaces
+  // (schedules, jobs, link to task, mark read/unread, raw, archive). Second, wrapping: its workspaces
   // (`machine:path` pills with each machine's availability and a ⚠ when another open session shares
   // the directory), badges, options, parent and task chips, and the usage statusline.
   import { useApp } from '../app/app.svelte';
@@ -26,8 +26,10 @@
   const schedules = $derived(app.client.feed.scheduleList.filter((x) => x.session_id === s.id).length);
   const schedulesShown = $derived(app.view.panels['schedules:' + key] ?? schedules > 0);
   const online = $derived(app.client.online);
+  const jobs = $derived(detail?.jobs.length ?? 0);
   const actions = $derived.by((): MenuAction[] => [
     { label: schedules ? `Schedules (${schedules})` : 'Schedules', checked: schedulesShown, run: () => (app.view.panels['schedules:' + key] = !schedulesShown) },
+    ...(jobs ? [{ label: `Jobs (${jobs})`, aria: `Background jobs (${jobs})`, run: () => (app.view.modal = { kind: 'jobs', session: { id: s.id }, job: null }) }] : []),
     { label: tasks.length ? 'Tasks…' : 'Link to task…', run: () => (app.view.modal = { kind: 'link-tasks', session: { id: s.id } }) },
     s.unread
       ? { label: 'Mark read', disabled: !online, run: () => app.markRead(s) }

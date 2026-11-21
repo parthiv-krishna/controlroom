@@ -61,7 +61,7 @@ test('scripted feed: the in-flight queue item is echoed and leaves the queue', a
   await expect(page.getByRole('option', { name: /flaky e2e tests/ })).toContainText('Re-running the failing spec');
 });
 
-test('todo panel and auto-continue; jobs strip', async ({ page }) => {
+test('todo panel and auto-continue; a running job from the strip', async ({ page }) => {
   await start(page, S.jobs);
   const todo = page.getByLabel('Todo');
   await expect(todo.getByText('Auto-continue')).toContainText('on');
@@ -69,11 +69,12 @@ test('todo panel and auto-continue; jobs strip', async ({ page }) => {
   await todo.getByLabel('Add todo').fill('Write the regression test');
   await todo.getByLabel('Add todo').press('Enter');
   await todo.getByRole('button', { name: 'Turn off' }).click();
-  await page.getByRole('button', { name: /tests/ }).first().click();
-  await expect(page.getByLabel('Log tail')).toContainText('FAIL e2e/queue.spec.ts');
-  await expect(page.getByText(/next wake in \d+s/)).toBeVisible();
-  await page.getByRole('button', { name: 'Unfollow' }).click();
-  await page.getByRole('button', { name: 'Kill' }).click();
+  await page.getByLabel('Running jobs').getByRole('button', { name: /^Job tests/ }).click();
+  const sheet = page.getByRole('dialog', { name: 'Jobs' });
+  await expect(sheet.getByLabel('Log tail')).toContainText('FAIL e2e/queue.spec.ts');
+  await expect(sheet.getByText(/wake in \d+s/)).toBeVisible();
+  await sheet.getByRole('button', { name: 'Unfollow' }).click();
+  await sheet.getByRole('button', { name: 'Kill job tests' }).click();
   const methods = (await calls(page)).map((c) => c.method);
   expect(methods).toEqual(expect.arrayContaining(['todo.add', 'session.update', 'job.logs', 'job.unfollow', 'job.kill']));
 });

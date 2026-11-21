@@ -26,6 +26,8 @@ export type Modal =
   | { kind: 'project'; id: ProjectId | null }
   | { kind: 'start-fresh'; session: SessionRef }
   | { kind: 'link-tasks'; session: SessionRef }
+  /** The session's jobs, `job` open. */
+  | { kind: 'jobs'; session: SessionRef; job: string | null }
   | { kind: 'task'; id: TaskId };
 
 /** Where the raw view was opened: an item's records, or the live tail (all null). */
@@ -84,8 +86,6 @@ export class View {
   expanded = $state<Record<string, boolean>>({});
   /** The open raw view per session id, and the records it was opened at. */
   raw = $state<Record<string, RawFocus>>({});
-  /** The job open in the jobs strip, by session id (a timeline job item opens it too). */
-  jobOpen = $state<Record<string, string | null>>({});
   /** A timeline item to scroll to and flash (a raw record's link back). */
   focusItem = $state<{ key: string; id: string } | null>(null);
 
