@@ -6,7 +6,8 @@
 //! controlroom-agentd ctl call <method> [<params JSON>] any method; prints the result
 //! controlroom-agentd ctl watch <session> [--since N]   subscribe and render the timeline live
 //! controlroom-agentd ctl render [<file>]               render ops offline (JSONL)
-//! controlroom-agentd ctl create --workspace <machine id>:<path>... [--sandbox off] [prompt...]
+//! controlroom-agentd ctl create --workspace <machine id>:<path>... [--profile <id>] [--sandbox off]
+//!                                                      [prompt...]
 //! controlroom-agentd ctl prompt <session> <text...>
 //! controlroom-agentd ctl cancel <session>
 //! controlroom-agentd ctl approve <session> <request> <option>
@@ -31,7 +32,7 @@ use controlroom_protocol::agentd::{
     InitialPrompt, PromptResult, RequestRespondParams, SessionCreateParams, SessionEventsParams,
     SessionOpParams, SessionPromptParams, SessionSubscribeParams, methods,
 };
-use controlroom_protocol::ids::{MachineId, OpId, RemotePath, RequestId, SessionId};
+use controlroom_protocol::ids::{MachineId, OpId, ProfileId, RemotePath, RequestId, SessionId};
 use controlroom_protocol::session::{ContentPart, Response, SandboxLevel, WorkspaceSpec};
 use controlroom_protocol::timeline::TimelineOp;
 use controlroom_protocol::{NotificationMethod, Seq};
@@ -78,6 +79,9 @@ enum Cmd {
         /// A name for the session.
         #[arg(long)]
         name: Option<String>,
+        /// The profile (needed once the controller has reported profiles).
+        #[arg(long)]
+        profile: Option<ProfileId>,
         /// The sandbox level (strict, relaxed or off) [default: the daemon's default].
         #[arg(long)]
         sandbox: Option<String>,
@@ -150,9 +154,10 @@ fn online(socket: &std::path::Path, command: Cmd) -> anyhow::Result<()> {
         Cmd::Create {
             workspaces,
             name,
+            profile,
             sandbox,
             prompt,
-        } => create(&mut client, &workspaces, name, sandbox, &prompt),
+        } => create(&mut client, &workspaces, name, profile, sandbox, &prompt),
         Cmd::Prompt { session, text } => {
             print_json(&serde_json::to_value(prompt(&mut client, session, &text)?)?)
         }
@@ -189,6 +194,7 @@ fn create(
     client: &mut DaemonClient,
     workspaces: &[String],
     name: Option<String>,
+    profile_id: Option<ProfileId>,
     sandbox: Option<String>,
     first_prompt: &[String],
 ) -> anyhow::Result<()> {
@@ -218,7 +224,7 @@ fn create(
         workspaces,
         name,
         parent_id: None,
-        profile_id: None,
+        profile_id,
         sandbox_level,
         sandbox: None,
         prompt: (!first_prompt.is_empty()).then(|| InitialPrompt {

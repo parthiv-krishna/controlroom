@@ -3,9 +3,9 @@
 //! Session, workspace, queue, request, todo, job and settings commands go to the runtime (a
 //! `job.kill` here is the user's). The host bridge (`hostops.*`) is the controller's only;
 //! debug clients get `unsupported`. `agents.list` and `doctor.report` run here on blocking
-//! threads. `models.*` go to Settings › Models ([`crate::models`]). `sandbox.revoke` (session grants)
-//! answers `unsupported` until grants land, and `profiles.report` and `session.move` until
-//! profiles do.
+//! threads. `models.*` go to Settings › Models ([`crate::models`]). `profiles.report` is the
+//! controller's only, like the host bridge. `sandbox.revoke` (session grants) answers
+//! `unsupported` until grants land.
 
 use std::sync::Arc;
 
@@ -48,7 +48,8 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         Err(e) => return conn.respond(id, Err(e)).await,
     };
     let method = call.method();
-    if method.starts_with("hostops.") && !conn.is_controller() {
+    let controller_only = method.starts_with("hostops.") || method == "profiles.report";
+    if controller_only && !conn.is_controller() {
         let error = RpcError::new(
             ErrorData::Unsupported,
             format!("{method} is for the controller only"),
@@ -96,6 +97,7 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         AgentdRequest::SessionMarkUnread(p) => json(runtime.mark_unread(p).await),
         AgentdRequest::SessionSetOption(p) => ack(runtime.set_option(p).await),
         AgentdRequest::SessionSetSandboxLevel(p) => ack(runtime.set_sandbox_level(p).await),
+        AgentdRequest::SessionMove(p) => ack(runtime.move_session(p).await),
         AgentdRequest::SessionTerminalOpen(p) => json(runtime.terminal_open(p).await),
         AgentdRequest::SessionTerminalClose(p) => ack(runtime.terminal_close(p).await),
 
@@ -118,9 +120,8 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         AgentdRequest::JobFollowMethod(p) => json(runtime.job_follow(p).await),
         AgentdRequest::JobUnfollow(p) => json(runtime.job_unfollow(p).await),
 
-        AgentdRequest::SandboxRevoke(_)
-        | AgentdRequest::SessionMove(_)
-        | AgentdRequest::ProfilesReport(_) => Err(RpcError::new(
+        AgentdRequest::ProfilesReport(p) => ack(runtime.profiles_report(p.profiles)),
+        AgentdRequest::SandboxRevoke(_) => Err(RpcError::new(
             ErrorData::Unsupported,
             format!("{method} is not available in this version"),
         )),

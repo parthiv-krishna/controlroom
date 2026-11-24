@@ -49,16 +49,7 @@ impl FakeController {
             "hello",
             hello_params(json!({"kind": "controller", "controller_id": CONTROLLER})),
         );
-        client.call(
-            "hostops.machines",
-            json!({"machines": [{
-                "machine_id": machine,
-                "name": "devbox",
-                "availability": {"connectivity": {"state": "connected"}, "since": UnixMillis::now()},
-                "epoch": EPOCH,
-                "grace_s": 600,
-            }]}),
-        );
+        client.call("hostops.machines", machines(machine, &[]));
         let methods = Arc::new(Mutex::new(Vec::new()));
         let jobs = Arc::new(Mutex::new(None));
         let pending = client.call("hostops.subscribe", json!({}));
@@ -84,6 +75,19 @@ impl FakeController {
             machine: machine.parse().expect("a machine id"),
             jobs,
         }
+    }
+
+    /// Reports `devbox` again, in `profiles`.
+    pub fn set_profiles(&self, profiles: &[&str]) {
+        self.client.call(
+            "hostops.machines",
+            machines(&self.machine.to_string(), profiles),
+        );
+    }
+
+    /// Calls a method as the controller.
+    pub fn call(&self, method: &str, params: Value) -> Value {
+        self.client.call(method, params)
     }
 
     /// Waits until the agent daemon closes this controller's connection.
@@ -299,4 +303,16 @@ fn run(op: &HostOp) -> Result<Value, RpcError> {
         }
         _ => fail(ErrorData::Unsupported, "not in the fake host"),
     }
+}
+
+/// `hostops.machines` params: `machine`, connected, named `devbox`, in `profiles`.
+fn machines(machine: &str, profiles: &[&str]) -> Value {
+    json!({"machines": [{
+        "machine_id": machine,
+        "name": "devbox",
+        "availability": {"connectivity": {"state": "connected"}, "since": UnixMillis::now()},
+        "epoch": EPOCH,
+        "grace_s": 600,
+        "profile_ids": profiles,
+    }]})
 }

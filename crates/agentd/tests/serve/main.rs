@@ -6,6 +6,7 @@ mod agent;
 mod clients;
 mod controller;
 mod harness;
+mod profiles;
 mod queue;
 mod recovery;
 mod remote;
