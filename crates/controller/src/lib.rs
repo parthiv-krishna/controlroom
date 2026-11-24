@@ -55,7 +55,8 @@
 //! - `machines`: the per-machine tasks (connect, bootstrap, reconnect with backoff,
 //!   auto-upgrade) and the daemon link;
 //! - `rpc`: the UI API (connection handling, ordering contract, handlers by namespace,
-//!   table-driven pass-through);
+//!   table-driven pass-through, profiles and their membership rules);
+//! - `contacts`: a session's contact directory, never crossing profiles (for the mailbox, R3);
 //! - `attention` and `notify`: server-owned attention and Web Push delivery;
 //! - `terminals`: terminal streams over exec channels on the machines' SSH connections;
 //! - `schedules`: the scheduler that wakes sessions on cron or interval specs ([`Clock`] in
