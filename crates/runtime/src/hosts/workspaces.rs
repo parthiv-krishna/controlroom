@@ -56,9 +56,8 @@ impl Runtime {
             return Ok(result);
         }
         let kind = inner.agents.kind()?;
-        if let Some(parent) = params.parent_id {
-            inner.with_core(|core| core.session(parent).map(|_| ()))?;
-        }
+        // Checked again when the session is created; here, so nothing opens on a host.
+        inner.with_core(|core| core.new_session_profile(&params).map(|_| ()))?;
         let id = SessionId::generate();
         let sandbox = effective_sandbox(params.sandbox_level, params.sandbox.as_ref());
         let workspaces = inner.with_core(|core| {
@@ -101,6 +100,7 @@ impl Runtime {
                     METHOD,
                 ));
             }
+            core.require_machine(data.profile_id, &params.workspace.machine_id)?;
             let now = core.clock.now();
             let mut records = new_workspaces(
                 &core.machines,
@@ -370,6 +370,8 @@ impl Core {
         id: SessionId,
         record: WorkspaceRecord,
     ) -> Result<Workspace, RpcError> {
+        let profile = self.session(id)?.data.profile_id;
+        self.require_machine(profile, &record.machine_id)?;
         let machine = self.machines.name(&record.machine_id);
         let shell = ShellRecord::new(
             record.shell.clone(),

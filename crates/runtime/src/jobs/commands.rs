@@ -388,16 +388,16 @@ impl Core {
             return Err(invalid_state(SessionState::Closed, "job run"));
         }
         let machine = match &params.machine {
-            Some(name) => self
-                .machines
-                .by_name(name)
-                .filter(|m| data.workspaces.iter().any(|w| w.machine_id == *m))
-                .ok_or_else(|| not_found(Resource::Workspace, name))?,
-            None => data
-                .workspaces
-                .first()
-                .map(|w| w.machine_id)
-                .ok_or_else(|| not_found(Resource::Workspace, "primary"))?,
+            Some(name) => self.agent_machine(data, name)?,
+            None => {
+                let primary = data
+                    .workspaces
+                    .first()
+                    .map(|w| w.machine_id)
+                    .ok_or_else(|| not_found(Resource::Workspace, "primary"))?;
+                self.require_machine(data.profile_id, &primary)?;
+                primary
+            }
         };
         let on_machine = || data.workspaces.iter().filter(|w| w.machine_id == machine);
         let workspace = params

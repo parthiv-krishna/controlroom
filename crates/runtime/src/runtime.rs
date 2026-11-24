@@ -6,12 +6,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use controlroom_protocol::RpcError;
 use controlroom_protocol::agentd::{
-    DaemonSettings, HostMachine, HostOpRequest, PromptResult, QueueEditParams, QueueRemoveParams,
-    QueueReorderParams, QueueSendNowParams, ReadCursor, RequestRespondParams, RequestRespondResult,
-    RetentionPolicy, SendNowResult, SessionMarkReadParams, SessionOpParams, SessionPromptParams,
-    SessionResumeParams, SessionSetOptionParams, SessionSetSandboxLevelParams,
-    SessionStartFreshParams, SessionUpdateParams, SessionsChange, SessionsSnapshot,
-    SettingsSetParams, StartFreshResult,
+    DaemonSettings, HostMachine, HostOpRequest, ProfilePolicy, PromptResult, QueueEditParams,
+    QueueRemoveParams, QueueReorderParams, QueueSendNowParams, ReadCursor, RequestRespondParams,
+    RequestRespondResult, RetentionPolicy, SendNowResult, SessionMarkReadParams, SessionMoveParams,
+    SessionOpParams, SessionPromptParams, SessionResumeParams, SessionSetOptionParams,
+    SessionSetSandboxLevelParams, SessionStartFreshParams, SessionUpdateParams, SessionsChange,
+    SessionsSnapshot, SettingsSetParams, StartFreshResult,
 };
 use controlroom_protocol::ids::{DaemonId, HostOpId, Rev, Seq, SessionId, SubscriptionId};
 use controlroom_protocol::jsonrpc::RpcOutcome;
@@ -30,7 +30,7 @@ use crate::hosts::{Bridge, BridgeEvent};
 use crate::io;
 use crate::ports::{Agents, Clock, Host};
 use crate::session::{AgentEvent, Session, SessionUpdate, raw_frame};
-use crate::store::{MigrateError, Store};
+use crate::store::{SchemaError, Store};
 
 /// What the runtime needs to open.
 pub struct RuntimeConfig {
@@ -47,7 +47,7 @@ pub struct RuntimeConfig {
 /// Why the runtime didn't open.
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
-    /// The database couldn't be opened or migrated.
+    /// The database couldn't be opened, or has another schema.
     #[error("opening the daemon database: {0}")]
     Database(String),
     /// Reading it failed.
@@ -159,6 +159,7 @@ impl Runtime {
         });
         let rev = store.last_rev()?;
         let sessions = store.load_sessions()?;
+        let profiles = crate::profiles::Profiles::new(store.load_profiles()?);
         let bridge = Arc::new(Bridge::default());
         let now = config.clock.now();
         let mut core = Core::new(
@@ -172,6 +173,7 @@ impl Runtime {
         );
         core.load_machines(now)
             .map_err(|e| OpenError::Database(e.message))?;
+        core.profiles = profiles;
         for data in sessions {
             let driver = config.agents.driver(data.driver);
             let mut session = Session::new(data, driver, core.machines.clone());
@@ -438,6 +440,15 @@ impl Runtime {
         self.inner.transact(|core| core.set_machines(machines))
     }
 
+    /// `profiles.report`: every profile's policy, replacing (and persisting) the previous
+    /// report.
+    pub fn profiles_report(&self, profiles: Vec<ProfilePolicy>) -> Result<(), RpcError> {
+        self.inner.transact(|core| {
+            core.set_profiles(profiles);
+            Ok(())
+        })
+    }
+
     // -----------------------------------------------------------------------------------------
     // Commands
     // -----------------------------------------------------------------------------------------
@@ -580,6 +591,14 @@ impl Runtime {
         .await
     }
 
+    /// `session.move`.
+    pub async fn move_session(&self, params: SessionMoveParams) -> Result<(), RpcError> {
+        self.command("session.move", &params.op_id, &params, |core| {
+            core.move_session(&params)
+        })
+        .await
+    }
+
     /// `queue.send_now`.
     pub async fn send_now(&self, params: QueueSendNowParams) -> Result<SendNowResult, RpcError> {
         self.command("queue.send_now", &params.op_id, &params, |core| {
@@ -654,8 +673,8 @@ impl Runtime {
     }
 }
 
-impl From<MigrateError> for OpenError {
-    fn from(e: MigrateError) -> Self {
+impl From<SchemaError> for OpenError {
+    fn from(e: SchemaError) -> Self {
         OpenError::Database(e.to_string())
     }
 }

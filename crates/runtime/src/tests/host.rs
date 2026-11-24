@@ -10,6 +10,7 @@ use controlroom_drivers::fake::wire::{Command, Input};
 use controlroom_drivers::fake::{AgentOutput, FakeAgent, FakeScript};
 use controlroom_drivers::{Capabilities, Driver, FakeDriver};
 use controlroom_protocol::RpcError;
+use controlroom_protocol::agentd::{ModelDefaults, ModelPolicy};
 use controlroom_protocol::ids::{RemotePath, Seq, SessionId, UnixMillis};
 use controlroom_protocol::session::{DriverKind, SandboxLevel};
 use controlroom_supervisor::{Exec, SpawnSpec};
@@ -60,7 +61,18 @@ impl Agents for FakeAgents {
             stdin: controlroom_transcript::StdinMode::Pipe,
             timeout_ms: None,
             max_line_bytes: None,
-            labels: [("sandbox".to_owned(), level_name(launch.sandbox_level))].into(),
+            labels: [
+                ("sandbox".to_owned(), level_name(launch.sandbox_level)),
+                (
+                    "models".to_owned(),
+                    serde_json::to_string(&launch.models).unwrap(),
+                ),
+                (
+                    "model_defaults".to_owned(),
+                    serde_json::to_string(&launch.model_defaults).unwrap(),
+                ),
+            ]
+            .into(),
             plain_log: None,
         })
     }
@@ -269,6 +281,20 @@ impl FakeHost {
             .into_iter()
             .filter_map(|r| match r.body {
                 Body::Meta(meta) => meta.labels.get("sandbox").cloned(),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The model policy and defaults of each start of the session's agent, in order.
+    pub(crate) fn launch_models(&self, id: SessionId) -> Vec<(ModelPolicy, ModelDefaults)> {
+        self.transcript(id)
+            .into_iter()
+            .filter_map(|r| match r.body {
+                Body::Meta(meta) => Some((
+                    serde_json::from_str(&meta.labels["models"]).unwrap(),
+                    serde_json::from_str(&meta.labels["model_defaults"]).unwrap(),
+                )),
                 _ => None,
             })
             .collect()

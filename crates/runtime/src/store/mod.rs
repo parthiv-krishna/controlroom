@@ -1,12 +1,13 @@
 //! `agent.sqlite`: sessions, queue, op dedup, decisions, the materialized timeline, the rev log,
-//! job cursors and settings. One connection, used under the runtime's lock; every entry point runs as one
+//! job cursors, settings and the profiles' policies. One connection, used under the runtime's lock; every entry point runs as one
 //! transaction ([`Store::begin`], [`Store::commit`], [`Store::rollback`]).
 //!
 //! The database runs in WAL mode with `synchronous=FULL`: a committed decision or queue change
 //! survives a power loss, so the transcript and the store never disagree about what was decided.
 
-mod migrations;
+mod profiles;
 mod rows;
+mod schema;
 
 use std::path::Path;
 
@@ -15,7 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-pub(crate) use migrations::MigrateError;
+pub(crate) use schema::SchemaError;
 
 /// The store.
 pub(crate) struct Store {
@@ -36,12 +37,12 @@ pub(crate) enum StoredOp {
 }
 
 impl Store {
-    /// Opens (creating if needed) and migrates the database.
-    pub(crate) fn open(path: &Path) -> Result<Store, MigrateError> {
-        let mut conn = Connection::open(path)?;
+    /// Opens the database, creating its schema if it is new (see `schema`).
+    pub(crate) fn open(path: &Path) -> Result<Store, SchemaError> {
+        let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "FULL")?;
-        migrations::migrate(&mut conn)?;
+        schema::apply(&conn)?;
         Ok(Store {
             conn,
             #[cfg(test)]

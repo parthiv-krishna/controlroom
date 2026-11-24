@@ -12,6 +12,7 @@ mod jobs;
 mod lifecycle;
 mod machines;
 mod origins;
+mod profiles;
 mod queue;
 mod raised;
 mod recovery;

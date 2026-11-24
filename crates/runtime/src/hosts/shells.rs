@@ -42,11 +42,7 @@ impl Runtime {
                 return Err(invalid_state(SessionState::Closed, "shell.open"));
             }
             check_name(&params.name)?;
-            let machine = core
-                .machines
-                .by_name(&params.machine)
-                .filter(|m| session.data.workspaces.iter().any(|w| w.machine_id == *m))
-                .ok_or_else(|| not_found(Resource::Workspace, &params.machine))?;
+            let machine = core.agent_machine(&session.data, &params.machine)?;
             if let Some(shell) = session
                 .data
                 .shells

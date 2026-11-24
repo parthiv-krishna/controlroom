@@ -51,6 +51,8 @@ impl Core {
             mode,
             sandbox_level: data.sandbox_level(),
             sandbox: data.sandbox.clone(),
+            models: self.profiles.models(data.profile_id),
+            model_defaults: self.profiles.model_defaults(data.profile_id),
         }))
     }
 

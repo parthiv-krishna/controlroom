@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use controlroom_drivers::{LineTag, NativeRef};
 use controlroom_protocol::ids::{
-    ApprovalId, CallId, JobId, MachineId, OpId, QueueId, RemotePath, RequestId, Seq, SessionId,
-    UnixMillis,
+    ApprovalId, CallId, JobId, MachineId, OpId, ProfileId, QueueId, RemotePath, RequestId, Seq,
+    SessionId, UnixMillis,
 };
 use controlroom_protocol::session::{
     AgentSession, AutoContinueStatus, ContentPart, DriverKind, PromptOrigin, QueueItem, Request,
@@ -182,6 +182,9 @@ pub(crate) struct SessionData {
     pub created_at: UnixMillis,
     pub closed_at: Option<UnixMillis>,
     pub parent_id: Option<SessionId>,
+    /// The profile whose policy applies (a child's is its parent's); `None` only for a session
+    /// created while no profile was reported (see `profiles`).
+    pub profile_id: Option<ProfileId>,
     /// The workspaces, the primary one first.
     pub workspaces: Vec<WorkspaceRecord>,
     /// The named shells, in creation order.

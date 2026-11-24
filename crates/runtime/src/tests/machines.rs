@@ -21,8 +21,8 @@ use controlroom_protocol::host::{
     ToolWaitingInputParams, WorkspaceOpenResult,
 };
 use controlroom_protocol::ids::{
-    ApprovalId, CallId, Epoch, HostOpId, JobId, MachineId, RemotePath, Rev, SessionId, ShellId,
-    SubscriptionId, UnixMillis, WorkspaceId,
+    ApprovalId, CallId, Epoch, HostOpId, JobId, MachineId, ProfileId, RemotePath, Rev, SessionId,
+    ShellId, SubscriptionId, UnixMillis, WorkspaceId,
 };
 use controlroom_protocol::jsonrpc::{Ack, RpcOutcome};
 use controlroom_protocol::session::{
@@ -68,6 +68,7 @@ struct Machine {
     since: UnixMillis,
     epoch: Epoch,
     grace_s: u32,
+    profile_ids: Vec<ProfileId>,
     /// Counts connections; answers go out only on the connection their request ran on.
     generation: u64,
     workspaces: BTreeMap<WorkspaceId, (SessionId, RemotePath)>,
@@ -112,7 +113,7 @@ impl Machine {
             },
             epoch: Some(self.epoch),
             grace_s: self.grace_s,
-            profile_ids: Vec::new(),
+            profile_ids: self.profile_ids.clone(),
         }
     }
 }
@@ -175,6 +176,7 @@ impl FakeMachines {
                 since: now,
                 epoch: Epoch::generate(),
                 grace_s: 600,
+                profile_ids: Vec::new(),
                 generation: 1,
                 workspaces: BTreeMap::new(),
                 opened: Vec::new(),
@@ -884,6 +886,12 @@ impl FakeMachines {
     /// Sets the machine's grace period.
     pub(crate) fn set_grace(&self, machine: MachineId, grace_s: u32) {
         self.with(machine, |m| m.grace_s = grace_s);
+        self.report();
+    }
+
+    /// Sets the profiles the machine belongs to.
+    pub(crate) fn set_profiles(&self, machine: MachineId, profile_ids: Vec<ProfileId>) {
+        self.with(machine, |m| m.profile_ids = profile_ids);
         self.report();
     }
 

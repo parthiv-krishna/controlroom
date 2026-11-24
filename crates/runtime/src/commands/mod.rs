@@ -4,6 +4,7 @@
 //! as the command's effect, a repeat returns the stored result, and an op id reused for a
 //! different command is `op_id_conflict`. A failed command records nothing.
 
+mod moving;
 mod queue;
 mod requests;
 mod sandbox;

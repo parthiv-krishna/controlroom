@@ -23,7 +23,8 @@
 //! **Modules:** `core` (state and transactions), `ingest` (folding records), `reconcile`,
 //! `commands`, `lifecycle` and `io` (agent processes and supervisor attachments),
 //! `policy` (the tick: idle-stop, retention, pruning), `timeline` (materialization), `store`
-//! (SQLite with versioned migrations), `preview`, `history` (start-fresh export), `raised`
+//! (SQLite; the schema is edited in place until the first release), `profiles` (the reported
+//! profile policies and the checks that keep a session inside its profile), `preview`, `history` (start-fresh export), `raised`
 //! (requests the daemon raises itself: questions and host requests), `hosts` (workspaces,
 //! shells, host calls with grace and late results, the host bridge, approvals), `jobs`
 //! (background jobs on hosts: the job event log and wakes).
@@ -34,7 +35,7 @@
 //! knowledge), `items` (daemon-made timeline items) and `agent` (the agent API the daemon's
 //! agent socket serves).
 //!
-//! **Not yet here** (later phases add them as new modules and migrations): children, the
+//! **Not yet here** (later phases add them as new modules and tables): children, the
 //! mailbox and contact policy, `bash_privileged` and `terminal_read`.
 
 mod agent;
@@ -55,6 +56,7 @@ mod model;
 mod policy;
 pub mod ports;
 mod preview;
+mod profiles;
 mod questions;
 mod raised;
 mod reconcile;

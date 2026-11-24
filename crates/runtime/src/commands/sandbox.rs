@@ -91,7 +91,7 @@ impl Core {
 
     /// Stops the live agent and starts it again (`by`, normally a resume) once it is gone.
     /// Its running host calls are cancelled, as for `session.cancel`.
-    fn restart_agent(&mut self, id: SessionId, by: StartedBy) -> Result<(), RpcError> {
+    pub(super) fn restart_agent(&mut self, id: SessionId, by: StartedBy) -> Result<(), RpcError> {
         self.cancel_calls(id, None);
         let session = self.session_mut(id)?;
         session.data.pending_start = Some(by);

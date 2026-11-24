@@ -4,7 +4,9 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
-use controlroom_protocol::ids::{ItemId, MachineId, RemotePath, Rev, Seq, SessionId, UnixMillis};
+use controlroom_protocol::ids::{
+    ItemId, MachineId, ProfileId, RemotePath, Rev, Seq, SessionId, UnixMillis,
+};
 use controlroom_protocol::session::AgentSession;
 use controlroom_protocol::timeline::TimelineItem;
 use rusqlite::{OptionalExtension, Row, params};
@@ -19,7 +21,7 @@ use crate::model::{AgentSessionRow, Decision, Raised, SessionData};
 const SESSION_COLUMNS: &str = "id, driver, name, created_at, closed_at, parent_id,
     sandbox_level, sandbox, read_seq, last_turn_end_seq, last_outcome, last_error, queue_paused,
     auto_send, pending_start, history_note, resume_failed, applied_seq, timeline_seq,
-    auto_continue, run_triggers, workspaces, shells, late_calls, outages";
+    auto_continue, run_triggers, workspaces, shells, late_calls, outages, profile_id";
 
 fn decode<T: DeserializeOwned>(raw: &str) -> rusqlite::Result<T> {
     serde_json::from_str(raw).map_err(|e| {
@@ -33,6 +35,12 @@ fn decode_opt<T: DeserializeOwned>(raw: Option<String>) -> rusqlite::Result<Opti
 
 fn session_id(raw: &str) -> rusqlite::Result<SessionId> {
     SessionId::from_str(raw).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+    })
+}
+
+fn profile_id(raw: &str) -> rusqlite::Result<ProfileId> {
+    ProfileId::from_str(raw).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })
 }
@@ -70,6 +78,11 @@ fn session_row(row: &Row<'_>) -> rusqlite::Result<SessionData> {
         shells: decode(&text(22)?)?,
         late: decode(&text(23)?)?,
         outages: decode(&text(24)?)?,
+        profile_id: row
+            .get::<_, Option<String>>(25)?
+            .as_deref()
+            .map(profile_id)
+            .transpose()?,
         agent_sessions: Vec::new(),
         queue: Vec::new(),
         decisions: BTreeMap::new(),
@@ -254,7 +267,7 @@ impl Store {
             &format!(
                 "INSERT OR REPLACE INTO sessions ({SESSION_COLUMNS}) VALUES
                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                  ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)"
+                  ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)"
             ),
             params![
                 d.id.to_string(),
@@ -282,6 +295,7 @@ impl Store {
                 json(&d.shells),
                 json(&d.late),
                 json(&d.outages),
+                d.profile_id.map(|p| p.to_string()),
             ],
         )?;
         Ok(())

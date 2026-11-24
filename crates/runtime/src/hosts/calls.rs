@@ -287,11 +287,7 @@ impl Core {
             }
             HostOp::Bash { .. } => None,
         };
-        let machine = self
-            .machines
-            .by_name(&params.machine)
-            .filter(|m| session.data.workspaces.iter().any(|w| w.machine_id == *m))
-            .ok_or_else(|| not_found(Resource::Workspace, &params.machine))?;
+        let machine = self.agent_machine(&session.data, &params.machine)?;
         let tool = ToolCall {
             call_id: params.call_id.clone(),
             what: describe(&params.op),

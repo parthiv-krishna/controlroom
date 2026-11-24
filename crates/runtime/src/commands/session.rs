@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use controlroom_drivers::{Intent, LineTag};
+use controlroom_drivers::{Intent, LineTag, MODEL_OPTION, model_provider};
 use controlroom_protocol::agentd::{
     IfBusy, OptionValue, PromptResult, ReadCursor, SessionCreateParams, SessionCreateResult,
     SessionMarkReadParams, SessionOpParams, SessionPromptParams, SessionSetOptionParams,
@@ -36,9 +36,7 @@ impl Core {
         id: SessionId,
         workspaces: Vec<WorkspaceRecord>,
     ) -> Result<SessionCreateResult, RpcError> {
-        if let Some(parent) = params.parent_id {
-            self.session(parent)?;
-        }
+        let profile_id = self.new_session_profile(params)?;
         if let Some(prompt) = &params.prompt {
             validate_content(&prompt.content)?;
         }
@@ -56,6 +54,7 @@ impl Core {
             created_at: self.clock.now(),
             closed_at: None,
             parent_id: params.parent_id,
+            profile_id,
             workspaces,
             shells,
             late: Vec::new(),
@@ -412,6 +411,11 @@ impl Core {
                 "{:?} doesn't allow this value",
                 params.option_id
             )));
+        }
+        if params.option_id == MODEL_OPTION
+            && let OptionValue::Choice(value) = &params.value
+        {
+            self.require_account(&session.data, model_provider(value))?;
         }
         let intent = Intent::SetOption {
             id: params.option_id.clone(),

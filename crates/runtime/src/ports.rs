@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use controlroom_drivers::{Driver, StartMode};
 use controlroom_protocol::RpcError;
+use controlroom_protocol::agentd::{ModelDefaults, ModelPolicy};
 use controlroom_protocol::ids::{RemotePath, Seq, SessionId, UnixMillis};
 use controlroom_protocol::session::{DriverKind, SandboxLevel, SandboxSpec};
 use controlroom_supervisor::SpawnSpec;
@@ -95,6 +96,11 @@ pub struct AgentLaunch {
     pub sandbox_level: SandboxLevel,
     /// The session's sandbox defaults (grants, domains, mediated commands).
     pub sandbox: SandboxSpec,
+    /// The model accounts the agent may use: its profile's policy (an unreported profile
+    /// admits none).
+    pub models: ModelPolicy,
+    /// Its profile's model defaults, on top of the server's.
+    pub model_defaults: ModelDefaults,
 }
 
 /// The server's agent.

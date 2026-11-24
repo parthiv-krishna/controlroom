@@ -27,6 +27,7 @@ use crate::errors::{internal, unknown_session};
 use crate::hosts::{Bridge, HostSync, LateCall, Machines};
 use crate::model::SessionData;
 use crate::ports::{Agents, Clock, SupervisorConn};
+use crate::profiles::Profiles;
 use crate::session::{Live, Session, SessionUpdate};
 use crate::store::Store;
 
@@ -96,6 +97,8 @@ struct TxState {
     created: Vec<SessionId>,
     removed: Vec<Session>,
     settings: Option<DaemonSettings>,
+    /// The profiles' policies before the transaction changed them.
+    profiles: Option<Profiles>,
     rev: Option<Rev>,
     /// Sessions whose summary may have changed.
     touched: BTreeSet<SessionId>,
@@ -116,6 +119,8 @@ pub(crate) struct Core {
     pub agents: Arc<dyn Agents>,
     /// The controller's machines, as last reported.
     pub machines: Arc<Machines>,
+    /// The profiles' policies, as last reported.
+    pub profiles: Profiles,
     /// Pending host requests (outside the lock; staged by transactions).
     pub bridge: Arc<Bridge>,
     /// Per host: results to release with `journal.ack`.
@@ -146,6 +151,7 @@ impl Core {
             clock,
             agents,
             machines: Arc::new(Machines::default()),
+            profiles: Profiles::default(),
             bridge,
             acks: BTreeMap::new(),
             sync: BTreeMap::new(),
@@ -243,6 +249,13 @@ impl Core {
         &mut self.settings
     }
 
+    pub(crate) fn profiles_mut(&mut self) -> &mut Profiles {
+        self.tx
+            .profiles
+            .get_or_insert_with(|| self.profiles.clone());
+        &mut self.profiles
+    }
+
     /// Stages a line for the session's supervisor.
     pub(crate) fn stage_line(&mut self, id: SessionId, line: String) {
         self.tx.fx.lines.push((id, line));
@@ -331,6 +344,12 @@ impl Core {
             self.emit(SessionsEvent::SettingsChanged {
                 settings: self.settings.clone(),
             })?;
+        }
+        if let Some(before) = &self.tx.profiles
+            && *before != self.profiles
+        {
+            let now = self.clock.now();
+            self.store.save_profiles(&self.profiles.policies(), now)?;
         }
         self.emit_summaries()
     }
@@ -522,6 +541,9 @@ impl Core {
         if let Some(settings) = tx.settings {
             self.settings = settings;
         }
+        if let Some(profiles) = tx.profiles {
+            self.profiles = profiles;
+        }
         if let Some(rev) = tx.rev {
             self.rev = rev;
         }
@@ -577,7 +599,7 @@ impl Core {
                 .map_or(data.created_at, |s| s.updated_at),
             closed_at: data.closed_at,
             parent_id: data.parent_id,
-            profile_id: None,
+            profile_id: data.profile_id,
             state,
             last_outcome: data.last_outcome,
             last_error: data.last_error.clone(),
