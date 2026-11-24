@@ -279,6 +279,17 @@ impl Env {
             .collect()
     }
 
+    /// The JSON lines the agent wrote, in order.
+    pub fn lines_out(&self, session: &str) -> Vec<Value> {
+        self.records(session)
+            .into_iter()
+            .filter_map(|r| match r.body {
+                Body::Out(line) => serde_json::from_str(&line.raw).ok(),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The prompt texts written to the agent (prompt, steer and follow-up commands).
     pub fn prompts_sent(&self, session: &str) -> Vec<String> {
         self.lines_in(session)

@@ -266,12 +266,16 @@ fn a_job_wake_steered_mid_run_names_its_job() {
             },
         ),
     ]);
+    // The wake is in the agent's steering queue (not only written to its stdin), so the run
+    // takes it in before it ends rather than starting a run of its own.
     wait_until("the steered wake", || {
-        env.lines_in(&id).iter().any(|l| {
-            l["streamingBehavior"] == "steer"
-                && l["message"]
-                    .as_str()
-                    .is_some_and(|m| m.contains("[controlroom] Job"))
+        env.lines_out(&id).iter().any(|l| {
+            l["type"] == "queue_update"
+                && l["steering"].as_array().is_some_and(|queued| {
+                    queued
+                        .iter()
+                        .any(|m| m.as_str().is_some_and(|m| m.contains("[controlroom] Job")))
+                })
         })
     });
     env.release("hold");
