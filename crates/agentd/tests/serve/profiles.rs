@@ -95,10 +95,9 @@ fn reported_policies_shape_the_agent_dir_and_survive_a_restart() {
     let mark = client.turn_mark(&id);
     client.prompt(&id, "hi");
     client.wait_turn(&id, mark);
-    client.call(
-        "session.move",
-        json!({"op_id": op(), "id": id, "profile_id": book}),
-    );
+    let moved = json!({"op_id": op(), "id": id, "profile_id": book});
+    client.call_err("session.move", moved.clone(), "unsupported");
+    env.controller().call("session.move", moved);
     wait_until("the relaunch", || starts(&env, &id) == 2);
     client.wait_session(&id, "the resumed agent", |s| {
         s["profile_id"] == book.as_str() && s["agent_live"] == true

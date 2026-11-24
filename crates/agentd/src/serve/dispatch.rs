@@ -3,9 +3,9 @@
 //! Session, workspace, queue, request, todo, job and settings commands go to the runtime (a
 //! `job.kill` here is the user's). The host bridge (`hostops.*`) is the controller's only;
 //! debug clients get `unsupported`. `agents.list` and `doctor.report` run here on blocking
-//! threads. `models.*` go to Settings › Models ([`crate::models`]). `profiles.report` is the
-//! controller's only, like the host bridge. `sandbox.revoke` (session grants) answers
-//! `unsupported` until grants land.
+//! threads. `models.*` go to Settings › Models ([`crate::models`]). `profiles.report` and
+//! `session.move` are the controller's only, like the host bridge. `sandbox.revoke` (session
+//! grants) answers `unsupported` until grants land.
 
 use std::sync::Arc;
 
@@ -48,7 +48,8 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         Err(e) => return conn.respond(id, Err(e)).await,
     };
     let method = call.method();
-    let controller_only = method.starts_with("hostops.") || method == "profiles.report";
+    let controller_only =
+        method.starts_with("hostops.") || matches!(method, "profiles.report" | "session.move");
     if controller_only && !conn.is_controller() {
         let error = RpcError::new(
             ErrorData::Unsupported,
