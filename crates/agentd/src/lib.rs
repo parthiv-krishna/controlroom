@@ -5,6 +5,7 @@
 //! remote tools), and reaches hosts only through the controller's host bridge.
 //!
 //! - [`dirs`], [`config`], [`version`], [`shell`]: paths, configuration and helpers;
+//! - [`environment`]: the inherited variables removed at startup (`NONO_*`, provider keys);
 //! - [`instance`], [`serve`]: the single instance and the APIs it serves;
 //! - [`launch`]: pi launch glue (session dirs, nono profile, supervisor spawn spec);
 //! - [`login`], [`credential`]: model credentials (OAuth sign-in, nono's credential helper);
@@ -16,6 +17,7 @@ pub mod credential;
 pub mod ctl;
 pub mod dirs;
 pub mod doctor;
+pub mod environment;
 pub mod instance;
 pub mod launch;
 pub mod login;
