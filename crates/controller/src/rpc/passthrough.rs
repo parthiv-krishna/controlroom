@@ -15,16 +15,21 @@
 //!
 //! An answered `request.respond` may also change the sandbox defaults: "Always allow" and
 //! "Never" on a file request (see [`sandbox_decisions`]).
+//!
+//! Two methods are checked against the session's profile first ([`membership`]): a new
+//! workspace's machine must be in it (C2), and neither a new workspace nor a level change may
+//! run a shared machine at level off (C8).
 
 use std::sync::Arc;
 
 use controlroom_client_core::daemon::{CallError, CallOptions, CallTimeout};
+use controlroom_protocol::agentd::{SessionSetSandboxLevelParams, WorkspaceAddParams};
 use controlroom_protocol::ids::SessionId;
 use controlroom_protocol::session::PromptOrigin;
 use controlroom_protocol::{ErrorData, RpcError};
 use serde_json::{Map, Value};
 
-use super::{Conn, Reply, sandbox, sandbox_decisions};
+use super::{Conn, Reply, membership, sandbox, sandbox_decisions};
 use crate::errors::{internal, invalid_params, store_error};
 use crate::hub::agentd_unavailable;
 
@@ -202,6 +207,7 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
     let entry = entry(method)?;
     let mut params = object(params)?;
     fill_params(conn, entry.fill, &mut params)?;
+    check_profile(conn, method, &params)?;
     if entry.machines {
         conn.hub.outbound.barrier().await;
     }
@@ -281,6 +287,43 @@ fn audit(conn: &Conn, method: &str, params: &Map<String, Value>) {
     tracing::info!(%method, %provider, %device, "Settings › Models change");
 }
 
+/// The membership rules of a session command (C2, C8), for a session the controller can place
+/// in a profile; the agent daemon checks the rest.
+fn check_profile(conn: &Conn, method: &str, params: &Map<String, Value>) -> Result<(), RpcError> {
+    let decode = |what| invalid_params(format!("invalid {what} params"));
+    let hub = &conn.hub;
+    match method {
+        "session.workspace_add" => {
+            let p: WorkspaceAddParams = serde_json::from_value(Value::Object(params.clone()))
+                .map_err(|_| decode(method))?;
+            let (Some(session), Some(profile)) =
+                (hub.session(p.id), membership::session_profile(hub, p.id))
+            else {
+                return Ok(());
+            };
+            let machine = [p.workspace.machine_id];
+            membership::check_machines_in(hub, &hub.profile(profile)?, &machine)?;
+            membership::check_level(hub, profile, &machine, session.sandbox.level)
+        }
+        "session.set_sandbox_level" => {
+            let p: SessionSetSandboxLevelParams =
+                serde_json::from_value(Value::Object(params.clone()))
+                    .map_err(|_| decode(method))?;
+            let (Some(session), Some(profile)) =
+                (hub.session(p.id), membership::session_profile(hub, p.id))
+            else {
+                return Ok(());
+            };
+            let Some(level) = p.level.or(p.sandbox.map(|s| s.level)) else {
+                return Ok(());
+            };
+            let machines: Vec<_> = session.workspaces.iter().map(|w| w.machine_id).collect();
+            membership::check_level(hub, profile, &machines, level)
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Fills `params` per `fill`.
 fn fill_params(conn: &Conn, fill: Fill, params: &mut Map<String, Value>) -> Result<(), RpcError> {
     fn encode<T: serde::Serialize>(v: &T) -> Result<Value, RpcError> {
@@ -316,7 +359,8 @@ fn fill_params(conn: &Conn, fill: Fill, params: &mut Map<String, Value>) -> Resu
                     .tasks()
                     .linked_to(session.id)
                     .map_err(store_error)?;
-                let spec = sandbox::defaults(&conn.hub, &machines, &linked)?;
+                let profile = membership::session_profile(&conn.hub, session.id);
+                let spec = sandbox::defaults(&conn.hub, profile, &machines, &linked)?;
                 params.insert("sandbox".into(), encode(&spec)?);
             }
         }

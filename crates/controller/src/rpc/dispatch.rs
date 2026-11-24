@@ -2,7 +2,7 @@
 //! so malformed params are `invalid_params` before anything happens.
 //!
 //! Session commands pass through to the agent daemon ([`passthrough`]); `session.create`
-//! does more (sandbox defaults, attribution, task links); `fs.list` and a machine's
+//! does more (profile, sandbox defaults, attribution, task links); `fs.list` and a machine's
 //! `doctor.report` go to that machine's host daemon.
 
 use std::sync::Arc;
@@ -13,20 +13,20 @@ use controlroom_protocol::agentd::methods::SessionCreate;
 use controlroom_protocol::error::Resource;
 use controlroom_protocol::host::methods::{DoctorReportMethod, FsList};
 use controlroom_protocol::host::{DoctorReport, FsListParams, FsListResult};
+use controlroom_protocol::ids::{MachineId, ProfileId};
 use controlroom_protocol::session::PromptOrigin;
 use controlroom_protocol::ui::{
-    DoctorReportParams, OnMachine, Priority, TaskStatus, UiRequest, UiSessionCreateParams,
+    DoctorReportParams, OnMachine, Profile, TaskStatus, UiRequest, UiSessionCreateParams,
 };
 use controlroom_protocol::{Ack, NoParams, RpcError, RpcRequest};
 use serde_json::Value;
 
 use super::{
-    Conn, Reply, board, keys, machines, passthrough, people, reply, sandbox, schedules, state,
-    subscriptions,
+    Conn, Reply, board, keys, machines, membership, passthrough, people, profile_move, profiles,
+    reply, sandbox, schedules, state, subscriptions,
 };
-use crate::errors::{call_error, internal, not_found, store_error, unsupported};
-use crate::hub::Focus;
-use crate::store::NewTask;
+use crate::errors::{call_error, internal, invalid_params, not_found, store_error};
+use crate::hub::{Focus, Hub};
 
 pub(super) async fn dispatch(
     conn: &Arc<Conn>,
@@ -59,15 +59,13 @@ pub(super) async fn dispatch(
         UiRequest::KeysImport(p) => reply(keys::import(conn, p)?),
         UiRequest::KeysDelete(p) => reply(keys::delete(conn, p)?),
 
-        UiRequest::ProfilesList(_)
-        | UiRequest::ProfilesCreate(_)
-        | UiRequest::ProfilesUpdate(_)
-        | UiRequest::ProfilesDelete(_)
-        | UiRequest::ProfilesMove(_) => Err(unsupported(format!(
-            "{method} is not supported by this controller yet"
-        ))),
+        UiRequest::ProfilesList(_) => reply(profiles::list(conn)?),
+        UiRequest::ProfilesCreate(p) => reply(profiles::create(conn, p)?),
+        UiRequest::ProfilesUpdate(p) => reply(profiles::update(conn, p)?),
+        UiRequest::ProfilesDelete(p) => reply(profiles::delete(conn, p).await?),
+        UiRequest::ProfilesMove(p) => reply(profile_move::run(conn, p).await?),
 
-        UiRequest::ProjectsCreate(p) => reply(board::projects_create(conn, &p.name, &p.color)?),
+        UiRequest::ProjectsCreate(p) => reply(board::projects_create(conn, p)?),
         UiRequest::ProjectsUpdate(p) => reply(board::projects_update(
             conn,
             p.project_id,
@@ -75,19 +73,7 @@ pub(super) async fn dispatch(
             p.color.as_deref(),
         )?),
         UiRequest::ProjectsDelete(p) => reply(board::projects_delete(conn, p)?),
-        UiRequest::TasksCreate(p) => reply(board::tasks_create(
-            conn,
-            NewTask {
-                title: p.title,
-                status: p.status.unwrap_or(TaskStatus::Backlog),
-                order: p.order,
-                priority: p.priority.unwrap_or(Priority::P2),
-                project_ids: p.project_ids,
-                notes: p.notes,
-                checklist: p.checklist,
-                links: p.links,
-            },
-        )?),
+        UiRequest::TasksCreate(p) => reply(board::tasks_create(conn, p)?),
         UiRequest::TasksUpdate(p) => reply(board::tasks_update(conn, p)?),
         UiRequest::TasksMove(p) => reply(board::tasks_move(conn, p)?),
         UiRequest::TasksDelete(p) => reply(board::tasks_delete(conn, p)?),
@@ -145,9 +131,11 @@ pub(super) async fn dispatch(
 
 /// `session.create`: the agent daemon creates the session on its workspaces with its first
 /// prompt (atomically, under the `op_id`), then the controller links it to the tasks, moving
-/// tasks in `backlog` or `todo` to `doing`. The controller fills in the sandbox defaults (the
-/// workspaces' machines and the tasks' projects) and the prompt's origin (this connection's
-/// device), replacing whatever a client sent. Links are set-like, so a retry is safe.
+/// tasks in `backlog` or `todo` to `doing`. The controller fills in the profile (C1: every
+/// machine and task must be in it; omitted, the one the machines name), the sandbox defaults
+/// (the profile's, the workspaces' machines' and the tasks' projects'; level off is refused on
+/// a shared machine, C8) and the prompt's origin (this connection's device), replacing whatever
+/// a client sent. Links are set-like, so a retry is safe.
 async fn create(
     conn: &Arc<Conn>,
     p: UiSessionCreateParams,
@@ -164,7 +152,14 @@ async fn create(
             machines.push(w.machine_id);
         }
     }
-    create.sandbox = Some(sandbox::defaults(hub, &machines, &p.task_ids)?);
+    let profile = session_profile(hub, create.profile_id, &machines)?;
+    membership::check_machines_in(hub, &profile, &machines)?;
+    membership::check_tasks_in(hub, &profile, &p.task_ids)?;
+    let sandbox = sandbox::defaults(hub, Some(profile.id), &machines, &p.task_ids)?;
+    let level = create.sandbox_level.unwrap_or(sandbox.level);
+    membership::check_level(hub, profile.id, &machines, level)?;
+    create.profile_id = Some(profile.id);
+    create.sandbox = Some(sandbox);
     if let Some(prompt) = &mut create.prompt {
         prompt.origin = PromptOrigin::User {
             device: conn.device_ref(),
@@ -196,6 +191,38 @@ async fn create(
         hub.emit_task(&mut st, &row);
     }
     Ok(created)
+}
+
+/// A new session's profile: the one given, else the one profile its machines share.
+fn session_profile(
+    hub: &Hub,
+    id: Option<ProfileId>,
+    machines: &[MachineId],
+) -> Result<Profile, RpcError> {
+    if let Some(id) = id {
+        return hub.profile(id);
+    }
+    membership::require_profile(hub)?;
+    let common: Vec<ProfileId> = {
+        let st = hub.lock();
+        let mut common = machines
+            .first()
+            .map(|m| st.machine_profiles(*m).to_vec())
+            .unwrap_or_default();
+        for machine in machines {
+            let here = st.machine_profiles(*machine);
+            common.retain(|p| here.contains(p));
+        }
+        common
+    };
+    match common.as_slice() {
+        [only] => hub.profile(*only),
+        // No workspace yet: the agent daemon refuses it; the only profile, if there is one.
+        [] if machines.is_empty() => membership::profile_or_only(hub, None),
+        _ => Err(invalid_params(
+            "profile_id is required: the machines don't name exactly one profile",
+        )),
+    }
 }
 
 /// `fs.list`: a directory on a machine, listed by its host daemon with the user's own access.

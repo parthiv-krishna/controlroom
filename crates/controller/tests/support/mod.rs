@@ -99,14 +99,15 @@ pub async fn controlroom_key(ui: &mut UiDriver) -> String {
         .to_owned()
 }
 
-/// Adds `host` (authorizing the controlroom key first); returns the machine id once it is
-/// connected.
+/// Adds `host` (creating the first profile on a fresh install and authorizing the controlroom
+/// key first); returns the machine id once it is connected.
 pub async fn add_machine(ui: &mut UiDriver, host: &RemoteHost, name: &str) -> String {
     add_machine_at(ui, host, name, host.port()).await
 }
 
 /// Like [`add_machine`], reaching the host's SSH server on `port` (e.g. through a [`Relay`](controlroom_controller::test_support::Relay)).
 pub async fn add_machine_at(ui: &mut UiDriver, host: &RemoteHost, name: &str, port: u16) -> String {
+    ui.ensure_profile().await;
     let key = controlroom_key(ui).await;
     host.authorize(&key);
     let mut new = host.new_machine(name);

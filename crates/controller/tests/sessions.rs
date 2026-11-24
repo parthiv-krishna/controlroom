@@ -30,6 +30,7 @@ async fn the_feed_shows_global_sessions_with_projects_and_overlaps() {
     let agentd = FakeAgentd::start().await;
     let setup = controller_with_agentd(None, agentd.socket());
     let mut next = ui(&setup.controller, "laptop").await;
+    let profile = next.ensure_profile().await;
     let mut phone = ui(&setup.controller, "phone").await;
     agentd.wait_connected(1).await;
 
@@ -120,7 +121,7 @@ async fn the_feed_shows_global_sessions_with_projects_and_overlaps() {
         .await;
     assert_eq!(
         phone.mirror.projects[web["id"].as_str().unwrap()],
-        json!({"id": web["id"], "name": "web", "color": "#a78bfa", "profile_id": null})
+        json!({"id": web["id"], "name": "web", "color": "#a78bfa", "profile_id": profile})
     );
 
     // Closing a session ends its overlap; deleting it removes it.

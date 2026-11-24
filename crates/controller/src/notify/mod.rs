@@ -12,8 +12,10 @@
 //!   the store before sending (released again if the send fails, so a later change retries).
 //! - **Focus:** a device with a visible client showing the session is skipped.
 //! - **Restarts:** waiting pushes are rebuilt from current attention (`pending`).
-//! - **Payloads** ([`PushPayload`]) carry metadata only: the session id, the session's and its
-//!   primary machine's names, the attention kind, and a deep link. Never code, prompts or tool output.
+//! - **Payloads** ([`PushPayload`]) carry metadata only: the session id and profile, the
+//!   session's and its primary machine's names, the attention kind, and a deep link. Never code,
+//!   prompts or tool output. A private profile's payload has no session or machine name, only
+//!   the profile's (C11).
 //! - Subscriptions the push service reports gone (404/410) are deleted.
 //! - **SSRF guard:** endpoints must be public `https` host names, are checked again at send
 //!   time, must resolve to public addresses, and redirects aren't followed (`endpoint`).
@@ -32,7 +34,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use controlroom_protocol::UnixMillis;
-use controlroom_protocol::ids::{DeviceId, SessionId};
+use controlroom_protocol::ids::{DeviceId, ProfileId, SessionId};
 use controlroom_protocol::session::SessionSummary;
 use controlroom_protocol::ui::{NotificationPreferences, PushContent, PushPayload};
 use futures::future::BoxFuture;
@@ -113,41 +115,52 @@ fn truncate(s: &str) -> String {
 /// The session a notification is about, as its payload shows it.
 struct Subject {
     session_id: SessionId,
-    /// The session's display name.
-    name: String,
-    /// The primary workspace's machine name.
-    machine: String,
+    profile_id: Option<ProfileId>,
+    content: PushContent,
 }
 
 impl Subject {
-    /// The user's name, else the agent's title, else the primary workspace's path.
+    /// A private profile's session shows only the profile's name (C11). Others show the
+    /// session's name (the user's, else the agent's title, else the primary workspace's path)
+    /// and its primary machine.
     fn of(hub: &Hub, session: &SessionSummary) -> Self {
-        let primary = session.workspaces.iter().find(|w| w.primary);
+        let (profile_id, private) = hub.push_profile(session);
+        let content = match private {
+            Some(profile) => PushContent::Private {
+                profile: truncate(&profile),
+            },
+            None => {
+                let primary = session.workspaces.iter().find(|w| w.primary);
+                let name = session
+                    .name
+                    .clone()
+                    .or_else(|| session.title.clone())
+                    .or_else(|| primary.map(|w| w.path.to_string()))
+                    .unwrap_or_default();
+                let machine = primary
+                    .and_then(|w| hub.machine_name(w.machine_id))
+                    .unwrap_or_default();
+                PushContent::Session {
+                    name: truncate(&name),
+                    machine: truncate(&machine),
+                }
+            }
+        };
         Self {
             session_id: session.id,
-            name: session
-                .name
-                .clone()
-                .or_else(|| session.title.clone())
-                .or_else(|| primary.map(|w| w.path.to_string()))
-                .unwrap_or_default(),
-            machine: primary
-                .and_then(|w| hub.machine_name(w.machine_id))
-                .unwrap_or_default(),
+            profile_id,
+            content,
         }
     }
 
-    /// The push payload. Sessions have no profile yet, so every push shows the session.
+    /// The push payload.
     fn payload(&self, kind: AttentionKind) -> PushPayload {
         PushPayload {
             session_id: self.session_id,
-            profile_id: None,
+            profile_id: self.profile_id,
             state: kind.push_state(),
             url: format!("#/s/{}", self.session_id),
-            content: PushContent::Session {
-                name: truncate(&self.name),
-                machine: truncate(&self.machine),
-            },
+            content: self.content.clone(),
         }
     }
 }

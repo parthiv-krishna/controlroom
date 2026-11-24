@@ -373,6 +373,8 @@ impl Drop for RemoteHost {
 /// The state feed as a client sees it, by id.
 #[derive(Debug, Default)]
 pub struct Mirror {
+    /// Profiles.
+    pub profiles: HashMap<String, Value>,
     /// Machines.
     pub machines: HashMap<String, Value>,
     /// Sessions (`MachineSession`).
@@ -418,6 +420,7 @@ impl Mirror {
                 })
                 .collect()
         };
+        self.profiles = index(&snapshot["profiles"]);
         self.machines = index(&snapshot["machines"]);
         self.sessions = index(&snapshot["sessions"]);
         self.tasks = index(&snapshot["tasks"]);
@@ -431,6 +434,13 @@ impl Mirror {
     fn apply(&mut self, change: &Value) {
         let id = |v: &Value| v.as_str().unwrap_or_default().to_owned();
         match change["kind"].as_str().unwrap_or_default() {
+            "profile_upserted" => {
+                self.profiles
+                    .insert(id(&change["profile"]["id"]), change["profile"].clone());
+            }
+            "profile_removed" => {
+                self.profiles.remove(&id(&change["profile_id"]));
+            }
             "machine_upserted" => {
                 let m = &change["machine"];
                 let key = id(&m["id"]);
@@ -638,6 +648,23 @@ impl UiDriver {
         self.mirror.apply_snapshot(&result["snapshot"]);
         self.cursor = Some(result["cursor"].clone());
         result
+    }
+
+    /// Creates a profile (not private, any model account); returns its id.
+    pub async fn create_profile(&mut self, name: &str) -> String {
+        let profile = self
+            .ok("profiles.create", json!({"name": name, "color": "#7c3aed"}))
+            .await;
+        profile["id"].as_str().unwrap().to_owned()
+    }
+
+    /// The first profile, created (as "Garden club") on a fresh install, as setup does.
+    pub async fn ensure_profile(&mut self) -> String {
+        let list = self.ok("profiles.list", json!({})).await;
+        match list["profiles"][0]["id"].as_str() {
+            Some(id) => id.to_owned(),
+            None => self.create_profile("Garden club").await,
+        }
     }
 
     /// Waits until `pred` holds for the mirrored state, failing after [`TIMEOUT`].

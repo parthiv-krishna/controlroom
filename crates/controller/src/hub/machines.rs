@@ -115,7 +115,7 @@ impl MachineEntry {
             host: r.host.clone(),
             port: r.port,
             user: r.username.clone(),
-            profile_ids: Vec::new(),
+            profile_ids: r.profile_ids.clone(),
             key_id: r.key_id,
             host_key: r
                 .host_key
@@ -148,7 +148,7 @@ impl MachineEntry {
             },
             epoch: self.epoch,
             grace_s: self.record.grace_s,
-            profile_ids: Vec::new(),
+            profile_ids: self.record.profile_ids.clone(),
         }
     }
 }

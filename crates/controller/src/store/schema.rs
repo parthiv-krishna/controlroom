@@ -7,13 +7,17 @@
 //! another owner's row. Task links and contact grants deliberately have no foreign key to
 //! machines or sessions: they survive session purges and machine removal and render as
 //! "missing session". Sessions are global (the agent daemon's), so they are named by id alone.
+//!
+//! **Profiles** (tenants) own machine entries (`machine_profiles`, several when shared),
+//! projects and tasks (`profile_id`, with real foreign keys, so a profile with rows can't be
+//! deleted) and sandbox defaults (scope `profile`). A fresh store has no profiles.
 
 use rusqlite::Connection;
 
 use super::{StoreError, StoreResult};
 
 /// The schema version, kept in `PRAGMA user_version`.
-pub(super) const VERSION: u32 = 7;
+pub(super) const VERSION: u32 = 8;
 
 const SCHEMA: &str = r#"
 CREATE TABLE installation (
@@ -75,13 +79,42 @@ CREATE TABLE machines (
     FOREIGN KEY (key_id, owner_id) REFERENCES keys (id, owner_id) ON DELETE RESTRICT
 ) STRICT;
 
+CREATE TABLE profiles (
+    id              TEXT NOT NULL,
+    owner_id        TEXT NOT NULL REFERENCES owners(id),
+    name            TEXT NOT NULL,
+    color           TEXT NOT NULL,
+    private         INTEGER NOT NULL DEFAULT 0 CHECK (private IN (0, 1)),
+    -- ModelPolicy JSON.
+    models          TEXT NOT NULL DEFAULT '{"kind":"any"}',
+    -- ModelDefaults JSON; NULL: the server's.
+    model_defaults  TEXT,
+    position        REAL NOT NULL,
+    created_at      INTEGER NOT NULL,
+    PRIMARY KEY (owner_id, id),
+    UNIQUE (owner_id, name)
+) STRICT;
+
+-- The profiles of a machine entry: one, or several when shared.
+CREATE TABLE machine_profiles (
+    owner_id    TEXT NOT NULL,
+    machine_id  TEXT NOT NULL,
+    profile_id  TEXT NOT NULL,
+    PRIMARY KEY (machine_id, profile_id),
+    FOREIGN KEY (machine_id, owner_id) REFERENCES machines (id, owner_id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id, profile_id) REFERENCES profiles (owner_id, id) ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX machine_profiles_profile ON machine_profiles (owner_id, profile_id);
+
 CREATE TABLE projects (
     id                 TEXT PRIMARY KEY NOT NULL,
     owner_id           TEXT NOT NULL REFERENCES owners(id),
     name               TEXT NOT NULL,
     color              TEXT NOT NULL,
+    profile_id         TEXT NOT NULL,
     created_at         INTEGER NOT NULL,
-    UNIQUE (id, owner_id)
+    UNIQUE (id, owner_id),
+    FOREIGN KEY (owner_id, profile_id) REFERENCES profiles (owner_id, id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TABLE tasks (
@@ -92,9 +125,12 @@ CREATE TABLE tasks (
     position    REAL NOT NULL,
     priority    TEXT NOT NULL,
     notes       TEXT NOT NULL,
+    -- Every project of a task is in its profile.
+    profile_id  TEXT NOT NULL,
     created_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL,
-    UNIQUE (id, owner_id)
+    UNIQUE (id, owner_id),
+    FOREIGN KEY (owner_id, profile_id) REFERENCES profiles (owner_id, id) ON DELETE RESTRICT
 ) STRICT;
 CREATE INDEX tasks_owner ON tasks (owner_id, status, position);
 
@@ -213,10 +249,10 @@ CREATE TABLE schedules (
 ) STRICT;
 CREATE INDEX schedules_owner ON schedules (owner_id);
 
--- Sandbox defaults of one machine or project (Settings > Sandbox).
+-- Sandbox defaults of one profile, machine or project (Settings > Sandbox).
 CREATE TABLE sandbox_defaults (
     owner_id    TEXT NOT NULL REFERENCES owners(id),
-    scope_kind  TEXT NOT NULL CHECK (scope_kind IN ('machine', 'project')),
+    scope_kind  TEXT NOT NULL CHECK (scope_kind IN ('machine', 'project', 'profile')),
     scope_id    TEXT NOT NULL,
     level       TEXT,
     grants      TEXT NOT NULL,

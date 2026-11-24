@@ -1,17 +1,22 @@
 //! Projects and tasks (`projects.*`, `tasks.*`). Each handler writes the changed columns and
 //! emits the result to the state feed under the hub lock, so the feed order matches the
 //! store's.
+//!
+//! Projects and tasks belong to one profile each (the only one when omitted): a task's projects
+//! are all in its profile (C3), and it links only sessions of its profile (C4). They change
+//! profile only with `profiles.move`.
 
 use controlroom_protocol::error::Resource;
-use controlroom_protocol::ids::{ProjectId, SessionId, TaskId};
+use controlroom_protocol::ids::{ProfileId, ProjectId, SessionId, TaskId};
 use controlroom_protocol::ui::{
-    ChecklistAddParams, ChecklistRemoveParams, ChecklistUpdateParams, Project, ProjectRef, Task,
-    TaskRef, TasksMoveParams, TasksUpdateParams,
+    ChecklistAddParams, ChecklistRemoveParams, ChecklistUpdateParams, Priority, Profile, Project,
+    ProjectRef, ProjectsCreateParams, Task, TaskRef, TaskStatus, TasksCreateParams,
+    TasksMoveParams, TasksUpdateParams,
 };
 use controlroom_protocol::{Ack, RpcError};
 
-use super::Conn;
-use crate::errors::{invalid_params, not_found, store_error};
+use super::{Conn, membership};
+use crate::errors::{invalid_params, not_found, policy_denied, store_error};
 use crate::store::{NewTask, StoreResult, Tasks};
 
 fn project(conn: &Conn, id: ProjectId) -> Result<Project, RpcError> {
@@ -23,12 +28,33 @@ fn project(conn: &Conn, id: ProjectId) -> Result<Project, RpcError> {
         .ok_or_else(|| not_found(Resource::Project, id))
 }
 
-/// Checks every project exists.
-fn check_projects(conn: &Conn, ids: &[ProjectId]) -> Result<(), RpcError> {
+/// Checks every project exists and is in `profile` (C3).
+fn check_projects(conn: &Conn, profile: &Profile, ids: &[ProjectId]) -> Result<(), RpcError> {
     for id in ids {
-        project(conn, *id)?;
+        let project = project(conn, *id)?;
+        if project.profile_id != Some(profile.id) {
+            return Err(policy_denied(
+                profile.id,
+                format!("the project {:?} isn't in {}", project.name, profile.name),
+            ));
+        }
     }
     Ok(())
+}
+
+/// A new task's profile: the one given, else its first project's, else the only one.
+fn new_task_profile(
+    conn: &Conn,
+    profile_id: Option<ProfileId>,
+    projects: &[ProjectId],
+) -> Result<Profile, RpcError> {
+    match (profile_id, projects.first()) {
+        (None, Some(first)) => {
+            let first = project(conn, *first)?;
+            membership::profile_or_only(&conn.hub, first.profile_id)
+        }
+        (id, _) => membership::profile_or_only(&conn.hub, id),
+    }
 }
 
 fn finite(order: f64) -> Result<f64, RpcError> {
@@ -39,13 +65,14 @@ fn finite(order: f64) -> Result<f64, RpcError> {
     }
 }
 
-pub(super) fn projects_create(conn: &Conn, name: &str, color: &str) -> Result<Project, RpcError> {
+pub(super) fn projects_create(conn: &Conn, p: ProjectsCreateParams) -> Result<Project, RpcError> {
+    let profile = membership::profile_or_only(&conn.hub, p.profile_id)?;
     let mut st = conn.hub.lock();
     let project = conn
         .hub
         .repo()
         .projects()
-        .insert(name, color)
+        .insert(&p.name, &p.color, profile.id)
         .map_err(store_error)?;
     conn.hub.emit_project(&mut st, &project);
     Ok(project)
@@ -105,11 +132,22 @@ fn edit_task(
     Ok(task)
 }
 
-pub(super) fn tasks_create(conn: &Conn, task: NewTask) -> Result<Task, RpcError> {
-    check_projects(conn, &task.project_ids)?;
+pub(super) fn tasks_create(conn: &Conn, p: TasksCreateParams) -> Result<Task, RpcError> {
+    let profile = new_task_profile(conn, p.profile_id, &p.project_ids)?;
+    check_projects(conn, &profile, &p.project_ids)?;
+    for session in &p.links {
+        membership::check_session_in(&conn.hub, &profile, *session)?;
+    }
     let task = NewTask {
-        order: task.order.map(finite).transpose()?,
-        ..task
+        title: p.title,
+        status: p.status.unwrap_or(TaskStatus::Backlog),
+        order: p.order.map(finite).transpose()?,
+        priority: p.priority.unwrap_or(Priority::P2),
+        project_ids: p.project_ids,
+        profile_id: profile.id,
+        notes: p.notes,
+        checklist: p.checklist,
+        links: p.links,
     };
     let mut st = conn.hub.lock();
     let task = conn.hub.repo().tasks().insert(task).map_err(store_error)?;
@@ -119,7 +157,8 @@ pub(super) fn tasks_create(conn: &Conn, task: NewTask) -> Result<Task, RpcError>
 
 pub(super) fn tasks_update(conn: &Conn, p: TasksUpdateParams) -> Result<Task, RpcError> {
     if let Some(projects) = &p.project_ids {
-        check_projects(conn, projects)?;
+        let profile = membership::task_profile(&conn.hub, &conn.hub.task(p.task_id)?)?;
+        check_projects(conn, &profile, projects)?;
     }
     edit_task(conn, p.task_id, |tasks| {
         tasks.update(
@@ -154,8 +193,11 @@ pub(super) fn tasks_delete(conn: &Conn, p: TaskRef) -> Result<Ack, RpcError> {
     Ok(Ack {})
 }
 
-/// Links can dangle: the session need not exist.
+/// Links can dangle: the session need not exist. A known session must be in the task's
+/// profile (C4).
 pub(super) fn tasks_link(conn: &Conn, task: TaskId, session: SessionId) -> Result<Task, RpcError> {
+    let profile = membership::task_profile(&conn.hub, &conn.hub.task(task)?)?;
+    membership::check_session_in(&conn.hub, &profile, session)?;
     edit_task(conn, task, |tasks| tasks.link(task, session))
 }
 

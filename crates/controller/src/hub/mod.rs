@@ -12,6 +12,7 @@ mod clients;
 mod feed;
 mod global;
 mod machines;
+mod profiles;
 mod timeline;
 
 use std::collections::{BTreeMap, HashMap};
@@ -686,7 +687,7 @@ impl Hub {
     pub(crate) fn snapshot(&self, st: &HubState) -> Result<StateSnapshot, RpcError> {
         let repo = self.repo();
         Ok(StateSnapshot {
-            profiles: Vec::new(),
+            profiles: repo.profiles().list().map_err(store_error)?,
             machines: st.machines.values().map(MachineEntry::view).collect(),
             sessions: st.global.feed(),
             overlaps: st.global.overlaps.clone(),

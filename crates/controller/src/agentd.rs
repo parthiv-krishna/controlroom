@@ -3,10 +3,11 @@
 //!
 //! After each `hello` (as this controller) it subscribes to every session's summary
 //! (`sessions.subscribe` from the last applied revision), takes over the pending host requests
-//! (`hostops.subscribe`), reports the machines (`hostops.machines`) and resumes every open
-//! UI session subscription. Response hooks apply each subscription's result
-//! before any of its notifications are routed. Disconnecting does nothing on the agent daemon's
-//! side: its sessions keep running, and host calls only pause.
+//! (`hostops.subscribe`), reports the machines (`hostops.machines`) and the profiles' policies
+//! (`profiles.report`; an agent daemon before profiles answers `unsupported`, which is only
+//! logged) and resumes every open UI session subscription. Response hooks apply each
+//! subscription's result before any of its notifications are routed. Disconnecting does nothing
+//! on the agent daemon's side: its sessions keep running, and host calls only pause.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
@@ -130,6 +131,7 @@ async fn subscribe(hub: &Arc<Hub>, client: &DaemonClient) -> Result<(), String> 
         .await
         .map_err(|e| format!("hostops.subscribe failed: {e}"))?;
     hub.report_machines(true);
+    hub.report_profiles();
     Ok(())
 }
 

@@ -1,24 +1,24 @@
 //! Sandbox defaults (spec §11.6): `sandbox.defaults`, `sandbox.set_defaults`, and the defaults
 //! the controller fills into session create, resume and start fresh.
 //!
-//! A session's defaults combine the defaults of its workspaces' machines and of every project
-//! it belongs to (through its linked tasks): the strictest level (`strict` when none is set),
-//! and the union of grants, domains and mediated commands. An explicit session level is the
+//! A session's defaults combine the defaults of its profile, its workspaces' machines and every
+//! project it belongs to (through its linked tasks): the strictest level (`strict` when none is
+//! set), and the union of grants, domains and mediated commands. An explicit session level is the
 //! daemon's to apply on top, in either direction.
 
 use std::sync::Arc;
 
 use controlroom_protocol::RpcError;
 use controlroom_protocol::error::Resource;
-use controlroom_protocol::ids::{MachineId, ProjectId, TaskId};
+use controlroom_protocol::ids::{MachineId, ProfileId, ProjectId, TaskId};
 use controlroom_protocol::session::DeviceRef;
 use controlroom_protocol::session::{MediationAction, SandboxLevel, SandboxSpec};
 use controlroom_protocol::ui::{
     DefaultsChange, DefaultsScope, SandboxDefaultsResult, SandboxSetDefaultsParams,
 };
 
-use super::{Conn, defaults_paths};
-use crate::errors::{invalid_params, not_found, store_error, unsupported};
+use super::{Conn, defaults_paths, membership};
+use crate::errors::{invalid_params, not_found, store_error};
 use crate::hub::Hub;
 
 /// `sandbox.defaults`.
@@ -41,10 +41,17 @@ pub(super) fn set(
     let repo = conn.hub.repo();
     match &p.scope {
         DefaultsScope::Machine { machine_id } => {
-            repo.machines()
+            let machine = repo
+                .machines()
                 .get(*machine_id)
                 .map_err(store_error)?
                 .ok_or_else(|| not_found(Resource::Machine, machine_id))?;
+            // A shared machine never runs at level off (C8).
+            if let DefaultsChange::SetLevel { level } = &p.change
+                && let Some(profile) = machine.profile_ids.first()
+            {
+                membership::check_level(&conn.hub, *profile, &[*machine_id], *level)?;
+            }
         }
         DefaultsScope::Project { project_id } => {
             repo.projects()
@@ -52,10 +59,8 @@ pub(super) fn set(
                 .map_err(store_error)?
                 .ok_or_else(|| not_found(Resource::Project, project_id))?;
         }
-        DefaultsScope::Profile { .. } => {
-            return Err(unsupported(
-                "profile sandbox defaults are not supported yet",
-            ));
+        DefaultsScope::Profile { profile_id } => {
+            conn.hub.profile(*profile_id)?;
         }
         DefaultsScope::Unknown => return Err(invalid_params("unknown sandbox defaults scope")),
     }
@@ -90,9 +95,11 @@ fn task_projects(hub: &Hub, tasks: &[TaskId]) -> Result<Vec<ProjectId>, RpcError
     Ok(out)
 }
 
-/// The sandbox defaults of a session with workspaces on `machines`, linked to `tasks`.
+/// The sandbox defaults of a session in `profile` with workspaces on `machines`, linked to
+/// `tasks`.
 pub(crate) fn defaults(
     hub: &Arc<Hub>,
+    profile: Option<ProfileId>,
     machines: &[MachineId],
     tasks: &[TaskId],
 ) -> Result<SandboxSpec, RpcError> {
@@ -101,8 +108,8 @@ pub(crate) fn defaults(
     let applies = |scope: &DefaultsScope| match scope {
         DefaultsScope::Machine { machine_id } => machines.contains(machine_id),
         DefaultsScope::Project { project_id } => projects.contains(project_id),
-        // Sessions have no profile yet.
-        DefaultsScope::Profile { .. } | DefaultsScope::Unknown => false,
+        DefaultsScope::Profile { profile_id } => profile == Some(*profile_id),
+        DefaultsScope::Unknown => false,
     };
     let mut spec = SandboxSpec {
         level: SandboxLevel::Strict,

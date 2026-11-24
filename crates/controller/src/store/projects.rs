@@ -1,8 +1,8 @@
-//! Projects: named, colored groups of tasks. A session belongs to the projects of the tasks
-//! that link it.
+//! Projects: named, colored groups of tasks in one profile. A session belongs to the projects
+//! of the tasks that link it.
 
 use controlroom_protocol::UnixMillis;
-use controlroom_protocol::ids::ProjectId;
+use controlroom_protocol::ids::{ProfileId, ProjectId};
 use controlroom_protocol::ui::Project;
 use rusqlite::OptionalExtension;
 
@@ -14,14 +14,14 @@ pub struct Projects<'a> {
     owner: &'a OwnerId,
 }
 
-const COLUMNS: &str = "id, name, color";
+const COLUMNS: &str = "id, name, color, profile_id";
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     Ok(Project {
         id: parsed_col(row, 0)?,
         name: row.get(1)?,
         color: row.get(2)?,
-        profile_id: None,
+        profile_id: Some(parsed_col(row, 3)?),
     })
 }
 
@@ -30,17 +30,18 @@ impl<'a> Projects<'a> {
         Self { store, owner }
     }
 
-    /// Creates a project.
-    pub fn insert(&self, name: &str, color: &str) -> StoreResult<Project> {
+    /// Creates a project in a profile (which must exist).
+    pub fn insert(&self, name: &str, color: &str, profile: ProfileId) -> StoreResult<Project> {
         let id = ProjectId::generate();
         self.store.lock().execute(
-            "INSERT INTO projects (id, owner_id, name, color, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO projects (id, owner_id, name, color, profile_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![
                 id.to_string(),
                 self.owner.as_str(),
                 name,
                 color,
+                profile.to_string(),
                 UnixMillis::now().0
             ],
         )?;
@@ -48,7 +49,7 @@ impl<'a> Projects<'a> {
             id,
             name: name.to_owned(),
             color: color.to_owned(),
-            profile_id: None,
+            profile_id: Some(profile),
         })
     }
 

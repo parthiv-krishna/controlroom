@@ -2,7 +2,8 @@
 
 use controlroom_client_core::daemon::CallError;
 use controlroom_protocol::error::Resource;
-use controlroom_protocol::ids::MachineId;
+use controlroom_protocol::ids::{MachineId, ProfileId};
+use controlroom_protocol::session::SessionState;
 use controlroom_protocol::ui::Connectivity;
 use controlroom_protocol::{ErrorData, RpcError};
 
@@ -18,9 +19,22 @@ pub(crate) fn invalid_params(message: impl Into<String>) -> RpcError {
     RpcError::new(ErrorData::InvalidParams, message)
 }
 
-/// A declared method or option this controller doesn't implement yet.
-pub(crate) fn unsupported(message: impl Into<String>) -> RpcError {
-    RpcError::new(ErrorData::Unsupported, message)
+/// A profile's policy refuses the command. `reason` names only that profile.
+pub(crate) fn policy_denied(profile_id: ProfileId, reason: impl Into<String>) -> RpcError {
+    let reason = reason.into();
+    RpcError::new(
+        ErrorData::PolicyDenied {
+            profile_id,
+            reason: reason.clone(),
+        },
+        reason,
+    )
+}
+
+/// The command doesn't apply in the current state (`state`: the session state behind it, or
+/// `unknown` when it isn't about a session).
+pub(crate) fn invalid_state(state: SessionState, message: impl Into<String>) -> RpcError {
+    RpcError::new(ErrorData::InvalidState { state }, message)
 }
 
 /// A referenced controller object doesn't exist.

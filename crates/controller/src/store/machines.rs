@@ -1,11 +1,11 @@
-//! Machine records: how to reach a daemon host, its pinned host key, and what the controller
-//! last learned about it. Every setter updates only its own columns.
+//! Machine records: how to reach a daemon host, its pinned host key, its profiles, and what the
+//! controller last learned about it. Every setter updates only its own columns.
 
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::host::DoctorReport;
-use controlroom_protocol::ids::{DaemonId, KeyId, MachineId};
+use controlroom_protocol::ids::{DaemonId, KeyId, MachineId, ProfileId};
 use controlroom_protocol::version::Capability;
-use rusqlite::OptionalExtension;
+use rusqlite::{Connection, OptionalExtension};
 
 use super::{
     OwnerId, Store, StoreResult, conflict, json_col, json_col_opt, parsed_col, parsed_col_opt,
@@ -25,6 +25,8 @@ pub struct MachineRow {
     pub port: u16,
     /// SSH user.
     pub username: String,
+    /// The profiles the entry belongs to (several when shared), in profile order.
+    pub profile_ids: Vec<ProfileId>,
     /// An additional key; `None` means the controlroom key.
     pub key_id: Option<KeyId>,
     /// For machines on the controlroom key: the controlroom key installed on the host.
@@ -64,6 +66,8 @@ pub struct NewMachineRow {
     pub port: u16,
     /// User.
     pub username: String,
+    /// Its profiles, at least one.
+    pub profile_ids: Vec<ProfileId>,
     /// An additional key, or `None` for the controlroom key.
     pub key_id: Option<KeyId>,
     /// The controlroom key it authenticated with (machines on the controlroom key).
@@ -104,6 +108,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<MachineRow> {
         host: row.get(2)?,
         port: row.get(3)?,
         username: row.get(4)?,
+        profile_ids: Vec::new(),
         key_id: parsed_col_opt(row, 5)?,
         auth_key_id: parsed_col_opt(row, 6)?,
         host_key: row.get(7)?,
@@ -120,17 +125,70 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<MachineRow> {
     })
 }
 
+/// Fills in each machine's profiles, in profile order.
+fn attach_profiles(
+    conn: &Connection,
+    owner: &OwnerId,
+    machines: &mut [MachineRow],
+) -> StoreResult<()> {
+    let mut stmt = conn.prepare(
+        "SELECT mp.machine_id, mp.profile_id FROM machine_profiles mp
+         JOIN profiles p ON p.owner_id = mp.owner_id AND p.id = mp.profile_id
+         WHERE mp.owner_id = ?1 ORDER BY p.position, p.created_at, p.rowid",
+    )?;
+    let rows = stmt.query_map([owner.as_str()], |r| {
+        Ok((
+            parsed_col::<MachineId>(r, 0)?,
+            parsed_col::<ProfileId>(r, 1)?,
+        ))
+    })?;
+    for row in rows {
+        let (machine, profile) = row?;
+        if let Some(m) = machines.iter_mut().find(|m| m.id == machine) {
+            m.profile_ids.push(profile);
+        }
+    }
+    Ok(())
+}
+
+/// Replaces a machine's profiles.
+pub(super) fn set_profiles(
+    conn: &Connection,
+    owner: &OwnerId,
+    id: MachineId,
+    profiles: &[ProfileId],
+) -> StoreResult<()> {
+    conn.execute(
+        "DELETE FROM machine_profiles WHERE owner_id = ?1 AND machine_id = ?2",
+        (owner.as_str(), id.to_string()),
+    )?;
+    let mut stmt = conn.prepare(
+        "INSERT OR IGNORE INTO machine_profiles (owner_id, machine_id, profile_id)
+         VALUES (?1, ?2, ?3)",
+    )?;
+    for profile in profiles {
+        stmt.execute((owner.as_str(), id.to_string(), profile.to_string()))?;
+    }
+    Ok(())
+}
+
 impl<'a> Machines<'a> {
     pub(super) fn new(store: &'a Store, owner: &'a OwnerId) -> Self {
         Self { store, owner }
     }
 
-    /// Adds a machine. A taken name or an already added `user@host:port` is a conflict.
+    /// Adds a machine to its profiles. A taken name or an already added `user@host:port` is a
+    /// conflict.
     pub fn insert(&self, machine: NewMachineRow) -> StoreResult<MachineRow> {
         let id = MachineId::generate();
-        self.store
-            .lock()
-            .execute(
+        let conflict_message = || {
+            format!(
+                "a machine named {:?} or for {}@{}:{} already exists",
+                machine.name, machine.username, machine.host, machine.port
+            )
+        };
+        self.store.transaction(|tx| {
+            tx.execute(
                 "INSERT INTO machines (id, owner_id, name, host, port, username, key_id,
                                        auth_key_id, host_key, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -147,57 +205,74 @@ impl<'a> Machines<'a> {
                     UnixMillis::now().0
                 ],
             )
-            .map_err(|e| {
-                conflict(e, || {
-                    format!(
-                        "a machine named {:?} or for {}@{}:{} already exists",
-                        machine.name, machine.username, machine.host, machine.port
-                    )
-                })
-            })?;
+            .map_err(|e| conflict(e, conflict_message))?;
+            set_profiles(tx, self.owner, id, &machine.profile_ids)
+        })?;
         self.get(id)?
             .ok_or_else(|| super::StoreError::Conflict("the machine vanished".into()))
+    }
+
+    /// The machines matching `filter` (an SQL condition on `?2`, `?3`, … after the owner).
+    fn select(
+        &self,
+        filter: &str,
+        params: &[&dyn rusqlite::ToSql],
+    ) -> StoreResult<Vec<MachineRow>> {
+        let conn = self.store.lock();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM machines WHERE owner_id = ?1 {filter} ORDER BY name, id"
+        ))?;
+        let owner = self.owner.as_str();
+        let all: Vec<&dyn rusqlite::ToSql> = std::iter::once(&owner as &dyn rusqlite::ToSql)
+            .chain(params.iter().copied())
+            .collect();
+        let mut rows = stmt
+            .query_map(all.as_slice(), map)?
+            .collect::<Result<Vec<_>, _>>()?;
+        attach_profiles(&conn, self.owner, &mut rows)?;
+        Ok(rows)
     }
 
     /// A machine by id.
     pub fn get(&self, id: MachineId) -> StoreResult<Option<MachineRow>> {
         Ok(self
-            .store
-            .lock()
-            .query_row(
-                &format!("SELECT {COLUMNS} FROM machines WHERE owner_id = ?1 AND id = ?2"),
-                (self.owner.as_str(), id.to_string()),
-                map,
-            )
-            .optional()?)
+            .select("AND id = ?2", &[&id.to_string()])?
+            .into_iter()
+            .next())
     }
 
     /// The machine for `user@host:port`, if added.
     pub fn find(&self, host: &str, port: u16, username: &str) -> StoreResult<Option<MachineRow>> {
         Ok(self
-            .store
-            .lock()
-            .query_row(
-                &format!(
-                    "SELECT {COLUMNS} FROM machines
-                     WHERE owner_id = ?1 AND host = ?2 AND port = ?3 AND username = ?4"
-                ),
-                rusqlite::params![self.owner.as_str(), host, port, username],
-                map,
-            )
-            .optional()?)
+            .select(
+                "AND host = ?2 AND port = ?3 AND username = ?4",
+                &[&host, &port, &username],
+            )?
+            .into_iter()
+            .next())
     }
 
     /// Every machine, by name.
     pub fn list(&self) -> StoreResult<Vec<MachineRow>> {
-        let conn = self.store.lock();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM machines WHERE owner_id = ?1 ORDER BY name, id"
-        ))?;
-        let rows = stmt
-            .query_map([self.owner.as_str()], map)?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
+        self.select("", &[])
+    }
+
+    /// Replaces a machine's profiles (at least one); returns whether it exists.
+    pub fn set_profiles(&self, id: MachineId, profiles: &[ProfileId]) -> StoreResult<bool> {
+        self.store.transaction(|tx| {
+            let exists = tx
+                .query_row(
+                    "SELECT 1 FROM machines WHERE owner_id = ?1 AND id = ?2",
+                    (self.owner.as_str(), id.to_string()),
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if exists {
+                set_profiles(tx, self.owner, id, profiles)?;
+            }
+            Ok(exists)
+        })
     }
 
     fn set(&self, id: MachineId, column: &str, value: &dyn rusqlite::ToSql) -> StoreResult<bool> {

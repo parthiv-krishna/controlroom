@@ -18,7 +18,9 @@ mod devices;
 mod grants;
 mod keys;
 mod machines;
+mod moves;
 mod prefs;
+mod profiles;
 mod projects;
 mod push;
 mod sandbox;
@@ -43,7 +45,9 @@ pub use devices::Devices;
 pub use grants::Grants;
 pub use keys::{KeyKind, KeyRow, Keys, NewKey};
 pub use machines::{MachineRow, Machines, NewMachineRow, SeenUpdate};
+pub use moves::{MoveWrite, Moves};
 pub use prefs::Prefs;
+pub use profiles::{NewProfile, ProfileChanges, ProfileContents, Profiles};
 pub use projects::Projects;
 pub use push::{Delivery, PushSubscriptionRow, PushSubscriptions};
 pub use sandbox::SandboxDefaultsStore;
@@ -226,9 +230,19 @@ impl OwnerRepo<'_> {
         Keys::new(self.store, &self.owner)
     }
 
+    /// Profiles.
+    pub fn profiles(&self) -> Profiles<'_> {
+        Profiles::new(self.store, &self.owner)
+    }
+
     /// Machine records.
     pub fn machines(&self) -> Machines<'_> {
         Machines::new(self.store, &self.owner)
+    }
+
+    /// Moving machines, projects and their tasks between profiles.
+    pub fn moves(&self) -> Moves<'_> {
+        Moves::new(self.store, &self.owner)
     }
 
     /// Projects.

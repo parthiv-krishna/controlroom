@@ -170,6 +170,8 @@ impl World {
             store,
             bundled,
         };
+        // Setup creates the first profile; with one, every id may be omitted.
+        world.ui.ensure_profile().await;
         world.devbox.id = add_machine(&mut world.ui, &world.devbox).await;
         world.buildbox.id = add_machine(&mut world.ui, &world.buildbox).await;
         world

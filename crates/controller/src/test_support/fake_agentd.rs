@@ -4,6 +4,11 @@
 //! host requests (`hostops.request`) and withdraw them. Like the real one, `session.create`
 //! refuses a machine its latest report doesn't show connected; the test can hold machine
 //! reports (they are taken when released).
+//!
+//! Profiles: it records every `profiles.report`, gives a created session its `profile_id`, and
+//! moves a session (`session.move`) by changing it and publishing the summary. The test can
+//! make any method fail instead ([`FakeAgentd::refuse`]), e.g. `unsupported` as an agent daemon
+//! before profiles answers.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -15,9 +20,9 @@ use controlroom_protocol::agentd::notifications::{
 use controlroom_protocol::agentd::{
     DaemonSettings, HelloResult, HostMachine, HostOpRequest, HostOpsNotifyParams,
     HostOpsRequestParams, HostOpsRespondParams, HostOpsSubscribeResult, HostOpsWithdrawParams,
-    PromptResult, RetentionPolicy, SessionCreateParams, SessionCreateResult, SessionEventsParams,
-    SessionsChange, SessionsEvent, SessionsEventsParams, SessionsSnapshot, SessionsSubscribeParams,
-    SessionsSubscribeResult,
+    ProfilesReportParams, PromptResult, RetentionPolicy, SessionCreateParams, SessionCreateResult,
+    SessionEventsParams, SessionMoveParams, SessionsChange, SessionsEvent, SessionsEventsParams,
+    SessionsSnapshot, SessionsSubscribeParams, SessionsSubscribeResult,
 };
 use controlroom_protocol::ids::{DaemonId, HostOpId, SessionId, SubscriptionId, WorkspaceId};
 use controlroom_protocol::session::{Availability, SessionState, SessionSummary, Workspace};
@@ -51,6 +56,8 @@ struct State {
     prompts: Vec<(String, Value, Value)>,
     /// Results of otherwise acknowledged methods, by method.
     results: HashMap<String, Value>,
+    /// Errors that methods answer instead, by method.
+    errors: HashMap<String, RpcError>,
     /// Refusing connections.
     down: bool,
 }
@@ -232,6 +239,34 @@ impl FakeAgentd {
         self.lock().results.insert(method.to_owned(), result);
     }
 
+    /// Answers every later call of `method` with `error` (until [`Self::accept`]).
+    pub fn refuse(&self, method: &str, error: RpcError) {
+        self.lock().errors.insert(method.to_owned(), error);
+    }
+
+    /// Handles `method` normally again.
+    pub fn accept(&self, method: &str) {
+        self.lock().errors.remove(method);
+    }
+
+    /// Every `profiles.report` received, in order.
+    pub fn profile_reports(&self) -> Vec<ProfilesReportParams> {
+        self.calls("profiles.report")
+            .into_iter()
+            .map(|p| serde_json::from_value(p).unwrap())
+            .collect()
+    }
+
+    /// Waits until the latest profile report satisfies `pred`; returns it.
+    pub async fn wait_profiles(
+        &self,
+        what: &str,
+        pred: impl Fn(&ProfilesReportParams) -> bool,
+    ) -> ProfilesReportParams {
+        wait_until(what, || self.profile_reports().last().is_some_and(&pred)).await;
+        self.profile_reports().pop().unwrap()
+    }
+
     /// Every prompt delivered (once per op id), in order.
     pub fn prompts(&self) -> Vec<Value> {
         self.lock()
@@ -372,6 +407,9 @@ fn handle(
 ) -> Result<Value, RpcError> {
     let mut st = state.lock().unwrap();
     st.calls.push((method.to_owned(), params.clone()));
+    if let Some(error) = st.errors.get(method) {
+        return Err(error.clone());
+    }
     match method {
         "hello" => {
             st.hellos += 1;
@@ -447,7 +485,8 @@ fn handle(
                     ));
                 }
             }
-            let session = session_summary(SessionId::generate(), &p.workspaces);
+            let mut session = session_summary(SessionId::generate(), &p.workspaces);
+            session.profile_id = p.profile_id;
             let result = SessionCreateResult {
                 session: session.clone(),
                 prompt: p.prompt.as_ref().map(|_| PromptResult::Queued {
@@ -476,6 +515,24 @@ fn handle(
             }))
         }
         "session.prompt" => prompt(&mut st, params),
+        "session.move" => {
+            let p: SessionMoveParams = serde_json::from_value(params).unwrap();
+            let Some(session) = st.sessions.iter_mut().find(|s| s.id == p.id) else {
+                return Err(RpcError::new(
+                    ErrorData::UnknownSession { id: p.id },
+                    "no such session",
+                ));
+            };
+            session.profile_id = Some(p.profile_id);
+            let session = session.clone();
+            publish(
+                &mut st,
+                SessionsEvent::SessionUpserted {
+                    session: Box::new(session),
+                },
+            );
+            Ok(json!({}))
+        }
         "doctor.report" | "agents.list" => Err(RpcError::new(ErrorData::Unsupported, "fake")),
         _ => Ok(st.results.get(method).cloned().unwrap_or_else(|| json!({}))),
     }

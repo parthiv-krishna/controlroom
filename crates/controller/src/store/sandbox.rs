@@ -1,7 +1,7 @@
-//! Sandbox defaults per machine and project (spec §11.6). Each edit is applied inside one
+//! Sandbox defaults per profile, machine and project (spec §11.6). Each edit is applied inside one
 //! transaction, so concurrent edits of the same scope never lose each other.
 
-use controlroom_protocol::ids::{GrantId, MachineId, ProjectId, UnixMillis};
+use controlroom_protocol::ids::{GrantId, MachineId, ProfileId, ProjectId, UnixMillis};
 use controlroom_protocol::session::{
     DeviceRef, GrantScope, PathAccess, SandboxGrant, SandboxLevel,
 };
@@ -20,7 +20,8 @@ fn scope_key(scope: &DefaultsScope) -> StoreResult<(&'static str, String)> {
     match scope {
         DefaultsScope::Machine { machine_id } => Ok(("machine", machine_id.to_string())),
         DefaultsScope::Project { project_id } => Ok(("project", project_id.to_string())),
-        DefaultsScope::Profile { .. } | DefaultsScope::Unknown => Err(StoreError::InvalidValue {
+        DefaultsScope::Profile { profile_id } => Ok(("profile", profile_id.to_string())),
+        DefaultsScope::Unknown => Err(StoreError::InvalidValue {
             column: "sandbox_defaults.scope",
             value: format!("{scope:?}"),
         }),
@@ -50,9 +51,18 @@ fn from_raw((kind, id, level, mut defaults): RawDefaults) -> StoreResult<Sandbox
         "machine" => DefaultsScope::Machine {
             machine_id: parse::<MachineId>("sandbox_defaults.scope_id", &id)?,
         },
-        _ => DefaultsScope::Project {
+        "project" => DefaultsScope::Project {
             project_id: parse::<ProjectId>("sandbox_defaults.scope_id", &id)?,
         },
+        "profile" => DefaultsScope::Profile {
+            profile_id: parse::<ProfileId>("sandbox_defaults.scope_id", &id)?,
+        },
+        _ => {
+            return Err(StoreError::InvalidValue {
+                column: "sandbox_defaults.scope_kind",
+                value: kind,
+            });
+        }
     };
     defaults.level = level
         .map(|l| serde_json::from_value::<SandboxLevel>(serde_json::Value::String(l)))

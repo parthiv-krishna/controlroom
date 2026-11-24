@@ -8,6 +8,11 @@
 //! machine with its host key pinned. Bootstrap (install or upgrade with verify-run and
 //! rollback, start, doctor) continues in the machine's task; its progress and the doctor
 //! report arrive through the state feed.
+//!
+//! **Profiles:** a new entry goes to its `profile_ids` (the only profile when omitted; none:
+//! "create a profile first"). `set_settings {profile_ids}` shares an entry or stops sharing it
+//! (it keeps at least one of its profiles; moving it is `profiles.move`). A private profile's
+//! entries are never shared, and a shared entry never runs at level off (C7, C8).
 
 use std::sync::Arc;
 
@@ -15,14 +20,14 @@ use controlroom_client_core::bootstrap::{self, BootstrapError};
 use controlroom_client_core::keys::install_command;
 use controlroom_client_core::ssh::{self, HostKey, SshError, SshTarget};
 use controlroom_protocol::error::Resource;
-use controlroom_protocol::ids::KeyId;
+use controlroom_protocol::ids::{KeyId, MachineId, ProfileId};
 use controlroom_protocol::ui::{
     Machine, MachineRef, MachinesAddConfirmParams, MachinesAddConfirmResult, MachinesAddResult,
     MachinesConfirmHostKeyParams, MachinesSetSettingsParams, NewMachine,
 };
 use controlroom_protocol::{Ack, ErrorData, RpcError};
 
-use super::Conn;
+use super::{Conn, membership};
 use crate::errors::{internal, invalid_params, not_found, store_error};
 use crate::hub::host_key_info;
 use crate::keys;
@@ -149,6 +154,7 @@ async fn confirmed_host_key(
 
 pub(super) async fn add(conn: &Conn, m: NewMachine) -> Result<MachinesAddResult, RpcError> {
     let t = target(&m)?;
+    membership::machine_profiles(&conn.hub, &m.profile_ids)?;
     check_new(conn, &t)?;
     let host_key = ssh::fetch_host_key(&t, &conn.hub.services.tuning.ssh)
         .await
@@ -164,6 +170,7 @@ pub(super) async fn add_confirm(
 ) -> Result<MachinesAddConfirmResult, RpcError> {
     let hub = &conn.hub;
     let t = target(&p.machine)?;
+    let profile_ids = membership::machine_profiles(hub, &p.machine.profile_ids)?;
     check_new(conn, &t)?;
     let name = match p.machine.name.as_deref().map(str::trim) {
         Some(name) if !name.is_empty() => machine_name(name)?,
@@ -207,6 +214,7 @@ pub(super) async fn add_confirm(
             host: t.host.clone(),
             port: t.port,
             username: t.username.clone(),
+            profile_ids,
             key_id: p.machine.key_id,
             auth_key_id: p.machine.key_id.is_none().then_some(key_id),
             host_key: host_key.to_openssh(),
@@ -298,8 +306,16 @@ pub(super) fn set_settings(conn: &Conn, p: MachinesSetSettingsParams) -> Result<
             "the grace period is at most {MAX_GRACE_S} seconds"
         )));
     }
+    let profiles = p
+        .profile_ids
+        .as_deref()
+        .map(|ids| sharing(conn, &before.profile_ids, id, ids))
+        .transpose()?;
     if let Some(name) = &name {
         machines.set_name(id, name).map_err(store_error)?;
+    }
+    if let Some(profiles) = &profiles {
+        machines.set_profiles(id, profiles).map_err(store_error)?;
     }
     if let Some(on) = p.auto_upgrade {
         machines.set_auto_upgrade(id, on).map_err(store_error)?;
@@ -320,6 +336,30 @@ pub(super) fn set_settings(conn: &Conn, p: MachinesSetSettingsParams) -> Result<
         hub.command(id, MachineCommand::Reconnect)?;
     }
     hub.machine_view(id)
+}
+
+/// A machine entry's new profiles from `machines.set_settings`: at least one, keeping one of
+/// its current profiles (a move is `profiles.move`), never a private one with others (C7), and
+/// shared only while it doesn't run at level off (C8).
+fn sharing(
+    conn: &Conn,
+    current: &[ProfileId],
+    machine: MachineId,
+    ids: &[ProfileId],
+) -> Result<Vec<ProfileId>, RpcError> {
+    if ids.is_empty() {
+        return Err(invalid_params("a machine is in at least one profile"));
+    }
+    let profiles = membership::machine_profiles(&conn.hub, ids)?;
+    let Some(kept) = profiles.iter().find(|p| current.contains(p)) else {
+        return Err(invalid_params(
+            "keep one of the machine's profiles; moving it is profiles.move",
+        ));
+    };
+    if profiles.len() > 1 {
+        membership::check_shareable(&conn.hub, *kept, machine)?;
+    }
+    Ok(profiles)
 }
 
 #[cfg(test)]

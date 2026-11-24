@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use controlroom_protocol::UnixMillis;
-use controlroom_protocol::ids::{ChecklistItemId, ProjectId, SessionId, TaskId};
+use controlroom_protocol::ids::{ChecklistItemId, ProfileId, ProjectId, SessionId, TaskId};
 use controlroom_protocol::ui::{ChecklistItem, Priority, Task, TaskStatus};
 use rusqlite::{Connection, OptionalExtension};
 
@@ -24,8 +24,10 @@ pub struct NewTask {
     pub order: Option<f64>,
     /// Priority.
     pub priority: Priority,
-    /// Assigned projects, in order.
+    /// Assigned projects, in order (all in `profile_id`).
     pub project_ids: Vec<ProjectId>,
+    /// Its profile.
+    pub profile_id: ProfileId,
     /// Notes.
     pub notes: String,
     /// Checklist texts.
@@ -40,7 +42,8 @@ pub struct Tasks<'a> {
     owner: &'a OwnerId,
 }
 
-const COLUMNS: &str = "id, title, status, position, priority, notes, created_at, updated_at";
+const COLUMNS: &str =
+    "id, title, status, position, priority, notes, created_at, updated_at, profile_id";
 
 fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     Ok(Task {
@@ -50,7 +53,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         order: row.get(3)?,
         priority: enum_col(row, 4)?,
         project_ids: Vec::new(),
-        profile_id: None,
+        profile_id: Some(parsed_col(row, 8)?),
         notes: row.get(5)?,
         checklist: Vec::new(),
         links: Vec::new(),
@@ -205,8 +208,8 @@ impl<'a> Tasks<'a> {
             };
             tx.execute(
                 "INSERT INTO tasks (id, owner_id, title, status, position, priority, notes,
-                                    created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                                    profile_id, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
                 rusqlite::params![
                     id.to_string(),
                     self.owner.as_str(),
@@ -215,6 +218,7 @@ impl<'a> Tasks<'a> {
                     order,
                     enum_str(&task.priority)?,
                     task.notes,
+                    task.profile_id.to_string(),
                     now
                 ],
             )?;

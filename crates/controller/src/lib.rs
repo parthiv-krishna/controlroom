@@ -65,6 +65,11 @@ mod agentd;
 mod attention;
 mod auth;
 mod config;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the mailbox (R3) delivers it to the agent daemon")
+)]
+mod contacts;
 mod controller;
 mod errors;
 mod hub;

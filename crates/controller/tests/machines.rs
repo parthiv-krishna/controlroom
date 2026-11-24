@@ -23,7 +23,12 @@ async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_instal
     let host = RemoteHost::start().await;
     let mut ui = ui(&setup.controller, "laptop").await;
 
+    // A fresh install has no profile: adding a machine needs one first.
     let new = host.new_machine("devbox");
+    let refused = ui.err("machines.add", new.clone(), "invalid_params").await;
+    assert_eq!(refused["message"], "create a profile first");
+    let profile = ui.create_profile("Side project").await;
+
     let added = ui.ok("machines.add", new.clone()).await;
     let fingerprint = added["host_key"]["fingerprint"].clone();
     assert_eq!(added["host_key"]["algorithm"], "ssh-ed25519");
@@ -58,6 +63,7 @@ async fn add_machine_confirms_the_host_key_recovers_from_auth_failure_and_instal
         Some(format!("versions/{DAEMON_VERSION}").as_str())
     );
     let machine = ui.mirror.machine(&id);
+    assert_eq!(machine["profile_ids"], json!([profile]), "the only profile");
     assert_eq!(machine["update_available"], false);
     assert_eq!(machine["arch"], std::env::consts::ARCH);
     assert!(machine["daemon_id"].is_string());
@@ -162,6 +168,16 @@ async fn an_unreachable_machine_does_not_block_others() {
     let store = controlroom_controller::store::Store::open(&store_path).unwrap();
     let owner = controlroom_controller::OwnerId::local();
     store.ensure_owner(&owner).unwrap();
+    let profile = store
+        .owner(&owner)
+        .profiles()
+        .insert(controlroom_controller::store::NewProfile {
+            name: "Garden club".into(),
+            color: "#16a34a".into(),
+            private: false,
+            models: controlroom_protocol::agentd::ModelPolicy::Any,
+        })
+        .unwrap();
     let stuck = store
         .owner(&owner)
         .machines()
@@ -170,6 +186,7 @@ async fn an_unreachable_machine_does_not_block_others() {
             host: "127.0.0.1".into(),
             port: silent_port,
             username: "alice".into(),
+            profile_ids: vec![profile.id],
             key_id: None,
             auth_key_id: None,
             host_key:
