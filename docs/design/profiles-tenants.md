@@ -1,8 +1,9 @@
 # Design: profiles as tenants
 
-Status: **accepted; P0 (contracts) done.** The protocol types and methods are in `crates/protocol` and
-`docs/protocol.md` (§"Profiles"), declared alongside today's behavior: the controller and the agent daemon answer
-the new methods with `unsupported`, and the new fields are empty or `null`, until the P1 lanes implement them (§12).
+Status: **accepted; P0 (contracts) and P1a (controller) done.** The protocol types and methods are in
+`crates/protocol` and `docs/protocol.md` (§"Profiles"). The controller implements its side (store, `profiles.*`,
+C1–C13, reports to the agent daemon, push redaction); the agent daemon answers `profiles.report` and `session.move`
+with `unsupported` until P1b (§12).
 The sandbox defaults rename (decision 9) is done: `sandbox.defaults`, `sandbox.set_defaults`, `SandboxDefaults`,
 `DefaultsScope`, `DefaultsChange`, store table `sandbox_defaults`.
 
