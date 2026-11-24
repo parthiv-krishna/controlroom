@@ -41,8 +41,8 @@
     const profile: Row[] = pf ? [{ key: `f:${pf.id}`, name: pf.name, label: `profile ${pf.name}`, shared: false, color: pf.color, scope: { kind: 'profile', profile_id: pf.id }, defaults: byKey.get(`f:${pf.id}`) ?? null }] : [];
     const machines: Row[] = scoped.machineList.map((m) => ({ key: `m:${m.id}`, name: m.name, label: m.name, shared: m.profile_ids.length > 1, color: null, scope: { kind: 'machine', machine_id: m.id }, defaults: byKey.get(`m:${m.id}`) ?? null }));
     const projects: Row[] = scoped.projects.map((p) => ({ key: `p:${p.id}`, name: p.name, label: p.name, shared: false, color: p.color, scope: { kind: 'project', project_id: p.id }, defaults: byKey.get(`p:${p.id}`) ?? null }));
-    const groups: [string, Row[]][] = [['Machines', machines], ['Projects', projects]];
-    return pf ? [['Profile', profile] as [string, Row[]], ...groups] : groups;
+    const groups: [string, Row[]][] = [['Profile', profile], ['Machines', machines], ['Projects', projects]];
+    return groups.filter(([, rows]) => rows.length);
   });
   /** A machine's unset level falls back to its profile's ("Garden club default (strict)"). */
   const unset = (row: Row): string => {

@@ -45,13 +45,23 @@ export const autofocus: Action<HTMLElement> = (node) => {
   });
 };
 
+/** The right edge a popup must stay left of: the window's, or a clipping ancestor's (a dialog). */
+function visibleRight(node: HTMLElement): number {
+  let right = window.innerWidth;
+  for (let el = node.parentElement; el; el = el.parentElement) {
+    if (getComputedStyle(el).overflowX !== 'visible') right = Math.min(right, el.getBoundingClientRect().right);
+  }
+  return right;
+}
+
 /**
  * For a popup positioned under its anchor (`left: 0`): shifts it left, once mounted, as far as it
- * overflows the window's right edge (a badge near the right of a phone screen), never past the left.
+ * overflows the window's right edge (a badge near the right of a phone screen) or a clipping
+ * ancestor's (a ⋯ at the right of a dialog), never past the left.
  */
 export const fitInView: Action<HTMLElement> = (node) => {
   const margin = 8;
   const rect = node.getBoundingClientRect();
-  const over = rect.right - (window.innerWidth - margin);
+  const over = rect.right - (visibleRight(node) - margin);
   if (over > 0) node.style.left = `${-Math.min(over, Math.max(0, rect.left - margin))}px`;
 };
