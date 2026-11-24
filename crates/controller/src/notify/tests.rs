@@ -26,9 +26,9 @@ use crate::store::{OwnerId, PushSubscriptionRow, Store};
 /// One recorded push: the device, the payload's `state`, and whether it was urgent.
 type Sent = (String, String, bool);
 
-/// Records every push.
+/// Records every push, and its whole payload.
 #[derive(Default)]
-struct Recorder(Mutex<Vec<Sent>>);
+struct Recorder(Mutex<Vec<Sent>>, Mutex<Vec<serde_json::Value>>);
 
 impl PushSender for Recorder {
     fn send<'a>(
@@ -43,6 +43,7 @@ impl PushSender for Recorder {
             .lock()
             .unwrap()
             .push((sub.device_id.to_string(), state, urgent));
+        self.1.lock().unwrap().push(payload);
         Box::pin(async { PushOutcome::Delivered })
     }
 }
@@ -50,6 +51,10 @@ impl PushSender for Recorder {
 impl Recorder {
     fn sent(&self) -> Vec<Sent> {
         self.0.lock().unwrap().clone()
+    }
+
+    fn payloads(&self) -> Vec<serde_json::Value> {
+        self.1.lock().unwrap().clone()
     }
 
     fn devices(&self) -> Vec<String> {
@@ -378,4 +383,73 @@ fn prefs_unchanged() -> NotificationsSetPreferencesParams {
         delay_s: None,
         idle_s: None,
     }
+}
+
+/// C11: a private profile's push carries its profile's name and the attention kind, never the
+/// session's name or machine; other profiles' pushes show the session.
+#[tokio::test(start_paused = true)]
+async fn a_private_profiles_push_carries_no_session_name_or_machine() {
+    use controlroom_protocol::agentd::ModelPolicy;
+
+    use crate::store::NewProfile;
+
+    let mut s = Setup::new();
+    s.set_prefs(NotificationsSetPreferencesParams {
+        delay_s: Some(0),
+        ..prefs_unchanged()
+    });
+    let new = |name: &str, private| NewProfile {
+        name: name.into(),
+        color: "#000".into(),
+        private,
+        models: if private {
+            ModelPolicy::Only { accounts: vec![] }
+        } else {
+            ModelPolicy::Any
+        },
+    };
+    let repo = s.hub.repo();
+    let books = repo.profiles().insert(new("Book club", true)).unwrap();
+    let garden = repo.profiles().insert(new("Garden club", false)).unwrap();
+    let session = |id: &str, name: &str, profile| {
+        let mut idle = summary();
+        idle.id = id.parse().unwrap();
+        idle.name = Some(name.into());
+        idle.profile_id = Some(profile);
+        let mut waiting = idle.clone();
+        waiting.requests = vec![request("r1", true)];
+        (idle, waiting)
+    };
+    let (idle, waiting) = session("01HZY3K6W8Q9X2V4N7B5C1D3E7", "Plot twist", books.id);
+    s.upsert(&idle);
+    s.upsert(&waiting);
+    let (idle, waiting) = session("01HZY3K6W8Q9X2V4N7B5C1D3E8", "Tomatoes", garden.id);
+    s.upsert(&idle);
+    s.upsert(&waiting);
+    settle().await;
+
+    let payloads = s.push.payloads();
+    assert_eq!(payloads.len(), 4, "two sessions, two devices");
+    let private: Vec<_> = payloads
+        .iter()
+        .filter(|p| p["profile_id"] == serde_json::json!(books.id))
+        .collect();
+    assert_eq!(private.len(), 2);
+    for payload in private {
+        assert_eq!(
+            *payload,
+            serde_json::json!({
+                "session_id": "01HZY3K6W8Q9X2V4N7B5C1D3E7", "profile_id": books.id,
+                "state": "approval", "url": "#/s/01HZY3K6W8Q9X2V4N7B5C1D3E7",
+                "kind": "private", "profile": "Book club",
+            })
+        );
+        assert!(!payload.to_string().contains("Plot twist"));
+    }
+    let public = payloads
+        .iter()
+        .find(|p| p["profile_id"] == serde_json::json!(garden.id))
+        .unwrap();
+    assert_eq!(public["kind"], "session");
+    assert_eq!(public["name"], "Tomatoes");
 }

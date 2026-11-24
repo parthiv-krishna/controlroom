@@ -158,7 +158,8 @@ async fn sessions_are_created_and_driven_through_the_agent_daemon() {
     .await;
     let task = next.ok("tasks.create", json!({"title": "ship"})).await;
 
-    // The controller fills the sandbox defaults and the prompt's origin, then links the task.
+    // The controller fills the profile (the only one), the sandbox defaults and the prompt's
+    // origin, then links the task.
     let create_op = op();
     let params = json!({
         "op_id": create_op,
@@ -170,6 +171,10 @@ async fn sessions_are_created_and_driven_through_the_agent_daemon() {
     let created = next.ok("session.create", params.clone()).await;
     let session = created["session"]["id"].as_str().unwrap().to_owned();
     let sent = &agentd.calls("session.create")[0];
+    let profile = next.mirror.machine(&devbox)["profile_ids"][0].clone();
+    assert!(profile.is_string());
+    assert_eq!(sent["profile_id"], profile);
+    assert_eq!(created["session"]["profile_id"], profile);
     assert_eq!(sent["sandbox"]["level"], "relaxed");
     assert_eq!(sent["prompt"]["origin"]["device"]["device_id"], "laptop");
     assert!(sent.get("task_ids").is_none());
