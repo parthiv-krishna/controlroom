@@ -40,6 +40,18 @@ use controlroom_protocol::timeline::{InjectOrigin, TimelineOp, TokenUsage};
 use controlroom_protocol::{Seq, UnixMillis};
 use controlroom_transcript::Record;
 
+/// The [`AgentView::options`] entry holding the agent's model. Its values are
+/// `<provider>/<model id>`, the provider being the model's account (pi's provider id).
+pub const MODEL_OPTION: &str = "model";
+
+/// The provider (account) of a [`MODEL_OPTION`] value: what precedes its first `/`, or the
+/// whole value.
+pub fn model_provider(value: &str) -> &str {
+    value
+        .split_once('/')
+        .map_or(value, |(provider, _)| provider)
+}
+
 /// Identifies what a written line belongs to. Embedded in the line (for pi: the RPC `id`) and
 /// echoed in the agent's response, so both sides are visible in the transcript.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

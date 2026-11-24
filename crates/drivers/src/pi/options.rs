@@ -8,7 +8,7 @@ use super::wire::Model;
 use crate::EncodeError;
 
 /// The model option id; values are `<provider>/<model id>`.
-pub(crate) const MODEL: &str = "model";
+pub(crate) const MODEL: &str = crate::MODEL_OPTION;
 /// The thinking level option id; values are pi's level names.
 pub(crate) const THINKING: &str = "thinking";
 
