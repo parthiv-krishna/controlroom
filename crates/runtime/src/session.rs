@@ -13,8 +13,8 @@ use controlroom_protocol::agent::{AgentState, SessionInfo};
 use controlroom_protocol::host::{ToolOutputParams, ToolWaitingInputParams};
 use controlroom_protocol::ids::{HostOpId, ItemId, OpId, RequestId, Seq, UnixMillis};
 use controlroom_protocol::session::{
-    AgentSession, Attention, AutoContinueStatus, ContextUsage, LiveWork, Request, RequestKind,
-    RequestState, SessionDetail, SessionState,
+    AgentSession, Attention, AutoContinueStatus, ContextUsage, LiveWork, OpenNotice, Request,
+    RequestKind, RequestState, SessionDetail, SessionState,
 };
 use controlroom_protocol::session::{SessionSummary, SessionUsage};
 use controlroom_protocol::timeline::{MessageOrigin, RawFrame, RawStream, RunTrigger, TimelineOp};
@@ -356,10 +356,21 @@ impl Session {
             || self.auto_continue_paused()
         {
             Some(Attention::Problem)
+        } else if !self.open_notices().is_empty() {
+            Some(Attention::Notice)
         } else if self.unread() {
             Some(Attention::Unread)
         } else {
             None
+        }
+    }
+
+    /// The open agent notices the summary lists, oldest first: none while closed.
+    pub(crate) fn open_notices(&self) -> &[OpenNotice] {
+        if self.data.closed() {
+            &[]
+        } else {
+            &self.data.notices
         }
     }
 
@@ -419,7 +430,8 @@ impl Session {
         self.data.last_turn_end_seq > self.data.read_seq
     }
 
-    /// The preview: pending request, else error, else running tool, else last agent text.
+    /// The preview: pending request, else error, else the newest open notice, else running
+    /// tool, else last agent text.
     pub(crate) fn preview(&self, state: SessionState) -> String {
         if let Some(request) = self.pending_requests().first() {
             return one_line(&request.title);
@@ -434,6 +446,9 @@ impl Session {
             if let Some(error) = error {
                 return one_line(&error);
             }
+        }
+        if let Some(notice) = self.open_notices().last() {
+            return one_line(&notice.text);
         }
         if self.derived.process.live
             && let Some(tool) = self.derived.preview.running_tool()

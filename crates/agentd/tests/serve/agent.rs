@@ -209,6 +209,70 @@ fn the_agent_socket_takes_only_its_session_token_and_survives_a_restart() {
     wait_until("the agent socket to go", || !socket.exists());
 }
 
+/// `notify_user` end to end: an info notice is only in the timeline; a warning is pinned (the
+/// summary's `notices`, attention `notice`) across a daemon restart until the user dismisses
+/// it, recorded with the device, without waking the agent.
+#[test]
+fn a_warning_notice_stays_pinned_until_dismissed() {
+    let scenario = json!({"replies": [
+        agent_tool("call_info", "notify_user", "notify",
+            json!({"text": "Checked 3 units", "level": "info"})),
+        agent_tool("call_warn", "notify_user", "notify",
+            json!({"text": "devbox has a failed unit", "level": "warning"})),
+        say("Told the user."),
+    ]});
+    let mut env = Env::with(scenario);
+    let client = env.client();
+    client.watch_sessions();
+    let id = client.create(&env.workspaces());
+    client.wait_idle(&id);
+    client.prompt(&id, "check the units");
+    let s = client.wait_session(&id, "the open notice", |s| {
+        s["state"] == "idle" && s["notices"].as_array().is_some_and(|n| n.len() == 1)
+    });
+    assert_eq!(s["attention"], "notice");
+    let notice = s["notices"][0].clone();
+    assert_eq!(notice["level"], "warning");
+    assert_eq!(notice["text"], "devbox has a failed unit");
+    let notices = |client: &Client| {
+        let (result, ops) = client.session_ops(&id, 0);
+        client.call(
+            "unsubscribe",
+            json!({"subscription_id": result["subscription_id"]}),
+        );
+        ops.into_iter()
+            .filter(|op| op["item"]["kind"] == "notice")
+            .map(|op| op["item"].clone())
+            .collect::<Vec<_>>()
+    };
+    let items = notices(&client);
+    assert_eq!(items.len(), 2);
+    assert!(items[0].get("pinned").is_none(), "info isn't pinned");
+    assert_eq!(items[1]["pinned"], true);
+
+    env.kill_daemon();
+    env.start();
+    let client = env.client();
+    client.watch_sessions();
+    let s = client.wait_session(&id, "the notice after a restart", |s| {
+        s["notices"].as_array().is_some_and(|n| n.len() == 1)
+    });
+    assert_eq!(s["attention"], "notice");
+    let prompts = env.prompts_sent(&id).len();
+    client.call(
+        "notice.dismiss",
+        json!({"op_id": op(), "id": id, "item_id": notice["item_id"],
+               "by": {"device_id": "phone-1", "label": "Phone"}}),
+    );
+    let s = client.wait_session(&id, "no open notice", |s| {
+        s["notices"].as_array().is_some_and(Vec::is_empty)
+    });
+    assert_ne!(s["attention"], "notice");
+    let items = notices(&client);
+    assert_eq!(items[1]["dismissed"]["by"]["label"], "Phone");
+    assert_eq!(env.prompts_sent(&id).len(), prompts, "the agent isn't told");
+}
+
 /// A job's exit reported mid-run is steered into the user's run: its message item names the
 /// job wake and its job, not the user.
 #[test]

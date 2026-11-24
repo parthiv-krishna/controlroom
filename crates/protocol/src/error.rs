@@ -122,6 +122,8 @@ pub enum Resource {
     SignIn,
     /// A profile (UI API).
     Profile,
+    /// An agent's pinned notice (`notice.dismiss`).
+    Notice,
     /// A resource kind this build doesn't know.
     #[serde(other)]
     Unknown,

@@ -8,10 +8,11 @@
 //! summary still shows the occurrence, so a delayed push is dropped once it was dealt with.
 
 use controlroom_protocol::Seq;
-use controlroom_protocol::ids::RequestId;
+use controlroom_protocol::ids::{ItemId, RequestId};
 use controlroom_protocol::session::{
-    Attention, Request, RequestState, RunOutcome, SessionState, SessionSummary,
+    Attention, OpenNotice, Request, RequestState, RunOutcome, SessionState, SessionSummary,
 };
+use controlroom_protocol::timeline::NoticeLevel;
 use controlroom_protocol::ui::PushState;
 
 /// What a notification is about.
@@ -25,6 +26,8 @@ pub(crate) enum AttentionKind {
     Problem,
     /// A run finished and its output is unread.
     TurnEnd,
+    /// The agent's warning or error notice is open.
+    Notice(NoticeLevel),
 }
 
 impl AttentionKind {
@@ -35,6 +38,7 @@ impl AttentionKind {
             AttentionKind::Question => PushState::Question,
             AttentionKind::Problem => PushState::Problem,
             AttentionKind::TurnEnd => PushState::Finished,
+            AttentionKind::Notice(_) => PushState::Notice,
         }
     }
 }
@@ -46,6 +50,8 @@ pub(crate) enum Occurrence {
     Request(RequestId),
     /// The turn that ended at this seq (problems and finished runs).
     TurnEnd(Seq),
+    /// An agent notice, by its timeline item.
+    Notice(ItemId),
 }
 
 /// One notification-worthy occurrence in a session.
@@ -64,12 +70,13 @@ impl AttentionEvent {
             (Occurrence::Request(id), _) => format!("question:{id}"),
             (Occurrence::TurnEnd(seq), AttentionKind::Problem) => format!("problem@{}", seq.0),
             (Occurrence::TurnEnd(seq), _) => format!("turn_end@{}", seq.0),
+            (Occurrence::Notice(id), _) => format!("notice:{id}"),
         }
     }
 
     /// Whether `current` (a later summary of the same session) still shows the occurrence: the
-    /// request is still pending, the problem still stands after the same turn, or the finished
-    /// run is still unread and no other turn ended since.
+    /// request is still pending, the problem still stands after the same turn, the finished run
+    /// is still unread and no other turn ended since, or the notice is still open.
     pub(crate) fn still_pending(&self, current: &SessionSummary) -> bool {
         match &self.occurrence {
             Occurrence::Request(id) => current
@@ -83,6 +90,7 @@ impl AttentionEvent {
                         _ => current.unread,
                     }
             }
+            Occurrence::Notice(id) => own_notices(current).any(|n| n.item_id == *id),
         }
     }
 }
@@ -93,6 +101,11 @@ fn pending(session: &SessionSummary, blocking: bool) -> impl Iterator<Item = &Re
     session.requests.iter().filter(move |r| {
         r.state == RequestState::Pending && r.blocking == blocking && r.origin_child.is_none()
     })
+}
+
+/// The session's own open notices (descendants' roll up from their own summaries).
+fn own_notices(session: &SessionSummary) -> impl Iterator<Item = &OpenNotice> {
+    session.notices.iter().filter(|n| n.origin_child.is_none())
 }
 
 /// The newest request of `current` in a tier that `previous` didn't have pending.
@@ -108,9 +121,11 @@ fn new_request<'a>(
 
 /// The occurrences that are new in `current` compared with `previous`.
 ///
+/// Every new open notice fires (its level decides whether it pushes).
+///
 /// With no previous summary (first observation, e.g. after a controller restart), only pending
-/// requests fire: they may have arrived while nobody watched, while old failures and finished
-/// runs must not alert again. Repeats are absorbed by delivery dedup.
+/// requests and open notices fire: they may have arrived while nobody watched, while old
+/// failures and finished runs must not alert again. Repeats are absorbed by delivery dedup.
 pub(crate) fn detect(
     previous: Option<&SessionSummary>,
     current: &SessionSummary,
@@ -126,6 +141,15 @@ pub(crate) fn detect(
                 occurrence: Occurrence::Request(request.id.clone()),
             });
         }
+    }
+    for notice in own_notices(current) {
+        if previous.is_some_and(|p| own_notices(p).any(|old| old.item_id == notice.item_id)) {
+            continue;
+        }
+        events.push(AttentionEvent {
+            kind: AttentionKind::Notice(notice.level),
+            occurrence: Occurrence::Notice(notice.item_id.clone()),
+        });
     }
     let Some(previous) = previous else {
         return events;
@@ -205,8 +229,50 @@ pub(crate) mod tests {
         }
     }
 
+    /// An open agent notice.
+    pub(crate) fn notice(id: &str, level: NoticeLevel) -> OpenNotice {
+        OpenNotice {
+            item_id: ItemId::new(id),
+            level,
+            text: "devbox has a failed unit".into(),
+            created_at: UnixMillis(id.len() as i64),
+            origin_child: None,
+        }
+    }
+
     fn keys(events: &[AttentionEvent]) -> Vec<String> {
         events.iter().map(|e| e.event_key()).collect()
+    }
+
+    #[test]
+    fn every_new_open_notice_fires_until_dismissed() {
+        let idle = summary();
+        let mut warned = summary();
+        warned.notices = vec![notice("n1", NoticeLevel::Warning)];
+        let events = detect(Some(&idle), &warned);
+        assert_eq!(keys(&events), ["notice:n1"]);
+        assert_eq!(events[0].kind, AttentionKind::Notice(NoticeLevel::Warning));
+        assert!(detect(Some(&warned), &warned).is_empty(), "unchanged");
+        // Each new one fires; a child's rolls up from its own summary.
+        let mut more = warned.clone();
+        more.notices.push(notice("n22", NoticeLevel::Error));
+        more.notices.push(notice("n333", NoticeLevel::Warning));
+        let mut child = notice("c1", NoticeLevel::Error);
+        child.origin_child = Some(idle.id);
+        more.notices.push(child);
+        assert_eq!(
+            keys(&detect(Some(&warned), &more)),
+            ["notice:n22", "notice:n333"]
+        );
+        // A first observation (after a restart) fires the open ones again.
+        assert_eq!(keys(&detect(None, &warned)), ["notice:n1"]);
+
+        let [event] = detect(Some(&idle), &warned).try_into().unwrap();
+        assert!(event.still_pending(&more));
+        let mut dismissed = more.clone();
+        dismissed.notices.remove(0);
+        assert!(!event.still_pending(&dismissed));
+        assert!(detect(Some(&more), &dismissed).is_empty());
     }
 
     #[test]

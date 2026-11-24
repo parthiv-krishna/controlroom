@@ -12,10 +12,12 @@
 //!   the store before sending (released again if the send fails, so a later change retries).
 //! - **Focus:** a device with a visible client showing the session is skipped.
 //! - **Restarts:** waiting pushes are rebuilt from current attention (`pending`).
+//! - **What pushes:** approvals and problems, the agent's warning and error notices (or errors
+//!   only), and, if opted in, questions and finished runs (`prefs`).
 //! - **Payloads** ([`PushPayload`]) carry metadata only: the session id and profile, the
 //!   session's and its primary machine's names, the attention kind, and a deep link. Never code,
-//!   prompts or tool output. A private profile's payload has no session or machine name, only
-//!   the profile's (C11).
+//!   prompts, tool output or notice text. A private profile's payload has no session or machine
+//!   name, only the profile's (C11).
 //! - Subscriptions the push service reports gone (404/410) are deleted.
 //! - **SSRF guard:** endpoints must be public `https` host names, are checked again at send
 //!   time, must resolve to public addresses, and redirects aren't followed (`endpoint`).
@@ -36,7 +38,8 @@ use std::time::Duration;
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::ids::{DeviceId, ProfileId, SessionId};
 use controlroom_protocol::session::SessionSummary;
-use controlroom_protocol::ui::{NotificationPreferences, PushContent, PushPayload};
+use controlroom_protocol::timeline::NoticeLevel;
+use controlroom_protocol::ui::{NoticePush, NotificationPreferences, PushContent, PushPayload};
 use futures::future::BoxFuture;
 use tokio::sync::broadcast;
 use tokio::time::Instant;
@@ -105,6 +108,11 @@ fn wanted(prefs: &NotificationPreferences, kind: AttentionKind) -> bool {
         AttentionKind::Approval | AttentionKind::Problem => prefs.attention,
         AttentionKind::Question => prefs.questions,
         AttentionKind::TurnEnd => prefs.turn_end,
+        AttentionKind::Notice(level) => match prefs.agent_notices {
+            NoticePush::WarningAndError | NoticePush::Unknown => level.pins(),
+            NoticePush::Error => level == NoticeLevel::Error,
+            NoticePush::Off => false,
+        },
     }
 }
 

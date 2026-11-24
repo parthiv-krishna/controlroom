@@ -3,4 +3,4 @@
 /**
  * What a session needs from the user, most urgent first. Computed by the daemon.
  */
-export type Attention = "approval" | "question" | "problem" | "unread" | "unknown";
+export type Attention = "approval" | "question" | "problem" | "notice" | "unread" | "unknown";

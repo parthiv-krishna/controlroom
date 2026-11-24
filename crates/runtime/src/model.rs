@@ -8,8 +8,9 @@ use controlroom_protocol::ids::{
     SessionId, UnixMillis,
 };
 use controlroom_protocol::session::{
-    AgentSession, AutoContinueStatus, ContentPart, DriverKind, PromptOrigin, QueueItem, Request,
-    RequestKind, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec, StartedBy, Todo, TodoStatus,
+    AgentSession, AutoContinueStatus, ContentPart, DriverKind, OpenNotice, PromptOrigin, QueueItem,
+    Request, RequestKind, RunOutcome, SandboxInfo, SandboxLevel, SandboxSpec, StartedBy, Todo,
+    TodoStatus,
 };
 use controlroom_protocol::timeline::{InjectOrigin, MessageOrigin, RunTrigger};
 use serde::{Deserialize, Serialize};
@@ -220,6 +221,9 @@ pub(crate) struct SessionData {
     pub decisions: BTreeMap<RequestId, Decision>,
     /// Requests the daemon raised, pending or resolved.
     pub raised: BTreeMap<RequestId, Raised>,
+    /// The agent's open (undismissed) warning and error notices, oldest first. Stored as their
+    /// timeline items (see `notices`), not with the session row.
+    pub notices: Vec<OpenNotice>,
     /// The shared todo list, in display order.
     pub todos: Vec<Todo>,
     /// Items waiting to be delivered into the agent's next turn, in order.

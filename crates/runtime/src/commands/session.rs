@@ -76,6 +76,7 @@ impl Core {
             queue: Vec::new(),
             decisions: BTreeMap::new(),
             raised: BTreeMap::new(),
+            notices: Vec::new(),
             jobs: BTreeMap::new(),
             todos: Vec::new(),
             injections: Vec::new(),

@@ -50,6 +50,7 @@ import type { ModelsSetKeyParams } from "./ModelsSetKeyParams";
 import type { ModelsState } from "./ModelsState";
 import type { NewMachine } from "./NewMachine";
 import type { NoParams } from "./NoParams";
+import type { NoticeDismissParams } from "./NoticeDismissParams";
 import type { NotificationPreferences } from "./NotificationPreferences";
 import type { NotificationsSetPreferencesParams } from "./NotificationsSetPreferencesParams";
 import type { NotificationsSubscribeParams } from "./NotificationsSubscribeParams";
@@ -419,6 +420,10 @@ export type UiMethods = {
    * Pass-through: answer a request.
    */
   "request.respond": { params: RequestRespondParams, result: RequestRespondResult },
+  /**
+   * Pass-through: dismiss an agent's open notice (`by` is filled in).
+   */
+  "notice.dismiss": { params: NoticeDismissParams, result: Ack },
   /**
    * Pass-through: add todo entries.
    */

@@ -399,6 +399,23 @@ pub enum NoticeLevel {
     Unknown,
 }
 
+impl NoticeLevel {
+    /// Whether an agent's notice of this level is pinned until the user dismisses it (and
+    /// raises attention): warnings and errors.
+    pub fn pins(self) -> bool {
+        matches!(self, NoticeLevel::Warning | NoticeLevel::Error)
+    }
+}
+
+/// How a pinned notice was dismissed: a user action, recorded with the device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct NoticeDismissal {
+    /// The dismissing device; `null` when not dismissed from a UI device (a debug client).
+    pub by: Option<DeviceRef>,
+    /// When it was dismissed.
+    pub at: UnixMillis,
+}
+
 /// The kind-specific content of a timeline item, tagged by `kind`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -548,6 +565,14 @@ pub enum ItemBody {
         level: NoticeLevel,
         /// The text.
         text: String,
+        /// The agent's warning or error notice (`notify_user`): pinned in the session's request
+        /// tray until dismissed (`notice.dismiss`), listed in the summary's `notices` while open.
+        /// Absent (false) for every other notice.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pinned: bool,
+        /// A pinned notice's dismissal, once dismissed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dismissed: Option<NoticeDismissal>,
     },
     /// An error outside any tool call (e.g. an extension error).
     Error {

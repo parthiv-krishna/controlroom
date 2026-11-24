@@ -20,4 +20,8 @@ problems: number,
 /**
  * Descendants with unread output.
  */
-unread: number, };
+unread: number, 
+/**
+ * Descendants with an open agent notice.
+ */
+notices: number, };

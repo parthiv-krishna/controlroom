@@ -12,12 +12,13 @@ use controlroom_protocol::agentd::{
 };
 use controlroom_protocol::ids::{DeviceId, SessionId, SubscriptionId};
 use controlroom_protocol::session::{RequestState, SessionSummary};
+use controlroom_protocol::timeline::NoticeLevel;
 use controlroom_protocol::ui::{AuthMode, NotificationsSetPreferencesParams};
 use futures::future::BoxFuture;
 use tokio::sync::{mpsc, watch};
 
 use super::{PushConfig, PushOutcome, PushSender, prefs};
-use crate::attention::tests::{request, summary};
+use crate::attention::tests::{notice, request, summary};
 use crate::auth::AuthPolicy;
 use crate::config::{Services, Tuning};
 use crate::hub::{ClientId, ClientSink, Focus, Hub};
@@ -379,6 +380,7 @@ fn prefs_unchanged() -> NotificationsSetPreferencesParams {
         attention: None,
         questions: None,
         turn_end: None,
+        agent_notices: None,
         hold_while_active: None,
         delay_s: None,
         idle_s: None,
@@ -452,4 +454,129 @@ async fn a_private_profiles_push_carries_no_session_name_or_machine() {
         .unwrap();
     assert_eq!(public["kind"], "session");
     assert_eq!(public["name"], "Tomatoes");
+
+    // An agent notice in the private profile: metadata only, no session name or notice text.
+    let mut noticed = summary();
+    noticed.id = "01HZY3K6W8Q9X2V4N7B5C1D3E7".parse().unwrap();
+    noticed.name = Some("Plot twist".into());
+    noticed.profile_id = Some(books.id);
+    noticed.notices = vec![notice("n1", NoticeLevel::Error)];
+    s.upsert(&noticed);
+    settle().await;
+    let payloads = s.push.payloads();
+    assert_eq!(payloads.len(), 6);
+    for payload in &payloads[4..] {
+        assert_eq!(
+            *payload,
+            serde_json::json!({
+                "session_id": "01HZY3K6W8Q9X2V4N7B5C1D3E7", "profile_id": books.id,
+                "state": "notice", "url": "#/s/01HZY3K6W8Q9X2V4N7B5C1D3E7",
+                "kind": "private", "profile": "Book club",
+            })
+        );
+    }
+}
+
+/// A session with these open agent notices.
+fn noticed(notices: &[(&str, NoticeLevel)]) -> SessionSummary {
+    let mut session = summary();
+    session.notices = notices
+        .iter()
+        .map(|(id, level)| notice(id, *level))
+        .collect();
+    session
+}
+
+/// A warning or an error pushes like an approval (delay, presence hold, dedup across a
+/// restart), but not urgently, and never carries the notice's text.
+#[tokio::test(start_paused = true)]
+async fn agent_notices_push_after_the_delay_and_while_nobody_is_active() {
+    let mut s = Setup::new();
+    let laptop = s.connect("laptop");
+    s.hub.record_input(laptop);
+    s.upsert(&summary());
+    s.upsert(&noticed(&[("n1", NoticeLevel::Warning)]));
+    pass(100).await;
+    assert!(s.push.sent().is_empty(), "held while the laptop is active");
+    s.focus(laptop, "laptop", false, None);
+    settle().await;
+    assert_eq!(s.push.devices(), ["laptop", "phone"]);
+    assert!(
+        s.push
+            .sent()
+            .iter()
+            .all(|(_, state, urgent)| state == "notice" && !*urgent)
+    );
+    assert!(
+        s.push
+            .payloads()
+            .iter()
+            .all(|p| !p.to_string().contains("failed unit"))
+    );
+    // Still open after a restart: raised again, never sent twice.
+    s.restart().await;
+    s.upsert(&noticed(&[("n1", NoticeLevel::Warning)]));
+    pass(600).await;
+    assert_eq!(s.push.sent().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_notice_dismissed_within_the_delay_is_never_pushed() {
+    let mut s = Setup::new();
+    s.upsert(&summary());
+    s.upsert(&noticed(&[("n1", NoticeLevel::Error)]));
+    pass(10).await;
+    s.upsert(&summary());
+    pass(600).await;
+    assert!(s.push.sent().is_empty());
+}
+
+/// Info never pushes; the preference picks warnings and errors (the default), errors only, or
+/// none.
+#[tokio::test(start_paused = true)]
+async fn the_agent_notices_preference_picks_the_levels_that_push() {
+    use controlroom_protocol::ui::NoticePush;
+
+    let mut s = Setup::new();
+    s.set_prefs(NotificationsSetPreferencesParams {
+        delay_s: Some(0),
+        ..prefs_unchanged()
+    });
+    s.upsert(&summary());
+    s.upsert(&noticed(&[("i1", NoticeLevel::Info)]));
+    settle().await;
+    assert!(s.push.sent().is_empty(), "info never pushes");
+
+    s.set_prefs(NotificationsSetPreferencesParams {
+        agent_notices: Some(NoticePush::Error),
+        ..prefs_unchanged()
+    });
+    s.upsert(&noticed(&[("w1", NoticeLevel::Warning)]));
+    settle().await;
+    assert!(s.push.sent().is_empty(), "errors only");
+    s.upsert(&noticed(&[
+        ("w1", NoticeLevel::Warning),
+        ("e1", NoticeLevel::Error),
+    ]));
+    settle().await;
+    assert_eq!(s.push.devices(), ["laptop", "phone"]);
+
+    s.set_prefs(NotificationsSetPreferencesParams {
+        agent_notices: Some(NoticePush::Off),
+        ..prefs_unchanged()
+    });
+    s.upsert(&noticed(&[("e2", NoticeLevel::Error)]));
+    settle().await;
+    assert_eq!(s.push.sent().len(), 2, "off");
+    assert_eq!(
+        prefs::load(&s.hub.repo().prefs()).unwrap().agent_notices,
+        NoticePush::Off
+    );
+    assert!(
+        prefs::check(&NotificationsSetPreferencesParams {
+            agent_notices: Some(NoticePush::Unknown),
+            ..prefs_unchanged()
+        })
+        .is_err()
+    );
 }

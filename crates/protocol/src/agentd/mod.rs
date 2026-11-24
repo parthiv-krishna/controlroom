@@ -115,6 +115,8 @@ pub mod methods {
 
         /// Answer any request, including host sandbox approvals and waits for terminal input.
         RequestRespond = "request.respond" (RequestRespondParams) -> RequestRespondResult;
+        /// Dismiss an agent's open notice (the agent isn't told).
+        NoticeDismiss = "notice.dismiss" (NoticeDismissParams) -> Ack;
 
         /// Add todo entries.
         TodoAdd = "todo.add" (TodoAddParams) -> TodoAddResult;

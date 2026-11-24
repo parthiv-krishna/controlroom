@@ -3,6 +3,7 @@ import type { Attention } from "./Attention";
 import type { AttentionRollup } from "./AttentionRollup";
 import type { ContextUsage } from "./ContextUsage";
 import type { LiveWork } from "./LiveWork";
+import type { OpenNotice } from "./OpenNotice";
 import type { ProfileId } from "./ProfileId";
 import type { QueueStatus } from "./QueueStatus";
 import type { Request } from "./Request";
@@ -117,6 +118,10 @@ queue: QueueStatus,
  * Pending requests, including descendants' (with `origin_child`).
  */
 requests: Array<Request>, 
+/**
+ * Open agent notices, oldest first, including descendants' (with `origin_child`).
+ */
+notices: Array<OpenNotice>, 
 /**
  * The todo roll-up; `null` while the list is empty.
  */

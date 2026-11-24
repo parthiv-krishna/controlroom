@@ -10,6 +10,7 @@ import type { MessageId } from "./MessageId";
 import type { MessageOrigin } from "./MessageOrigin";
 import type { MessageOutcome } from "./MessageOutcome";
 import type { MessageRole } from "./MessageRole";
+import type { NoticeDismissal } from "./NoticeDismissal";
 import type { NoticeLevel } from "./NoticeLevel";
 import type { PeerRef } from "./PeerRef";
 import type { Request } from "./Request";
@@ -263,7 +264,17 @@ level: NoticeLevel,
 /**
  * The text.
  */
-text: string, } | { "kind": "error", 
+text: string, 
+/**
+ * The agent's warning or error notice (`notify_user`): pinned in the session's request
+ * tray until dismissed (`notice.dismiss`), listed in the summary's `notices` while open.
+ * Absent (false) for every other notice.
+ */
+pinned?: boolean, 
+/**
+ * A pinned notice's dismissal, once dismissed.
+ */
+dismissed?: NoticeDismissal | null, } | { "kind": "error", 
 /**
  * The text.
  */

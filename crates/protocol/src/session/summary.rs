@@ -5,9 +5,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{ProfileId, Seq, SessionId, UnixMillis};
+use crate::ids::{ItemId, ProfileId, Seq, SessionId, UnixMillis};
 use crate::session::{AutoContinueStatus, Request, SandboxInfo, Shell, Workspace};
-use crate::timeline::TokenUsage;
+use crate::timeline::{NoticeLevel, TokenUsage};
 
 /// A session's state. `working` means a run is active, whoever started it (user, queue, steer,
 /// job completion, message, auto-continue).
@@ -66,6 +66,8 @@ pub enum Attention {
     Question,
     /// The last run failed or was interrupted, or auto-continue paused with attention.
     Problem,
+    /// The agent's warning or error notice is open (pinned until dismissed).
+    Notice,
     /// A run finished and its output is unread.
     Unread,
     /// An attention kind this build doesn't know.
@@ -85,6 +87,26 @@ pub struct AttentionRollup {
     pub problems: u32,
     /// Descendants with unread output.
     pub unread: u32,
+    /// Descendants with an open agent notice.
+    #[serde(default)]
+    pub notices: u32,
+}
+
+/// The agent's warning or error notice that the user hasn't dismissed yet: pinned in the
+/// session's request tray (its timeline item shows a stub) until `notice.dismiss`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct OpenNotice {
+    /// The notice's timeline item.
+    pub item_id: ItemId,
+    /// Warning or error.
+    pub level: NoticeLevel,
+    /// The text (Markdown).
+    pub text: String,
+    /// When the agent sent it.
+    pub created_at: UnixMillis,
+    /// Set when the notice belongs to a child session and is rolled up to its parent; dismiss
+    /// it on the child session.
+    pub origin_child: Option<SessionId>,
 }
 
 /// The todo roll-up shown in lists and the session header.
@@ -249,6 +271,9 @@ pub struct SessionSummary {
     pub queue: QueueStatus,
     /// Pending requests, including descendants' (with `origin_child`).
     pub requests: Vec<Request>,
+    /// Open agent notices, oldest first, including descendants' (with `origin_child`).
+    #[serde(default)]
+    pub notices: Vec<OpenNotice>,
     /// The todo roll-up; `null` while the list is empty.
     pub todo: Option<TodoRollup>,
     /// Background work that will wake the agent (jobs, children, asks, waiting host calls).

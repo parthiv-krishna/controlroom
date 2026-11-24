@@ -1,13 +1,16 @@
 //! The owner's notification preferences, stored server-side (one row each, so setting one never
 //! overwrites another).
 
-use controlroom_protocol::ui::{NotificationPreferences, NotificationsSetPreferencesParams};
+use controlroom_protocol::ui::{
+    NoticePush, NotificationPreferences, NotificationsSetPreferencesParams,
+};
 
 use crate::store::{Prefs, StoreResult};
 
 const ATTENTION: &str = "notifications.attention";
 const QUESTIONS: &str = "notifications.questions";
 const TURN_END: &str = "notifications.turn_end";
+const AGENT_NOTICES: &str = "notifications.agent_notices";
 const HOLD_WHILE_ACTIVE: &str = "notifications.hold_while_active";
 const DELAY_S: &str = "notifications.delay_s";
 const IDLE_S: &str = "notifications.idle_s";
@@ -21,14 +24,15 @@ const DEFAULT_IDLE_S: u32 = 120;
 /// The idle window's bounds (seconds): well above the clients' input heartbeat (~20 s).
 const IDLE_RANGE_S: std::ops::RangeInclusive<u32> = 60..=3600;
 
-/// The owner's preferences. By default approvals and problems push, questions and finished runs
-/// are in-app only, and pushes wait 30 s and are held while the user is active (2 min idle
+/// The owner's preferences. By default approvals, problems and the agent's warning and error
+/// notices push, questions and finished runs are in-app only, and pushes wait 30 s and are held while the user is active (2 min idle
 /// window).
 pub(crate) fn load(prefs: &Prefs<'_>) -> StoreResult<NotificationPreferences> {
     Ok(NotificationPreferences {
         attention: prefs.get(ATTENTION)?.unwrap_or(true),
         questions: prefs.get(QUESTIONS)?.unwrap_or(false),
         turn_end: prefs.get(TURN_END)?.unwrap_or(false),
+        agent_notices: prefs.get(AGENT_NOTICES)?.unwrap_or_default(),
         hold_while_active: prefs.get(HOLD_WHILE_ACTIVE)?.unwrap_or(true),
         delay_s: prefs.get(DELAY_S)?.unwrap_or(DEFAULT_DELAY_S),
         idle_s: prefs.get(IDLE_S)?.unwrap_or(DEFAULT_IDLE_S),
@@ -39,6 +43,9 @@ pub(crate) fn load(prefs: &Prefs<'_>) -> StoreResult<NotificationPreferences> {
 pub(crate) fn check(p: &NotificationsSetPreferencesParams) -> Result<(), String> {
     if p.delay_s.is_some_and(|s| s > MAX_DELAY_S) {
         return Err(format!("delay_s must be at most {MAX_DELAY_S}"));
+    }
+    if p.agent_notices == Some(NoticePush::Unknown) {
+        return Err("agent_notices must be warning_and_error, error or off".into());
     }
     if p.idle_s.is_some_and(|s| !IDLE_RANGE_S.contains(&s)) {
         return Err(format!(
@@ -66,6 +73,9 @@ pub(crate) fn set(prefs: &Prefs<'_>, p: &NotificationsSetPreferencesParams) -> S
         if let Some(value) = value {
             prefs.set(key, &value)?;
         }
+    }
+    if let Some(value) = p.agent_notices {
+        prefs.set(AGENT_NOTICES, &value)?;
     }
     Ok(())
 }

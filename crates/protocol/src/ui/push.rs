@@ -18,6 +18,8 @@ pub enum PushState {
     Problem,
     /// A finished run with unread output.
     Finished,
+    /// The agent's warning or error notice (never its text).
+    Notice,
     /// A state this build doesn't know.
     #[serde(other)]
     Unknown,

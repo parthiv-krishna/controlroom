@@ -1,6 +1,7 @@
 //! The agent's primitives: non-blocking questions (answer, dismiss, withdraw; answered while
 //! busy → steer, while idle → a new run), the shared todo list with attribution and the
-//! user's edits injected as a notice, notices, and run triggers from the runtime's knowledge.
+//! user's edits injected as a notice, notices (pinned until dismissed), and run triggers from
+//! the runtime's knowledge.
 
 use controlroom_drivers::Capabilities;
 use controlroom_drivers::fake::{FakeScript, FakeStep};
@@ -9,15 +10,17 @@ use controlroom_protocol::agent::{
     QuestionAskParams, QuestionWithdrawParams,
 };
 use controlroom_protocol::agentd::{
-    IfBusy, RequestRespondParams, SessionPromptParams, TodoAddParams, TodoRemoveParams,
-    TodoReorderParams, TodoUpdateParams,
+    IfBusy, NoticeDismissParams, RequestRespondParams, SessionMarkReadParams, SessionPromptParams,
+    TodoAddParams, TodoRemoveParams, TodoReorderParams, TodoUpdateParams,
 };
-use controlroom_protocol::ids::{DeviceId, OpId, RequestId, ScheduleId, SessionId, TodoId};
+use controlroom_protocol::ids::{DeviceId, ItemId, OpId, RequestId, ScheduleId, SessionId, TodoId};
 use controlroom_protocol::session::{
     Attention, Author, DeviceRef, PromptOrigin, QuestionAnswer, RequestKind, RequestState,
     Response, SessionState, TodoStatus,
 };
-use controlroom_protocol::timeline::{InjectOrigin, ItemBody, NoticeLevel, RunTrigger};
+use controlroom_protocol::timeline::{
+    InjectOrigin, ItemBody, NoticeDismissal, NoticeLevel, RunTrigger,
+};
 use controlroom_protocol::{ErrorData, Seq};
 
 use super::host::steered_text;
@@ -487,34 +490,152 @@ async fn the_agent_state_follows_todos_and_questions() {
     h.wait_state(id, SessionState::Idle).await;
 }
 
-#[tokio::test]
-async fn notices_appear_in_the_timeline() {
-    let mut h = Harness::new(FakeScript::default()).await;
-    let id = h.create().await;
+async fn notify(h: &Harness, id: SessionId, call: &str, level: NoticeLevel, text: &str) {
     h.rt.agent_notify(
         id,
         NotifyParams {
-            call_id: "n1".into(),
-            text: "Deployed to staging".into(),
-            level: NoticeLevel::Warning,
+            call_id: call.into(),
+            text: text.into(),
+            level,
         },
     )
     .await
     .unwrap();
-    let notices: Vec<(NoticeLevel, String)> = h
-        .timeline(id)
+}
+
+fn dismiss(id: SessionId, item: &ItemId) -> NoticeDismissParams {
+    NoticeDismissParams {
+        op_id: OpId::generate(),
+        id,
+        item_id: item.clone(),
+        by: Some(laptop()),
+    }
+}
+
+/// The session's notice items: (level, text, pinned, dismissed).
+async fn notice_items(
+    h: &Harness,
+    id: SessionId,
+) -> Vec<(NoticeLevel, String, bool, Option<NoticeDismissal>)> {
+    h.timeline(id)
         .await
         .into_iter()
         .filter_map(|i| match i.body {
-            ItemBody::Notice { level, text } => Some((level, text)),
+            ItemBody::Notice {
+                level,
+                text,
+                pinned,
+                dismissed,
+            } => Some((level, text, pinned, dismissed)),
             _ => None,
         })
-        .collect();
+        .collect()
+}
+
+#[tokio::test]
+async fn info_notices_are_only_in_the_timeline() {
+    let mut h = Harness::new(FakeScript::default()).await;
+    let id = h.create().await;
+    notify(&h, id, "n1", NoticeLevel::Info, "Checked 3 units: all fine").await;
+    let items = notice_items(&h, id).await;
     assert_eq!(
-        notices,
-        [(NoticeLevel::Warning, "Deployed to staging".to_owned())]
+        items,
+        [(
+            NoticeLevel::Info,
+            "Checked 3 units: all fine".to_owned(),
+            false,
+            None
+        )]
     );
+    let s = h.summary(id);
+    assert!(s.notices.is_empty());
+    assert_eq!(s.attention, None);
     h.wait_state(id, SessionState::Idle).await;
+}
+
+#[tokio::test]
+async fn warning_and_error_notices_stay_open_until_dismissed_across_a_restart() {
+    let mut h = Harness::new(FakeScript::default()).await;
+    let id = h.create().await;
+    notify(
+        &h,
+        id,
+        "n1",
+        NoticeLevel::Warning,
+        "devbox has a failed unit",
+    )
+    .await;
+    h.clock.advance(1000);
+    notify(&h, id, "n2", NoticeLevel::Error, "**Backups** failed").await;
+    // The same call id applies once.
+    notify(&h, id, "n2", NoticeLevel::Error, "**Backups** failed").await;
+    let s = h
+        .wait(id, "two open notices", |s| s.notices.len() == 2)
+        .await;
+    assert_eq!(s.state, SessionState::Idle);
+    assert_eq!(s.attention, Some(Attention::Notice));
+    assert_eq!(s.preview, "Backups failed", "the newest open notice");
+    let levels: Vec<_> = s.notices.iter().map(|n| n.level).collect();
+    assert_eq!(
+        levels,
+        [NoticeLevel::Warning, NoticeLevel::Error],
+        "oldest first"
+    );
+    assert!(s.notices.iter().all(|n| n.origin_child.is_none()));
+    let (warning, error) = (s.notices[0].item_id.clone(), s.notices[1].item_id.clone());
+
+    // Open notices survive a restart; reading the session dismisses nothing.
+    let mut h = h.restart().await;
+    let s = h
+        .wait(id, "notices after the restart", |s| s.notices.len() == 2)
+        .await;
+    assert_eq!(s.attention, Some(Attention::Notice));
+    h.rt.mark_read(SessionMarkReadParams {
+        op_id: OpId::generate(),
+        id,
+        seq: Seq(u64::MAX),
+    })
+    .await
+    .unwrap();
+    assert_eq!(h.summary(id).notices.len(), 2);
+
+    // Dismissed with the device; the agent isn't told.
+    h.rt.dismiss_notice(dismiss(id, &warning)).await.unwrap();
+    let s = h
+        .wait(id, "one open notice", |s| s.notices.len() == 1)
+        .await;
+    assert_eq!(s.notices[0].item_id, error);
+    let items = notice_items(&h, id).await;
+    let dismissed = items[0].3.as_ref().expect("the warning is dismissed");
+    assert_eq!(dismissed.by, Some(laptop()));
+    assert!(items[0].2 && items[1].2 && items[1].3.is_none());
+    // Again (e.g. from another device): nothing changes. Not a pinned notice: not found.
+    h.rt.dismiss_notice(dismiss(id, &warning)).await.unwrap();
+    assert_eq!(notice_items(&h, id).await[0].3.as_ref(), Some(dismissed));
+    let err =
+        h.rt.dismiss_notice(dismiss(id, &ItemId::new("notice-unknown")))
+            .await
+            .unwrap_err();
+    assert!(
+        matches!(err.data, Some(ErrorData::NotFound { .. })),
+        "{err:?}"
+    );
+
+    // A closed session lists none; reopening shows the open one again.
+    h.rt.close(h.op(id)).await.unwrap();
+    let s = h.wait_state(id, SessionState::Closed).await;
+    assert!(s.notices.is_empty());
+    assert_ne!(s.attention, Some(Attention::Notice));
+    h.rt.reopen(h.op(id)).await.unwrap();
+    let s = h.wait(id, "reopened", |s| s.notices.len() == 1).await;
+    assert_eq!(s.attention, Some(Attention::Notice));
+
+    h.rt.dismiss_notice(dismiss(id, &error)).await.unwrap();
+    let s = h.wait(id, "no open notice", |s| s.notices.is_empty()).await;
+    assert_eq!(s.attention, None);
+    assert!(h.host.prompts(id).is_empty(), "no wake on dismiss");
+    let h = h.restart().await;
+    assert!(h.summary(id).notices.is_empty());
 }
 
 #[tokio::test]

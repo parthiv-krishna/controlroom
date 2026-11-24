@@ -156,7 +156,12 @@ impl PiDriver {
             item_id("notice", at.seq, None),
             at,
             at.seq,
-            ItemBody::Notice { level, text },
+            ItemBody::Notice {
+                level,
+                text,
+                pinned: false,
+                dismissed: None,
+            },
             Life::Done,
         );
     }

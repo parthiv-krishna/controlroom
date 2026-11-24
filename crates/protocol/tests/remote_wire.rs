@@ -154,6 +154,7 @@ fn summary() -> SessionSummary {
         usage: SessionUsage::default(),
         queue: QueueStatus::default(),
         requests: vec![],
+        notices: vec![],
         todo: None,
         live_work: LiveWork {
             host_calls: 1,
@@ -192,7 +193,7 @@ fn summary_json() -> Value {
         "unread": false,
         "preview": "cargo test",
         "attention": "unread",
-        "rollup": {"approvals": 0, "questions": 0, "problems": 0, "unread": 0},
+        "rollup": {"approvals": 0, "questions": 0, "problems": 0, "unread": 0, "notices": 0},
         "context": null,
         "usage": {
             "tokens": {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0},
@@ -201,6 +202,7 @@ fn summary_json() -> Value {
         },
         "queue": {"len": 0, "paused": false, "auto_send": false, "send_now_pending": false},
         "requests": [],
+        "notices": [],
         "todo": null,
         "live_work": {"jobs": 0, "children": 0, "asks": 0, "host_calls": 1},
         "options": [],

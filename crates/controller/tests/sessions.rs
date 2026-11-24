@@ -212,6 +212,16 @@ async fn sessions_are_created_and_driven_through_the_agent_daemon() {
         "laptop"
     );
     next.ok(
+        "notice.dismiss",
+        json!({"op_id": op(), "id": session, "item_id": "notice-1",
+               "by": {"device_id": "evil", "label": "x"}}),
+    )
+    .await;
+    assert_eq!(
+        agentd.calls("notice.dismiss")[0]["by"]["device_id"],
+        "laptop"
+    );
+    next.ok(
         "session.workspace_add",
         json!({"op_id": op(), "id": session, "workspace": {"machine_id": devbox, "path": "~/web"}}),
     )

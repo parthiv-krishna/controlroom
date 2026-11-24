@@ -20,7 +20,7 @@ use controlroom_protocol::agent::{AgentState, SessionInfo};
 use controlroom_protocol::agentd::{DaemonSettings, HostOpRequest, SessionsChange, SessionsEvent};
 use controlroom_protocol::host::HostRequest;
 use controlroom_protocol::ids::{CallId, DaemonId, HostOpId, MachineId, Rev, SessionId};
-use controlroom_protocol::session::{AttentionRollup, SessionDetail, SessionSummary};
+use controlroom_protocol::session::{AttentionRollup, OpenNotice, SessionDetail, SessionSummary};
 use tokio::sync::{broadcast, watch};
 
 use crate::errors::{internal, unknown_session};
@@ -561,6 +561,7 @@ impl Core {
         let state = session.state();
         let mut rollup = AttentionRollup::default();
         let mut requests = session.pending_requests();
+        let mut notices = session.open_notices().to_vec();
         for other in self.sessions.values() {
             if !self.is_descendant(other.data.id, id) {
                 continue;
@@ -570,6 +571,7 @@ impl Core {
                 Some(Attention::Approval) => rollup.approvals += 1,
                 Some(Attention::Question) => rollup.questions += 1,
                 Some(Attention::Problem) => rollup.problems += 1,
+                Some(Attention::Notice) => rollup.notices += 1,
                 Some(Attention::Unread) => rollup.unread += 1,
                 Some(Attention::Unknown) | None => {}
             }
@@ -577,7 +579,12 @@ impl Core {
                 r.origin_child = Some(other.data.id);
                 r
             }));
+            notices.extend(other.open_notices().iter().map(|n| OpenNotice {
+                origin_child: Some(other.data.id),
+                ..n.clone()
+            }));
         }
+        notices.sort_by_key(|n| n.created_at);
         let view = session.view();
         let send_now_pending = data.waiting().next().is_some_and(|(_, head)| {
             head.send_now
@@ -618,6 +625,7 @@ impl Core {
                 send_now_pending,
             },
             requests,
+            notices,
             todo: crate::todos::rollup(data),
             live_work: session.live_work(),
             options: view.options.clone(),

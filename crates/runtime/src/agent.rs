@@ -7,18 +7,13 @@ use controlroom_protocol::agent::{
     AgentState, AgentTodoAddParams, AgentTodoUpdateParams, AgentTodos, NotifyParams,
     QuestionAskParams, QuestionAskResult, QuestionWithdrawParams, QuestionWithdrawResult,
 };
-use controlroom_protocol::ids::{ItemId, OpId, SessionId};
-use controlroom_protocol::session::{Author, SessionState};
-use controlroom_protocol::timeline::ItemBody;
+use controlroom_protocol::ids::{OpId, SessionId};
+use controlroom_protocol::session::Author;
 use tokio::sync::watch;
 
 use crate::core::Core;
-use crate::errors::{invalid_params, invalid_state};
 use crate::runtime::Runtime;
 use crate::todos::Edit;
-
-/// Longest notice text.
-const MAX_NOTICE: usize = 4000;
 
 /// The op id of an agent call: scoped to the session, so call ids can't collide across agents.
 pub(crate) fn op_id(id: SessionId, call_id: &str) -> OpId {
@@ -114,7 +109,7 @@ impl Runtime {
         .await
     }
 
-    /// `notify`: a notice in the session's timeline.
+    /// `notify`: a notice in the session's timeline (see `notices`).
     pub async fn agent_notify(&self, id: SessionId, params: NotifyParams) -> Result<(), RpcError> {
         let op = op_id(id, &params.call_id);
         self.command("agent.notify", &op, &params, |core| {
@@ -131,23 +126,5 @@ impl Core {
         Ok(AgentTodos {
             todos: self.session(id)?.data.todos.clone(),
         })
-    }
-
-    fn agent_notice(&mut self, id: SessionId, params: &NotifyParams) -> Result<(), RpcError> {
-        let text = params.text.trim();
-        if text.is_empty() || text.len() > MAX_NOTICE {
-            return Err(invalid_params(format!(
-                "a notice has 1 to {MAX_NOTICE} bytes"
-            )));
-        }
-        if self.session(id)?.data.closed() {
-            return Err(invalid_state(SessionState::Closed, "notify"));
-        }
-        let item = ItemId::new(format!("notice-{}", ulid::Ulid::generate()));
-        let body = ItemBody::Notice {
-            level: params.level,
-            text: text.to_owned(),
-        };
-        self.put_item(id, item, body)
     }
 }

@@ -328,6 +328,8 @@ fn session_ops() -> Vec<TimelineOp> {
             ItemBody::Notice {
                 level: NoticeLevel::Warning,
                 text: "extension reloaded".into(),
+                pinned: false,
+                dismissed: None,
             },
         ),
         item(

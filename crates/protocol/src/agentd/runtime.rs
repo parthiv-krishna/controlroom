@@ -1,11 +1,11 @@
-//! Runtime commands: answering requests, editing todos, managing jobs and revoking sandbox
-//! grants.
+//! Runtime commands: answering requests, dismissing notices, editing todos, managing jobs and
+//! revoking sandbox grants.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::agentd::PromptResult;
-use crate::ids::{GrantId, JobId, OpId, RequestId, SessionId, TodoId};
+use crate::ids::{GrantId, ItemId, JobId, OpId, RequestId, SessionId, TodoId};
 use crate::session::{ContentPart, DeviceRef, Job, Request, Response, Todo, TodoStatus};
 
 /// Params of `request.respond`: answer a permission, question, dialog, sandbox, contact or
@@ -37,6 +37,22 @@ pub struct RequestRespondResult {
     pub request: Request,
     /// What happened to `then`, if given.
     pub then: Option<PromptResult>,
+}
+
+/// Params of `notice.dismiss`: unpin an agent's open warning or error notice. The agent isn't
+/// told. Dismissing a notice that is already dismissed succeeds and changes nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct NoticeDismissParams {
+    /// Idempotency key.
+    pub op_id: OpId,
+    /// The session the notice belongs to (for a rolled-up notice, the child session).
+    pub id: SessionId,
+    /// The notice's timeline item ([`crate::session::OpenNotice::item_id`]).
+    pub item_id: ItemId,
+    /// The dismissing device, recorded as [`crate::timeline::NoticeDismissal::by`]. Filled in
+    /// by the controller like [`RequestRespondParams::by`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<DeviceRef>,
 }
 
 /// Params of `todo.add`: add entries (e.g. seeded from a task checklist) atomically.

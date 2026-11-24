@@ -3,4 +3,4 @@
 /**
  * What a pushed session needs from the user.
  */
-export type PushState = "approval" | "question" | "problem" | "finished" | "unknown";
+export type PushState = "approval" | "question" | "problem" | "finished" | "notice" | "unknown";

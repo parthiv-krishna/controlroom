@@ -415,7 +415,19 @@ fn summary(body: &ItemBody) -> Option<String> {
             }
             line
         }
-        ItemBody::Notice { level, text } => format!("notice ({}): {text}", name(level)),
+        ItemBody::Notice {
+            level,
+            text,
+            pinned,
+            dismissed,
+        } => {
+            let state = match (pinned, dismissed) {
+                (true, None) => " (open)",
+                (true, Some(_)) => " (dismissed)",
+                (false, _) => "",
+            };
+            format!("notice ({}){state}: {text}", name(level))
+        }
         ItemBody::Error { text } => format!("error: {text}"),
         ItemBody::SessionInfo {
             title,

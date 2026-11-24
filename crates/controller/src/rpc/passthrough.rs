@@ -145,6 +145,7 @@ const TABLE: &[Entry] = &[
     plain("queue.reorder"),
     plain("queue.resume"),
     fill("request.respond", Fill::Responder),
+    fill("notice.dismiss", Fill::Responder),
     fill("todo.add", Fill::Responder),
     fill("todo.update", Fill::Responder),
     fill("todo.remove", Fill::Responder),

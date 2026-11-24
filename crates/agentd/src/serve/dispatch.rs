@@ -109,6 +109,7 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         AgentdRequest::QueueResume(p) => ack(runtime.queue_resume(p).await),
 
         AgentdRequest::RequestRespond(p) => json(runtime.respond(p).await),
+        AgentdRequest::NoticeDismiss(p) => ack(runtime.dismiss_notice(p).await),
 
         AgentdRequest::TodoAdd(p) => json(runtime.todo_add(p).await),
         AgentdRequest::TodoUpdate(p) => json(runtime.todo_update(p).await),

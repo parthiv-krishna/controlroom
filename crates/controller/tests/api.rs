@@ -178,20 +178,27 @@ async fn devices_preferences_and_sandbox_defaults() {
     assert_eq!(
         prefs,
         json!({"attention": true, "questions": false, "turn_end": false,
+               "agent_notices": "warning_and_error",
                "hold_while_active": true, "delay_s": 30, "idle_s": 120})
     );
     let prefs = a
         .ok(
             "notifications.set_preferences",
-            json!({"questions": true, "hold_while_active": false, "delay_s": 0, "idle_s": 300}),
+            json!({"questions": true, "agent_notices": "error", "hold_while_active": false,
+                   "delay_s": 0, "idle_s": 300}),
         )
         .await;
     assert_eq!(
         prefs,
         json!({"attention": true, "questions": true, "turn_end": false,
+               "agent_notices": "error",
                "hold_while_active": false, "delay_s": 0, "idle_s": 300})
     );
-    for bad in [json!({"delay_s": 3601}), json!({"idle_s": 59})] {
+    for bad in [
+        json!({"delay_s": 3601}),
+        json!({"idle_s": 59}),
+        json!({"agent_notices": "sometimes"}),
+    ] {
         a.err("notifications.set_preferences", bad, "invalid_params")
             .await;
     }

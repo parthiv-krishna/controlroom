@@ -63,6 +63,9 @@ pub struct NotificationPreferences {
     pub questions: bool,
     /// Finished runs with unread output.
     pub turn_end: bool,
+    /// Which of the agent's notices push (default: warnings and errors). Info notices never do.
+    #[serde(default)]
+    pub agent_notices: NoticePush,
     /// Hold pushes while the user is active on any device (default on).
     pub hold_while_active: bool,
     /// How long a push waits before it is sent (seconds; default 30, at most an hour).
@@ -70,6 +73,22 @@ pub struct NotificationPreferences {
     /// How long after the last input a device stops being active (seconds; default 120,
     /// from a minute to an hour).
     pub idle_s: u32,
+}
+
+/// Which of the agent's notices (`notify_user`) push.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum NoticePush {
+    /// Warnings and errors (the default).
+    #[default]
+    WarningAndError,
+    /// Errors only.
+    Error,
+    /// None (they still show in-app).
+    Off,
+    /// A choice this build doesn't know; treated as the default.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Params of `notifications.set_preferences`. Absent fields are left unchanged.
@@ -84,6 +103,9 @@ pub struct NotificationsSetPreferencesParams {
     /// Push on finished runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_end: Option<bool>,
+    /// Which agent notices push.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_notices: Option<NoticePush>,
     /// Hold pushes while the user is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hold_while_active: Option<bool>,

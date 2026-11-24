@@ -137,6 +137,13 @@ fn summary() -> SessionSummary {
             send_now_pending: false,
         },
         requests: vec![request()],
+        notices: vec![OpenNotice {
+            item_id: ItemId::new("notice-1"),
+            level: NoticeLevel::Warning,
+            text: "devbox has a **failed** unit".into(),
+            created_at: UnixMillis(1_500),
+            origin_child: None,
+        }],
         todo: Some(TodoRollup {
             done: 2,
             total: 5,
@@ -208,7 +215,7 @@ fn summary_json() -> Value {
         "unread": true,
         "preview": "Run git push origin main?",
         "attention": "approval",
-        "rollup": {"approvals": 0, "questions": 0, "problems": 0, "unread": 0},
+        "rollup": {"approvals": 0, "questions": 0, "problems": 0, "unread": 0, "notices": 0},
         "context": {"used": 41000, "size": 200000, "cost": 0.25},
         "usage": {
             "tokens": {"input": 430000, "output": 378000, "cache_read": 303000000, "cache_write": 54000000},
@@ -232,6 +239,13 @@ fn summary_json() -> Value {
             "answer": null,
             "origin_child": null,
             "created_at": 2000
+        }],
+        "notices": [{
+            "item_id": "notice-1",
+            "level": "warning",
+            "text": "devbox has a **failed** unit",
+            "created_at": 1500,
+            "origin_child": null
         }],
         "todo": {"done": 2, "total": 5, "auto_continue": "on"},
         "live_work": {"jobs": 1, "children": 0, "asks": 0, "host_calls": 0},
@@ -469,6 +483,58 @@ fn golden_agentd_request_respond_carries_the_deciding_device() {
             "response": {"kind": "choice", "option_id": "allow-once"},
             "by": {"device_id": "dev-1", "label": "Laptop"}
         }),
+    );
+}
+
+#[test]
+fn golden_notice_dismiss_and_a_dismissed_notice() {
+    let params = NoticeDismissParams {
+        op_id: OpId::new("op-9"),
+        id: sid(),
+        item_id: ItemId::new("notice-1"),
+        by: Some(DeviceRef {
+            device_id: DeviceId::new("dev-1"),
+            label: "Phone".into(),
+        }),
+    };
+    golden(
+        &RpcRequest::new::<um::NoticeDismiss>("c9", params),
+        json!({
+            "jsonrpc": "2.0",
+            "id": "c9",
+            "method": "notice.dismiss",
+            "params": {
+                "op_id": "op-9",
+                "id": SID,
+                "item_id": "notice-1",
+                "by": {"device_id": "dev-1", "label": "Phone"}
+            }
+        }),
+    );
+    let body = ItemBody::Notice {
+        level: NoticeLevel::Error,
+        text: "Backups failed".into(),
+        pinned: true,
+        dismissed: Some(NoticeDismissal {
+            by: None,
+            at: UnixMillis(7),
+        }),
+    };
+    golden(
+        &body,
+        json!({"kind": "notice", "level": "error", "text": "Backups failed", "pinned": true,
+               "dismissed": {"by": null, "at": 7}}),
+    );
+    // Every other notice (a driver's, an info) carries neither field.
+    let plain = ItemBody::Notice {
+        level: NoticeLevel::Info,
+        text: "hi".into(),
+        pinned: false,
+        dismissed: None,
+    };
+    golden(
+        &plain,
+        json!({"kind": "notice", "level": "info", "text": "hi"}),
     );
 }
 
@@ -1127,6 +1193,16 @@ fn golden_path_request_body_and_file_options() {
             "deny"
         ]
     );
+}
+
+#[test]
+fn a_summary_without_notices_decodes_with_none_open() {
+    let mut older = summary_json();
+    older.as_object_mut().unwrap().remove("notices");
+    older["rollup"].as_object_mut().unwrap().remove("notices");
+    let decoded: SessionSummary = serde_json::from_value(older).unwrap();
+    assert!(decoded.notices.is_empty());
+    assert_eq!(decoded.rollup.notices, 0);
 }
 
 #[test]

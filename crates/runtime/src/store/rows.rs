@@ -7,7 +7,7 @@ use std::str::FromStr;
 use controlroom_protocol::ids::{
     ItemId, MachineId, ProfileId, RemotePath, Rev, Seq, SessionId, UnixMillis,
 };
-use controlroom_protocol::session::AgentSession;
+use controlroom_protocol::session::{AgentSession, OpenNotice};
 use controlroom_protocol::timeline::TimelineItem;
 use rusqlite::{OptionalExtension, Row, params};
 use serde::Serialize;
@@ -87,6 +87,7 @@ fn session_row(row: &Row<'_>) -> rusqlite::Result<SessionData> {
         queue: Vec::new(),
         decisions: BTreeMap::new(),
         raised: BTreeMap::new(),
+        notices: Vec::new(),
         todos: Vec::new(),
         injections: Vec::new(),
         jobs: BTreeMap::new(),
@@ -160,6 +161,7 @@ impl Store {
             let raised: Raised = decode(&raw?)?;
             data.raised.insert(raised.request.id.clone(), raised);
         }
+        data.notices = self.open_notices(&id)?;
         data.todos = self.list(&id, "todos", "todo")?;
         data.injections = self.list(&id, "injections", "injection")?;
         let mut stmt = self
@@ -185,6 +187,7 @@ impl Store {
             b.queue.clone_from(&after.queue);
             b.decisions.clone_from(&after.decisions);
             b.raised.clone_from(&after.raised);
+            b.notices.clone_from(&after.notices);
             b.todos.clone_from(&after.todos);
             b.injections.clone_from(&after.injections);
             b.jobs.clone_from(&after.jobs);
@@ -431,6 +434,22 @@ impl Store {
             ],
         )?;
         Ok(())
+    }
+
+    /// The session's open agent notices (pinned, undismissed notice items), oldest first.
+    fn open_notices(&self, id: &str) -> rusqlite::Result<Vec<OpenNotice>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT item FROM timeline_items WHERE session_id = ?1 AND item_id LIKE 'notice-%'",
+        )?;
+        let mut notices = Vec::new();
+        for raw in stmt.query_map([id], |r| r.get::<_, String>(0))? {
+            let item: TimelineItem = decode(&raw?)?;
+            if let Some(notice) = crate::notices::open(&item) {
+                notices.push(notice);
+            }
+        }
+        notices.sort_by(|a, b| (a.created_at, &a.item_id).cmp(&(b.created_at, &b.item_id)));
+        Ok(notices)
     }
 
     /// Items changed after `since`, ordered by `seq_from`.

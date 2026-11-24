@@ -233,6 +233,8 @@ pub mod methods {
         QueueResume = "queue.resume" (SessionOpParams) -> Ack;
         /// Pass-through: answer a request.
         RequestRespond = "request.respond" (RequestRespondParams) -> RequestRespondResult;
+        /// Pass-through: dismiss an agent's open notice (`by` is filled in).
+        NoticeDismiss = "notice.dismiss" (NoticeDismissParams) -> Ack;
         /// Pass-through: add todo entries.
         TodoAdd = "todo.add" (TodoAddParams) -> TodoAddResult;
         /// Pass-through: edit a todo entry.
