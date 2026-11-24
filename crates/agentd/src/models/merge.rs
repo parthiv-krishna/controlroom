@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use controlroom_protocol::agentd::{Gateway, KeyKind};
+use controlroom_protocol::agentd::{Gateway, KeyKind, ModelDefaults};
 use controlroom_sandbox::agent_dir::{ManagedProviders, PLACEHOLDER, stand_in, synthetic_access};
 use controlroom_sandbox::credential::{KeyStore, OAuthAccount, Secret};
 use serde_json::{Map, Value, json};
@@ -94,19 +94,22 @@ pub fn additions(
             out.add_preset_account(preset, id, &name, store, keys, &definitions);
         }
     }
-    let defaults = &stored.defaults;
+    apply_defaults(&mut out.managed.settings, &stored.defaults);
+    out
+}
+
+/// Sets the session settings' defaults (`defaultProvider`, `defaultModel`,
+/// `defaultThinkingLevel`) that `defaults` names, over earlier layers.
+pub fn apply_defaults(settings: &mut Map<String, Value>, defaults: &ModelDefaults) {
     for (key, value) in [
         ("defaultProvider", &defaults.provider),
         ("defaultModel", &defaults.model),
         ("defaultThinkingLevel", &defaults.thinking),
     ] {
         if let Some(value) = value {
-            out.managed
-                .settings
-                .insert(key.to_owned(), Value::String(value.clone()));
+            settings.insert(key.to_owned(), Value::String(value.clone()));
         }
     }
-    out
 }
 
 impl Additions {

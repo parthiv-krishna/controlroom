@@ -80,8 +80,8 @@ fn resolve(
                 AgentStatus::Missing,
                 Some(path.clone()),
                 format!(
-                    "{path} is not in a PATH directory of controlroom-agentd, and sandboxed sessions \
-                     (nono) can only start programs from PATH directories; install it into a \
+                    "{path} is not in a PATH directory of controlroom-agentd, and sessions (pi runs \
+                     under nono) can only start programs from PATH directories; install it into a \
                      profile on PATH (e.g. home.packages) and set `command = \"{name} …\"` in \
                      agents.toml"
                 ),

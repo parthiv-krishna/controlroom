@@ -53,6 +53,8 @@ fn launch(level: SandboxLevel) -> AgentLaunch {
             "a b".into(),
         ],
         level,
+        allowed_providers: None,
+        model_defaults: ModelDefaults::default(),
     }
 }
 
@@ -149,42 +151,55 @@ fn strict_launch_runs_pi_in_an_empty_workdir_with_remote_tools_only() {
     );
     let models = std::fs::read_to_string(session_dir.join("agent/models.json").as_path()).unwrap();
     assert!(!models.contains("sk-test-key"));
-    assert_eq!(prepared.built.unwrap().api_key_providers, ["mock"]);
+    assert_eq!(prepared.built.api_key_providers, ["mock"]);
 }
 
+/// The server sandbox is always on: at level off pi runs under nono on its session agent dir,
+/// with the same profile (routes included) as at strict, never on the daemon's own agent dir.
 #[test]
-fn level_off_runs_the_login_shell_directly() {
-    let mut f = fixture("");
-    f.host.nono = None;
+fn level_off_runs_pi_under_the_same_server_sandbox() {
+    let f = fixture(LOOPBACK_ROUTE);
+    prepare(&f.host, &launch(SandboxLevel::Strict)).unwrap();
+    let strict = profile(&f);
+    let token = load_agent_token(&f.host.dirs, SESSION).unwrap();
+
     let prepared = prepare(&f.host, &launch(SandboxLevel::Off)).unwrap();
-    assert_eq!(argv(&prepared), ["/bin/sh", "-lc", COMMAND]);
+    let argv = argv(&prepared);
+    assert_eq!(argv[0], "/nix/store/aaaa-nono-0.80.0/bin/nono");
+    assert_eq!(argv[argv.len() - 3..], ["/bin/sh", "-lc", COMMAND]);
+    assert_eq!(prepared.request.spec.labels["sandbox"], "off");
+    assert_eq!(profile(&f), strict);
+    let session_agent = f
+        .host
+        .dirs
+        .state()
+        .join(&format!("sessions/{SESSION}/agent"));
+    let env = &strict["environment"].to_string();
+    assert!(env.contains(session_agent.as_str()), "{env}");
+    assert_eq!(prepared.built.api_key_providers, ["mock"]);
     let env = std::fs::read_to_string(prepared.request.spec.env_file.as_ref().unwrap()).unwrap();
     let env = controlroom_supervisor::parse_env(&env).unwrap();
-    let keys: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(
-        keys,
-        [
-            "CONTROLROOM_SESSION_ID",
-            "CONTROLROOM_AGENT_SOCKET",
-            "CONTROLROOM_AGENT_TOKEN",
-            "PI_CODING_AGENT_DIR"
-        ]
+    assert!(
+        env.iter().all(|(k, _)| k != "PI_CODING_AGENT_DIR"),
+        "{env:?}"
     );
-    let token = load_agent_token(&f.host.dirs, SESSION).unwrap();
-    prepare(&f.host, &launch(SandboxLevel::Off)).unwrap();
+    // Every launch gets a fresh agent token.
     assert!(
         !load_agent_token(&f.host.dirs, SESSION)
             .unwrap()
             .matches(&token)
     );
-    assert!(prepared.built.is_none());
 }
 
 #[test]
-fn sandboxed_levels_need_nono() {
+fn every_level_needs_nono() {
     let mut f = fixture("");
     f.host.nono = None;
-    for level in [SandboxLevel::Strict, SandboxLevel::Relaxed] {
+    for level in [
+        SandboxLevel::Off,
+        SandboxLevel::Strict,
+        SandboxLevel::Relaxed,
+    ] {
         assert!(matches!(
             prepare(&f.host, &launch(level)),
             Err(LaunchError::NoNono)
@@ -249,4 +264,95 @@ fn stored_keys_and_gateways_get_routes() {
     let layout = SessionLayout::new(f.host.dirs.state(), &SessionId::new(SESSION).unwrap());
     let manifest = controlroom_sandbox::credential::load_manifest(&layout).unwrap();
     assert_eq!(manifest.stored_keys.unwrap().path, store);
+}
+
+#[test]
+fn a_model_allow_list_keeps_only_its_providers_routes_and_credentials() {
+    use controlroom_sandbox::agent_dir::ManagedProviders;
+    // Two providers with credentials: `mock` (the server's models.json key) and `unused` (a
+    // stored key), each with a route. The session's profile allows `mock` only.
+    let mut f = fixture(LOOPBACK_ROUTE);
+    f.host.sandbox.agent_dir.managed = ManagedProviders {
+        key_providers: vec!["unused".into()],
+        key_store: Some(f.host.dirs.models().join("keys.json")),
+        ..ManagedProviders::default()
+    };
+    let session_dir = f.host.dirs.state().join("sessions").join(SESSION);
+    let layout = SessionLayout::new(f.host.dirs.state(), &SessionId::new(SESSION).unwrap());
+    for level in [SandboxLevel::Strict, SandboxLevel::Off] {
+        let restricted = AgentLaunch {
+            allowed_providers: Some(ProviderAllowList::new(["mock"])),
+            ..launch(level)
+        };
+        let prepared = prepare(&f.host, &restricted).unwrap();
+        assert_eq!(prepared.built.api_key_providers, ["mock"]);
+        assert!(prepared.built.stored_key_providers.is_empty());
+        let profile = profile(&f);
+        let routes = profile["network"]["custom_credentials"]
+            .as_object()
+            .unwrap();
+        assert_eq!(routes.keys().collect::<Vec<_>>(), ["cr_mock"], "{level:?}");
+        let auth = std::fs::read_to_string(session_dir.join("agent/auth.json").as_path()).unwrap();
+        assert!(!auth.contains("unused"), "{auth}");
+        let manifest = controlroom_sandbox::credential::load_manifest(&layout).unwrap();
+        assert!(manifest.stored_keys.unwrap().providers.is_empty());
+    }
+
+    // A profile that admits no account (unreported): no provider, no route.
+    let none = AgentLaunch {
+        allowed_providers: Some(ProviderAllowList::default()),
+        ..launch(SandboxLevel::Strict)
+    };
+    let prepared = prepare(&f.host, &none).unwrap();
+    assert!(prepared.built.api_key_providers.is_empty());
+    assert!(profile(&f)["network"]["custom_credentials"].is_null());
+}
+
+#[test]
+fn the_profiles_model_defaults_go_on_top_unless_refused() {
+    let f = fixture("");
+    std::fs::write(
+        f.host.dirs.pi_agent_dir().join("settings.json").as_path(),
+        r#"{"defaultProvider": "mock", "defaultModel": "m", "defaultThinkingLevel": "low"}"#,
+    )
+    .unwrap();
+    let settings = || -> Value {
+        let path = f
+            .host
+            .dirs
+            .state()
+            .join(&format!("sessions/{SESSION}/agent/settings.json"));
+        serde_json::from_str(&std::fs::read_to_string(path.as_path()).unwrap()).unwrap()
+    };
+    let defaults = ModelDefaults {
+        provider: Some("mock".into()),
+        model: Some("m2".into()),
+        thinking: None,
+    };
+    let with_defaults = AgentLaunch {
+        model_defaults: defaults.clone(),
+        ..launch(SandboxLevel::Strict)
+    };
+    prepare(&f.host, &with_defaults).unwrap();
+    let s = settings();
+    assert_eq!(
+        (
+            &s["defaultProvider"],
+            &s["defaultModel"],
+            &s["defaultThinkingLevel"]
+        ),
+        (&"mock".into(), &"m2".into(), &"low".into())
+    );
+
+    // A default of a provider the profile refuses is dropped: pi starts on an allowed one.
+    let refused = AgentLaunch {
+        allowed_providers: Some(ProviderAllowList::new(["other"])),
+        ..with_defaults
+    };
+    prepare(&f.host, &refused).unwrap();
+    let s = settings();
+    assert!(
+        s.get("defaultProvider").is_none() && s.get("defaultModel").is_none(),
+        "{s}"
+    );
 }

@@ -20,7 +20,7 @@ pub fn nono(dirs: &Dirs, shell: &AbsPath, setting: &str) -> DoctorCheck {
             return check(
                 CheckStatus::Fail,
                 "missing",
-                format!("{e}; sandboxed sessions can't start"),
+                format!("{e}; sessions can't start"),
             );
         }
     };
@@ -43,7 +43,7 @@ fn nono_status(path: &AbsPath, status: NonoStatus) -> DoctorCheck {
         NonoStatus::Unavailable(why) => check(
             CheckStatus::Fail,
             "unusable",
-            format!("{why}; sandboxed sessions can't start"),
+            format!("{why}; sessions can't start"),
         ),
     }
 }
@@ -84,7 +84,7 @@ fn landlock_status(landlock: Landlock) -> (Option<u32>, DoctorCheck) {
             check(
                 CheckStatus::Fail,
                 "unsupported",
-                "this kernel has no Landlock; sandboxed sessions can't start",
+                "this kernel has no Landlock; sessions can't start",
             ),
         ),
     }

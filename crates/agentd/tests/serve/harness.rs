@@ -35,6 +35,12 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 /// can't print into transcripts.
 const LOGIN_SHELL: &str = "#!/bin/sh\n[ \"$1\" = -lc ] || { echo \"bad shell args: $*\" >&2; exit 99; }\nexec /bin/sh -c \"$2\"\n";
 
+/// A stand-in nono (`sandbox.toml` `nono`): pi always runs under nono on the server, and these
+/// tests have none, so it runs the command after `--` unconfined. Its arguments are checked
+/// by `launch`'s unit tests.
+const STAND_IN_NONO: &str =
+    "#!/bin/sh\nwhile [ $# -gt 0 ] && [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n";
+
 /// The fake agent binary; see the module docs.
 pub fn fake_agent() -> &'static Path {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -112,6 +118,15 @@ impl Env {
             .unwrap();
         let shell = dir.path().join("login-shell");
         write_executable(&shell, LOGIN_SHELL);
+        let nono = dir.path().join("nono");
+        write_executable(&nono, STAND_IN_NONO);
+        let config = dir.path().join("state/config");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(
+            config.join("sandbox.toml"),
+            format!("nono = {:?}\n", nono.display().to_string()),
+        )
+        .unwrap();
         std::fs::create_dir_all(dir.path().join("work")).unwrap();
         std::fs::create_dir_all(dir.path().join("gates")).unwrap();
         Env {

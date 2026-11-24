@@ -2,15 +2,18 @@
 //! (`pi` → [`PiDriver`]), and the launch glue ([`crate::launch`]) that turns a start into a
 //! supervisor spawn spec.
 //!
-//! Only the session's sandbox *level* applies to pi on the server; its grants, domains and
-//! mediated commands are the workspaces' and apply on their hosts.
+//! pi always runs under nono on the server, whatever the session's level (which, with its
+//! grants, domains and mediated commands, shapes the workspaces' sandboxes on their hosts). Its
+//! profile's model policy decides which providers its agent dir has.
 
 use std::sync::{Arc, Mutex, PoisonError};
 
 use controlroom_drivers::{Driver, FakeDriver, PiDriver};
+use controlroom_protocol::agentd::ModelPolicy;
 use controlroom_protocol::session::{DriverKind, SandboxLevel as WireLevel};
 use controlroom_protocol::{ErrorData, Resource, RpcError};
 use controlroom_runtime::ports::{AgentLaunch, Agents};
+use controlroom_sandbox::agent_dir::ProviderAllowList;
 use controlroom_sandbox::{AbsPath, SandboxLevel};
 use controlroom_supervisor::SpawnSpec;
 
@@ -63,7 +66,7 @@ impl ServerAgents {
         })
     }
 
-    fn host(&self, sandboxed: bool) -> Result<Host, RpcError> {
+    fn host(&self) -> Result<Host, RpcError> {
         let loaded = sandbox_config::load(&self.dirs);
         if let Some(e) = &loaded.error {
             tracing::warn!("{e}");
@@ -75,22 +78,15 @@ impl ServerAgents {
         // Settings › Models, re-read so changes apply to the next start.
         crate::models::merge::apply(&self.dirs, &mut sandbox);
         let shell = login_shell();
-        let (nono, oauth_helper) = if sandboxed {
-            let nono = cached(&self.nono, &shell, &sandbox.nono)
-                .map_err(|e| sandbox_unavailable(format!("nono: {e}")))?;
-            (
-                Some(nono),
-                cached(&self.oauth_helper, &shell, &sandbox.oauth_helper).ok(),
-            )
-        } else {
-            (None, None)
-        };
+        let nono = cached(&self.nono, &shell, &sandbox.nono)
+            .map_err(|e| sandbox_unavailable(format!("nono: {e}")))?;
+        let oauth_helper = cached(&self.oauth_helper, &shell, &sandbox.oauth_helper).ok();
         Ok(Host {
             dirs: self.dirs.clone(),
             agentd: self.agentd.clone(),
             shell,
             sandbox,
-            nono,
+            nono: Some(nono),
             oauth_helper,
         })
     }
@@ -109,6 +105,15 @@ fn cached(
     let path = find_program(shell, setting)?;
     *slot = Some(path.clone());
     Ok(path)
+}
+
+/// The providers a model policy lets into a session's agent dir; `None`: every one.
+fn allow_list(policy: &ModelPolicy) -> Option<ProviderAllowList> {
+    match policy {
+        ModelPolicy::Any => None,
+        ModelPolicy::Only { accounts } => Some(ProviderAllowList::new(accounts.iter().cloned())),
+        ModelPolicy::Unknown => Some(ProviderAllowList::default()),
+    }
 }
 
 fn sandbox_unavailable(detail: String) -> RpcError {
@@ -139,7 +144,7 @@ impl Agents for ServerAgents {
             WireLevel::Relaxed => SandboxLevel::Relaxed,
             WireLevel::Strict | WireLevel::Unknown => SandboxLevel::Strict,
         };
-        let host = self.host(level != SandboxLevel::Off)?;
+        let host = self.host()?;
         let session = controlroom_sandbox::SessionId::new(&start.session.to_string())
             .map_err(|e| sandbox_unavailable(e.to_string()))?;
         if let Err(e) = self.sockets.ensure(start.session) {
@@ -152,6 +157,8 @@ impl Agents for ServerAgents {
             agent,
             args: start.args.clone(),
             level,
+            allowed_providers: allow_list(&start.models),
+            model_defaults: start.model_defaults.clone(),
         };
         let prepared =
             launch::prepare(&host, &launch).map_err(|e| sandbox_unavailable(e.to_string()))?;

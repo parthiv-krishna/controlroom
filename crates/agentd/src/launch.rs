@@ -6,10 +6,16 @@
 //! --no-context-files --no-skills`, so every tool it has is @controlroom/pi's remote one and
 //! its project context comes from the workspaces (`session.info`).
 //!
-//! For levels strict and relaxed, [`prepare`]:
+//! **pi always runs under nono on the server**, at every level (design
+//! `docs/design/profiles-tenants.md`, decision 1): the session's level shapes only its host
+//! sandboxes, and pi's server sandbox is the same at every level. [`prepare`]:
 //!
 //! 1. builds the session dirs from the agent daemon's pi agent dir (`agent/` with fake
-//!    credentials, `home/`, `tmp/`) and finds the API-key and OAuth providers;
+//!    credentials, `home/`, `tmp/`) and finds the API-key and OAuth providers. Only the
+//!    providers its profile admits are in it ([`AgentLaunch::allowed_providers`]: the others
+//!    get no `models.json` or `auth.json` entry, no credential route and no credential-manifest
+//!    entry), and its profile's model defaults go on top of the server's (a default of a
+//!    refused provider is dropped);
 //! 2. assembles the [`SessionSandboxSpec`]: the scratch directory, read access to the configured
 //!    system paths and the `agent/npm` link's target, the session's agent socket, credential
 //!    routes for the providers that have a key (or an OAuth token, given the OAuth helper), and
@@ -21,9 +27,10 @@
 //! 5. returns the supervisor [`LaunchRequest`]: the session dir holds the transcript, the
 //!    socket is `<state>/run/<id>.sock`.
 //!
-//! Level off runs `$SHELL -lc '…'` directly with the agent dir as is.
+//! So pi never uses the agent daemon's own agent dir: a sign-in there reaches sessions only
+//! through a credential route (Settings › Models, or `sandbox.toml` routes).
 //!
-//! Every level's env file carries what @controlroom/pi needs to reach its session
+//! The env file also carries what @controlroom/pi needs to reach its session
 //! (`CONTROLROOM_SESSION_ID`, `CONTROLROOM_AGENT_SOCKET`, and a fresh `CONTROLROOM_AGENT_TOKEN`
 //! that the agent socket's listener checks against `<session>/agent.token`).
 //!
@@ -35,9 +42,11 @@
 
 use std::collections::BTreeMap;
 
+use controlroom_protocol::agentd::ModelDefaults;
 use controlroom_protocol::session::DriverKind;
 use controlroom_sandbox::agent_dir::{
-    AgentDirError, AgentDirSpec, BuiltAgentDir, build_session_dirs, write_profile,
+    AgentDirError, AgentDirSpec, BuiltAgentDir, ProviderAllowList, build_session_dirs,
+    write_profile,
 };
 use controlroom_sandbox::launch::{LaunchCommand, NONO_ENV_PREFIX, Nono, NonoDirs, shell_quote};
 use controlroom_sandbox::policy::{EffectivePolicy, SandboxLevel};
@@ -52,6 +61,7 @@ use controlroom_transcript::{ProcessKind, StdinMode};
 use crate::config::agents::AgentEntry;
 use crate::config::sandbox::SandboxSettings;
 use crate::dirs::{Dirs, create_private_dir, write_private_file};
+use crate::models::merge::apply_defaults;
 
 /// pi's flags for remote tools: no local tools, context files or skills.
 pub const REMOTE_TOOLS_ARGS: [&str; 3] =
@@ -86,8 +96,13 @@ pub struct AgentLaunch {
     pub agent: AgentEntry,
     /// The driver's arguments for this start (`Driver::launch_args`).
     pub args: Vec<String>,
-    /// The level the agent runs at.
+    /// The session's level, recorded in the transcript (pi's server sandbox is the same at
+    /// every level).
     pub level: SandboxLevel,
+    /// The only model providers the session may use (its profile's); `None`: all.
+    pub allowed_providers: Option<ProviderAllowList>,
+    /// Its profile's model defaults, on top of the server's and Settings › Models'.
+    pub model_defaults: ModelDefaults,
 }
 
 /// A launch ready to start.
@@ -95,17 +110,15 @@ pub struct AgentLaunch {
 pub struct PreparedLaunch {
     /// What the supervisor runs.
     pub request: LaunchRequest,
-    /// What the agent dir build found, unless the level is off.
-    pub built: Option<BuiltAgentDir>,
+    /// What the agent dir build found.
+    pub built: BuiltAgentDir,
 }
 
 /// Why a launch could not be prepared.
 #[derive(Debug, thiserror::Error)]
 pub enum LaunchError {
     /// A sandboxed level was requested but nono is unavailable.
-    #[error(
-        "nono is not available, so sandboxed sessions can't start (see `controlroom-agentd doctor`)"
-    )]
+    #[error("nono is not available, so sessions can't start (see `controlroom-agentd doctor`)")]
     NoNono,
     /// An inherited `NONO_*` variable would reach nono.
     #[error("refusing to launch with {0} in the environment: nono would read it as a flag")]
@@ -146,35 +159,29 @@ pub fn prepare(host: &Host, launch: &AgentLaunch) -> Result<PreparedLaunch, Laun
         path: workdir.to_string(),
         source,
     })?;
-    let mut env = agent_env(&host.dirs, &launch.session)?;
-    let (exec, built) = if launch.level == SandboxLevel::Off {
-        if let Some(dir) = &host.sandbox.agent_dir.user_agent_dir {
-            env.push(("PI_CODING_AGENT_DIR".to_owned(), dir.to_string()));
-        }
-        let cmd = LaunchCommand::new(None, &host.shell, &workdir, &command);
-        (argv(&cmd), None)
-    } else {
-        let nono = Nono {
-            binary: host.nono.clone().ok_or(LaunchError::NoNono)?,
-            dirs: NonoDirs::under(host.dirs.state()),
-        };
-        let agent_dir = AgentDirSpec {
-            oauth_helper: host.oauth_helper.clone(),
-            ..host.sandbox.agent_dir.clone()
-        };
-        let built = build_session_dirs(&layout, &agent_dir)?;
-        let spec = sandbox_spec(host, launch, &layout, &workdir, &built);
-        write_profile(&layout, &generate_profile(&spec)?)?;
-        let cmd = LaunchCommand::new(
-            Some((&nono, &layout.profile())),
-            &host.shell,
-            &workdir,
-            &command,
-        );
-        env.extend(cmd.env.iter().cloned());
-        env.push(("TMPDIR".to_owned(), host.sandbox.nono_tmp.to_string()));
-        (argv(&cmd), Some(built))
+    let nono = Nono {
+        binary: host.nono.clone().ok_or(LaunchError::NoNono)?,
+        dirs: NonoDirs::under(host.dirs.state()),
     };
+    let mut env = agent_env(&host.dirs, &launch.session)?;
+    let mut agent_dir = AgentDirSpec {
+        oauth_helper: host.oauth_helper.clone(),
+        allowed_providers: launch.allowed_providers.clone(),
+        ..host.sandbox.agent_dir.clone()
+    };
+    apply_defaults(&mut agent_dir.managed.settings, &launch.model_defaults);
+    let built = build_session_dirs(&layout, &agent_dir)?;
+    let spec = sandbox_spec(host, launch, &layout, &workdir, &built);
+    write_profile(&layout, &generate_profile(&spec)?)?;
+    let cmd = LaunchCommand::new(
+        Some((&nono, &layout.profile())),
+        &host.shell,
+        &workdir,
+        &command,
+    );
+    env.extend(cmd.env.iter().cloned());
+    env.push(("TMPDIR".to_owned(), host.sandbox.nono_tmp.to_string()));
+    let exec = argv(&cmd);
     let env_file = layout.root().join("launch.env");
     write_env_file(&env_file, &env)?;
     let run = host.dirs.run();
@@ -270,8 +277,9 @@ fn sandbox_spec(
     SessionSandboxSpec {
         layout: layout.clone(),
         cwd: workdir.clone(),
+        // The level shapes only the host sandboxes: pi's is the strict one at every level.
         policy: EffectivePolicy {
-            level: launch.level,
+            level: SandboxLevel::Strict,
             paths: Vec::new(),
             domains: Vec::new(),
             sockets: Vec::new(),

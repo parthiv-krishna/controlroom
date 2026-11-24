@@ -20,6 +20,12 @@ use crate::procs;
 /// host profile scripts can't print into transcripts.
 const LOGIN_SHELL: &str = "#!/bin/sh\n[ \"$1\" = -lc ] || { echo \"bad shell args: $*\" >&2; exit 99; }\nexec /bin/sh -c \"$2\"\n";
 
+/// A stand-in nono (`sandbox.toml` `nono`): pi always runs under nono on the server, and these
+/// tests have none, so it runs the command after `--` unconfined. Its arguments are checked
+/// by `launch`'s unit tests.
+const STAND_IN_NONO: &str =
+    "#!/bin/sh\nwhile [ $# -gt 0 ] && [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n";
+
 /// The built `controlroom-agentd` (`$CONTROLROOM_AGENTD_BIN` overrides it).
 pub fn binary() -> &'static Path {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -49,6 +55,13 @@ impl Agentd {
         );
         std::fs::create_dir_all(dir.path().join("gates")).unwrap();
         std::fs::create_dir_all(dir.path().join("config")).unwrap();
+        let nono = dir.path().join("nono");
+        controlroom_controller::test_support::write_executable(&nono, STAND_IN_NONO.as_bytes());
+        std::fs::write(
+            dir.path().join("config/sandbox.toml"),
+            format!("nono = {:?}\n", nono.display().to_string()),
+        )
+        .unwrap();
         let mut agentd = Self { dir, child: None };
         agentd.scenario(&serde_json::json!({}));
         agentd
