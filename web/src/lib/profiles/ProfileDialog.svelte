@@ -34,8 +34,10 @@
       const p = id
         ? await app.client.request('profiles.update', { profile_id: id, name: n, color })
         : await app.client.request('profiles.create', { name: n, color, private: isPrivate });
+      // Props are gone once the dialog closes.
+      const next = then;
       close();
-      then?.(p);
+      next?.(p);
     } catch (e) {
       error = describeError(e);
     } finally {

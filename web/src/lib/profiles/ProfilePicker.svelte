@@ -1,7 +1,7 @@
 <script lang="ts">
   // The profile picker at the top of Settings › Machines, Models and Sandbox: one pill per profile
   // (its color, a lock when private), ＋ a new profile, and the picked profile's ⋯ (rename, color,
-  // private, move, delete). On a fresh install only ＋ shows.
+  // private, move out of it, delete). On a fresh install only ＋ shows.
   import { useApp } from '../app/app.svelte';
   import { archivedIn, deleteBlocker, profileLabel } from '../model/profiles';
   import type { Profile } from '../protocol';
@@ -51,12 +51,10 @@
         hint: !p.private && p.models.kind === 'any' ? `List the accounts in ${p.name} first (Models)` : 'Push names only the profile; no shared machines; accounts listed one by one',
         run: () => void setPrivate(p),
       },
-      ...(app.multi ? [{ label: 'Move here…', aria: `Move things to ${p.name}`, disabled: !online, run: () => app.moveToProfile({ from: otherThan(p), to: p.id }) }] : []),
+      ...(app.multi ? [{ label: 'Move…', aria: `Move machines, projects or sessions from ${p.name}`, disabled: !online, run: () => app.moveToProfile({ from: p.id }) }] : []),
       { label: 'Delete…', danger: true, disabled: !online || !!blocker, hint: blocker ?? undefined, run: () => void remove(p) },
     ];
   };
-  /** The profile things move from by default: the first other one. */
-  const otherThan = (p: Profile) => app.profiles.find((q) => q.id !== p.id)?.id ?? p.id;
 </script>
 
 <div class="pp">

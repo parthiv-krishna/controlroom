@@ -140,12 +140,13 @@ export class App {
     if (entering) this.leaveOtherProfiles();
   }
 
-  /** Enters another profile at its ∗. */
+  /** Enters another profile at its ∗; task and machine filters named the old profile's. */
   private enterProfile(id: ProfileId): void {
     this.view.profile = id;
     this.view.project = null;
     this.view.openTask = null;
     this.view.keep = [];
+    this.view.filters = { ...this.view.filters, task: [], machine: [] };
   }
 
   /** The open session stays only if it is the current profile's; the desktop opens its most urgent instead. */

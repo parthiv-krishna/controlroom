@@ -76,7 +76,7 @@
         {#if st === 'unreachable'}<button class="btn sm" aria-label="Retry connecting to {m.name}" disabled={!online} onclick={() => app.client.call('machines.reconnect', { machine_id: m.id })}>Retry</button>{/if}
         {#if st === 'incompatible'}<button class="btn sm primary" aria-label="Upgrade the daemon on {m.name}" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade</button>
         {:else if st === 'connected' && m.update_available}<button class="btn sm" aria-label="Upgrade the daemon on {m.name}" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade</button>{/if}
-        {#if st === 'connected'}<button class="btn sm" onclick={() => { app.view.settings = null; app.newSession({ workspaces: [{ machine_id: m.id, path: '~' }] }); }}>+ Session here</button>{/if}
+        {#if st === 'connected'}<button class="btn sm" onclick={() => { app.view.settings = null; app.newSession({ profile: profile?.id, workspaces: [{ machine_id: m.id, path: '~' }] }); }}>+ Session here</button>{/if}
         {#if app.multi && profile}
           {@const from = profile.id}
           <button class="btn sm ghost" aria-label="Move {m.name} to another profile" disabled={!online} onclick={() => app.moveToProfile({ from, machine_ids: [m.id] })}>Move to profile…</button>
