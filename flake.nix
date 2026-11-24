@@ -136,6 +136,8 @@
           extension-pi = (extensionFor pkgs).check;
           # pi sends a pasted Anthropic subscription token's stand-in as a subscription's.
           agentd-pi-subscription-token = rust.piSubscriptionToken (piFor pkgs).bundle;
+          # A profile's model allow-list: pi lists, accepts and calls only the allowed providers.
+          agentd-pi-model-policy = rust.piModelPolicy (piFor pkgs).bundle;
           # Builds the pinned nono; its install check asserts `nono --version`.
           nono = nonoFor pkgs;
           # services.controlroom's assertions and generated settings.

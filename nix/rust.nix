@@ -293,4 +293,18 @@ in
         CR_TEST_PI_BUNDLE = piBundle;
       }
     );
+
+  # A profile's model allow-list against real pi: the agent daemon's ignored `pi_model_policy`
+  # test, run against `piBundle` (controlroom-pi).
+  piModelPolicy =
+    piBundle:
+    craneLib.cargoTest (
+      commonArgs
+      // {
+        pname = "controlroom-pi-model-policy";
+        inherit cargoArtifacts;
+        cargoTestExtraArgs = "-p controlroom-agentd --test pi_model_policy -- --ignored";
+        CR_TEST_PI_BUNDLE = piBundle;
+      }
+    );
 }
