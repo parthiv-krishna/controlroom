@@ -34,9 +34,8 @@ fn env_var(var: &str) -> String {
 }
 
 /// The bundle's launcher, pointing the mock provider at nono's reverse proxy: nono hands the
-/// sandbox the proxied base URL and a phantom key for the route. At level off there is no nono:
-/// pi runs on the agent daemon's own agent dir, which names the mock directly, so nothing is
-/// rewritten.
+/// sandbox the proxied base URL and a phantom key for the route. pi runs under nono at every
+/// level (the level shapes only the hosts' sandboxes).
 fn agent_command(bundle: &Path, mock: &MockModel) -> String {
     let origin = format!("http://127.0.0.1:{}", mock.port());
     let placeholder = controlroom_sandbox::agent_dir::PLACEHOLDER;
@@ -625,6 +624,21 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
     }
 }
 
+/// The argv of each start of the session's agent, from its transcript's `meta` records.
+fn agent_starts(world: &World, id: &str) -> Vec<Vec<String>> {
+    let transcript = world
+        .agentd
+        .state()
+        .join(format!("sessions/{id}/transcript.jsonl"));
+    std::fs::read_to_string(transcript)
+        .unwrap()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|record| record["dir"] == "meta")
+        .map(|record| serde_json::from_value(record["argv"].clone()).unwrap())
+        .collect()
+}
+
 /// Spec §11 "A session's level after creation", end to end with real pi and nono: in a strict
 /// session, `cat` of a file outside the workspace raises a file request (denied here); after
 /// `session.set_sandbox_level` to off the agent restarts resumed, with the note in its context,
@@ -700,6 +714,13 @@ async fn a_level_change_reaches_the_agent_and_its_shells() {
     assert!(
         after.contains("set the sandbox level to off"),
         "the note: {after}"
+    );
+    // The server sandbox stays on: the restarted pi runs under nono, with the model's route.
+    let starts = agent_starts(&world, &id);
+    assert_eq!(starts.len(), 2, "{starts:?}");
+    assert!(
+        starts.iter().all(|argv| argv[0].ends_with("/nono")),
+        "{starts:?}"
     );
     assert!(
         after.contains("Tried."),
