@@ -1,8 +1,8 @@
 // Sandbox levels in the new-session dialog and a session's header (spec §11.6). The session's own
 // `SandboxInfo` comes from the server; before a session exists, the dialog previews its default
-// level from the profiles as the server computes it: the strictest level among its workspaces'
+// level from the sandbox defaults as the server computes it: the strictest level among its workspaces'
 // machines and its tasks' projects.
-import type { MachineId, ProjectId, SandboxInfo, SandboxLevel, SandboxProfile } from '../protocol';
+import type { MachineId, ProjectId, SandboxInfo, SandboxLevel, SandboxDefaults } from '../protocol';
 
 export const LEVELS: { value: SandboxLevel; label: string; hint: string }[] = [
   { value: 'strict', label: 'Strict', hint: 'Workspace directories and session dirs only' },
@@ -42,8 +42,8 @@ export function levelChange(info: SandboxInfo, next: SandboxLevel | null): Level
 }
 
 /** The default level of a new session on `machines` linked to tasks of `projects` (`strict` when nothing is set). */
-export function defaultLevel(profiles: readonly SandboxProfile[], machines: readonly MachineId[], projects: readonly ProjectId[]): SandboxLevel {
-  const levels = profiles
+export function defaultLevel(defaults: readonly SandboxDefaults[], machines: readonly MachineId[], projects: readonly ProjectId[]): SandboxLevel {
+  const levels = defaults
     .filter((p) => (p.scope.kind === 'machine' && machines.includes(p.scope.machine_id)) || (p.scope.kind === 'project' && projects.includes(p.scope.project_id)))
     .map((p) => p.level)
     .filter((l): l is SandboxLevel => l !== null);
@@ -52,13 +52,13 @@ export function defaultLevel(profiles: readonly SandboxProfile[], machines: read
 }
 
 /** A path typed for a standing grant, a socket or the never list, checked as the server checks it. */
-export type ProfilePath = { ok: true; path: string } | { ok: false; error: string };
+export type DefaultsPath = { ok: true; path: string } | { ok: false; error: string };
 
 /**
  * Checks and normalizes a grant, socket or never path: absolute (`/…`) or home-relative (`~`, `~/…`;
  * each host expands `~`), no `.` or `..` components; repeated and trailing slashes are dropped.
  */
-export function checkProfilePath(value: string): ProfilePath {
+export function checkDefaultsPath(value: string): DefaultsPath {
   const v = value.trim();
   let prefix: string;
   let rest: string;

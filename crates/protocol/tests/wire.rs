@@ -1021,14 +1021,14 @@ fn models_wire_shapes() {
 }
 
 #[test]
-fn golden_sandbox_profile_changes_for_paths() {
-    let scope = ProfileScope::Machine {
+fn golden_sandbox_defaults_changes_for_paths() {
+    let scope = DefaultsScope::Machine {
         machine_id: MID.parse().unwrap(),
     };
     golden(
-        &SandboxSetProfileParams {
+        &SandboxSetDefaultsParams {
             scope: scope.clone(),
-            change: ProfileChange::AddGrant {
+            change: DefaultsChange::AddGrant {
                 grant: NewGrant {
                     kind: GrantKind::Path,
                     value: "~/.cache/nix".into(),
@@ -1043,7 +1043,7 @@ fn golden_sandbox_profile_changes_for_paths() {
         }),
     );
     golden(
-        &ProfileChange::AddGrant {
+        &DefaultsChange::AddGrant {
             grant: NewGrant {
                 kind: GrantKind::Socket,
                 value: "/run/dbus/system_bus_socket".into(),
@@ -1057,19 +1057,19 @@ fn golden_sandbox_profile_changes_for_paths() {
     let kind: GrantKind = serde_json::from_value(json!("tunnel")).unwrap();
     assert_eq!(kind, GrantKind::Unknown);
     golden(
-        &ProfileChange::AddNever {
+        &DefaultsChange::AddNever {
             path: "~/.bash_history".into(),
         },
         json!({"kind": "add_never", "path": "~/.bash_history"}),
     );
     golden(
-        &ProfileChange::RemoveNever {
+        &DefaultsChange::RemoveNever {
             path: "~/.bash_history".into(),
         },
         json!({"kind": "remove_never", "path": "~/.bash_history"}),
     );
-    // Profiles and specs from before the never list decode with an empty one.
-    let old: SandboxProfile = serde_json::from_value(json!({
+    // Defaults and specs from before the never list decode with an empty one.
+    let old: SandboxDefaults = serde_json::from_value(json!({
         "scope": {"kind": "machine", "machine_id": MID},
         "level": null, "grants": [], "domains": [], "mediated": []
     }))

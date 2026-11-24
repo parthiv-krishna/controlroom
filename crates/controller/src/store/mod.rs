@@ -46,7 +46,7 @@ pub use machines::{MachineRow, Machines, NewMachineRow, SeenUpdate};
 pub use prefs::Prefs;
 pub use projects::Projects;
 pub use push::{Delivery, PushSubscriptionRow, PushSubscriptions};
-pub use sandbox::SandboxProfiles;
+pub use sandbox::SandboxDefaultsStore;
 pub use schedules::{NewSchedule, Schedules, Timing};
 pub use tasks::{NewTask, Tasks};
 
@@ -266,9 +266,9 @@ impl OwnerRepo<'_> {
         Schedules::new(self.store, &self.owner)
     }
 
-    /// Sandbox default profiles.
-    pub fn sandbox_profiles(&self) -> SandboxProfiles<'_> {
-        SandboxProfiles::new(self.store, &self.owner)
+    /// Sandbox defaults per scope.
+    pub fn sandbox_defaults(&self) -> SandboxDefaultsStore<'_> {
+        SandboxDefaultsStore::new(self.store, &self.owner)
     }
 
     /// UI and notification preferences.

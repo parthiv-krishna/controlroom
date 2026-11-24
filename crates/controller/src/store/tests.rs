@@ -5,7 +5,7 @@ use controlroom_protocol::host::{BootStartMethod, CheckStatus, DoctorCheck, Doct
 use controlroom_protocol::ids::{DeviceId, KeyId, MachineId, SessionId};
 use controlroom_protocol::session::SandboxLevel;
 use controlroom_protocol::ui::{
-    AuthMode, ContactScope, Priority, ProfileChange, ProfileScope, Task, TaskStatus,
+    AuthMode, ContactScope, DefaultsChange, DefaultsScope, Priority, Task, TaskStatus,
 };
 
 use super::*;
@@ -401,57 +401,57 @@ fn auth_sessions_slide_and_expire() {
 }
 
 #[test]
-fn sandbox_profiles_and_grants() {
+fn sandbox_defaults_and_grants() {
     let (store, owner) = store();
     let repo = store.owner(&owner);
     let m = MachineId::generate();
-    let scope = ProfileScope::Machine { machine_id: m };
-    repo.sandbox_profiles()
+    let scope = DefaultsScope::Machine { machine_id: m };
+    repo.sandbox_defaults()
         .change(
             &scope,
-            &ProfileChange::SetLevel {
+            &DefaultsChange::SetLevel {
                 level: SandboxLevel::Off,
             },
             None,
         )
         .unwrap();
-    repo.sandbox_profiles()
+    repo.sandbox_defaults()
         .change(
             &scope,
-            &ProfileChange::AddDomain {
+            &DefaultsChange::AddDomain {
                 domain: "registry.example.com".into(),
             },
             None,
         )
         .unwrap();
-    let profiles = repo.sandbox_profiles().list().unwrap();
-    assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].scope, scope);
-    assert_eq!(profiles[0].level, Some(SandboxLevel::Off));
-    assert_eq!(profiles[0].domains, ["registry.example.com"]);
-    // A profile without settings disappears.
-    repo.sandbox_profiles()
-        .change(&scope, &ProfileChange::ClearLevel, None)
+    let defaults = repo.sandbox_defaults().list().unwrap();
+    assert_eq!(defaults.len(), 1);
+    assert_eq!(defaults[0].scope, scope);
+    assert_eq!(defaults[0].level, Some(SandboxLevel::Off));
+    assert_eq!(defaults[0].domains, ["registry.example.com"]);
+    // A scope without settings disappears.
+    repo.sandbox_defaults()
+        .change(&scope, &DefaultsChange::ClearLevel, None)
         .unwrap();
-    repo.sandbox_profiles()
+    repo.sandbox_defaults()
         .change(
             &scope,
-            &ProfileChange::RemoveDomain {
+            &DefaultsChange::RemoveDomain {
                 domain: "registry.example.com".into(),
             },
             None,
         )
         .unwrap();
-    assert!(repo.sandbox_profiles().list().unwrap().is_empty());
-    // The never list is stored with the profile.
-    let never = ProfileChange::AddNever {
+    assert!(repo.sandbox_defaults().list().unwrap().is_empty());
+    // The never list is stored with the defaults.
+    let never = DefaultsChange::AddNever {
         path: "~/.bash_history".into(),
     };
-    repo.sandbox_profiles()
+    repo.sandbox_defaults()
         .change(&scope, &never, None)
         .unwrap();
     assert_eq!(
-        repo.sandbox_profiles().list().unwrap()[0].never,
+        repo.sandbox_defaults().list().unwrap()[0].never,
         ["~/.bash_history"]
     );
 
@@ -497,29 +497,17 @@ fn projects_created_in_the_same_millisecond_keep_their_insertion_order() {
     assert_eq!(names, ["p0", "p1", "p2"]);
 }
 
-/// A version-5 database (before the never list) is upgraded in place, keeping its rows.
+/// An older database is refused, never upgraded: there are no migrations before the first
+/// release.
 #[test]
-fn a_version_5_database_is_upgraded() {
+fn an_older_database_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("controller.sqlite");
-    let id = Store::open(&path).unwrap().controller_id().unwrap();
+    Store::open(&path).unwrap();
     let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("ALTER TABLE sandbox_profiles DROP COLUMN never; PRAGMA user_version = 5;")
+    conn.pragma_update(None, "user_version", schema::VERSION - 1)
         .unwrap();
     drop(conn);
-    let store = Store::open(&path).unwrap();
-    assert_eq!(store.controller_id().unwrap(), id);
-    let owner = OwnerId::new("alice");
-    store.ensure_owner(&owner).unwrap();
-    let scope = ProfileScope::Machine {
-        machine_id: MachineId::generate(),
-    };
-    let never = ProfileChange::AddNever {
-        path: "/srv/secret".into(),
-    };
-    store
-        .owner(&owner)
-        .sandbox_profiles()
-        .change(&scope, &never, None)
-        .unwrap();
+    let err = Store::open(&path).err().unwrap();
+    assert!(err.to_string().contains("delete the database"), "{err}");
 }

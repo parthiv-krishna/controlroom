@@ -160,10 +160,10 @@ pub mod methods {
         /// Fire a schedule now.
         SchedulesRunNow = "schedules.run_now" (ScheduleRef) -> Schedule;
 
-        /// The sandbox defaults of every machine and project.
-        SandboxProfiles = "sandbox.profiles" (NoParams) -> SandboxProfilesResult;
-        /// Edit a machine's or project's sandbox defaults.
-        SandboxSetProfile = "sandbox.set_profile" (SandboxSetProfileParams) -> SandboxProfilesResult;
+        /// The sandbox defaults of every scope.
+        SandboxDefaultsMethod = "sandbox.defaults" (NoParams) -> SandboxDefaultsResult;
+        /// Edit one scope's sandbox defaults.
+        SandboxSetDefaults = "sandbox.set_defaults" (SandboxSetDefaultsParams) -> SandboxDefaultsResult;
 
         /// Report what this client shows, for push deduplication.
         ClientFocus = "client.focus" (ClientFocusParams) -> Ack;

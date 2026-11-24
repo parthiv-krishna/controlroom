@@ -13,7 +13,7 @@
   import { connKind, connLabel, isLive } from '../model/status';
   import { columnLabel } from '../model/tasks';
   import { normPath } from '../model/workspaces';
-  import type { MachineId, SandboxLevel, SandboxProfile } from '../protocol';
+  import type { MachineId, SandboxLevel, SandboxDefaults } from '../protocol';
   import Dropdown, { type Option } from '../ui/Dropdown.svelte';
   import Modal from '../ui/Modal.svelte';
   import PathCombo from '../ui/PathCombo.svelte';
@@ -43,17 +43,17 @@
   // svelte-ignore state_referenced_locally
   let tasks = $state<string[]>(preset.tasks?.slice() ?? []);
   let level = $state<SandboxLevel | 'default'>('default');
-  let profiles = $state<SandboxProfile[]>([]);
+  let sandboxDefaults = $state<SandboxDefaults[]>([]);
   let busy = $state(false);
   let error = $state<string | null>(null);
 
   $effect(() => {
-    if (app.client.online) void app.client.call('sandbox.profiles', {}).then((r) => (profiles = r?.profiles ?? []));
+    if (app.client.online) void app.client.call('sandbox.defaults', {}).then((r) => (sandboxDefaults = r?.defaults ?? []));
   });
 
   const machineIds = $derived([...new Set(rows.map((r) => r.machine).filter(Boolean))]);
   const taskProjects = $derived([...new Set(tasks.flatMap((id) => feed.tasks.get(id)?.project_ids ?? []))]);
-  const defaults = $derived(defaultLevel(profiles, machineIds, taskProjects));
+  const defaults = $derived(defaultLevel(sandboxDefaults, machineIds, taskProjects));
   const chosen = $derived(level === 'default' ? defaults : level);
   /** Machines that can't take a workspace now (the server refuses them). */
   const away = $derived(machineIds.map((id) => feed.machines.get(id)).filter((m) => !m || !isLive(m)));

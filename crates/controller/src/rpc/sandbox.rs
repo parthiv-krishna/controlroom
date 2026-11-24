@@ -1,7 +1,7 @@
-//! Sandbox defaults (spec §11.6): `sandbox.profiles`, `sandbox.set_profile`, and the defaults
+//! Sandbox defaults (spec §11.6): `sandbox.defaults`, `sandbox.set_defaults`, and the defaults
 //! the controller fills into session create, resume and start fresh.
 //!
-//! A session's defaults combine the profiles of its workspaces' machines and of every project
+//! A session's defaults combine the defaults of its workspaces' machines and of every project
 //! it belongs to (through its linked tasks): the strictest level (`strict` when none is set),
 //! and the union of grants, domains and mediated commands. An explicit session level is the
 //! daemon's to apply on top, in either direction.
@@ -14,60 +14,60 @@ use controlroom_protocol::ids::{MachineId, ProjectId, TaskId};
 use controlroom_protocol::session::DeviceRef;
 use controlroom_protocol::session::{MediationAction, SandboxLevel, SandboxSpec};
 use controlroom_protocol::ui::{
-    ProfileChange, ProfileScope, SandboxProfilesResult, SandboxSetProfileParams,
+    DefaultsChange, DefaultsScope, SandboxDefaultsResult, SandboxSetDefaultsParams,
 };
 
-use super::{Conn, profile_paths};
+use super::{Conn, defaults_paths};
 use crate::errors::{invalid_params, not_found, store_error};
 use crate::hub::Hub;
 
-/// `sandbox.profiles`.
-pub(super) fn profiles(conn: &Conn) -> Result<SandboxProfilesResult, RpcError> {
-    Ok(SandboxProfilesResult {
-        profiles: conn
+/// `sandbox.defaults`.
+pub(super) fn list(conn: &Conn) -> Result<SandboxDefaultsResult, RpcError> {
+    Ok(SandboxDefaultsResult {
+        defaults: conn
             .hub
             .repo()
-            .sandbox_profiles()
+            .sandbox_defaults()
             .list()
             .map_err(store_error)?,
     })
 }
 
-/// `sandbox.set_profile`: applies to new sessions and restarts.
-pub(super) fn set_profile(
+/// `sandbox.set_defaults`: applies to new sessions and restarts.
+pub(super) fn set(
     conn: &Conn,
-    p: SandboxSetProfileParams,
-) -> Result<SandboxProfilesResult, RpcError> {
+    p: SandboxSetDefaultsParams,
+) -> Result<SandboxDefaultsResult, RpcError> {
     let repo = conn.hub.repo();
     match &p.scope {
-        ProfileScope::Machine { machine_id } => {
+        DefaultsScope::Machine { machine_id } => {
             repo.machines()
                 .get(*machine_id)
                 .map_err(store_error)?
                 .ok_or_else(|| not_found(Resource::Machine, machine_id))?;
         }
-        ProfileScope::Project { project_id } => {
+        DefaultsScope::Project { project_id } => {
             repo.projects()
                 .get(*project_id)
                 .map_err(store_error)?
                 .ok_or_else(|| not_found(Resource::Project, project_id))?;
         }
-        ProfileScope::Unknown => return Err(invalid_params("unknown profile scope")),
+        DefaultsScope::Unknown => return Err(invalid_params("unknown sandbox defaults scope")),
     }
-    let change = profile_paths::check_change(p.change)?;
+    let change = defaults_paths::check_change(p.change)?;
     let device = conn.device_ref();
     if matches!(
         change,
-        ProfileChange::AddGrant { .. }
-            | ProfileChange::AddNever { .. }
-            | ProfileChange::RemoveNever { .. }
+        DefaultsChange::AddGrant { .. }
+            | DefaultsChange::AddNever { .. }
+            | DefaultsChange::RemoveNever { .. }
     ) {
         tracing::info!(scope = ?p.scope, ?change, device = %device_label(device.as_ref()), "sandbox defaults change");
     }
-    repo.sandbox_profiles()
+    repo.sandbox_defaults()
         .change(&p.scope, &change, device.as_ref())
         .map_err(store_error)?;
-    profiles(conn)
+    list(conn)
 }
 
 /// The projects of `tasks`, in order.
@@ -92,11 +92,11 @@ pub(crate) fn defaults(
     tasks: &[TaskId],
 ) -> Result<SandboxSpec, RpcError> {
     let projects = task_projects(hub, tasks)?;
-    let profiles = hub.repo().sandbox_profiles().list().map_err(store_error)?;
-    let applies = |scope: &ProfileScope| match scope {
-        ProfileScope::Machine { machine_id } => machines.contains(machine_id),
-        ProfileScope::Project { project_id } => projects.contains(project_id),
-        ProfileScope::Unknown => false,
+    let entries = hub.repo().sandbox_defaults().list().map_err(store_error)?;
+    let applies = |scope: &DefaultsScope| match scope {
+        DefaultsScope::Machine { machine_id } => machines.contains(machine_id),
+        DefaultsScope::Project { project_id } => projects.contains(project_id),
+        DefaultsScope::Unknown => false,
     };
     let mut spec = SandboxSpec {
         level: SandboxLevel::Strict,
@@ -106,29 +106,29 @@ pub(crate) fn defaults(
         never: Vec::new(),
     };
     let mut level: Option<SandboxLevel> = None;
-    for profile in profiles.into_iter().filter(|p| applies(&p.scope)) {
-        if let Some(l) = profile.level {
+    for entry in entries.into_iter().filter(|e| applies(&e.scope)) {
+        if let Some(l) = entry.level {
             level = Some(match level {
                 Some(current) if l.is_looser_than(current) => current,
                 _ => l,
             });
         }
-        for grant in profile.grants {
+        for grant in entry.grants {
             if !spec.grants.iter().any(|g| g.id == grant.id) {
                 spec.grants.push(grant);
             }
         }
-        for domain in profile.domains {
+        for domain in entry.domains {
             if !spec.domains.contains(&domain) {
                 spec.domains.push(domain);
             }
         }
-        for path in profile.never {
+        for path in entry.never {
             if !spec.never.contains(&path) {
                 spec.never.push(path);
             }
         }
-        for mediated in profile.mediated {
+        for mediated in entry.mediated {
             match spec
                 .mediated
                 .iter_mut()

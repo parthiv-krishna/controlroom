@@ -7,31 +7,31 @@
   // could never take effect are refused with the reason (checked here, and by the server).
   import { useApp } from '../app/app.svelte';
   import { describeError } from '../api/errors';
-  import { KNOWN_SOCKETS, LEVELS, PROC_GRANT, checkProfilePath, grantLimit } from '../model/sandbox';
-  import type { MediationAction, NewGrant, PathAccess, ProfileChange, ProfileScope, SandboxProfile } from '../protocol';
+  import { KNOWN_SOCKETS, LEVELS, PROC_GRANT, checkDefaultsPath, grantLimit } from '../model/sandbox';
+  import type { MediationAction, NewGrant, PathAccess, DefaultsChange, DefaultsScope, SandboxDefaults } from '../protocol';
   import ActionMenu, { type MenuAction } from '../ui/ActionMenu.svelte';
   import Dropdown from '../ui/Dropdown.svelte';
 
   const app = useApp();
   const feed = app.client.feed;
   const online = $derived(app.client.online);
-  let profiles = $state<SandboxProfile[]>([]);
+  let defaults = $state<SandboxDefaults[]>([]);
   $effect(() => {
-    if (online) void app.client.call('sandbox.profiles', {}).then((r) => (profiles = r?.profiles ?? []));
+    if (online) void app.client.call('sandbox.defaults', {}).then((r) => (defaults = r?.defaults ?? []));
   });
 
   interface Row {
     key: string;
     name: string;
     color: string | null;
-    scope: ProfileScope;
-    profile: SandboxProfile | null;
+    scope: DefaultsScope;
+    defaults: SandboxDefaults | null;
   }
-  const scopeKey = (s: ProfileScope) => (s.kind === 'machine' ? `m:${s.machine_id}` : s.kind === 'project' ? `p:${s.project_id}` : '');
+  const scopeKey = (s: DefaultsScope) => (s.kind === 'machine' ? `m:${s.machine_id}` : s.kind === 'project' ? `p:${s.project_id}` : '');
   const rows = $derived.by(() => {
-    const byKey = new Map(profiles.map((p) => [scopeKey(p.scope), p]));
-    const machines: Row[] = feed.machineList.map((m) => ({ key: `m:${m.id}`, name: m.name, color: null, scope: { kind: 'machine', machine_id: m.id }, profile: byKey.get(`m:${m.id}`) ?? null }));
-    const projects: Row[] = feed.projectList.map((p) => ({ key: `p:${p.id}`, name: p.name, color: p.color, scope: { kind: 'project', project_id: p.id }, profile: byKey.get(`p:${p.id}`) ?? null }));
+    const byKey = new Map(defaults.map((p) => [scopeKey(p.scope), p]));
+    const machines: Row[] = feed.machineList.map((m) => ({ key: `m:${m.id}`, name: m.name, color: null, scope: { kind: 'machine', machine_id: m.id }, defaults: byKey.get(`m:${m.id}`) ?? null }));
+    const projects: Row[] = feed.projectList.map((p) => ({ key: `p:${p.id}`, name: p.name, color: p.color, scope: { kind: 'project', project_id: p.id }, defaults: byKey.get(`p:${p.id}`) ?? null }));
     return { machines, projects };
   });
 
@@ -62,13 +62,13 @@
   /** Why the last path typed for a row (`<key>:grant`, `<key>:never` or `<key>:socket`) was refused. */
   let pathError = $state<Record<string, string>>({});
 
-  async function change(scope: ProfileScope, c: ProfileChange) {
-    const r = await app.client.call('sandbox.set_profile', { scope, change: c });
-    if (r) profiles = r.profiles;
+  async function change(scope: DefaultsScope, c: DefaultsChange) {
+    const r = await app.client.call('sandbox.set_defaults', { scope, change: c });
+    if (r) defaults = r.defaults;
   }
   async function setLevel(row: Row, v: string) {
     if (v === 'off' && !(await app.dialogs.confirm({ title: `Turn the sandbox off for ${row.name}?`, body: 'New sessions there run unconfined; running ones keep their sandbox.', ok: 'Turn off', danger: true }))) return;
-    await change(row.scope, v === 'none' ? { kind: 'clear_level' } : { kind: 'set_level', level: v as SandboxProfile['level'] & string });
+    await change(row.scope, v === 'none' ? { kind: 'clear_level' } : { kind: 'set_level', level: v as SandboxDefaults['level'] & string });
   }
   function onEnter(e: KeyboardEvent, run: () => void) {
     if (e.key !== 'Enter') return;
@@ -85,7 +85,7 @@
   /** A typed path, normalized; `null` (with the reason shown) when it is refused. */
   function typedPath(row: Row, which: 'grant' | 'never' | 'socket', value: string): string | null {
     const key = `${row.key}:${which}`;
-    const checked = checkProfilePath(value);
+    const checked = checkDefaultsPath(value);
     if (!checked.ok) {
       pathError[key] = checked.error;
       return null;
@@ -96,7 +96,7 @@
   /** Adds a standing grant; a refusal (the server's reason) shows under the row's `which` input. */
   async function addGrantOf(row: Row, which: 'grant' | 'socket', grant: NewGrant): Promise<boolean> {
     try {
-      profiles = (await app.client.request('sandbox.set_profile', { scope: row.scope, change: { kind: 'add_grant', grant } })).profiles;
+      defaults = (await app.client.request('sandbox.set_defaults', { scope: row.scope, change: { kind: 'add_grant', grant } })).defaults;
       return true;
     } catch (e) {
       pathError[`${row.key}:${which}`] = describeError(e);
@@ -123,8 +123,8 @@
       if (typedValue === undefined) socketPath[row.key] = '';
     }
   }
-  const pathGrants = (p: SandboxProfile | null) => (p?.grants ?? []).filter((g) => g.kind !== 'socket');
-  const socketGrants = (p: SandboxProfile | null) => (p?.grants ?? []).filter((g) => g.kind === 'socket');
+  const pathGrants = (p: SandboxDefaults | null) => (p?.grants ?? []).filter((g) => g.kind !== 'socket');
+  const socketGrants = (p: SandboxDefaults | null) => (p?.grants ?? []).filter((g) => g.kind === 'socket');
   function addNever(row: Row) {
     const path = typedPath(row, 'never', neverPath[row.key] ?? '');
     if (path === null) return;
@@ -143,10 +143,10 @@
 {#each [['Machines', rows.machines], ['Projects', rows.projects]] as [label, list] (label)}
   <div class="sec-h">{label}</div>
   {#each list as Row[] as row (row.key)}
-    {@const p = row.profile}
+    {@const p = row.defaults}
     {@const paths = pathGrants(p)}
     {@const sockets = socketGrants(p)}
-    <div class="card" data-profile={row.key}>
+    <div class="card" data-scope={row.key}>
       <div class="h">
         {#if row.color}<span class="pdot" style:background={row.color}></span>{/if}<b>{row.name}</b><span class="sp"></span>
         <Dropdown small label="Sandbox level for {row.name}" value={p?.level ?? 'none'} disabled={!online} options={[{ value: 'none', label: row.scope.kind === 'project' ? 'No minimum' : 'Default (strict)' }, ...LEVELS.map((l) => ({ value: l.value, label: l.label, hint: l.hint }))]} onchange={(v) => setLevel(row, v)} />

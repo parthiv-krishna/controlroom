@@ -14,7 +14,7 @@
 
 use controlroom_protocol::RpcError;
 use controlroom_protocol::session::{GrantKind, PathAccess};
-use controlroom_protocol::ui::{NewGrant, ProfileChange};
+use controlroom_protocol::ui::{DefaultsChange, NewGrant};
 use controlroom_sandbox::limits;
 
 use crate::errors::invalid_params;
@@ -53,12 +53,12 @@ pub(crate) fn normalize(value: &str) -> Result<String, RpcError> {
 }
 
 /// `change` with its path checked and normalized; other changes as they are.
-pub(crate) fn check_change(change: ProfileChange) -> Result<ProfileChange, RpcError> {
+pub(crate) fn check_change(change: DefaultsChange) -> Result<DefaultsChange, RpcError> {
     Ok(match change {
-        ProfileChange::AddGrant { grant } => ProfileChange::AddGrant {
+        DefaultsChange::AddGrant { grant } => DefaultsChange::AddGrant {
             grant: check_grant(grant)?,
         },
-        ProfileChange::AddNever { path } => ProfileChange::AddNever {
+        DefaultsChange::AddNever { path } => DefaultsChange::AddNever {
             path: normalize(&path)?,
         },
         other => other,
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn grants_are_paths_with_read_or_read_write_and_root_stays_read_only() {
         let grant = |kind, value: &str, access| {
-            check_change(ProfileChange::AddGrant {
+            check_change(DefaultsChange::AddGrant {
                 grant: NewGrant {
                     kind,
                     value: value.into(),
@@ -147,7 +147,7 @@ mod tests {
         let path = GrantKind::Path;
         assert_eq!(
             grant(path, "~/.cache//nix/", Some(PathAccess::ReadWrite)).unwrap(),
-            ProfileChange::AddGrant {
+            DefaultsChange::AddGrant {
                 grant: NewGrant {
                     kind: path,
                     value: "~/.cache/nix".into(),
@@ -159,14 +159,14 @@ mod tests {
         assert!(grant(path, "/srv", Some(PathAccess::Write)).is_err());
         assert!(grant(path, "/srv", None).is_err());
         assert!(grant(GrantKind::Domain, "example.com", None).is_err());
-        assert!(check_change(ProfileChange::AddNever { path: "rel".into() }).is_err());
+        assert!(check_change(DefaultsChange::AddNever { path: "rel".into() }).is_err());
     }
 
     /// Grants nono could never hold are refused with the reason; never-paths aren't limited.
     #[test]
     fn grants_that_could_never_take_effect_are_refused() {
         let refused = |value: &str| {
-            check_change(ProfileChange::AddGrant {
+            check_change(DefaultsChange::AddGrant {
                 grant: NewGrant {
                     kind: GrantKind::Path,
                     value: value.into(),
@@ -184,7 +184,7 @@ mod tests {
         assert!(refused("~/.nono/x").contains("nono's own state"));
         assert!(refused("/proc/1/root").contains("/proc entry"));
         let path = |value: &str| {
-            check_change(ProfileChange::AddGrant {
+            check_change(DefaultsChange::AddGrant {
                 grant: NewGrant {
                     kind: GrantKind::Path,
                     value: value.into(),
@@ -195,7 +195,7 @@ mod tests {
         assert!(path("~/.bash_history").is_ok());
         assert!(path("/proc").is_ok());
         assert!(
-            check_change(ProfileChange::AddNever {
+            check_change(DefaultsChange::AddNever {
                 path: "/proc/1/root".into()
             })
             .is_ok()
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn socket_grants_are_paths_without_access() {
         let socket = |value: &str, access| {
-            check_change(ProfileChange::AddGrant {
+            check_change(DefaultsChange::AddGrant {
                 grant: NewGrant {
                     kind: GrantKind::Socket,
                     value: value.into(),
@@ -215,7 +215,7 @@ mod tests {
         };
         assert_eq!(
             socket("/run/dbus//system_bus_socket", None).unwrap(),
-            ProfileChange::AddGrant {
+            DefaultsChange::AddGrant {
                 grant: NewGrant {
                     kind: GrantKind::Socket,
                     value: "/run/dbus/system_bus_socket".into(),

@@ -279,7 +279,7 @@ impl<'a> Machines<'a> {
     pub fn delete(&self, id: MachineId) -> StoreResult<bool> {
         let conn = self.store.lock();
         conn.execute(
-            "DELETE FROM sandbox_profiles WHERE owner_id = ?1 AND scope_kind = 'machine'
+            "DELETE FROM sandbox_defaults WHERE owner_id = ?1 AND scope_kind = 'machine'
              AND scope_id = ?2",
             (self.owner.as_str(), id.to_string()),
         )?;

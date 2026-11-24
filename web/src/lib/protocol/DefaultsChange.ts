@@ -5,9 +5,9 @@ import type { NewGrant } from "./NewGrant";
 import type { SandboxLevel } from "./SandboxLevel";
 
 /**
- * One edit of a default profile.
+ * One edit of a scope's sandbox defaults.
  */
-export type ProfileChange = { "kind": "set_level", 
+export type DefaultsChange = { "kind": "set_level", 
 /**
  * The level.
  */

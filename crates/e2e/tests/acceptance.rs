@@ -567,10 +567,10 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
             .is_some_and(|p| p.starts_with("/proc/sys"))),
         "{probes:#?}"
     );
-    let profiles = world.ui.ok("sandbox.profiles", json!({})).await;
-    let profile = &profiles["profiles"][0];
-    assert_eq!(profile["scope"]["machine_id"], json!(devbox));
-    let granted: Vec<&str> = profile["grants"]
+    let defaults = world.ui.ok("sandbox.defaults", json!({})).await;
+    let entry = &defaults["defaults"][0];
+    assert_eq!(entry["scope"]["machine_id"], json!(devbox));
+    let granted: Vec<&str> = entry["grants"]
         .as_array()
         .unwrap()
         .iter()
@@ -582,7 +582,7 @@ async fn always_and_never_on_file_requests_carry_over_to_new_sessions() {
         "{granted:?}"
     );
     assert!(
-        profile["never"][0]
+        entry["never"][0]
             .as_str()
             .unwrap()
             .ends_with("/notes/never.txt")

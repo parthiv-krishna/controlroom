@@ -1,9 +1,9 @@
 //! "Always allow" and "Never" on a file request (spec §11.4, §11.6): once the agent daemon has
 //! recorded the answer (`request.respond`), the controller, which owns the sandbox defaults,
-//! makes it standing on the requesting machine's profile:
+//! makes it standing in the requesting machine's sandbox defaults:
 //!
 //! - **Always allow** → a standing path grant with the requested access (`write` becomes
-//!   `read_write`), so new sessions and restarts get it in their profile;
+//!   `read_write`), so new sessions and restarts get it in their sandbox;
 //! - **Never** → the path joins the machine's never-list: later requests are denied on the host
 //!   without asking.
 //!
@@ -17,11 +17,11 @@ use controlroom_protocol::host::options::{ALLOW_ALWAYS, NEVER};
 use controlroom_protocol::session::{
     GrantKind, PathAccess, RequestBody, RequestKind, RequestState, Response,
 };
-use controlroom_protocol::ui::{NewGrant, ProfileChange, ProfileScope};
+use controlroom_protocol::ui::{DefaultsChange, DefaultsScope, NewGrant};
 use serde_json::Value;
 
 use super::sandbox::device_label;
-use super::{Conn, profile_paths};
+use super::{Conn, defaults_paths};
 use crate::errors::{not_found, store_error};
 
 /// Makes an answered "Always allow" or "Never" standing; other answers are left alone. A grant
@@ -40,7 +40,7 @@ pub(super) fn remember(conn: &Conn, result: &Value) -> Result<(), RpcError> {
         }
     };
     let repo = conn.hub.repo();
-    if let ProfileScope::Machine { machine_id } = &scope {
+    if let DefaultsScope::Machine { machine_id } = &scope {
         repo.machines()
             .get(*machine_id)
             .map_err(store_error)?
@@ -53,15 +53,15 @@ pub(super) fn remember(conn: &Conn, result: &Value) -> Result<(), RpcError> {
         device = %device_label(device.as_ref()),
         "sandbox decision on a file request"
     );
-    repo.sandbox_profiles()
+    repo.sandbox_defaults()
         .change(&scope, &change, device.as_ref())
         .map_err(store_error)
 }
 
-/// The profile change an answered file request asks for, if any.
+/// The defaults change an answered file request asks for, if any.
 fn standing_change(
     result: &RequestRespondResult,
-) -> Result<Option<(ProfileScope, ProfileChange)>, RpcError> {
+) -> Result<Option<(DefaultsScope, DefaultsChange)>, RpcError> {
     let request = &result.request;
     let option = match request.answer.as_ref().map(|a| &a.response) {
         Some(Response::Choice { option_id, .. }) => option_id.as_str(),
@@ -80,7 +80,7 @@ fn standing_change(
         return Ok(None);
     }
     let change = match option {
-        ALLOW_ALWAYS => ProfileChange::AddGrant {
+        ALLOW_ALWAYS => DefaultsChange::AddGrant {
             grant: NewGrant {
                 kind: GrantKind::Path,
                 value: path.as_str().to_owned(),
@@ -90,15 +90,15 @@ fn standing_change(
                 }),
             },
         },
-        NEVER => ProfileChange::AddNever {
+        NEVER => DefaultsChange::AddNever {
             path: path.as_str().to_owned(),
         },
         _ => return Ok(None),
     };
-    let scope = ProfileScope::Machine {
+    let scope = DefaultsScope::Machine {
         machine_id: *machine_id,
     };
-    Ok(Some((scope, profile_paths::check_change(change)?)))
+    Ok(Some((scope, defaults_paths::check_change(change)?)))
 }
 
 #[cfg(test)]
@@ -147,8 +147,8 @@ mod tests {
     }
 
     #[test]
-    fn always_and_never_become_changes_of_the_machine_profile() {
-        let scope = ProfileScope::Machine {
+    fn always_and_never_become_changes_of_the_machine_defaults() {
+        let scope = DefaultsScope::Machine {
             machine_id: machine(),
         };
         let always = standing_change(&answered(
@@ -160,7 +160,7 @@ mod tests {
             always.unwrap(),
             Some((
                 scope.clone(),
-                ProfileChange::AddGrant {
+                DefaultsChange::AddGrant {
                     grant: NewGrant {
                         kind: GrantKind::Path,
                         value: "/home/alice/.cache/nix/x".into(),
@@ -174,7 +174,7 @@ mod tests {
             never.unwrap(),
             Some((
                 scope,
-                ProfileChange::AddNever {
+                DefaultsChange::AddNever {
                     path: "/home/alice/.cache/nix/x".into(),
                 },
             ))

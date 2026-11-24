@@ -140,7 +140,7 @@ async fn state_cursor_catches_up_or_snapshots() {
 }
 
 #[tokio::test]
-async fn devices_preferences_and_sandbox_profiles() {
+async fn devices_preferences_and_sandbox_defaults() {
     let setup = controller(None, None);
     let mut a = ui(&setup.controller, "laptop").await;
     // The server's label wins on re-register.
@@ -196,15 +196,15 @@ async fn devices_preferences_and_sandbox_profiles() {
         .ok("projects.create", json!({"name": "p", "color": "#000"}))
         .await;
     let scope = json!({"kind": "project", "project_id": project["id"]});
-    let profiles = a
+    let defaults = a
         .ok(
-            "sandbox.set_profile",
+            "sandbox.set_defaults",
             json!({"scope": scope, "change": {"kind": "set_level", "level": "relaxed"}}),
         )
         .await;
-    assert_eq!(profiles["profiles"][0]["level"], "relaxed");
+    assert_eq!(defaults["defaults"][0]["level"], "relaxed");
     a.err(
-        "sandbox.set_profile",
+        "sandbox.set_defaults",
         json!({"scope": {"kind": "machine", "machine_id": "01HZY3K6W8Q9X2V4N7B5C1D3E6"},
                "change": {"kind": "clear_level"}}),
         "not_found",

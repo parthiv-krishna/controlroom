@@ -94,7 +94,7 @@ impl<'a> Projects<'a> {
     pub fn delete(&self, id: ProjectId) -> StoreResult<bool> {
         self.store.transaction(|tx| {
             tx.execute(
-                "DELETE FROM sandbox_profiles WHERE owner_id = ?1 AND scope_kind = 'project'
+                "DELETE FROM sandbox_defaults WHERE owner_id = ?1 AND scope_kind = 'project'
                  AND scope_id = ?2",
                 (self.owner.as_str(), id.to_string()),
             )?;

@@ -1,8 +1,8 @@
-//! Sandbox defaults per machine and project (Settings › Sandbox).
+//! Sandbox defaults per profile, machine and project (Settings › Sandbox).
 //!
-//! A session's effective profile combines its machine's defaults with those of every project it
-//! belongs to: the strictest level, and the union of standing grants, domains and mediated
-//! commands. Edits apply to new sessions and restarts.
+//! A session's effective sandbox combines the defaults of its profile, its workspaces' machines
+//! and every project it belongs to: the strictest level, and the union of standing grants,
+//! domains, never-paths and mediated commands. Edits apply to new sessions and restarts.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -10,10 +10,10 @@ use ts_rs::TS;
 use crate::ids::{GrantId, MachineId, ProjectId};
 use crate::session::{GrantKind, MediatedCommand, PathAccess, SandboxGrant, SandboxLevel};
 
-/// What a default profile belongs to.
+/// What a set of sandbox defaults belongs to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ProfileScope {
+pub enum DefaultsScope {
     /// A machine.
     Machine {
         /// The machine.
@@ -29,11 +29,11 @@ pub enum ProfileScope {
     Unknown,
 }
 
-/// The sandbox defaults of one machine or project.
+/// The sandbox defaults of one profile, machine or project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct SandboxProfile {
+pub struct SandboxDefaults {
     /// What it belongs to.
-    pub scope: ProfileScope,
+    pub scope: DefaultsScope,
     /// The level; `null` leaves it to the other scopes (default `strict`).
     pub level: Option<SandboxLevel>,
     /// Standing grants.
@@ -47,15 +47,15 @@ pub struct SandboxProfile {
     pub never: Vec<String>,
 }
 
-/// Result of `sandbox.profiles` and `sandbox.set_profile`.
+/// Result of `sandbox.defaults` and `sandbox.set_defaults`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct SandboxProfilesResult {
-    /// Every machine and project profile that has settings.
-    pub profiles: Vec<SandboxProfile>,
+pub struct SandboxDefaultsResult {
+    /// Every scope that has settings.
+    pub defaults: Vec<SandboxDefaults>,
 }
 
-/// A standing grant to add ([`ProfileChange::AddGrant`]): a `path` or a `socket` (domains have
-/// [`ProfileChange::AddDomain`]). `value` is absolute or `~/…` (the host expands `~`) with no
+/// A standing grant to add ([`DefaultsChange::AddGrant`]): a `path` or a `socket` (domains have
+/// [`DefaultsChange::AddDomain`]). `value` is absolute or `~/…` (the host expands `~`) with no
 /// `.` or `..` components. A path's `access` is `read` or `read_write`; `/` can't be granted
 /// read-write, and paths nono can't hold are refused (a directory containing one of nono's
 /// always-denied paths such as `~/.ssh`, nono's own state, another process's `/proc/<pid>`). A
@@ -70,10 +70,10 @@ pub struct NewGrant {
     pub access: Option<PathAccess>,
 }
 
-/// One edit of a default profile.
+/// One edit of a scope's sandbox defaults.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ProfileChange {
+pub enum DefaultsChange {
     /// Set the level.
     SetLevel {
         /// The level.
@@ -123,11 +123,11 @@ pub enum ProfileChange {
     },
 }
 
-/// Params of `sandbox.set_profile`.
+/// Params of `sandbox.set_defaults`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct SandboxSetProfileParams {
-    /// The machine or project.
-    pub scope: ProfileScope,
+pub struct SandboxSetDefaultsParams {
+    /// The scope.
+    pub scope: DefaultsScope,
     /// The edit.
-    pub change: ProfileChange,
+    pub change: DefaultsChange,
 }

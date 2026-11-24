@@ -150,7 +150,7 @@ async fn sessions_are_created_and_driven_through_the_agent_daemon() {
     agentd.wait_connected(1).await;
     let devbox = add_machine(&mut next, &host, "devbox").await;
     next.ok(
-        "sandbox.set_profile",
+        "sandbox.set_defaults",
         json!({"scope": {"kind": "machine", "machine_id": devbox},
                "change": {"kind": "set_level", "level": "relaxed"}}),
     )
@@ -382,20 +382,20 @@ async fn always_and_never_on_a_file_request_change_the_machine_defaults() {
     );
     next.ok("request.respond", respond("allow-session")).await;
 
-    let profiles = next.ok("sandbox.profiles", json!({})).await["profiles"].clone();
-    let profile = &profiles[0];
+    let defaults = next.ok("sandbox.defaults", json!({})).await["defaults"].clone();
+    let entry = &defaults[0];
     assert_eq!(
-        profile["scope"],
+        entry["scope"],
         json!({"kind": "machine", "machine_id": devbox})
     );
-    let grants = profile["grants"].as_array().unwrap();
-    assert_eq!(grants.len(), 1, "{profile}");
+    let grants = entry["grants"].as_array().unwrap();
+    assert_eq!(grants.len(), 1, "{entry}");
     assert_eq!(grants[0]["kind"], "path");
     assert_eq!(grants[0]["value"], "/home/alice/.cache/nix/x.sqlite-shm");
     assert_eq!(grants[0]["access"], "read_write");
     assert_eq!(grants[0]["scope"], "standing");
     assert_eq!(grants[0]["by"]["device_id"], "laptop");
-    assert_eq!(profile["never"], json!(["/home/alice/.bash_history"]));
+    assert_eq!(entry["never"], json!(["/home/alice/.bash_history"]));
 
     // A new session on the machine starts with both.
     let created = next
@@ -432,29 +432,32 @@ async fn path_grants_and_never_paths_are_checked_and_normalized() {
     };
     for (value, access) in [("rel/x", "read"), ("~/a/../b", "read"), ("/", "read_write")] {
         next.err(
-            "sandbox.set_profile",
+            "sandbox.set_defaults",
             grant(value, access),
             "invalid_params",
         )
         .await;
     }
-    next.ok("sandbox.set_profile", grant("~/.cache//nix/", "read_write"))
-        .await;
+    next.ok(
+        "sandbox.set_defaults",
+        grant("~/.cache//nix/", "read_write"),
+    )
+    .await;
     let result = next
         .ok(
-            "sandbox.set_profile",
+            "sandbox.set_defaults",
             json!({"scope": scope, "change": {"kind": "add_never", "path": "~/.bash_history"}}),
         )
         .await;
-    let profile = &result["profiles"][0];
-    assert_eq!(profile["grants"][0]["value"], "~/.cache/nix");
-    assert_eq!(profile["grants"][0]["by"]["device_id"], "laptop");
-    assert_eq!(profile["never"], json!(["~/.bash_history"]));
+    let entry = &result["defaults"][0];
+    assert_eq!(entry["grants"][0]["value"], "~/.cache/nix");
+    assert_eq!(entry["grants"][0]["by"]["device_id"], "laptop");
+    assert_eq!(entry["never"], json!(["~/.bash_history"]));
     let result = next
         .ok(
-            "sandbox.set_profile",
+            "sandbox.set_defaults",
             json!({"scope": scope, "change": {"kind": "remove_never", "path": "~/.bash_history"}}),
         )
         .await;
-    assert_eq!(result["profiles"][0]["never"], json!([]));
+    assert_eq!(result["defaults"][0]["never"], json!([]));
 }

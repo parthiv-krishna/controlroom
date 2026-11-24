@@ -4368,8 +4368,8 @@
    "last_seen": 1767596400000,
    "push": true
   },
-  "sandbox.profiles": {
-   "profiles": [
+  "sandbox.defaults": {
+   "defaults": [
     {
      "scope": {
       "kind": "machine",
@@ -4438,8 +4438,8 @@
     }
    ]
   },
-  "sandbox.set_profile": {
-   "profiles": [
+  "sandbox.set_defaults": {
+   "defaults": [
     {
      "scope": {
       "kind": "machine",

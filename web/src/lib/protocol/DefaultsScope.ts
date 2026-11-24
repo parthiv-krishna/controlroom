@@ -3,9 +3,9 @@ import type { MachineId } from "./MachineId";
 import type { ProjectId } from "./ProjectId";
 
 /**
- * What a default profile belongs to.
+ * What a set of sandbox defaults belongs to.
  */
-export type ProfileScope = { "kind": "machine", 
+export type DefaultsScope = { "kind": "machine", 
 /**
  * The machine.
  */

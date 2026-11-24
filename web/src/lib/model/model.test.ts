@@ -6,7 +6,7 @@ import { groupSessions } from './grouping';
 import { contentText, deepLinkHash, guessDeviceName, lineDiff, parseDeepLink } from './misc';
 import { notes } from './notifications';
 import { UNASSIGNED, health, inScope, needsYouElsewhere, taskIn, type Ctx } from './projects';
-import { OFF_WARNING, checkProfilePath, defaultLevel, grantLimit, levelChange, looser } from './sandbox';
+import { OFF_WARNING, checkDefaultsPath, defaultLevel, grantLimit, levelChange, looser } from './sandbox';
 import { humanSchedule, inTime, parseCron, runText, runWhen } from './schedule';
 import { connKind, connLabel, statusKind, statusLabel, statusTitle } from './status';
 import { columnTasks, orderFor, rollup, suggestMove, taskPrompt } from './tasks';
@@ -265,12 +265,12 @@ describe('schedules', () => {
 });
 
 describe('sandbox defaults', () => {
-  const profiles = f.responses['sandbox.profiles']!.profiles;
+  const defaults = f.responses['sandbox.defaults']!.defaults;
 
   it('previews the strictest level of the workspaces\' machines and the tasks\' projects', () => {
-    expect(defaultLevel(profiles, [buildbox.id], [])).toBe('relaxed');
-    expect(defaultLevel(profiles, [buildbox.id], [project('Acme API').id])).toBe('strict');
-    expect(defaultLevel(profiles, [buildbox.id, devbox.id], [])).toBe('strict');
+    expect(defaultLevel(defaults, [buildbox.id], [])).toBe('relaxed');
+    expect(defaultLevel(defaults, [buildbox.id], [project('Acme API').id])).toBe('strict');
+    expect(defaultLevel(defaults, [buildbox.id, devbox.id], [])).toBe('strict');
     expect(defaultLevel([], [devbox.id], [])).toBe('strict');
     expect(looser('off', 'relaxed')).toBe(true);
     expect(looser('strict', 'relaxed')).toBe(false);
@@ -319,9 +319,9 @@ describe('misc', () => {
 
 describe('sandbox paths', () => {
   it('accepts absolute and home paths, normalized', () => {
-    expect(checkProfilePath(' ~/.cache//nix/ ')).toEqual({ ok: true, path: '~/.cache/nix' });
-    expect(checkProfilePath('/srv/data')).toEqual({ ok: true, path: '/srv/data' });
-    for (const root of ['/', '//']) expect(checkProfilePath(root)).toEqual({ ok: true, path: '/' });
+    expect(checkDefaultsPath(' ~/.cache//nix/ ')).toEqual({ ok: true, path: '~/.cache/nix' });
+    expect(checkDefaultsPath('/srv/data')).toEqual({ ok: true, path: '/srv/data' });
+    for (const root of ['/', '//']) expect(checkDefaultsPath(root)).toEqual({ ok: true, path: '/' });
   });
 
   it('names the grants nono could never hold', () => {
@@ -337,6 +337,6 @@ describe('sandbox paths', () => {
   });
 
   it('refuses relative paths and . or ..', () => {
-    for (const bad of ['', 'rel/x', '~alice/x', './x', '/a/../b', '/a/./b', '~/..']) expect(checkProfilePath(bad).ok).toBe(false);
+    for (const bad of ['', 'rel/x', '~alice/x', './x', '/a/../b', '/a/./b', '~/..']) expect(checkDefaultsPath(bad).ok).toBe(false);
   });
 });

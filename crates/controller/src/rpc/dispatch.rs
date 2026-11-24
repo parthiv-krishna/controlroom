@@ -124,8 +124,8 @@ pub(super) async fn dispatch(
         UiRequest::SchedulesDelete(p) => reply(schedules::delete(conn, p)?),
         UiRequest::SchedulesRunNow(p) => reply(schedules::run_now(conn, p).await?),
 
-        UiRequest::SandboxProfiles(_) => reply(sandbox::profiles(conn)?),
-        UiRequest::SandboxSetProfile(p) => reply(sandbox::set_profile(conn, p)?),
+        UiRequest::SandboxDefaultsMethod(_) => reply(sandbox::list(conn)?),
+        UiRequest::SandboxSetDefaults(p) => reply(sandbox::set(conn, p)?),
 
         UiRequest::FsList(p) => reply(fs_list(conn, p).await?),
         UiRequest::DoctorReportMethod(p) => reply(doctor(conn, p).await?),
@@ -260,8 +260,8 @@ mod tests {
             "notifications.",
             "client.",
             "schedules.",
-            "sandbox.profiles",
-            "sandbox.set_profile",
+            "sandbox.defaults",
+            "sandbox.set_defaults",
         ];
         for method in UiRequest::METHODS {
             let ours = handled.contains(method) || namespaces.iter().any(|n| method.starts_with(n));

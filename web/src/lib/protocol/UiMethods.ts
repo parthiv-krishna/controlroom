@@ -66,9 +66,9 @@ import type { QueueSendNowParams } from "./QueueSendNowParams";
 import type { ReadCursor } from "./ReadCursor";
 import type { RequestRespondParams } from "./RequestRespondParams";
 import type { RequestRespondResult } from "./RequestRespondResult";
-import type { SandboxProfilesResult } from "./SandboxProfilesResult";
+import type { SandboxDefaultsResult } from "./SandboxDefaultsResult";
 import type { SandboxRevokeParams } from "./SandboxRevokeParams";
-import type { SandboxSetProfileParams } from "./SandboxSetProfileParams";
+import type { SandboxSetDefaultsParams } from "./SandboxSetDefaultsParams";
 import type { Schedule } from "./Schedule";
 import type { ScheduleRef } from "./ScheduleRef";
 import type { SchedulesCreateParams } from "./SchedulesCreateParams";
@@ -283,13 +283,13 @@ export type UiMethods = {
    */
   "schedules.run_now": { params: ScheduleRef, result: Schedule },
   /**
-   * The sandbox defaults of every machine and project.
+   * The sandbox defaults of every scope.
    */
-  "sandbox.profiles": { params: NoParams, result: SandboxProfilesResult },
+  "sandbox.defaults": { params: NoParams, result: SandboxDefaultsResult },
   /**
-   * Edit a machine's or project's sandbox defaults.
+   * Edit one scope's sandbox defaults.
    */
-  "sandbox.set_profile": { params: SandboxSetProfileParams, result: SandboxProfilesResult },
+  "sandbox.set_defaults": { params: SandboxSetDefaultsParams, result: SandboxDefaultsResult },
   /**
    * Report what this client shows, for push deduplication.
    */

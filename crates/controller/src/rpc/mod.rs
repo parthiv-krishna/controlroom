@@ -12,13 +12,13 @@
 //! the connection isn't read further while at the cap.
 
 mod board;
+mod defaults_paths;
 mod dispatch;
 mod keys;
 mod machines;
 mod order;
 mod passthrough;
 mod people;
-mod profile_paths;
 mod sandbox;
 mod sandbox_decisions;
 mod schedules;

@@ -105,11 +105,11 @@ test('settings: tabs, the add-machine flow, devices and sandbox defaults', async
   await settings.getByRole('tab', { name: 'Notifications' }).click();
   await expect(settings.locator('[data-device="device-phone"]')).toContainText('push on');
   await settings.getByRole('tab', { name: 'Sandbox' }).click();
-  await settings.locator(`[data-profile="m:${M.devbox}"]`).getByRole('button', { name: 'Add a rule for devbox' }).click();
+  await settings.locator(`[data-scope="m:${M.devbox}"]`).getByRole('button', { name: 'Add a rule for devbox' }).click();
   await settings.getByRole('menuitem', { name: 'Domain…' }).click();
   await settings.getByLabel('Add allowed domain for devbox').fill('example.com');
   await settings.getByLabel('Add allowed domain for devbox').press('Enter');
-  const [change] = await calls(page, 'sandbox.set_profile');
+  const [change] = await calls(page, 'sandbox.set_defaults');
   expect(change.params).toMatchObject({ scope: { kind: 'machine', machine_id: M.devbox }, change: { kind: 'add_domain', domain: 'example.com' } });
 
   await settings.getByRole('tab', { name: 'General' }).click();
