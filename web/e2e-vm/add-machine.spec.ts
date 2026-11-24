@@ -23,7 +23,6 @@ test('add a machine', async ({ page }) => {
     await newProfile.getByLabel('Name').fill('Garden club');
     await newProfile.getByRole('button', { name: '↵ Create' }).click();
     await expect(newProfile).toHaveCount(0);
-    await expect(pills).toHaveAccessibleName('Profile Garden club');
   } else {
     await expect(newProfile).toHaveCount(0);
   }
@@ -65,4 +64,6 @@ test('add a machine', async ({ page }) => {
   await expect(card).toContainText(`alice@${host}:22`);
   await expect(card.locator('[data-version]')).toContainText(/controlroomd \S+/);
   await expect(card.locator('[data-version]')).toHaveAttribute('title', /^x86_64,/);
+  // The machine joined the profile the dialog created.
+  if (fresh) await expect(pills).toHaveAccessibleName('Profile Garden club');
 });

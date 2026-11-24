@@ -1,6 +1,8 @@
 //! The whole topology of one test: the controller (in process, UI API), the real agent
 //! daemon, and two real host daemons ("devbox", "buildbox") reached over SSH through relays
-//! that can cut their links.
+//! that can cut their links, plus the mock push service the controller delivers to. A world
+//! starts on a fresh install ([`World::fresh`]) or with the first profile and both machines
+//! ([`World::start`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
