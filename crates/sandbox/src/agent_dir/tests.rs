@@ -103,6 +103,7 @@ fn spec(f: &Fixture) -> AgentDirSpec {
         tmp_seed: None,
         oauth_helper: None,
         managed: ManagedProviders::default(),
+        allowed_providers: None,
     }
 }
 
@@ -230,6 +231,63 @@ fn rejects_escaping_copy_entries() {
             "{bad}"
         );
     }
+}
+
+#[test]
+fn an_allow_list_leaves_out_every_other_provider() {
+    let f = fixture();
+    let store = f.bundle.join("keys.json");
+    let mut keys = crate::credential::KeyStore::default();
+    keys.insert("paid", "sk-paid-secret");
+    keys.save(&store).unwrap();
+    let spec = AgentDirSpec {
+        managed: ManagedProviders {
+            key_providers: vec!["paid".into()],
+            key_store: Some(store),
+            models: serde_json::from_value(json!({
+                "paid-gw": {"baseUrl": "https://paid.example.com/v1", "apiKey": PLACEHOLDER}
+            }))
+            .unwrap(),
+            ..ManagedProviders::default()
+        },
+        // The user's `local` (models.json) only; `gateway` (auth.json, and the default
+        // provider) and the managed `paid` and `paid-gw` are refused.
+        allowed_providers: Some(ProviderAllowList::new(["local"])),
+        ..spec(&f)
+    };
+    let built = build_session_dirs(&f.layout, &spec).unwrap();
+    assert_eq!(built.api_key_providers, ["local"]);
+    assert!(built.oauth_providers.is_empty() && built.stored_key_providers.is_empty());
+    let agent = f.layout.agent();
+    assert_eq!(read_json(agent.join("auth.json")), json!({}));
+    let models = read_json(agent.join("models.json"));
+    let providers: Vec<&String> = models["providers"].as_object().unwrap().keys().collect();
+    assert_eq!(providers, ["local"]);
+    let settings = read_json(agent.join("settings.json"));
+    assert!(settings.get("defaultProvider").is_none(), "{settings}");
+    // The credential helper can't serve what the session doesn't have (A6).
+    let manifest = crate::credential::load_manifest(&f.layout).unwrap();
+    assert_eq!(manifest.api_key_providers, ["local"]);
+    for refused in ["gateway", "paid", "paid-gw"] {
+        let provider = crate::names::Name::new(refused).unwrap();
+        assert!(
+            matches!(
+                crate::credential::resolve_credential(&manifest, &provider, 600),
+                Err(crate::credential::CredentialError::UnknownProvider(_))
+            ),
+            "{refused}"
+        );
+    }
+
+    // An empty list (a profile with no account) admits nothing at all.
+    let none = AgentDirSpec {
+        allowed_providers: Some(ProviderAllowList::default()),
+        ..spec.clone()
+    };
+    let built = build_session_dirs(&f.layout, &none).unwrap();
+    assert!(built.api_key_providers.is_empty());
+    let models = read_json(agent.join("models.json"));
+    assert_eq!(models["providers"], json!({}));
 }
 
 #[test]

@@ -189,6 +189,8 @@ impl SandboxConfig {
                 oauth_helper: None,
                 // Merged in from Settings › Models (see `crate::models`).
                 managed: Default::default(),
+                // A session's own (see `launch::AgentLaunch::allowed_providers`).
+                allowed_providers: None,
             },
             read_only: self
                 .read_only

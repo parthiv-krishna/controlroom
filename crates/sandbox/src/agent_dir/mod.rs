@@ -13,10 +13,14 @@
 //! get placeholder `auth.json` entries, custom gateways `models.json` entries, the defaults of
 //! new sessions override `settings.json`. The user's own config wins on a name clash.
 //!
+//! A session with a [`ProviderAllowList`] (its profile's model policy) gets only the listed
+//! providers, from both sources.
+//!
 //! It also writes `credentials.json` next to (not inside) `agent/`, telling
 //! `controlroomd credential` where the real keys live. Rebuilding (on restart) regenerates
 //! the files and keeps pi's sessions, `home/` and `tmp/`.
 
+mod allow;
 mod auth;
 mod models;
 mod settings;
@@ -28,6 +32,7 @@ use std::os::unix::fs::symlink;
 
 use serde_json::{Map, Value};
 
+pub use allow::ProviderAllowList;
 pub use auth::{FAR_FUTURE_MS, FakeAuth, fake_auth, stand_in, synthetic_access, unsigned_jwt};
 pub use models::sanitize_models;
 pub use settings::session_settings;
@@ -64,6 +69,8 @@ pub struct AgentDirSpec {
     pub oauth_helper: Option<AbsPath>,
     /// Providers managed outside the user's agent dir (Settings › Models).
     pub managed: ManagedProviders,
+    /// The only providers the session may use (its profile's model policy); `None`: all.
+    pub allowed_providers: Option<ProviderAllowList>,
 }
 
 /// Providers managed outside the user's agent dir, merged into the session's config.
@@ -195,18 +202,25 @@ pub fn build_agent_config(
         None => Ok(None),
     };
     let managed = &spec.managed;
+    let allowed = spec.allowed_providers.as_ref();
 
     let mut settings = session_settings(&read("settings.json")?.unwrap_or_default(), &spec.keep);
     settings.extend(managed.settings.clone());
+    allow::retain_default(&mut settings, allowed);
     write_json(&agent.join("settings.json"), &settings)?;
 
     let models_path = agent.join("models.json");
-    let user_models = read("models.json")?;
+    let mut user_models = read("models.json")?;
+    if let Some(models) = &mut user_models {
+        allow::retain_models(models, allowed);
+    }
+    let mut managed_models = managed.models.clone();
+    managed_models.retain(|provider, _| allow::admits(allowed, provider));
     let mut api_key_providers = user_models
         .as_ref()
         .map(models_api_key_providers)
         .unwrap_or_default();
-    match merge_models(user_models, &managed.models) {
+    match merge_models(user_models, &managed_models) {
         Some(models) => {
             let mut models = Value::Object(models);
             sanitize_models(&mut models);
@@ -215,7 +229,9 @@ pub fn build_agent_config(
         None => remove_if_exists(&models_path)?,
     }
 
-    let mut fake = fake_auth(&read("auth.json")?.unwrap_or_default(), &spec.oauth_claims);
+    let mut user_auth = read("auth.json")?.unwrap_or_default();
+    user_auth.retain(|provider, _| allow::admits(allowed, provider));
+    let mut fake = fake_auth(&user_auth, &spec.oauth_claims);
     api_key_providers.extend(fake.api_key_providers.iter().cloned());
     api_key_providers.sort();
     api_key_providers.dedup();
@@ -228,7 +244,8 @@ pub fn build_agent_config(
         .key_providers
         .iter()
         .map(|p| (p, false))
-        .chain(managed.oauth_accounts.keys().map(|p| (p, true)));
+        .chain(managed.oauth_accounts.keys().map(|p| (p, true)))
+        .filter(|(p, _)| allow::admits(allowed, p));
     for (provider, signed_in) in providers {
         let configured =
             api_key_providers.contains(provider) || fake.oauth_providers.contains(provider);
