@@ -15,7 +15,8 @@
    "vapid_public_key": "BFixtureVapidPublicKey000000000000000000000000000000000000000000000000000000000000000000"
   },
   "capabilities": [
-   "schedules"
+   "schedules",
+   "profiles"
   ]
  },
  "cursor": {

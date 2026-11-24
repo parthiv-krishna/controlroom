@@ -25,6 +25,8 @@ async fn hello_comes_first_and_bad_frames_fail_alone() {
     assert_eq!(hello["auth"], "dev_token");
     assert_eq!(hello["user"]["id"], "dev");
     assert_eq!(hello["push"], Value::Null);
+    // The UI asks for the first profile only from a server that announces profiles.
+    assert_eq!(hello["capabilities"], json!(["schedules", "profiles"]));
     ui.err(
         "hello",
         json!({"protocol_version": {"major": 2, "minor": 0}}),

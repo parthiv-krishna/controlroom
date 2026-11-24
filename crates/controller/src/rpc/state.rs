@@ -8,7 +8,7 @@ use controlroom_protocol::ui::{
     PushInfo, StateEventsParams, StateSubscribeParams, StateSubscribeResult, UiHelloParams,
     UiHelloResult,
 };
-use controlroom_protocol::{ErrorData, RpcError, UI_PROTOCOL_VERSION};
+use controlroom_protocol::{Capability, ErrorData, RpcError, UI_PROTOCOL_VERSION};
 
 use super::{After, Conn, Reply, mark_helloed};
 use crate::hub::client_gone;
@@ -46,7 +46,7 @@ pub(super) fn hello(conn: &Conn, p: UiHelloParams) -> Result<UiHelloResult, RpcE
         push: services.push.as_ref().map(|p| PushInfo {
             vapid_public_key: p.vapid_public_key.clone(),
         }),
-        capabilities: vec![controlroom_protocol::Capability::SCHEDULES],
+        capabilities: vec![Capability::SCHEDULES, Capability::PROFILES],
     })
 }
 

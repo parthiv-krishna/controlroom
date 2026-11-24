@@ -1,6 +1,7 @@
 // Profile variants of the development fixture (fixture build only): `?profiles=` picks one.
 // The committed fixture has one profile that owns everything. `0` is a fresh install (no
-// profiles yet), `legacy` a server before profiles (`profiles.*` unsupported), and `3` reassigns
+// profiles yet), `legacy` a server before profiles (no `profiles` capability, `profiles.*`
+// unsupported), and `3` reassigns
 // machines, projects, tasks and sessions to three profiles (web/fixtures/profiles.json).
 import type { MachineId, Profile, ProfileId, ProjectId, SandboxDefaults, SessionId, TaskId } from '../protocol';
 import type { Fixture } from './fixture';
@@ -41,8 +42,10 @@ export function withProfiles(source: Fixture, variant: ProfileVariant): Fixture 
     for (const p of f.snapshot.projects) p.profile_id = null;
     for (const t of f.snapshot.tasks) t.profile_id = null;
     for (const s of f.snapshot.sessions) s.profile_id = null;
-    if (variant === 'legacy') delete f.responses['profiles.list'];
-    else f.responses['profiles.list'] = { profiles: [] };
+    if (variant === 'legacy') {
+      f.hello.capabilities = f.hello.capabilities.filter((c) => c !== 'profiles');
+      delete f.responses['profiles.list'];
+    } else f.responses['profiles.list'] = { profiles: [] };
     return f;
   }
   const first = variant.profiles[0].id;

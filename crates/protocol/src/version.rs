@@ -77,6 +77,9 @@ impl Capability {
     pub const SANDBOX_APPROVALS: Capability = Capability(Cow::Borrowed("sandbox_approvals"));
     /// Schedules: `schedules.*` (controller).
     pub const SCHEDULES: Capability = Capability(Cow::Borrowed("schedules"));
+    /// Profiles (tenants): `profiles.*`, and every machine, project, task and session belongs
+    /// to one (controller). The UI asks for the first profile before anything that needs one.
+    pub const PROFILES: Capability = Capability(Cow::Borrowed("profiles"));
     /// Named PTY shells: `shell.*` and `bash` tool calls (host).
     pub const SHELLS: Capability = Capability(Cow::Borrowed("shells"));
     /// Terminals attach to shells over `controlroomd pty attach <shell id>` (host).

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { RpcError } from '../api/errors';
 import { Listeners, NotificationHub, type AuthState, type ConnState, type Params, type Result, type Transport } from '../api/transport';
 import type { StateSubscribeResult, UiMethod, UiNotificationName, UiNotifications } from '../protocol';
 import { loadFixture } from '../../test/fixture';
@@ -15,7 +14,7 @@ class FakeTransport implements Transport {
   subscribeResult: () => StateSubscribeResult = () => {
     throw new Error('unset');
   };
-  /** A server before profiles answers `profiles.list` with `unsupported`. */
+  /** A server before profiles doesn't announce them in its `hello`. */
   profiles = true;
 
   request<M extends UiMethod>(method: M, params: Params<M>): Promise<Result<M>> {
@@ -23,13 +22,11 @@ class FakeTransport implements Transport {
     if (this.state !== 'open') return Promise.reject(new Error('offline'));
     const f = loadFixture();
     const answers: Partial<Record<UiMethod, () => unknown>> = {
-      hello: () => f.hello,
+      hello: () => (this.profiles ? f.hello : { ...f.hello, capabilities: f.hello.capabilities.filter((c) => c !== 'profiles') }),
       'devices.register': () => f.snapshot.devices[0],
       'state.subscribe': () => this.subscribeResult(),
-      'profiles.list': () => ({ profiles: f.snapshot.profiles }),
       unsubscribe: () => ({}),
     };
-    if (method === 'profiles.list' && !this.profiles) return Promise.reject(new RpcError(-32006, 'unsupported', { kind: 'unsupported' }));
     return Promise.resolve(answers[method]?.() as Result<M>);
   }
   subscribe<N extends UiNotificationName>(name: N, handler: (p: UiNotifications[N]) => void) {
@@ -66,7 +63,7 @@ describe('Client sync', () => {
     const client = new Client(t, device);
     t.set('open');
     await settle();
-    expect(t.calls.map((c) => c.method)).toEqual(['hello', 'devices.register', 'profiles.list', 'state.subscribe']);
+    expect(t.calls.map((c) => c.method)).toEqual(['hello', 'devices.register', 'state.subscribe']);
     expect(t.calls[0].params).toMatchObject({ protocol_version: { major: 1 }, device_id: 'dev-1' });
     expect(client.everConnected).toBe(true);
     expect(client.online).toBe(true);
@@ -75,7 +72,7 @@ describe('Client sync', () => {
     expect(client.feed.profileList.map((p) => p.id)).toEqual(f.snapshot.profiles.map((p) => p.id));
   });
 
-  it('knows a server before profiles by its unsupported profiles.list', async () => {
+  it('knows a server before profiles by its hello', async () => {
     const f = loadFixture();
     const t = new FakeTransport();
     t.profiles = false;

@@ -119,7 +119,8 @@ async fn a_due_time_fires_once_across_restarts() {
             json!({"protocol_version": {"major": 1, "minor": 0}}),
         )
         .await;
-    assert_eq!(hello["capabilities"], json!(["schedules"]), "{hello}");
+    let capabilities = hello["capabilities"].as_array().unwrap();
+    assert!(capabilities.contains(&json!("schedules")), "{hello}");
     wait_state(&mut a, session, "idle").await;
     let id = every_minute(&mut a, session, "inbox", json!({})).await;
     assert_eq!(a.mirror.schedules[&id]["next_run"], T0 + MIN);
