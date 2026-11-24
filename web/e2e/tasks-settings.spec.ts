@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { M, calls, start } from './helpers';
+import { M, P, calls, start } from './helpers';
 
 test('tasks board: drag a card to another column', async ({ page }) => {
   await start(page);
@@ -127,5 +127,6 @@ test('a project is a named group of tasks', async ({ page }) => {
   await dialog.getByLabel('Name').fill('API');
   await dialog.getByRole('button', { name: '↵ Save' }).click();
   const [create] = await calls(page, 'projects.create');
-  expect(create.params).toEqual({ name: 'API', color: expect.any(String) });
+  // In the current (only) profile.
+  expect(create.params).toEqual({ name: 'API', color: expect.any(String), profile_id: P.only });
 });

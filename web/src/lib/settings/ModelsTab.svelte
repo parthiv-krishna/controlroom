@@ -5,10 +5,14 @@
   // Defaults pick the model and thinking level of new sessions. A preset or gateway can have
   // several named accounts (e.g. personal and work), each with its own key or sign-in and usage,
   // listed under it. Changes apply to new sessions and restarts.
+  // With a profile picked, its policy comes first: "Accounts in <profile>: Any / Only the checked
+  // ones" (a checkbox per account; the others dim), and the defaults are the profile's own, on top
+  // of the server-wide ones. A private profile lists its accounts (never Any).
   import { useApp } from '../app/app.svelte';
   import { hasAccounts, providerName, usageLine } from '../model/accounts';
+  import { admits } from '../model/profiles';
   import { AUTH_HEADERS, THINKING_LEVELS, defaultProviders, isToken, parseModels, providerDetail, providerHistory, providerStatus } from '../model/models';
-  import type { AuthHeader, ModelDefaults, ModelProvider, ModelsState } from '../protocol';
+  import type { AuthHeader, ModelDefaults, ModelPolicy, ModelProvider, ModelsState } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
   import SignIn from './SignIn.svelte';
 
@@ -128,20 +132,50 @@
     if (await run(params.provider, () => app.client.call('models.set_gateway', params))) gw = null;
   }
 
-  async function setDefaults(change: Partial<ModelDefaults>) {
-    if (!models) return;
-    const defaults = { ...models.defaults, ...change };
-    await run('defaults', () => app.client.call('models.set_defaults', { defaults }));
+  // ---- the picked profile's accounts and defaults
+  const profile = $derived(app.settingsProfile);
+  /** Accounts that can run something: a key, a sign-in, a gateway or the server's config. */
+  const usable = (p: ModelProvider) => !!p.key || !!p.signed_in || !!p.gateway || p.source === 'server';
+  const listed = (p: ModelProvider) => !profile || admits(profile.models, p.id);
+  async function setPolicy(models: ModelPolicy) {
+    if (!profile) return;
+    const provider = profile.model_defaults.provider;
+    // A default outside the list would be refused: it goes with the account.
+    const model_defaults = provider && !admits(models, provider) ? { provider: null, model: null, thinking: profile.model_defaults.thinking } : undefined;
+    await app.client.call('profiles.update', { profile_id: profile.id, models, model_defaults });
   }
-  const providerOptions = $derived(models ? defaultProviders(models.models, models.providers).map((o) => ({ ...o, label: nameFor(o.value, o.label) })) : []);
+  /** Only the checked ones starts with what is usable now, so nothing changes until unchecked. */
+  function setKind(kind: string) {
+    if (kind === 'any') void setPolicy({ kind: 'any' });
+    else if (profile?.models.kind !== 'only') void setPolicy({ kind: 'only', accounts: all.filter(usable).map((p) => p.id) });
+  }
+  function setListed(p: ModelProvider, on: boolean) {
+    if (profile?.models.kind !== 'only') return;
+    const accounts = profile.models.accounts.filter((id) => id !== p.id);
+    void setPolicy({ kind: 'only', accounts: on ? [...accounts, p.id] : accounts });
+  }
+
+  /** The defaults shown: the profile's (on top of the server-wide ones), else the server-wide ones. */
+  const shown = $derived(profile ? profile.model_defaults : models?.defaults);
+  async function setDefaults(change: Partial<ModelDefaults>) {
+    if (!models || !shown) return;
+    const defaults = { ...shown, ...change };
+    if (profile) await run('defaults', () => app.client.call('profiles.update', { profile_id: profile.id, model_defaults: defaults }).then(() => models ?? undefined));
+    else await run('defaults', () => app.client.call('models.set_defaults', { defaults }));
+  }
+  /** What an unset default falls back to: the server-wide default, then the server's config. */
+  const fallback = $derived.by(() => {
+    if (!models) return { provider: null, thinking: null };
+    const base = profile && models.defaults.provider ? models.defaults : models.server_defaults;
+    const thinking = (profile && models.defaults.thinking) || models.server_defaults.thinking;
+    return { provider: base.provider ? `${base.provider}${base.model ? `/${base.model}` : ''}` : null, thinking };
+  });
+  const providerOptions = $derived(models ? defaultProviders(models.models, models.providers).filter((o) => !profile || admits(profile.models, o.value)).map((o) => ({ ...o, label: nameFor(o.value, o.label) })) : []);
   const nameFor = (id: string, label: string) => {
     const p = all.find((q) => q.id === id);
     return p ? nameOf(p) : label;
   };
-  const modelOptions = $derived(models?.models.filter((m) => m.provider === models?.defaults.provider).map((m) => ({ value: m.id, label: m.name })) ?? []);
-  const serverDefault = $derived(
-    models?.server_defaults.provider ? `${models.server_defaults.provider}${models.server_defaults.model ? `/${models.server_defaults.model}` : ''}` : null,
-  );
+  const modelOptions = $derived(models?.models.filter((m) => m.provider === shown?.provider).map((m) => ({ value: m.id, label: m.name })) ?? []);
   function onEnter(e: KeyboardEvent, run: () => void) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
@@ -158,11 +192,14 @@
   {@const name = nameOf(p)}
   {@const multi = hasAccounts(p, all)}
   {@const usage = usageLine(p.usage)}
-  <div class="card" class:account={!!p.account_of} data-provider={p.id} title={providerHistory(p, deviceLabel) || undefined}>
+  <div class="card" class:account={!!p.account_of} class:dim={!listed(p)} data-provider={p.id} title={providerHistory(p, deviceLabel) || undefined}>
     <div class="h">
       <b>{p.label}</b>
       {#if multi}<span class="acct" data-account>{p.account}</span>{/if}
       <span class="st {status.tone}" data-status>{status.text}</span>
+      {#if profile?.models.kind === 'only'}
+        <label class="in small"><input type="checkbox" checked={listed(p)} disabled={!online} aria-label="Use {name} in {profile.name}" onchange={(e) => setListed(p, e.currentTarget.checked)} /> In {profile.name}</label>
+      {/if}
       <span class="sp"></span>
       <div class="acts">
         {#if p.takes_key && !p.gateway}
@@ -210,6 +247,15 @@
 
 {#if models}
   <div class="small muted">For new sessions and restarts. Keys stay on the server. Add accounts to keep personal and work use apart.</div>
+  {#if profile}
+    {@const pf = profile}
+    <div class="policy" data-policy>
+      <span class="small muted">Accounts in {pf.name}</span>
+      <Dropdown small label="Accounts in {pf.name}" value={pf.models.kind === 'any' ? 'any' : 'only'} disabled={!online}
+        options={[{ value: 'any', label: 'Any', disabled: pf.private, hint: pf.private ? 'A private profile lists its accounts' : 'Every account, new ones too' }, { value: 'only', label: 'Only the checked ones' }]}
+        onchange={setKind} />
+    </div>
+  {/if}
   <div class="sec-h">Providers</div>
   {#each providers as p (p.id)}{@render row(p)}{/each}
 
@@ -231,24 +277,27 @@
     </div>
   {/if}
 
-  <div class="sec-h">Defaults</div>
-  <div class="defaults" data-defaults>
-    <div class="field"><span>Provider</span>
-      <Dropdown small label="Default provider" value={models.defaults.provider ?? ''} disabled={!online}
-        options={[{ value: '', label: serverDefault ? `Server (${serverDefault})` : 'pi default' }, ...providerOptions]}
-        onchange={(v) => setDefaults({ provider: v || null, model: null })} />
+  <div class="sec-h">{profile ? `Defaults in ${profile.name}` : 'Defaults'}</div>
+  {#if shown}
+    {@const d = shown}
+    <div class="defaults" data-defaults>
+      <div class="field"><span>Provider</span>
+        <Dropdown small label="Default provider" value={d.provider ?? ''} disabled={!online}
+          options={[{ value: '', label: fallback.provider ? `Server (${fallback.provider})` : 'pi default' }, ...providerOptions]}
+          onchange={(v) => setDefaults({ provider: v || null, model: null })} />
+      </div>
+      <div class="field"><span>Model</span>
+        <Dropdown small label="Default model" value={d.model ?? ''} disabled={!online || !d.provider}
+          options={[{ value: '', label: 'Provider default' }, ...modelOptions]}
+          onchange={(v) => setDefaults({ model: v || null })} />
+      </div>
+      <div class="field"><span>Thinking</span>
+        <Dropdown small label="Default thinking level" value={d.thinking ?? ''} disabled={!online}
+          options={[{ value: '', label: fallback.thinking ? `Server (${fallback.thinking})` : 'pi default' }, ...THINKING_LEVELS.map((l) => ({ value: l, label: l }))]}
+          onchange={(v) => setDefaults({ thinking: v || null })} />
+      </div>
     </div>
-    <div class="field"><span>Model</span>
-      <Dropdown small label="Default model" value={models.defaults.model ?? ''} disabled={!online || !models.defaults.provider}
-        options={[{ value: '', label: 'Provider default' }, ...modelOptions]}
-        onchange={(v) => setDefaults({ model: v || null })} />
-    </div>
-    <div class="field"><span>Thinking</span>
-      <Dropdown small label="Default thinking level" value={models.defaults.thinking ?? ''} disabled={!online}
-        options={[{ value: '', label: models.server_defaults.thinking ? `Server (${models.server_defaults.thinking})` : 'pi default' }, ...THINKING_LEVELS.map((l) => ({ value: l, label: l }))]}
-        onchange={(v) => setDefaults({ thinking: v || null })} />
-    </div>
-  </div>
+  {/if}
   {#if models.models_error}<div class="small warn-t">Models unavailable: {models.models_error}</div>{/if}
 {:else}
   <div class="muted small">{online ? 'Loading…' : 'Not connected'}</div>
@@ -257,6 +306,9 @@
 <style>
   .card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; display: flex; flex-direction: column; gap: 6px; }
   .card.account { margin-left: 18px; }
+  .card.dim > :not(.h), .card.dim .h > :not(.in) { opacity: 0.55; }
+  .in { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; }
+  .policy { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .acct { font-size: 11.5px; padding: 0 6px; border-radius: 4px; background: var(--bg3); color: var(--fg); white-space: nowrap; }
   .h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .acts { display: flex; gap: 4px; flex-wrap: wrap; }

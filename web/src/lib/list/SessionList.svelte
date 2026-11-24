@@ -1,5 +1,6 @@
 <script lang="ts">
-  // The session list: the scope's title (a project, Unassigned or all), the device naming prompt,
+  // The session list: the scope's title (a project, Unassigned or all; a profile's ∗ is titled with
+  // the profile when there are several), the device naming prompt,
   // filters, then groups. Group headers fold, task groups take a dropped session (link) and offer
   // ✎ details and ＋ "new session for this task"; machine groups offer ＋ "new session here".
   // Subagents nest under their parent (dimmed ancestors keep the tree intact when filtering).
@@ -51,6 +52,9 @@
         <span class="pdot" style:background={p.color}></span>
         <EditableTitle value={p.name} editKey={p.id} onsave={(name) => app.client.call('projects.update', { project_id: p.id, name })} />
         <button class="edit" title="Edit project" aria-label="Edit project" onclick={() => (view.modal = { kind: 'project', id: p.id })}><Icon name="sliders" /></button>
+      {:else if app.multi && app.profile}
+        {@const pf = app.profile}
+        <span class="pdot round" style:background={pf.color}></span><span class="all">{pf.name}</span>{#if pf.private}<Icon name="lock" size={13} label="private" />{/if}
       {:else}
         <span class="all">{scopeName(app.scope)}</span>
       {/if}
@@ -111,6 +115,8 @@
   .list { grid-area: list; display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg); }
   .lt { height: var(--top-h); display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--line); flex: none; font-weight: 600; font-size: 15px; min-width: 0; }
   .pdot { width: 10px; height: 10px; border-radius: 4px; flex: none; }
+  .pdot.round { border-radius: 50%; }
+  .all { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .edit { background: none; border: none; color: var(--muted); cursor: pointer; padding: 3px 5px; border-radius: 6px; opacity: 0; }
   .lt:hover .edit, .edit:focus-visible { opacity: 1; }
   .edit:hover { background: var(--bg3); color: var(--fg); }

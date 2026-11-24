@@ -23,6 +23,24 @@
   "rev": 100
  },
  "snapshot": {
+  "profiles": [
+   {
+    "id": "01JAF000000000000000000001",
+    "name": "Orchard",
+    "color": "#60a5fa",
+    "private": false,
+    "models": {
+     "kind": "any"
+    },
+    "model_defaults": {
+     "provider": null,
+     "model": null,
+     "thinking": null
+    },
+    "position": 1,
+    "created_at": 1766000000000
+   }
+  ],
   "machines": [
    {
     "id": "01JAM000000000000000000001",
@@ -30,6 +48,9 @@
     "host": "devbox.example.com",
     "port": 22,
     "user": "alice",
+    "profile_ids": [
+     "01JAF000000000000000000001"
+    ],
     "key_id": null,
     "host_key": {
      "algorithm": "ssh-ed25519",
@@ -94,6 +115,9 @@
     "host": "buildbox.example.com",
     "port": 22,
     "user": "alice",
+    "profile_ids": [
+     "01JAF000000000000000000001"
+    ],
     "key_id": null,
     "host_key": {
      "algorithm": "ssh-ed25519",
@@ -158,6 +182,9 @@
     "host": "gpubox.example.com",
     "port": 22,
     "user": "alice",
+    "profile_ids": [
+     "01JAF000000000000000000001"
+    ],
     "key_id": null,
     "host_key": {
      "algorithm": "ssh-ed25519",
@@ -221,6 +248,9 @@
     "host": "armbox.example.com",
     "port": 22,
     "user": "alice",
+    "profile_ids": [
+     "01JAF000000000000000000001"
+    ],
     "key_id": null,
     "host_key": {
      "algorithm": "ssh-ed25519",
@@ -289,6 +319,9 @@
     "host": "oldbox.example.com",
     "port": 22,
     "user": "alice",
+    "profile_ids": [
+     "01JAF000000000000000000001"
+    ],
     "key_id": null,
     "host_key": {
      "algorithm": "ssh-ed25519",
@@ -533,7 +566,8 @@
       }
      ]
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [
@@ -669,7 +703,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [
@@ -836,7 +871,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [
@@ -976,7 +1012,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [
@@ -1151,7 +1188,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [
@@ -1339,7 +1377,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -1473,7 +1512,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -1607,7 +1647,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -1741,7 +1782,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [
@@ -1877,7 +1919,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [
@@ -2130,7 +2173,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -2299,7 +2343,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -2433,7 +2478,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -2628,7 +2674,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -2873,7 +2920,8 @@
      "looser_than_default": true,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -3007,7 +3055,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [
@@ -3180,7 +3229,8 @@
      "looser_than_default": true,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "project_ids": [],
@@ -3314,7 +3364,8 @@
      "looser_than_default": false,
      "grants": []
     },
-    "resumable": true
+    "resumable": true,
+    "profile_id": "01JAF000000000000000000001"
    }
   ],
   "overlaps": [
@@ -3347,17 +3398,20 @@
    {
     "id": "01JAP000000000000000000001",
     "name": "Acme API",
-    "color": "#f97316"
+    "color": "#f97316",
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "id": "01JAP000000000000000000002",
     "name": "Controlroom",
-    "color": "#a78bfa"
+    "color": "#a78bfa",
+    "profile_id": "01JAF000000000000000000001"
    },
    {
     "id": "01JAP000000000000000000003",
     "name": "Docs",
-    "color": "#22d3ee"
+    "color": "#22d3ee",
+    "profile_id": "01JAF000000000000000000001"
    }
   ],
   "tasks": [
@@ -3369,6 +3423,7 @@
     "project_ids": [
      "01JAP000000000000000000001"
     ],
+    "profile_id": "01JAF000000000000000000001",
     "notes": "Users get logged out when two tabs refresh at once.",
     "checklist": [
      {
@@ -3403,6 +3458,7 @@
     "project_ids": [
      "01JAP000000000000000000002"
     ],
+    "profile_id": "01JAF000000000000000000001",
     "notes": "",
     "checklist": [],
     "links": [
@@ -3421,6 +3477,7 @@
     "project_ids": [
      "01JAP000000000000000000002"
     ],
+    "profile_id": "01JAF000000000000000000001",
     "notes": "",
     "checklist": [
      {
@@ -3450,6 +3507,7 @@
     "project_ids": [
      "01JAP000000000000000000003"
     ],
+    "profile_id": "01JAF000000000000000000001",
     "notes": "",
     "checklist": [],
     "links": [
@@ -3468,6 +3526,7 @@
     "project_ids": [
      "01JAP000000000000000000002"
     ],
+    "profile_id": "01JAF000000000000000000001",
     "notes": "",
     "checklist": [],
     "links": [
@@ -3485,6 +3544,7 @@
     "project_ids": [
      "01JAP000000000000000000003"
     ],
+    "profile_id": "01JAF000000000000000000001",
     "notes": "",
     "checklist": [],
     "links": [],
@@ -3501,6 +3561,7 @@
      "01JAP000000000000000000002",
      "01JAP000000000000000000001"
     ],
+    "profile_id": "01JAF000000000000000000001",
     "notes": "",
     "checklist": [],
     "links": [],
@@ -3514,6 +3575,7 @@
     "order": 8,
     "priority": "p2",
     "project_ids": [],
+    "profile_id": "01JAF000000000000000000001",
     "notes": "",
     "checklist": [],
     "links": [
@@ -8088,6 +8150,41 @@
      "name": "work"
     }
    ]
+  },
+  "profiles.list": {
+   "profiles": [
+    {
+     "id": "01JAF000000000000000000001",
+     "name": "Orchard",
+     "color": "#60a5fa",
+     "private": false,
+     "models": {
+      "kind": "any"
+     },
+     "model_defaults": {
+      "provider": null,
+      "model": null,
+      "thinking": null
+     },
+     "position": 1,
+     "created_at": 1766000000000
+    }
+   ]
+  },
+  "profiles.move": {
+   "task_ids": [
+    "01JAT000000000000000000004",
+    "01JAT000000000000000000006"
+   ],
+   "session_ids": [
+    "01JAS000000000000000000005",
+    "01JAS000000000000000000006"
+   ],
+   "unlinked": [],
+   "revoked_grants": [],
+   "stranded": [
+    "01JAS000000000000000000007"
+   ]
   }
  },
  "script": [
@@ -8233,7 +8330,8 @@
         "looser_than_default": false,
         "grants": []
        },
-       "resumable": true
+       "resumable": true,
+       "profile_id": "01JAF000000000000000000001"
       }
      }
     ]
@@ -8483,7 +8581,8 @@
         "looser_than_default": false,
         "grants": []
        },
-       "resumable": true
+       "resumable": true,
+       "profile_id": "01JAF000000000000000000001"
       }
      }
     ]

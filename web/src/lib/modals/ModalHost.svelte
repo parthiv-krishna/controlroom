@@ -1,5 +1,6 @@
 <script lang="ts">
-  // The open modal: new session, new task, project, start fresh, link to tasks, task detail, jobs.
+  // The open modal: new session, new task, project, profile, move to profile, start fresh, link to
+  // tasks, task detail, jobs.
   import { newOpId, useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
   import { TASK_COLUMNS } from '../model/tasks';
@@ -9,6 +10,8 @@
   import NewSession from './NewSession.svelte';
   import NewTask from './NewTask.svelte';
   import ProjectEditor from './ProjectEditor.svelte';
+  import MoveDialog from '../profiles/MoveDialog.svelte';
+  import ProfileDialog from '../profiles/ProfileDialog.svelte';
 
   const app = useApp();
   const md = $derived(app.view.modal);
@@ -30,7 +33,11 @@
 {:else if md?.kind === 'new-task'}
   <NewTask preset={md.preset} />
 {:else if md?.kind === 'project'}
-  <ProjectEditor id={md.id} />
+  <ProjectEditor id={md.id} profile={md.profile ?? null} />
+{:else if md?.kind === 'profile'}
+  <ProfileDialog id={md.id} then={md.then} />
+{:else if md?.kind === 'move'}
+  <MoveDialog preset={md.preset} />
 {:else if md?.kind === 'task'}
   {@const t = app.client.feed.tasks.get(md.id)}
   <Modal label="Task" oncancel={close}>{#if t}<TaskDetail {t} onclose={close} />{:else}<p class="muted">This task was deleted.</p>{/if}</Modal>
@@ -53,7 +60,7 @@
     <input placeholder="Filter tasks…" aria-label="Filter tasks" bind:value={filter} data-autofocus />
     <div class="list">
       {#each TASK_COLUMNS as c (c.id)}
-        {@const ts = app.ctx.tasks.filter((t) => t.status === c.id && t.title.toLowerCase().includes(filter.toLowerCase()))}
+        {@const ts = app.ctxOf(s.profile_id).tasks.filter((t) => t.status === c.id && t.title.toLowerCase().includes(filter.toLowerCase()))}
         {#if ts.length}
           <div class="sec-h">{c.icon} {c.label}</div>
           {#each ts as t (t.id)}

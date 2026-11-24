@@ -1,8 +1,13 @@
 import { expect, type Page } from '@playwright/test';
-import type { RecordedCall } from '../src/lib/api/fixture';
+import type { ChangeBody, RecordedCall } from '../src/lib/api/fixture';
 
 /** Fixture ids (web/fixtures/controlroom.json). */
 export const M = { devbox: '01JAM000000000000000000001', buildbox: '01JAM000000000000000000002' };
+/**
+ * Profile ids: the committed fixture's only profile, and the three of `?profiles=3`
+ * (web/fixtures/profiles.json: Orchard is the only one, Lantern shares devbox, Quill is private).
+ */
+export const P = { only: '01JAF000000000000000000001', orchard: '01JAF000000000000000000001', lantern: '01JAF000000000000000000002', quill: '01JAF000000000000000000003' };
 export const S = {
   auth: '01JAS000000000000000000001',
   flaky: '01JAS000000000000000000002',
@@ -26,6 +31,11 @@ export async function start(page: Page, session?: string, query = 'paused'): Pro
 export async function calls(page: Page, method?: string): Promise<RecordedCall[]> {
   const all = await page.evaluate(() => window.__fixture?.calls ?? []);
   return method ? all.filter((c) => c.method === method) : all;
+}
+
+/** Sends state changes on the fixture's state feed (numbered after the last revision). */
+export async function emitState(page: Page, changes: ChangeBody[]): Promise<void> {
+  await page.evaluate((changes) => window.__fixture?.emitState(changes), changes);
 }
 
 /** Plays a session's next `n` recorded timeline steps (web/fixtures/timelines.json). */

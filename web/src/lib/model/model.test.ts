@@ -17,6 +17,7 @@ const f = loadFixture();
 const ctx: Ctx = {
   machines: new Map(f.snapshot.machines.map((m) => [m.id, m])),
   machineList: [...f.snapshot.machines].sort((a, b) => a.name.localeCompare(b.name)),
+  projects: f.snapshot.projects,
   sessions: f.snapshot.sessions,
   tasks: f.snapshot.tasks,
   overlaps: f.snapshot.overlaps,
@@ -92,7 +93,8 @@ describe('status and attention', () => {
     expect(health(ctx, null)).toEqual({ approvals: 7, questions: 1, problems: 2, unread: 1 });
     expect(health(ctx, project('Docs'))).toEqual({ approvals: 1, questions: 1, problems: 0, unread: 0 });
     expect(health(ctx, UNASSIGNED)).toEqual({ approvals: 3, questions: 0, problems: 2, unread: 1 });
-    expect(needsYouElsewhere(ctx, project('Docs'))).toBe(8);
+    expect(needsYouElsewhere(ctx, ctx, project('Docs'))).toBe(8);
+    expect(needsYouElsewhere(ctx, ctx, null)).toBe(0);
   });
 
   it('labels every reason a machine needs the user', () => {

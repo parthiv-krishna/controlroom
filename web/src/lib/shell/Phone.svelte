@@ -1,6 +1,8 @@
 <script lang="ts">
   // Phone (≤ 760px): a header with the project switcher and the bell, bottom tabs (Sessions ·
   // Tasks), the list then a full-screen conversation with ‹ back; menus and dialogs are sheets.
+  // With several profiles the switcher names the profile on its ∗ (a lock when private); the bell
+  // counts every profile.
   import { useApp } from '../app/app.svelte';
   import SessionList from '../list/SessionList.svelte';
   import { notes } from '../model/notifications';
@@ -15,9 +17,11 @@
   const view = app.view;
   const cur = $derived(app.current);
   const p = $derived(app.project);
-  const n = $derived(notes(app.ctx, app.scope));
+  const n = $derived(notes(app.notesCtx, app.scope));
   const hot = $derived(n.blocking.length + n.problems.length > 0);
-  const elsewhere = $derived(needsYouElsewhere(app.ctx, app.scope));
+  const elsewhere = $derived(needsYouElsewhere(app.all, app.ctx, app.scope));
+  /** The profile named on its ∗. */
+  const named = $derived(app.multi && !p ? app.profile : null);
   const detail = $derived(view.page === 'sessions' && view.phoneDetail && !!cur);
 </script>
 
@@ -25,8 +29,8 @@
   {#if !detail}
     <header class="top">
       <button class="proj" style:--pc={p?.color ?? 'var(--fg)'} aria-label="Projects" onclick={() => (view.drawer = true)}>
-        <span class="ic" class:home={!p}>{p ? projectCode(p) : app.scope === UNASSIGNED ? '○' : '∗'}</span><span class="nm">{scopeName(app.scope)}</span><span class="muted">▾</span>
-        {#if elsewhere}<span class="else" title="needs you in other projects">{elsewhere}</span>{/if}
+        <span class="ic" class:home={!p}>{p ? projectCode(p) : app.scope === UNASSIGNED ? '○' : '∗'}</span><span class="nm">{named ? named.name : scopeName(app.scope)}</span>{#if named?.private}<Icon name="lock" size={14} label="private" />{/if}<span class="muted">▾</span>
+        {#if elsewhere}<span class="else" title={app.multi ? 'needs you elsewhere' : 'needs you in other projects'}>{elsewhere}</span>{/if}
       </button>
       <button class="bell" class:on={view.notesOpen} aria-label="Notifications" onclick={() => app.toggleNotes()}>
         <Icon name="bell" size={18} />{#if n.total}<span class="bn" class:hot>{n.total}</span>{/if}

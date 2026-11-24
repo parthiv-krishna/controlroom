@@ -9,6 +9,7 @@ import type {
   FeedSession,
   Machine,
   Overlap,
+  Profile,
   Project,
   Schedule,
   StateChange,
@@ -16,10 +17,12 @@ import type {
   StateSnapshot,
   Task,
 } from '../protocol';
+import { sortProfiles } from '../model/profiles';
 
 export type ApplyResult = 'applied' | 'gap';
 
 export class StateFeed {
+  readonly profiles = new SvelteMap<string, Profile>();
   readonly machines = new SvelteMap<string, Machine>();
   /** Global sessions by id. */
   readonly sessions = new SvelteMap<string, FeedSession>();
@@ -35,6 +38,8 @@ export class StateFeed {
   /** The last applied position (not reactive: only the sync engine reads it). */
   cursor: StateCursor | null = null;
 
+  /** Profiles in the user's order. */
+  readonly profileList = $derived(sortProfiles([...this.profiles.values()]));
   readonly machineList = $derived([...this.machines.values()].sort((a, b) => a.name.localeCompare(b.name)));
   readonly sessionList = $derived([...this.sessions.values()]);
   readonly projectList = $derived([...this.projects.values()]);
@@ -45,6 +50,7 @@ export class StateFeed {
 
   /** Replaces everything with a snapshot at `cursor`. */
   reset(snapshot: StateSnapshot, cursor: StateCursor): void {
+    fill(this.profiles, snapshot.profiles ?? [], (p) => p.id);
     fill(this.machines, snapshot.machines, (m) => m.id);
     fill(this.sessions, snapshot.sessions, (s) => s.id);
     this.overlaps = snapshot.overlaps;
@@ -79,6 +85,8 @@ export class StateFeed {
 
   private applyOne(c: StateChange): void {
     switch (c.kind) {
+      case 'profile_upserted': this.profiles.set(c.profile.id, c.profile); break;
+      case 'profile_removed': this.profiles.delete(c.profile_id); break;
       case 'machine_upserted': this.machines.set(c.machine.id, c.machine); break;
       case 'machine_removed': this.machines.delete(c.machine_id); break;
       case 'session_upserted': this.sessions.set(c.session.id, c.session); break;

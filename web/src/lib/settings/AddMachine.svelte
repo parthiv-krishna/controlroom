@@ -1,15 +1,17 @@
 <script lang="ts">
   // Add a machine: details (with the key's install command) → host key (machines.add) → confirm
   // (machines.add_confirm) → "permission denied" recovery with the install command → live install
-  // progress (the new record's bootstrap in the state feed) → doctor results.
+  // progress (the new record's bootstrap in the state feed) → doctor results. The machine joins
+  // `profile` (none from a server before profiles).
   import { useApp } from '../app/app.svelte';
   import { describeError } from '../api/errors';
   import { isLive } from '../model/status';
-  import type { HostKeyInfo, KeysListResult } from '../protocol';
+  import type { HostKeyInfo, KeysListResult, ProfileId } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
+  import ProfileChip from '../profiles/ProfileChip.svelte';
   import DoctorView from './DoctorView.svelte';
 
-  let { keys, onclose }: { keys: KeysListResult | null; onclose: () => void } = $props();
+  let { keys, profile, onclose }: { keys: KeysListResult | null; profile: ProfileId | null; onclose: () => void } = $props();
   const app = useApp();
 
   let step = $state<'form' | 'hostkey' | 'denied' | 'run'>('form');
@@ -29,7 +31,7 @@
   const done = $derived(!!added && isLive(added) && !!added.doctor);
   const ready = $derived(!!host.trim() && !!user.trim());
   const installCommand = $derived(keyId ? null : keys?.controlroom.install_command);
-  const details = () => ({ host: host.trim(), port: Number(port) || 22, user: user.trim(), name: name.trim() || null, key_id: keyId || null });
+  const details = () => ({ host: host.trim(), port: Number(port) || 22, user: user.trim(), name: name.trim() || null, key_id: keyId || null, ...(profile ? { profile_ids: [profile] } : {}) });
 
   $effect(() => {
     const msg = added?.bootstrap?.message;
@@ -82,6 +84,7 @@
   {#if step !== 'run'}<button class="back" onclick={onclose}>‹ Machines</button>{/if}
   {#if step === 'form'}
     <h4>Add machine</h4>
+    {#if app.multi && profile}{@const pf = app.profiles.find((p) => p.id === profile)}{#if pf}<div class="small muted to">To <ProfileChip profile={pf} /></div>{/if}{/if}
     <div class="row2">
       <label class="field"><span>Host</span><input bind:value={host} placeholder="devbox.example.com" data-autofocus /></label>
       <label class="field"><span>Port</span><input bind:value={port} inputmode="numeric" /></label>
@@ -123,6 +126,7 @@
 <style>
   .wiz { display: flex; flex-direction: column; gap: 10px; max-width: 640px; }
   h4 { font-size: 16px; }
+  .to { display: flex; align-items: center; gap: 6px; }
   p { margin: 0; }
   .back { align-self: flex-start; background: none; border: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
   .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }

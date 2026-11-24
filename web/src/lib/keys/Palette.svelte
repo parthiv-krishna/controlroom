@@ -1,9 +1,12 @@
 <script lang="ts">
   // The command palette (⌘K / Ctrl-Shift-K, or `:` for ex commands): sessions and commands.
-  // Ex commands: :approve, :new, :goto <session>, :task, :settings [tab], :help.
+  // Ex commands: :approve, :new, :goto <session>, :task, :profile <name>, :settings [tab], :help.
+  // Sessions of every profile are listed (with several, the hint starts with the profile's name);
+  // opening one enters its profile.
   import { newOpId, useApp } from '../app/app.svelte';
   import { settingsTab } from '../app/view.svelte';
   import { displayName } from '../model/filters';
+  import { profileNamed } from '../model/profiles';
   import { machinesOf } from '../model/workspaces';
   import type { FeedSession } from '../protocol';
   import { autofocus } from '../ui/actions';
@@ -24,10 +27,18 @@
   interface Item {
     kind: 'command' | 'session';
     label: string;
-    hint?: string;
+    /** Shown after the label, each on its own. */
+    hints: string[];
     run: () => void;
   }
-  const EX: { cmd: string; args?: string; what: string; run: (arg: string) => void }[] = [
+  interface Ex {
+    cmd: string;
+    args?: string;
+    what: string;
+    run: (arg: string) => void;
+  }
+  // :profile exists only with several profiles.
+  const EX: Ex[] = $derived([
     { cmd: 'approve', what: 'Approve the oldest request', run: () => void approve() },
     { cmd: 'new', what: 'New session', run: () => app.newSession() },
     { cmd: 'task', what: 'New task', run: () => app.newTask() },
@@ -36,14 +47,28 @@
       args: '<session>',
       what: 'Go to a session',
       run: (a) => {
-        const s = app.ctx.sessions.find((x) => displayName(x).toLowerCase().includes(a.toLowerCase()));
+        const s = app.all.sessions.find((x) => displayName(x).toLowerCase().includes(a.toLowerCase()));
         if (s) app.open(s);
         else app.toasts.show(`No session matches “${a}”`, 'error');
       },
     },
+    ...(app.multi
+      ? [
+          {
+            cmd: 'profile',
+            args: '<name>',
+            what: 'Switch profile',
+            run: (a: string) => {
+              const p = profileNamed(app.profiles, a);
+              if (p) app.openProject(null, p.id);
+              else app.toasts.show(`No profile matches “${a}”`, 'error');
+            },
+          },
+        ]
+      : []),
     { cmd: 'settings', args: '[tab]', what: 'Open settings', run: (a) => app.openSettings(settingsTab(a || 'machines')) },
     { cmd: 'help', what: 'Keyboard help', run: () => (view.help = true) },
-  ];
+  ]);
 
   async function approve() {
     const cur = app.current;
@@ -65,14 +90,17 @@
     if (ex) {
       const [c, ...rest] = q.slice(1).split(' ');
       const arg = rest.join(' ').trim();
-      return EX.filter((e) => e.cmd.startsWith(c.toLowerCase())).map((e) => ({ kind: 'command', label: `:${e.cmd}${e.args ? ' ' + e.args : ''}`, hint: e.what, run: () => e.run(arg) }));
+      return EX.filter((e) => e.cmd.startsWith(c.toLowerCase())).map((e) => ({ kind: 'command', label: `:${e.cmd}${e.args ? ' ' + e.args : ''}`, hints: [e.what], run: () => e.run(arg) }));
     }
     const t = q.trim().toLowerCase();
-    const sessions: Item[] = app.ctx.sessions
+    const sessions: Item[] = app.all.sessions
       .filter((s) => s.state !== 'closed' && (!t || displayName(s).toLowerCase().includes(t)))
       .slice(0, t ? 8 : 6)
-      .map((s) => ({ kind: 'session', label: displayName(s), hint: `${machineNames(s)} · ${s.state.replace(/_/g, ' ')}`, run: () => app.open(s) }));
-    const commands: Item[] = EX.filter((e) => !t || e.cmd.includes(t) || e.what.toLowerCase().includes(t)).map((e) => ({ kind: 'command', label: e.what, hint: `:${e.cmd}`, run: () => e.run('') }));
+      .map((s) => {
+        const profile = app.shownProfile(s.profile_id)?.name;
+        return { kind: 'session', label: displayName(s), hints: [...(profile ? [profile] : []), machineNames(s), s.state.replace(/_/g, ' ')], run: () => app.open(s) };
+      });
+    const commands: Item[] = EX.filter((e) => !t || e.cmd.includes(t) || e.what.toLowerCase().includes(t)).map((e) => ({ kind: 'command', label: e.what, hints: [`:${e.cmd}`], run: () => e.run('') }));
     return [...sessions, ...commands];
   });
 
@@ -108,7 +136,7 @@
         {#each items as it, i (it.kind + it.label + i)}
           {#if i === 0 || items[i - 1].kind !== it.kind}<div class="sec">{it.kind === 'session' ? 'Sessions' : 'Commands'}</div>{/if}
           <button class="it" class:on={i === sel} role="option" aria-selected={i === sel} onmousemove={() => (sel = i)} onclick={() => run(it)}>
-            <span class="l">{it.label}</span>{#if it.hint}<span class="h">{it.hint}</span>{/if}
+            <span class="l">{it.label}</span>{#each it.hints as h, j (j)}<span class="h">{h}</span>{/each}
           </button>
         {:else}
           <div class="none">{ex ? 'Unknown command' : 'No matches'}</div>

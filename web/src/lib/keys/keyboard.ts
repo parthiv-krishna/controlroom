@@ -45,7 +45,8 @@ export function onKey(app: App, e: KeyboardEvent): void {
   if (e.key === ':' && vim) return void (e.preventDefault(), (view.palette = ':'));
   if (e.altKey) {
     if (/^[0-9]$/.test(e.key)) {
-      const p = [null, ...app.client.feed.projectList][Number(e.key)];
+      // The current profile's ∗ and projects.
+      const p = [null, ...app.ctx.projects][Number(e.key)];
       if (p !== undefined) app.openProject(p?.id ?? null);
     }
     return;

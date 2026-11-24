@@ -48,6 +48,19 @@ describe('FixtureTransport', () => {
     expect(seen).toEqual([subscription_id]);
   });
 
+  it('numbers the state changes a test sends after the last revision', async () => {
+    const fixture = loadFixture();
+    const t = new FixtureTransport(fixture, { autoplay: false });
+    await open(t);
+    const revs: number[] = [];
+    t.subscribe('state.events', (p) => revs.push(...p.changes.map((c) => c.rev)));
+    await t.request('state.subscribe', { since: null });
+    t.step();
+    t.emitState([{ kind: 'profile_removed', profile_id: fixture.snapshot.profiles[0].id }]);
+    const first = (fixture.script[0].params as { changes: { rev: number }[] }).changes[0].rev;
+    expect(revs).toEqual([first, first + 1]);
+  });
+
   it('replays a recorded timeline: backlog after the result, then live steps, raw only on request', async () => {
     const fixture = loadFixture();
     const id = Object.keys(fixture.timelines!).find((k) => fixture.timelines![k].live.length)!;

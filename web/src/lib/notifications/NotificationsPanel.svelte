@@ -1,7 +1,9 @@
 <script lang="ts">
   // What hasn't been dealt with in the active project: Needs you (blocking requests), Questions
   // (non-blocking; agents keep working), Failed or stopped, Finished; machines that need the user
-  // or can't be reached; "N more in other projects". Clicking a card opens the session.
+  // or can't be reached; "N more in other projects". Clicking a card opens the session. Under ∗ it
+  // aggregates every profile, each card tagged with its profile (opening one enters it); a project
+  // stays scoped.
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import { displayName } from '../model/filters';
@@ -12,12 +14,13 @@
   import type { FeedSession } from '../protocol';
   import RequestCard from '../session/RequestCard.svelte';
   import MachineFix from '../settings/MachineFix.svelte';
+  import ProfileChip from '../profiles/ProfileChip.svelte';
   import StatusIcon from '../ui/StatusIcon.svelte';
 
   let { overlay = false }: { overlay?: boolean } = $props();
   const app = useApp();
-  const n = $derived(notes(app.ctx, app.scope));
-  const others = $derived(app.project ? notes(app.ctx, null).total - n.total : 0);
+  const n = $derived(notes(app.notesCtx, app.scope));
+  const others = $derived(app.project ? notes(app.all, null).total - n.total : 0);
   const fixes = $derived(app.client.feed.machineList.filter((m) => m.connectivity.state === 'action_required'));
   const unreachable = $derived(n.offline.filter((o) => o.machine.connectivity.state !== 'action_required'));
   const online = $derived(app.client.online);
@@ -35,8 +38,9 @@
 </script>
 
 {#snippet head(s: FeedSession)}
-  {@const t = tasksFor(app.ctx, s)[0]}
-  <div class="ch"><StatusIcon kind={statusKind(s)} /><b>{displayName(s)}</b><span class="t">{ago(s.updated_at)}</span></div>
+  {@const t = tasksFor(app.ctxOf(s.profile_id), s)[0]}
+  {@const pf = app.shownProfile(s.profile_id)}
+  <div class="ch"><StatusIcon kind={statusKind(s)} /><b>{displayName(s)}</b>{#if pf}<ProfileChip profile={pf} />{/if}<span class="t">{ago(s.updated_at)}</span></div>
   <div class="sub">{t ? `${t.title}, ` : ''}{machinesOf(s).map((id) => app.client.feed.machines.get(id)?.name ?? '?').join(', ')}</div>
 {/snippet}
 

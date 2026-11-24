@@ -1,8 +1,8 @@
 // Sandbox levels in the new-session dialog and a session's header (spec §11.6). The session's own
 // `SandboxInfo` comes from the server; before a session exists, the dialog previews its default
-// level from the sandbox defaults as the server computes it: the strictest level among its workspaces'
-// machines and its tasks' projects.
-import type { MachineId, ProjectId, SandboxInfo, SandboxLevel, SandboxDefaults } from '../protocol';
+// level from the sandbox defaults as the server computes it: the strictest level among its profile,
+// its workspaces' machines and its tasks' projects.
+import type { DefaultsScope, MachineId, ProfileId, ProjectId, SandboxInfo, SandboxLevel, SandboxDefaults } from '../protocol';
 
 export const LEVELS: { value: SandboxLevel; label: string; hint: string }[] = [
   { value: 'strict', label: 'Strict', hint: 'Workspace directories and session dirs only' },
@@ -41,10 +41,22 @@ export function levelChange(info: SandboxInfo, next: SandboxLevel | null): Level
   return { title: next === null ? `Restart the agent with the defaults (${name})?` : `Restart the agent with ${name}?`, body, ok: 'Restart', danger: false };
 }
 
-/** The default level of a new session on `machines` linked to tasks of `projects` (`strict` when nothing is set). */
-export function defaultLevel(defaults: readonly SandboxDefaults[], machines: readonly MachineId[], projects: readonly ProjectId[]): SandboxLevel {
+/**
+ * The default level of a new session in `profile` on `machines` linked to tasks of `projects`
+ * (`strict` when nothing is set).
+ */
+export function defaultLevel(
+  defaults: readonly SandboxDefaults[],
+  machines: readonly MachineId[],
+  projects: readonly ProjectId[],
+  profile: ProfileId | null = null,
+): SandboxLevel {
+  const applies = (s: DefaultsScope) =>
+    (s.kind === 'machine' && machines.includes(s.machine_id)) ||
+    (s.kind === 'project' && projects.includes(s.project_id)) ||
+    (s.kind === 'profile' && s.profile_id === profile);
   const levels = defaults
-    .filter((p) => (p.scope.kind === 'machine' && machines.includes(p.scope.machine_id)) || (p.scope.kind === 'project' && projects.includes(p.scope.project_id)))
+    .filter((p) => applies(p.scope))
     .map((p) => p.level)
     .filter((l): l is SandboxLevel => l !== null);
   if (!levels.length) return 'strict';

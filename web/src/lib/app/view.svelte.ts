@@ -1,6 +1,6 @@
 // View state for this visit: selection, list filters, peeking panes, modals, drafts.
 import { emptyFilters, type FacetKey, type Filters } from '../model/filters';
-import type { ProjectId, SessionId, TaskId, TaskStatus, WorkspaceSpec } from '../protocol';
+import type { MachineId, Profile, ProfileId, ProjectId, SessionId, TaskId, TaskStatus, WorkspaceSpec } from '../protocol';
 import type { UNASSIGNED } from '../model/projects';
 
 /** A session, by its global id. */
@@ -9,6 +9,8 @@ export interface SessionRef {
 }
 
 export interface NewSessionPreset {
+  /** Its profile (default the current one); `null` from a server before profiles. */
+  profile?: ProfileId | null;
   /** The workspaces to start with, the primary first. */
   workspaces?: WorkspaceSpec[];
   tasks?: TaskId[];
@@ -18,12 +20,30 @@ export interface NewTaskPreset {
   status?: TaskStatus;
   project_ids?: ProjectId[];
   sessions?: SessionId[];
+  /** Its profile, for a task without projects. */
+  profile?: ProfileId | null;
+}
+
+/** What the move dialog starts with: the source profile and what is checked. */
+export interface MovePreset {
+  from: ProfileId;
+  /** The target (default: the first other profile). */
+  to?: ProfileId;
+  machine_ids?: MachineId[];
+  project_ids?: ProjectId[];
+  session_ids?: SessionId[];
+  /** Share the machines with the target instead of moving them. */
+  share?: boolean;
 }
 
 export type Modal =
   | { kind: 'new-session'; preset: NewSessionPreset }
   | { kind: 'new-task'; preset: NewTaskPreset }
-  | { kind: 'project'; id: ProjectId | null }
+  /** A project, new (in `profile`) or existing. */
+  | { kind: 'project'; id: ProjectId | null; profile?: ProfileId | null }
+  /** A profile, new or existing; `then` carries on with a new one (the first profile). */
+  | { kind: 'profile'; id: ProfileId | null; then?: (p: Profile) => void }
+  | { kind: 'move'; preset: MovePreset }
   | { kind: 'start-fresh'; session: SessionRef }
   | { kind: 'link-tasks'; session: SessionRef }
   /** The session's jobs, `job` open. */
@@ -49,6 +69,10 @@ export function settingsTab(name: string): SettingsTab {
 }
 
 export class View {
+  /** The profile the views show (null: the first). */
+  profile = $state<ProfileId | null>(null);
+  /** The profile picked in Settings (null: the current one). */
+  settingsProfile = $state<ProfileId | null>(null);
   /** The rail's scope: a project, Unassigned, or everything (null). */
   project = $state<ProjectId | typeof UNASSIGNED | null>(null);
   current = $state<SessionRef | null>(null);

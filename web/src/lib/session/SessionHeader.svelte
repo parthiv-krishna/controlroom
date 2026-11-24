@@ -2,10 +2,13 @@
   // The session header, two lines. First: the editable title (it shrinks last), status and a ⋯ menu
   // (schedules, jobs, link to task, mark read/unread, raw, archive). Second, wrapping: its workspaces
   // (`machine:path` pills with each machine's availability and a ⚠ when another open session shares
-  // the directory), badges, options, parent and task chips, and the usage statusline.
+  // the directory), badges, options, parent and task chips, and the usage statusline. With several
+  // profiles the second line starts with the session's profile chip (it leads to the profile's ∗),
+  // and ⋯ offers "Move to profile…".
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import { displayName } from '../model/filters';
+  import { profileLabel } from '../model/profiles';
   import { tasksFor } from '../model/projects';
   import { statusKind, statusLabel, statusTitle } from '../model/status';
   import { columnLabel } from '../model/tasks';
@@ -13,6 +16,7 @@
   import EditableTitle from '../ui/EditableTitle.svelte';
   import ActionMenu, { type MenuAction } from '../ui/ActionMenu.svelte';
   import StatusIcon from '../ui/StatusIcon.svelte';
+  import ProfileChip from '../profiles/ProfileChip.svelte';
   import AgentOptions from './AgentOptions.svelte';
   import SessionBadges from './SessionBadges.svelte';
   import Statusline from './Statusline.svelte';
@@ -20,7 +24,8 @@
 
   let { s, detail }: { s: FeedSession; detail: SessionDetail | null } = $props();
   const app = useApp();
-  const tasks = $derived(tasksFor(app.ctx, s));
+  const tasks = $derived(tasksFor(app.ctxOf(s.profile_id), s));
+  const profile = $derived(app.shownProfile(s.profile_id));
   const parent = $derived(s.parent_id ? app.client.feed.sessions.get(s.parent_id) : undefined);
   const key = $derived(s.id);
   const schedules = $derived(app.client.feed.scheduleList.filter((x) => x.session_id === s.id).length);
@@ -35,6 +40,7 @@
       ? { label: 'Mark read', disabled: !online, run: () => app.markRead(s) }
       : { label: 'Mark unread', disabled: !online, run: () => void app.client.call('session.mark_unread', onSession(s)) },
     { label: 'Raw transcript', run: () => (app.view.raw[key] = { from: null, to: null, item: null }) },
+    ...(profile ? [{ label: 'Move to profile…', disabled: !online, run: () => app.moveToProfile({ from: profile.id, session_ids: [s.id] }) }] : []),
     s.state !== 'closed'
       ? { label: 'Archive', key: 'e', disabled: !online, run: () => void app.archive(s) }
       : { label: 'Unarchive', key: 'e', disabled: !online, run: () => void app.unarchive(s) },
@@ -49,6 +55,7 @@
     <ActionMenu label="Session actions" {actions} />
   </div>
   <div class="meta">
+    {#if profile}{@const pf = profile}<ProfileChip profile={pf} title="{profileLabel(pf)}: all its sessions" onclick={() => app.openProject(null, pf.id)} />{/if}
     <Workspaces {s} />
     <SessionBadges {s} {detail} />
     <AgentOptions {s} />

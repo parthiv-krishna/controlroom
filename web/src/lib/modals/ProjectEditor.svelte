@@ -1,20 +1,22 @@
 <script lang="ts">
   // A project: a named, colored group of tasks. Sessions belong to it through the tasks that link
-  // them; the preview shows what it holds now.
+  // them; the preview shows what it holds now. A new project is created in `profile`; with several
+  // profiles an existing one can move to another (with its tasks).
   import { useApp } from '../app/app.svelte';
+  import { SWATCHES } from '../model/colors';
   import { displayName } from '../model/filters';
+  import type { ProfileId } from '../protocol';
   import Modal from '../ui/Modal.svelte';
 
-  let { id }: { id: string | null } = $props();
+  let { id, profile = null }: { id: string | null; profile?: ProfileId | null } = $props();
   const app = useApp();
   const feed = app.client.feed;
   const close = () => (app.view.modal = null);
-  const COLORS = ['#f97316', '#facc15', '#34d399', '#22d3ee', '#60a5fa', '#a78bfa', '#f472b6', '#f43f5e'];
 
   // svelte-ignore state_referenced_locally
   const base = id ? feed.projects.get(id) : undefined;
   let name = $state(base?.name ?? '');
-  let color = $state(base?.color ?? COLORS[feed.projects.size % COLORS.length]);
+  let color = $state(base?.color ?? SWATCHES[feed.projects.size % SWATCHES.length]);
 
   const preview = $derived({
     sessions: id ? app.ctx.sessions.filter((s) => s.state !== 'closed' && s.project_ids.includes(id)) : [],
@@ -23,10 +25,10 @@
 
   async function save() {
     const fields = { name: name.trim() || 'Untitled', color };
-    const p = id ? await app.client.call('projects.update', { project_id: id, ...fields }) : await app.client.call('projects.create', fields);
+    const p = id ? await app.client.call('projects.update', { project_id: id, ...fields }) : await app.client.call('projects.create', { ...fields, profile_id: profile });
     if (!p) return;
     close();
-    app.openProject(p.id);
+    app.openProject(p.id, p.profile_id ?? undefined);
   }
   async function remove() {
     if (!id || !(await app.dialogs.confirm({ title: 'Delete project?', body: 'Its tasks are kept.', ok: 'Delete', danger: true }))) return;
@@ -44,7 +46,7 @@
     <div class="field">
       <span>Color</span>
       <div class="swatches" role="radiogroup" aria-label="Color">
-        {#each COLORS as c (c)}<button class="swatch" class:on={color === c} style:--sw={c} role="radio" aria-checked={color === c} aria-label={c} onclick={() => (color = c)}></button>{/each}
+        {#each SWATCHES as c (c)}<button class="swatch" class:on={color === c} style:--sw={c} role="radio" aria-checked={color === c} aria-label={c} onclick={() => (color = c)}></button>{/each}
       </div>
     </div>
   </div>
@@ -58,6 +60,10 @@
   </div>
   <div class="acts">
     {#if id}<button class="btn ghost bad-t del" onclick={remove}>Delete project</button>{/if}
+    {#if id && app.multi && base?.profile_id}
+      {@const from = base.profile_id}
+      <button class="btn ghost" onclick={() => app.moveToProfile({ from, project_ids: [id] })}>Move to profile…</button>
+    {/if}
     <button class="btn" onclick={close}><span class="kbd">Esc</span> Cancel</button>
     <button class="btn primary" disabled={!app.client.online} onclick={save}><span class="kbd">↵</span> Save</button>
   </div>

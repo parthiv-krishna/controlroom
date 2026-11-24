@@ -1,0 +1,40 @@
+{
+ "three": {
+  "profiles": [
+   { "id": "01JAF000000000000000000001", "name": "Orchard", "color": "#60a5fa", "private": false, "models": { "kind": "any" }, "model_defaults": { "provider": null, "model": null, "thinking": null }, "position": 1, "created_at": 1766000000000 },
+   { "id": "01JAF000000000000000000002", "name": "Lantern", "color": "#34d399", "private": false, "models": { "kind": "only", "accounts": ["openai", "openrouter"] }, "model_defaults": { "provider": "openrouter", "model": null, "thinking": null }, "position": 2, "created_at": 1766100000000 },
+   { "id": "01JAF000000000000000000003", "name": "Quill", "color": "#f472b6", "private": true, "models": { "kind": "only", "accounts": ["litellm"] }, "model_defaults": { "provider": null, "model": null, "thinking": null }, "position": 3, "created_at": 1766200000000 }
+  ],
+  "machines": {
+   "01JAM000000000000000000001": ["01JAF000000000000000000001", "01JAF000000000000000000002"],
+   "01JAM000000000000000000002": ["01JAF000000000000000000001"],
+   "01JAM000000000000000000003": ["01JAF000000000000000000001"],
+   "01JAM000000000000000000004": ["01JAF000000000000000000003"],
+   "01JAM000000000000000000005": ["01JAF000000000000000000003"]
+  },
+  "projects": {
+   "01JAP000000000000000000001": "01JAF000000000000000000001",
+   "01JAP000000000000000000002": "01JAF000000000000000000001",
+   "01JAP000000000000000000003": "01JAF000000000000000000002"
+  },
+  "tasks": {
+   "01JAT000000000000000000004": "01JAF000000000000000000002",
+   "01JAT000000000000000000006": "01JAF000000000000000000002"
+  },
+  "sessions": {
+   "01JAS000000000000000000005": "01JAF000000000000000000002",
+   "01JAS000000000000000000006": "01JAF000000000000000000002",
+   "01JAS000000000000000000007": "01JAF000000000000000000002",
+   "01JAS000000000000000000015": "01JAF000000000000000000003",
+   "01JAS000000000000000000018": "01JAF000000000000000000003"
+  },
+  "workspaces": {
+   "01JAS000000000000000000015": ["01JAM000000000000000000001", "01JAM000000000000000000004"],
+   "01JAS000000000000000000018": ["01JAM000000000000000000001", "01JAM000000000000000000004"]
+  },
+  "defaults": [
+   { "scope": { "kind": "profile", "profile_id": "01JAF000000000000000000002" }, "level": "relaxed", "grants": [], "domains": [], "mediated": [], "never": [] },
+   { "scope": { "kind": "profile", "profile_id": "01JAF000000000000000000003" }, "level": "off", "grants": [], "domains": [], "mediated": [], "never": [] }
+  ]
+ }
+}

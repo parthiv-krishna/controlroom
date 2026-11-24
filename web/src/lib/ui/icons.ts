@@ -37,6 +37,7 @@ export const ICONS = {
   shieldOff: [stroke('M8 1.6 13.2 3.6v4.1c0 3.2-2.2 5.6-5.2 6.7-3-1.1-5.2-3.5-5.2-6.7V3.6z'), stroke('M2.5 2.5l11 11', 1.6)],
   close: [stroke('M4 4l8 8M12 4l-8 8', 1.6)],
   more: [fill(circle(3.2, 8, 1.3)), fill(circle(8, 8, 1.3)), fill(circle(12.8, 8, 1.3))],
+  lock: [stroke('M3.6 7.2h8.8a.8.8 0 0 1 .8.8v5.2a.8.8 0 0 1-.8.8H3.6a.8.8 0 0 1-.8-.8V8a.8.8 0 0 1 .8-.8z', 1.4), stroke('M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2', 1.4)],
 } satisfies Record<string, IconPath[]>;
 
 export type IconName = keyof typeof ICONS;

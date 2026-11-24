@@ -17,7 +17,7 @@
   const { view, prefs } = app;
   const cur = $derived(app.current);
   const detail = $derived(cur ? app.detail(cur) : null);
-  const h = $derived(health(app.ctx, app.scope));
+  const h = $derived(health(app.notesCtx, app.scope));
   const notesShown = $derived(prefs.notesPin || view.notesOpen);
 
   // ---- peek on hover (unpinned panes only)

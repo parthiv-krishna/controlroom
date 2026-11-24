@@ -10,10 +10,12 @@ export const UNASSIGNED = 'unassigned';
 /** What the views show: one project, the Unassigned group, or everything (`null`). */
 export type Scope = Project | typeof UNASSIGNED | null;
 
-/** The state the pure view logic works on (the store's maps and lists). */
+/** The state the pure view logic works on (the store's maps and lists, or one profile's). */
 export interface Ctx {
+  /** Every machine, by id (for names). */
   machines: ReadonlyMap<MachineId, Machine>;
   machineList: readonly Machine[];
+  projects: readonly Project[];
   sessions: readonly FeedSession[];
   tasks: readonly Task[];
   overlaps: readonly Overlap[];
@@ -37,7 +39,8 @@ export function inScope(s: FeedSession, scope: Scope): boolean {
   return s.project_ids.includes(scope.id);
 }
 
-export const scopeName = (scope: Scope): string => (!scope ? 'All projects' : scope === UNASSIGNED ? 'Unassigned' : scope.name);
+/** A scope's name; `all` names ∗ (a profile's, with several). */
+export const scopeName = (scope: Scope, all = 'All projects'): string => (!scope ? all : scope === UNASSIGNED ? 'Unassigned' : scope.name);
 
 /** Stoplight counts: red = problems, yellow = approvals (ring = only questions), green = unread. */
 export interface Health {
@@ -60,14 +63,17 @@ export function health(ctx: Ctx, scope: Scope): Health {
   return h;
 }
 
-/** Sessions needing a decision or a fix outside the scope (the phone's project switcher badge). */
-export const needsYouElsewhere = (ctx: Ctx, scope: Scope): number =>
-  scope
-    ? ctx.sessions.filter((s) => {
-        const a = attentionOf(s);
-        return (a === 'approval' || a === 'problem') && !inScope(s, scope);
-      }).length
-    : 0;
+/**
+ * Sessions needing a decision or a fix outside what is shown (the phone's switcher badge): `all`
+ * is every session, `shown` the current profile's (the same with one profile).
+ */
+export function needsYouElsewhere(all: Ctx, shown: Ctx, scope: Scope): number {
+  const here = new Set(shown.sessions.filter((s) => inScope(s, scope)).map((s) => s.id));
+  return all.sessions.filter((s) => {
+    const a = attentionOf(s);
+    return (a === 'approval' || a === 'problem') && !here.has(s.id);
+  }).length;
+}
 
 /** The two-letter code shown in the rail and on badges. */
 export const projectCode = (p: Project): string => p.name.trim().slice(0, 2);

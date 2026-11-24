@@ -1,8 +1,10 @@
 <script lang="ts">
-  // Settings › General: theme, keyboard (pane navigation, vim keys, the shortcuts) and the account.
+  // Settings › General: theme, the account, the server's session settings (idle stop, retention:
+  // global, the agent daemon's), keyboard (pane navigation, vim keys, the shortcuts).
   import { useApp } from '../app/app.svelte';
   import type { Theme } from '../app/prefs.svelte';
   import { SHORTCUTS } from '../keys/shortcuts';
+  import ServerSessions from './ServerSessions.svelte';
 
   const app = useApp();
   const THEMES: [Theme, string][] = [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']];
@@ -21,6 +23,8 @@
     {#if hello.auth === 'oidc'}<button class="btn" onclick={() => app.client.transport.logout()}>Sign out</button>{/if}
   </div>
 {/if}
+<div class="sec-h">Sessions</div>
+<ServerSessions />
 <div class="sec-h">Keyboard</div>
 <label class="check"><input type="checkbox" bind:checked={app.prefs.keyboard.navigator} /> <span><b>Pane navigation</b>{' '}<span class="muted">Ctrl-h/j/k/l</span></span></label>
 <label class="check"><input type="checkbox" bind:checked={app.prefs.keyboard.listVim} /> <span><b>Vim keys in lists</b></span></label>

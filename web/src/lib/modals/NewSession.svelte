@@ -4,6 +4,9 @@
   // (pre-filled when started from a task, incl. "+ New task …"), sandbox level (the defaults of
   // the machines and the tasks' projects, or an explicit choice), first message. A machine that
   // can't be reached is refused up front; a directory another open session uses is warned about.
+  // The session is created in a profile (the current one): its machines and tasks are the
+  // profile's, and its default level counts the profile's. With several profiles the dialog starts
+  // with the profile; changing it resets the workspaces.
   import { newOpId, useApp } from '../app/app.svelte';
   import type { NewSessionPreset } from '../app/view.svelte';
   import { RpcError, describeError } from '../api/errors';
@@ -33,7 +36,10 @@
   }
   let nextKey = 0;
   const row = (machine: MachineId, path: string): Row => ({ key: nextKey++, machine, path });
-  const firstLive = () => feed.machineList.find(isLive)?.id ?? '';
+  // svelte-ignore state_referenced_locally
+  let profile = $state(preset.profile ?? null);
+  const scoped = $derived(app.ctxOf(profile));
+  const firstLive = () => scoped.machineList.find(isLive)?.id ?? '';
 
   // svelte-ignore state_referenced_locally
   let rows = $state<Row[]>(preset.workspaces?.length ? preset.workspaces.map((w) => row(w.machine_id, w.path)) : [row(firstLive(), '')]);
@@ -53,12 +59,12 @@
 
   const machineIds = $derived([...new Set(rows.map((r) => r.machine).filter(Boolean))]);
   const taskProjects = $derived([...new Set(tasks.flatMap((id) => feed.tasks.get(id)?.project_ids ?? []))]);
-  const defaults = $derived(defaultLevel(sandboxDefaults, machineIds, taskProjects));
+  const defaults = $derived(defaultLevel(sandboxDefaults, machineIds, taskProjects, profile));
   const chosen = $derived(level === 'default' ? defaults : level);
   /** Machines that can't take a workspace now (the server refuses them). */
   const away = $derived(machineIds.map((id) => feed.machines.get(id)).filter((m) => !m || !isLive(m)));
 
-  const machineOptions = $derived<Option[]>(feed.machineList.map((m) => ({ value: m.id, label: m.name, disabled: !isLive(m), hint: isLive(m) ? undefined : connLabel(m) })));
+  const machineOptions = $derived<Option[]>(scoped.machineList.map((m) => ({ value: m.id, label: m.name, disabled: !isLive(m), hint: isLive(m) ? undefined : connLabel(m) })));
   const levelOptions = $derived<Option[]>([
     { value: 'default', label: `Defaults (${levelLabel(defaults)})` },
     ...LEVELS.map((l) => ({ value: l.value, label: l.label, hint: l.hint })),
@@ -67,28 +73,35 @@
   /** Directories recently used on a machine, most recent first. */
   function recent(machine: MachineId): string[] {
     const user = feed.machines.get(machine)?.user ?? '';
-    const dirs = app.ctx.sessions
+    const dirs = scoped.sessions
       .flatMap((s) => s.workspaces.filter((w) => w.machine_id === machine).map((w) => ({ at: s.updated_at, dir: normPath(w.root ?? w.path, user) })))
       .sort((a, b) => b.at - a.at)
       .map((x) => x.dir);
     return [...new Set(dirs)].slice(0, 5);
   }
 
-  /** Open sessions that already use a row's directory (sharing is allowed; edits may collide). */
+  /** Open sessions (of any profile: a machine may be shared) that already use a row's directory. */
   function sharing(r: Row): string[] {
     const user = feed.machines.get(r.machine)?.user ?? '';
     const want = normPath(r.path.trim().replace(/(.)\/+$/, '$1'), user);
     if (!want) return [];
-    return app.ctx.sessions
+    return app.all.sessions
       .filter((s) => s.state !== 'closed' && s.workspaces.some((w) => w.machine_id === r.machine && normPath(w.root ?? w.path, user) === want))
       .map(displayName);
   }
 
   function addRow() {
     const used = new Set(rows.map((r) => r.machine));
-    rows = [...rows, row(feed.machineList.find((m) => isLive(m) && !used.has(m.id))?.id ?? firstLive(), '')];
+    rows = [...rows, row(scoped.machineList.find((m) => isLive(m) && !used.has(m.id))?.id ?? firstLive(), '')];
   }
   const removeRow = (key: number) => (rows = rows.filter((r) => r.key !== key));
+  /** Another profile: its machines and tasks only. */
+  function setProfile(id: string) {
+    profile = id;
+    rows = [row(firstLive(), '')];
+    tasks = tasks.filter((t) => t.startsWith('new:') || scoped.tasks.some((x) => x.id === t));
+  }
+  const profileOptions = $derived<Option[]>(app.profiles.map((p) => ({ value: p.id, label: p.name, hint: p.private ? 'private' : undefined })));
   function makePrimary(key: number) {
     const r = rows.find((x) => x.key === key);
     if (r) rows = [r, ...rows.filter((x) => x.key !== key)];
@@ -97,12 +110,12 @@
   function suggestTasks(q: string, picked: string[]): Suggestion[] {
     const t = q.trim().toLowerCase();
     const order: Record<string, number> = { doing: 0, review: 1, todo: 2, backlog: 3 };
-    const out: Suggestion[] = app.ctx.tasks
+    const out: Suggestion[] = scoped.tasks
       .filter((x) => !picked.includes(x.id) && x.status !== 'done' && (!t || x.title.toLowerCase().includes(t)))
       .sort((a, b) => (order[a.status] ?? 4) - (order[b.status] ?? 4))
       .slice(0, 12)
       .map((x) => ({ value: x.id, label: x.title, hint: columnLabel(x.status) }));
-    if (t && !app.ctx.tasks.some((x) => x.title.toLowerCase() === t)) out.push({ value: 'new:' + q.trim(), label: `+ New task “${q.trim()}”`, isNew: true });
+    if (t && !scoped.tasks.some((x) => x.title.toLowerCase() === t)) out.push({ value: 'new:' + q.trim(), label: `+ New task “${q.trim()}”`, isNew: true });
     return out;
   }
 
@@ -139,10 +152,13 @@
         // tasks are linked (and moved to In progress) by the server.
         prompt: prompt.trim() ? { content: textContent(prompt.trim()), origin: { kind: 'user', device: app.client.deviceRef } } : null,
         task_ids: tasks.filter((v) => !v.startsWith('new:')),
+        profile_id: profile,
       });
       const id = r.session.id;
+      // New tasks join the viewed project when it is the session's profile's.
+      const project = app.project && scoped.projects.some((p) => p.id === app.project?.id) ? [app.project.id] : [];
       for (const v of tasks.filter((v) => v.startsWith('new:'))) {
-        await app.client.call('tasks.create', { title: v.slice(4), status: 'doing', links: [id], project_ids: app.project ? [app.project.id] : [] });
+        await app.client.call('tasks.create', { title: v.slice(4), status: 'doing', links: [id], project_ids: project, profile_id: profile });
       }
       close();
       app.open({ id });
@@ -158,12 +174,18 @@
   {@const m = feed.machines.get(o.value)}
   {#if m}<StatusIcon kind={connKind(m)} />{/if}
 {/snippet}
+{#snippet profileIcon(o: Option)}
+  <span class="pdot" style:background={app.profiles.find((p) => p.id === o.value)?.color}></span>
+{/snippet}
 {#snippet taskChip(v: string)}
   {#if v.startsWith('new:')}<span class="muted">new ·</span> {v.slice(4)}{:else}{feed.tasks.get(v)?.title ?? v}{/if}
 {/snippet}
 
 <Modal label="New session" oncancel={close} onprimary={create}>
   <h3>New session</h3>
+  {#if app.multi}
+    <div class="field"><span>Profile</span><Dropdown id="ns-profile" label="Profile" value={profile ?? ''} options={profileOptions} icon={profileIcon} onchange={setProfile} /></div>
+  {/if}
   <div class="field" role="group" aria-label="Workspaces">
     <span>Workspaces</span>
     {#each rows as r, i (r.key)}
@@ -206,6 +228,7 @@
   .field > :global(.dd) { display: flex; }
   .ws { display: grid; grid-template-columns: minmax(110px, 0.35fr) auto minmax(0, 1fr) auto auto; align-items: center; gap: 6px; color: var(--fg); }
   .colon { font: 13px var(--mono); color: var(--muted); }
+  .pdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .prim { font-size: 11px; color: var(--muted); padding: 0 6px; }
   .add { align-self: flex-start; }
   .row { display: flex; align-items: center; gap: 8px; }

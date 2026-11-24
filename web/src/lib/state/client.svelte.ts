@@ -1,7 +1,7 @@
 // The sync engine: on every (re)connect it says hello, registers this device, subscribes to the
 // state feed from the last cursor and resumes the open session feeds. Calls go through `call`,
 // typed by UiMethods; a failure is reported once through `onError` and resolves to undefined.
-import { describeError } from '../api/errors';
+import { RpcError, describeError } from '../api/errors';
 import type { AuthState, CallOptions, ConnState, Params, Result, Transport } from '../api/transport';
 import { UI_PROTOCOL_VERSION, type DeviceRef, type UiHelloResult, type UiMethod } from '../protocol';
 import { rememberLabel, type LocalDevice } from './device';
@@ -15,6 +15,11 @@ export class Client {
   everConnected = $state(false);
   offlineSince = $state<number | null>(null);
   hello = $state.raw<UiHelloResult | null>(null);
+  /**
+   * Whether the server has profiles (it answers `profiles.list`). A server before them answers
+   * `unsupported`: nothing then asks for a profile first.
+   */
+  profilesSupported = $state(true);
   /** This browser's device; `named` drives the first-load naming prompt. */
   device = $state<LocalDevice>({ id: '', label: '', named: true });
   readonly feed = new StateFeed();
@@ -110,6 +115,7 @@ export class Client {
         device_id: this.device.id,
       });
       await this.transport.request('devices.register', { device_id: this.device.id, label: this.device.label });
+      this.profilesSupported = await this.probeProfiles();
       await this.syncState();
       this.sessions.resubscribeAll();
       this.everConnected = true;
@@ -117,6 +123,16 @@ export class Client {
     } catch (e) {
       // The connection dropped or the server refused; the next `open` retries.
       if (this.transport.state === 'open') this.onError(describeError(e));
+    }
+  }
+
+  private async probeProfiles(): Promise<boolean> {
+    try {
+      await this.transport.request('profiles.list', {});
+      return true;
+    } catch (e) {
+      if (e instanceof RpcError && e.data.kind === 'unsupported') return false;
+      throw e;
     }
   }
 

@@ -14,7 +14,9 @@
 
   let { t, onclose }: { t: Task; onclose: () => void } = $props();
   const app = useApp();
-  const r = $derived(rollup(app.ctx, t));
+  // The task's profile's data (the current one, unless opened from elsewhere).
+  const scoped = $derived(app.ctxOf(t.profile_id));
+  const r = $derived(rollup(scoped, t));
   const online = $derived(app.client.online);
 
   let title = $state('');
@@ -29,11 +31,11 @@
   });
 
   const update = (fields: { title?: string; priority?: Priority; project_ids?: string[]; notes?: string }) => app.client.call('tasks.update', { task_id: t.id, ...fields });
-  const moveTo = (status: TaskStatus) => app.client.call('tasks.move', { task_id: t.id, status, order: orderFor(columnTasks(app.ctx.tasks, status), t.id, null) });
+  const moveTo = (status: TaskStatus) => app.client.call('tasks.move', { task_id: t.id, status, order: orderFor(columnTasks(scoped.tasks, status), t.id, null) });
 
   // Projects: read from the task, written straight to the server (replaces the set).
   const projectSuggest = (q: string, chosen: string[]): Suggestion[] =>
-    app.client.feed.projectList.filter((p) => !chosen.includes(p.id) && p.name.toLowerCase().includes(q.trim().toLowerCase())).map((p) => ({ value: p.id, label: p.name }));
+    scoped.projects.filter((p) => !chosen.includes(p.id) && p.name.toLowerCase().includes(q.trim().toLowerCase())).map((p) => ({ value: p.id, label: p.name }));
   function setProjects(ids: string[]) {
     if (ids.join() !== t.project_ids.join()) void update({ project_ids: ids });
   }
@@ -46,7 +48,7 @@
     item = '';
   }
   const linkable = $derived(
-    app.ctx.sessions.filter((s) => s.state !== 'closed' && !t.links.includes(s.id)),
+    scoped.sessions.filter((s) => s.state !== 'closed' && !t.links.includes(s.id)),
   );
   async function remove() {
     if (!(await app.dialogs.confirm({ title: 'Delete task?', body: 'Linked sessions are kept.', ok: 'Delete', danger: true }))) return;

@@ -78,8 +78,9 @@ test('models: a pasted subscription token', async ({ page }) => {
   await expect(row.getByRole('button', { name: 'Sign in to Anthropic' })).toBeDisabled();
 });
 
-test('models: a custom gateway and the defaults', async ({ page }) => {
-  await start(page);
+test('models: a custom gateway and the server-wide defaults', async ({ page }) => {
+  // A server before profiles: the defaults are the server's (with profiles they are the profile's).
+  await start(page, undefined, 'paused&profiles=legacy');
   const settings = await openModels(page);
   await settings.getByRole('button', { name: '+ Gateway' }).click();
   const form = settings.getByRole('group', { name: 'New gateway' });

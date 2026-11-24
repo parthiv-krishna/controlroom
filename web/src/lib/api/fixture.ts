@@ -3,10 +3,12 @@
 // (web/fixtures/), plus recorded session timelines (see fixture-timelines.ts). It holds no backend
 // logic: mutations are only recorded (and answered with an ack, or a canned result when the
 // fixture has one), and the feeds change only by script. Tests can queue the next result of a
-// method (`reply`); calls of `held` methods (long polls) wait for one.
+// method (`reply`), and send state changes of their own (`emitState`); calls of `held` methods
+// (long polls) wait for one.
 import type {
   SessionDetail,
   SessionEventsParams,
+  StateChange,
   StateCursor,
   StateEventsParams,
   StateSnapshot,
@@ -50,6 +52,9 @@ export interface Fixture {
   /** Methods whose calls wait for a result queued with `reply` (long polls). */
   held?: UiMethod[];
 }
+
+/** A state change without its revision (`emitState` numbers it). */
+export type ChangeBody = StateChange extends infer C ? (C extends unknown ? Omit<C, 'rev'> : never) : never;
 
 export interface RecordedCall {
   method: UiMethod;
@@ -97,12 +102,15 @@ export class FixtureTransport implements Transport {
   private readonly waiting = new Map<UiMethod, ((result: unknown) => void)[]>();
   private next = 0;
   private played = 0;
+  /** The last revision sent on the state feed. */
+  private rev: number;
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly fixture: Fixture,
     private readonly options: FixtureOptions = {},
   ) {
+    this.rev = fixture.cursor.rev;
     this.replays = new Map(Object.entries(fixture.timelines ?? {}).map(([key, t]) => [key, new TimelineReplay(t)]));
     if (options.offline) this.state = 'closed';
     else queueMicrotask(() => this.setState('open'));
@@ -147,12 +155,20 @@ export class FixtureTransport implements Transport {
     if (!step) return false;
     this.played++;
     if (step.notification === 'state.events') {
+      this.rev = Math.max(this.rev, ...step.params.changes.map((c) => c.rev));
       if (this.stateSub) this.hub.emit('state.events', { ...step.params, subscription_id: this.stateSub });
     } else {
       const sub = this.sessionSubs.get(step.params.id);
       if (sub) this.hub.emit('session.events', { ...step.params, subscription_id: sub.id });
     }
     return true;
+  }
+
+  /** Sends state changes on the state feed, numbered after the last revision sent. */
+  emitState(changes: ChangeBody[]): void {
+    // SAFETY: each body gains the revision it lacked, which makes it a StateChange again.
+    const numbered = changes.map((c) => ({ ...c, rev: ++this.rev }) as StateChange);
+    if (this.stateSub) this.hub.emit('state.events', { subscription_id: this.stateSub, changes: numbered });
   }
 
   /** Answers the oldest waiting call of `method` with `result`, or queues it for the next call. */
@@ -270,6 +286,6 @@ const ACK_METHODS = new Set<UiMethod>([
   'tasks.delete', 'grants.revoke', 'devices.remove', 'schedules.delete', 'client.focus', 'client.activity', 'session.cancel',
   'session.close', 'session.reopen', 'session.resume', 'session.delete', 'session.update', 'session.set_option', 'session.set_sandbox_level',
   'queue.edit', 'queue.remove', 'queue.reorder', 'queue.resume', 'todo.remove', 'todo.reorder', 'sandbox.revoke',
-  'session.terminal_close',
+  'session.terminal_close', 'profiles.delete',
 ] satisfies AckMethod[]);
 const isAck = (method: UiMethod): boolean => ACK_METHODS.has(method);

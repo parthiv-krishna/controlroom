@@ -1,11 +1,14 @@
 <script lang="ts">
-  // The server's agent settings (idle stop, retention: the agent daemon's), then machine cards:
-  // connection, doctor results, key, tool-call grace, auto-upgrade, retry/upgrade/remove,
-  // "+ Session here"; and the add-machine flow.
-  import { newOpId, useApp } from '../app/app.svelte';
+  // The picked profile's machine cards: connection, doctor results, key, tool-call grace,
+  // auto-upgrade, retry/upgrade/remove, "+ Session here"; with several profiles "Shared with" and
+  // move or share; and the add-machine flow (into the picked profile; on a fresh install the first
+  // profile is created first).
+  import { useApp } from '../app/app.svelte';
+  import { sharedWith } from '../model/profiles';
   import { ago, connLabel, upgrading } from '../model/status';
   import { touches } from '../model/workspaces';
-  import type { DaemonSettings, KeysListResult, Machine } from '../protocol';
+  import ProfileChip from '../profiles/ProfileChip.svelte';
+  import type { KeysListResult, Machine, ProfileId } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
   import AddMachine from './AddMachine.svelte';
   import DoctorView from './DoctorView.svelte';
@@ -19,20 +22,24 @@
     if (online) void app.client.call('keys.list', {}).then((r) => (keys = r ?? null));
   });
 
-  /** The agent daemon's settings (every session runs on the server). */
-  let server = $state<DaemonSettings | null>(null);
-  $effect(() => {
-    if (online) void app.client.call('settings.get', {}).then((r) => (server = r ?? null));
-  });
-
-  const sessionsOn = (m: Machine) => app.ctx.sessions.filter((s) => s.state !== 'closed' && touches(s, m.id)).length;
-  const IDLE = [1, 12, 24, 48, 168];
-  const RETENTION: [string, number | null][] = [['forever', null], ['7 days', 7], ['30 days', 30], ['90 days', 90]];
+  const profile = $derived(app.settingsProfile);
+  const machines = $derived(app.ctxOf(profile?.id).machineList);
+  const sessionsOn = (m: Machine) => app.all.sessions.filter((s) => s.state !== 'closed' && touches(s, m.id)).length;
   /** How long a tool call waits for an unreachable machine before it fails (and its result comes late). */
   const GRACE: [string, number][] = [['1 min', 60], ['10 min', 600], ['1 h', 3600], ['1 day', 86400]];
-  async function setServer(fields: { idle_timeout_h?: number; retention?: { delete_closed_after_days: number | null } }) {
-    const r = await app.client.call('settings.set', { op_id: newOpId(), ...fields });
-    if (r) server = r;
+
+  /** The profile a new machine joins: the picked one, or the first, created now. */
+  let addTo = $state<ProfileId | null>(null);
+  function add() {
+    if (profile || !app.client.profilesSupported) return start(profile?.id ?? null);
+    app.withProfile((id) => {
+      app.view.settingsProfile = id;
+      start(id);
+    });
+  }
+  function start(id: ProfileId | null) {
+    addTo = id;
+    adding = true;
   }
 
   async function remove(m: Machine) {
@@ -42,22 +49,15 @@
 </script>
 
 {#if adding}
-  <AddMachine bind:this={wizard} {keys} onclose={() => (adding = false)} />
+  <AddMachine bind:this={wizard} {keys} profile={addTo} onclose={() => (adding = false)} />
 {:else}
-  {#if server}
-    {@const ds = server}
-    <div class="card" data-server>
-      <div class="h"><b>Sessions</b></div>
-      <div class="settings small">
-        <span>Idle stop</span><Dropdown small label="Idle stop" value={String(ds.idle_timeout_h)} disabled={!online} options={[...new Set([...IDLE, ds.idle_timeout_h])].sort((a, b) => a - b).map((h) => ({ value: String(h), label: `${h} h` }))} onchange={(v) => setServer({ idle_timeout_h: Number(v) })} />
-        <span>Keep archived</span><Dropdown small label="Retention" value={String(ds.retention.delete_closed_after_days)} disabled={!online} options={RETENTION.map(([label, d]) => ({ value: String(d), label }))} onchange={(v) => setServer({ retention: { delete_closed_after_days: v === 'null' ? null : Number(v) } })} />
-      </div>
-    </div>
-  {/if}
-  {#each app.client.feed.machineList as m (m.id)}
+  {#each machines as m (m.id)}
     {@const st = m.connectivity.state}
+    {@const shared = app.multi && profile ? sharedWith(m, app.profiles, profile.id) : []}
     <div class="card c-{st}" data-machine={m.id}>
-      <div class="h"><span class="dot {st}"></span><b>{m.name}</b><span class="muted small">{m.user}@{m.host}:{m.port}</span><span class="sp"></span>{#if st !== 'action_required'}<span class="chip">{connLabel(m)}</span>{/if}</div>
+      <div class="h"><span class="dot {st}"></span><b>{m.name}</b><span class="muted small">{m.user}@{m.host}:{m.port}</span>
+        {#if shared.length}<span class="shared small muted" data-shared>Shared with {#each shared as p (p.id)}<ProfileChip profile={p} />{/each}</span>{/if}
+        <span class="sp"></span>{#if st !== 'action_required'}<span class="chip">{connLabel(m)}</span>{/if}</div>
       <div class="small muted" data-version title="{m.arch ?? '?'}, {sessionsOn(m)} open session{sessionsOn(m) === 1 ? '' : 's'}">
         controlroomd {m.version ?? '—'}{#if st !== 'connected'}, last seen {ago(m.last_seen)}{/if}
         {#if m.update_available && st === 'connected'}<span class="upd">update available ({m.version} → {app.client.hello?.server_version ?? 'newer'})</span>{/if}
@@ -77,11 +77,16 @@
         {#if st === 'incompatible'}<button class="btn sm primary" aria-label="Upgrade the daemon on {m.name}" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade</button>
         {:else if st === 'connected' && m.update_available}<button class="btn sm" aria-label="Upgrade the daemon on {m.name}" disabled={!online} onclick={() => app.client.call('machines.upgrade', { machine_id: m.id })}>Upgrade</button>{/if}
         {#if st === 'connected'}<button class="btn sm" onclick={() => { app.view.settings = null; app.newSession({ workspaces: [{ machine_id: m.id, path: '~' }] }); }}>+ Session here</button>{/if}
+        {#if app.multi && profile}
+          {@const from = profile.id}
+          <button class="btn sm ghost" aria-label="Move {m.name} to another profile" disabled={!online} onclick={() => app.moveToProfile({ from, machine_ids: [m.id] })}>Move to profile…</button>
+          {#if !profile.private}<button class="btn sm ghost" aria-label="Share {m.name} with another profile" disabled={!online} onclick={() => app.moveToProfile({ from, machine_ids: [m.id], share: true })}>Share with…</button>{/if}
+        {/if}
         <button class="btn sm ghost bad-t" disabled={!online} onclick={() => remove(m)}>Remove</button>
       </div>
     </div>
   {/each}
-  <button class="btn primary add" disabled={!online} onclick={() => (adding = true)}>+ Machine</button>
+  <button class="btn primary add" disabled={!online} onclick={add}>+ Machine</button>
 {/if}
 
 <style>
@@ -94,5 +99,6 @@
   .check { display: flex; align-items: center; gap: 8px; color: var(--muted); }
   .acts { display: flex; gap: 6px; flex-wrap: wrap; }
   .add { align-self: flex-start; }
+  .shared { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
   .upd { margin-left: 8px; color: var(--info); }
 </style>

@@ -57,6 +57,8 @@ export function describeError(e: unknown): string {
     case 'invalid_state': return `Not possible while ${d.state.replace(/_/g, ' ')}`;
     case 'busy': return 'Busy, try again';
     case 'unauthenticated': return 'Signed out';
+    // The server's reason names the session's own profile ("Not available in Garden club").
+    case 'policy_denied': return d.reason;
     default: return e.message;
   }
 }

@@ -1,8 +1,11 @@
 <script lang="ts">
   // Settings: a large fixed-size modal, or a full page via the expand button (the choice persists).
   // Esc closes (or steps back in the add-machine flow); Enter runs the flow's primary action.
+  // Machines, Models and Sandbox start with the profile picker (a server before profiles has
+  // none); Notifications (with Devices) and General are global, as are the SSH keys.
   import { useApp } from '../app/app.svelte';
   import type { SettingsTab } from '../app/view.svelte';
+  import ProfilePicker from '../profiles/ProfilePicker.svelte';
   import Icon from '../ui/Icon.svelte';
   import Modal from '../ui/Modal.svelte';
   import type AddMachine from './AddMachine.svelte';
@@ -21,6 +24,7 @@
     ['machines', 'Machines'], ['models', 'Models'], ['sandbox', 'Sandbox'], ['notifications', 'Notifications'], ['general', 'General'],
   ];
   const tab = $derived(app.view.settings ?? 'machines');
+  const picker = $derived(app.client.profilesSupported && (tab === 'machines' || tab === 'models' || tab === 'sandbox'));
   let adding = $state(false);
   let wizard = $state<AddMachine>();
 
@@ -46,6 +50,7 @@
     {/each}
   </div>
   <div class="body" role="tabpanel">
+    {#if picker && !adding}<ProfilePicker />{/if}
     {#if tab === 'machines'}<MachinesTab bind:adding bind:wizard />{#if !adding}<div class="sec-h">SSH keys</div><KeysTab />{/if}
     {:else if tab === 'models'}<ModelsTab />
     {:else if tab === 'notifications'}<NotificationsTab /><div class="sec-h">Devices</div><DevicesTab />

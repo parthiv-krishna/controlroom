@@ -1,6 +1,7 @@
 <script lang="ts">
   // A new task in one go: title, status, priority, projects (pre-filled with the viewed project),
-  // notes, checklist entries and linked sessions, all in one tasks.create.
+  // notes, checklist entries and linked sessions, all in one tasks.create, in the preset's profile
+  // (its projects and sessions only).
   import { useApp } from '../app/app.svelte';
   import type { NewTaskPreset } from '../app/view.svelte';
   import { displayName } from '../model/filters';
@@ -28,11 +29,14 @@
   // svelte-ignore state_referenced_locally
   let sessions = $state<string[]>(preset.sessions?.slice() ?? []);
   let busy = $state(false);
+  // svelte-ignore state_referenced_locally
+  const profile = preset.profile ?? null;
+  const scoped = $derived(app.ctxOf(profile));
 
   const projectSuggest = (q: string, picked: string[]): Suggestion[] =>
-    feed.projectList.filter((p) => !picked.includes(p.id) && p.name.toLowerCase().includes(q.trim().toLowerCase())).map((p) => ({ value: p.id, label: p.name }));
+    scoped.projects.filter((p) => !picked.includes(p.id) && p.name.toLowerCase().includes(q.trim().toLowerCase())).map((p) => ({ value: p.id, label: p.name }));
   const sessionSuggest = (q: string, picked: string[]): Suggestion[] =>
-    app.ctx.sessions
+    scoped.sessions
       .filter((s) => s.state !== 'closed' && !picked.includes(s.id) && displayName(s).toLowerCase().includes(q.trim().toLowerCase()))
       .sort((a, b) => b.updated_at - a.updated_at)
       .slice(0, 15)
@@ -58,6 +62,7 @@
       status,
       priority,
       project_ids: projects,
+      profile_id: profile,
       notes: notes.trim(),
       checklist: item.trim() ? [...items, item.trim()] : items,
       links,

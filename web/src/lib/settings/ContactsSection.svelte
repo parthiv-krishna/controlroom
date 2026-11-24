@@ -1,6 +1,6 @@
 <script lang="ts">
   // Contact grants (Settings › Sandbox): which sessions may message each other, and since when;
-  // revocable.
+  // revocable. With several profiles, the picked profile's (grants never cross profiles).
   import { useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
   import { ago } from '../model/status';
@@ -9,6 +9,10 @@
   const app = useApp();
   const feed = app.client.feed;
   const online = $derived(app.client.online);
+  const grants = $derived.by(() => {
+    const pf = app.multi ? app.settingsProfile : null;
+    return pf ? feed.grantList.filter((g) => feed.sessions.get(g.from)?.profile_id === pf.id) : feed.grantList;
+  });
   const nameOf = (id: SessionId) => {
     const s = feed.sessions.get(id);
     return s ? displayName(s) : 'missing session';
@@ -19,7 +23,7 @@
   }
 </script>
 
-{#each feed.grantList as g (g.id)}
+{#each grants as g (g.id)}
   {@const by = g.by ? (feed.devices.get(g.by.device_id)?.label ?? g.by.label) : null}
   <div class="row" title="Granted {ago(g.granted_at)}{by ? ` by ${by}` : ''}">
     <div class="pair"><button class="linkish" onclick={() => open(g.from)}>{nameOf(g.from)}</button>{' '}<span class="muted">⇄</span>{' '}<button class="linkish" onclick={() => open(g.to)}>{nameOf(g.to)}</button></div>

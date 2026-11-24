@@ -5,15 +5,16 @@
   // of the rest; edits apply to new sessions and restarts. A granted directory includes everything
   // under it (Landlock grants are recursive), so there is no separate toggle for that. Grants that
   // could never take effect are refused with the reason (checked here, and by the server).
+  // With a profile picked, its own card (its level, rules for all its sessions) comes first, then
+  // its machines and projects; a shared machine can't be set to off.
   import { useApp } from '../app/app.svelte';
   import { describeError } from '../api/errors';
-  import { KNOWN_SOCKETS, LEVELS, PROC_GRANT, checkDefaultsPath, grantLimit } from '../model/sandbox';
+  import { KNOWN_SOCKETS, LEVELS, PROC_GRANT, checkDefaultsPath, grantLimit, levelLabel } from '../model/sandbox';
   import type { MediationAction, NewGrant, PathAccess, DefaultsChange, DefaultsScope, SandboxDefaults } from '../protocol';
   import ActionMenu, { type MenuAction } from '../ui/ActionMenu.svelte';
   import Dropdown from '../ui/Dropdown.svelte';
 
   const app = useApp();
-  const feed = app.client.feed;
   const online = $derived(app.client.online);
   let defaults = $state<SandboxDefaults[]>([]);
   $effect(() => {
@@ -23,17 +24,39 @@
   interface Row {
     key: string;
     name: string;
+    /** The name in accessible labels (a profile may be named like a machine). */
+    label: string;
+    /** Shared with another profile: never off. */
+    shared: boolean;
     color: string | null;
     scope: DefaultsScope;
     defaults: SandboxDefaults | null;
   }
-  const scopeKey = (s: DefaultsScope) => (s.kind === 'machine' ? `m:${s.machine_id}` : s.kind === 'project' ? `p:${s.project_id}` : '');
+  const scopeKey = (s: DefaultsScope) =>
+    s.kind === 'machine' ? `m:${s.machine_id}` : s.kind === 'project' ? `p:${s.project_id}` : s.kind === 'profile' ? `f:${s.profile_id}` : '';
+  const pf = $derived(app.settingsProfile);
   const rows = $derived.by(() => {
     const byKey = new Map(defaults.map((p) => [scopeKey(p.scope), p]));
-    const machines: Row[] = feed.machineList.map((m) => ({ key: `m:${m.id}`, name: m.name, color: null, scope: { kind: 'machine', machine_id: m.id }, defaults: byKey.get(`m:${m.id}`) ?? null }));
-    const projects: Row[] = feed.projectList.map((p) => ({ key: `p:${p.id}`, name: p.name, color: p.color, scope: { kind: 'project', project_id: p.id }, defaults: byKey.get(`p:${p.id}`) ?? null }));
-    return { machines, projects };
+    const scoped = app.ctxOf(pf?.id);
+    const profile: Row[] = pf ? [{ key: `f:${pf.id}`, name: pf.name, label: `profile ${pf.name}`, shared: false, color: pf.color, scope: { kind: 'profile', profile_id: pf.id }, defaults: byKey.get(`f:${pf.id}`) ?? null }] : [];
+    const machines: Row[] = scoped.machineList.map((m) => ({ key: `m:${m.id}`, name: m.name, label: m.name, shared: m.profile_ids.length > 1, color: null, scope: { kind: 'machine', machine_id: m.id }, defaults: byKey.get(`m:${m.id}`) ?? null }));
+    const projects: Row[] = scoped.projects.map((p) => ({ key: `p:${p.id}`, name: p.name, label: p.name, shared: false, color: p.color, scope: { kind: 'project', project_id: p.id }, defaults: byKey.get(`p:${p.id}`) ?? null }));
+    const groups: [string, Row[]][] = [['Machines', machines], ['Projects', projects]];
+    return pf ? [['Profile', profile] as [string, Row[]], ...groups] : groups;
   });
+  /** A machine's unset level falls back to its profile's ("Garden club default (strict)"). */
+  const unset = (row: Row): string => {
+    if (row.scope.kind === 'project') return 'No minimum';
+    if (row.scope.kind === 'machine' && pf) {
+      const level = defaults.find((d) => d.scope.kind === 'profile' && d.scope.profile_id === pf.id)?.level ?? 'strict';
+      return `${pf.name} default (${levelLabel(level).toLowerCase()})`;
+    }
+    return 'Default (strict)';
+  };
+  const levelOptions = (row: Row) => [
+    { value: 'none', label: unset(row) },
+    ...LEVELS.map((l) => (l.value === 'off' && row.shared ? { value: l.value, label: l.label, disabled: true, hint: `${row.name} is shared; it can’t run unsandboxed` } : { value: l.value, label: l.label, hint: l.hint })),
+  ];
 
   type Kind = 'grant' | 'socket' | 'never' | 'domain' | 'command';
   /** The rule input open on each card (only rules that exist show otherwise). */
@@ -48,8 +71,8 @@
       { label: 'Never path…', hint: 'Denied without asking', run: open('never') },
       { label: 'Domain…', run: open('domain') },
       { label: 'Command…', hint: 'Ask or deny before it runs', run: open('command') },
-      ...(paths.some((g) => g.value === PROC_GRANT.path) ? [] : [{ label: PROC_GRANT.label, hint: PROC_GRANT.hint, aria: `Grant ${PROC_GRANT.label} on ${row.name}`, disabled: !online, run: () => void addGrant(row, PROC_GRANT.path, 'read') }]),
-      ...KNOWN_SOCKETS.filter((k) => !sockets.some((g) => g.value === k.path)).map((k) => ({ label: k.label, hint: `${k.path}: ${k.hint}`, aria: `Allow ${k.label} (${k.path}) on ${row.name}`, disabled: !online, run: () => void addSocket(row, k.path) })),
+      ...(paths.some((g) => g.value === PROC_GRANT.path) ? [] : [{ label: PROC_GRANT.label, hint: PROC_GRANT.hint, aria: `Grant ${PROC_GRANT.label} on ${row.label}`, disabled: !online, run: () => void addGrant(row, PROC_GRANT.path, 'read') }]),
+      ...KNOWN_SOCKETS.filter((k) => !sockets.some((g) => g.value === k.path)).map((k) => ({ label: k.label, hint: `${k.path}: ${k.hint}`, aria: `Allow ${k.label} (${k.path}) on ${row.label}`, disabled: !online, run: () => void addSocket(row, k.path) })),
     ];
   }
   let domain = $state<Record<string, string>>({});
@@ -67,7 +90,7 @@
     if (r) defaults = r.defaults;
   }
   async function setLevel(row: Row, v: string) {
-    if (v === 'off' && !(await app.dialogs.confirm({ title: `Turn the sandbox off for ${row.name}?`, body: 'New sessions there run unconfined; running ones keep their sandbox.', ok: 'Turn off', danger: true }))) return;
+    if (v === 'off' && !(await app.dialogs.confirm({ title: `Turn the sandbox off for ${row.label}?`, body: 'New sessions there run unconfined; running ones keep their sandbox.', ok: 'Turn off', danger: true }))) return;
     await change(row.scope, v === 'none' ? { kind: 'clear_level' } : { kind: 'set_level', level: v as SandboxDefaults['level'] & string });
   }
   function onEnter(e: KeyboardEvent, run: () => void) {
@@ -140,16 +163,16 @@
 </script>
 
 <div class="small muted" title="The strictest level wins; grants add up">Defaults for new sessions</div>
-{#each [['Machines', rows.machines], ['Projects', rows.projects]] as [label, list] (label)}
+{#each rows as [label, list] (label)}
   <div class="sec-h">{label}</div>
-  {#each list as Row[] as row (row.key)}
+  {#each list as row (row.key)}
     {@const p = row.defaults}
     {@const paths = pathGrants(p)}
     {@const sockets = socketGrants(p)}
     <div class="card" data-scope={row.key}>
       <div class="h">
         {#if row.color}<span class="pdot" style:background={row.color}></span>{/if}<b>{row.name}</b><span class="sp"></span>
-        <Dropdown small label="Sandbox level for {row.name}" value={p?.level ?? 'none'} disabled={!online} options={[{ value: 'none', label: row.scope.kind === 'project' ? 'No minimum' : 'Default (strict)' }, ...LEVELS.map((l) => ({ value: l.value, label: l.label, hint: l.hint }))]} onchange={(v) => setLevel(row, v)} />
+        <Dropdown small label="Sandbox level for {row.label}" value={p?.level ?? 'none'} disabled={!online} options={levelOptions(row)} onchange={(v) => setLevel(row, v)} />
       </div>
       {#if p?.level === 'off'}<div class="off">New sessions here run without a sandbox.</div>{/if}
       {#if paths.length || adding[row.key] === 'grant'}
@@ -157,11 +180,11 @@
           <span class="l">Grants</span>
           <div class="v">
             {#each paths as g (g.id)}
-              <span class="chip-s" data-grant={g.value}><span class="gk">{g.kind}</span><code>{g.value}</code>{#if g.access}<span class="muted small">{g.access.replace('_', '-')}</span>{/if}<button aria-label="Remove grant {g.value} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
+              <span class="chip-s" data-grant={g.value}><span class="gk">{g.kind}</span><code>{g.value}</code>{#if g.access}<span class="muted small">{g.access.replace('_', '-')}</span>{/if}<button aria-label="Remove grant {g.value} on {row.label}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
             {/each}
             {#if adding[row.key] === 'grant'}
-              <input class="in" placeholder="+ path" title="Absolute or ~/…; a directory includes everything under it" aria-label="Add path grant for {row.name}" aria-invalid={!!pathError[`${row.key}:grant`]} disabled={!online} bind:value={grantPath[row.key]} onkeydown={(e) => onEnter(e, () => void addGrant(row))} />
-              <Dropdown small label="Access for {row.name}" value={grantAccess[row.key] ?? 'read'} options={[{ value: 'read', label: 'read' }, { value: 'read_write', label: 'read-write' }]} onchange={(v) => (grantAccess[row.key] = v as PathAccess)} />
+              <input class="in" placeholder="+ path" title="Absolute or ~/…; a directory includes everything under it" aria-label="Add path grant for {row.label}" aria-invalid={!!pathError[`${row.key}:grant`]} disabled={!online} bind:value={grantPath[row.key]} onkeydown={(e) => onEnter(e, () => void addGrant(row))} />
+              <Dropdown small label="Access for {row.label}" value={grantAccess[row.key] ?? 'read'} options={[{ value: 'read', label: 'read' }, { value: 'read_write', label: 'read-write' }]} onchange={(v) => (grantAccess[row.key] = v as PathAccess)} />
             {/if}
             {#if pathError[`${row.key}:grant`]}<span class="err" role="alert">{pathError[`${row.key}:grant`]}</span>{/if}
           </div>
@@ -172,10 +195,10 @@
           <span class="l" title={SOCKET_NOTE}>Sockets <span class="q" aria-hidden="true">?</span></span>
           <div class="v">
             {#each sockets as g (g.id)}
-              <span class="chip-s" data-socket={g.value}><code>{g.value}</code><button aria-label="Remove socket {g.value} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
+              <span class="chip-s" data-socket={g.value}><code>{g.value}</code><button aria-label="Remove socket {g.value} on {row.label}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_grant', grant_id: g.id })}>×</button></span>
             {/each}
             {#if adding[row.key] === 'socket'}
-              <input class="in" placeholder="+ socket" title="A Unix socket the sandbox may connect to (absolute or ~/…)" aria-label="Add socket for {row.name}" aria-invalid={!!pathError[`${row.key}:socket`]} disabled={!online} bind:value={socketPath[row.key]} onkeydown={(e) => onEnter(e, () => void addSocket(row))} />
+              <input class="in" placeholder="+ socket" title="A Unix socket the sandbox may connect to (absolute or ~/…)" aria-label="Add socket for {row.label}" aria-invalid={!!pathError[`${row.key}:socket`]} disabled={!online} bind:value={socketPath[row.key]} onkeydown={(e) => onEnter(e, () => void addSocket(row))} />
             {/if}
             {#if pathError[`${row.key}:socket`]}<span class="err" role="alert">{pathError[`${row.key}:socket`]}</span>{/if}
           </div>
@@ -185,9 +208,9 @@
         <div class="r">
           <span class="l" title="Denied without asking">Never</span>
           <div class="v">
-            {#each p?.never ?? [] as n (n)}<span class="chip-s" data-never={n}><code>{n}</code><button aria-label="Remove never-path {n} on {row.name}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_never', path: n })}>×</button></span>{/each}
+            {#each p?.never ?? [] as n (n)}<span class="chip-s" data-never={n}><code>{n}</code><button aria-label="Remove never-path {n} on {row.label}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_never', path: n })}>×</button></span>{/each}
             {#if adding[row.key] === 'never'}
-              <input class="in" placeholder="+ path" title="Denied without asking; absolute or ~/…" aria-label="Add never-path for {row.name}" aria-invalid={!!pathError[`${row.key}:never`]} disabled={!online} bind:value={neverPath[row.key]} onkeydown={(e) => onEnter(e, () => addNever(row))} />
+              <input class="in" placeholder="+ path" title="Denied without asking; absolute or ~/…" aria-label="Add never-path for {row.label}" aria-invalid={!!pathError[`${row.key}:never`]} disabled={!online} bind:value={neverPath[row.key]} onkeydown={(e) => onEnter(e, () => addNever(row))} />
             {/if}
             {#if pathError[`${row.key}:never`]}<span class="err" role="alert">{pathError[`${row.key}:never`]}</span>{/if}
           </div>
@@ -198,7 +221,7 @@
           <span class="l">Domains</span>
           <div class="v">
             {#each p?.domains ?? [] as d (d)}<span class="chip-s"><code>{d}</code><button aria-label="Remove {d}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_domain', domain: d })}>×</button></span>{/each}
-            {#if adding[row.key] === 'domain'}<input class="in" placeholder="+ domain" aria-label="Add allowed domain for {row.name}" disabled={!online} bind:value={domain[row.key]} onkeydown={(e) => onEnter(e, () => addDomain(row))} />{/if}
+            {#if adding[row.key] === 'domain'}<input class="in" placeholder="+ domain" aria-label="Add allowed domain for {row.label}" disabled={!online} bind:value={domain[row.key]} onkeydown={(e) => onEnter(e, () => addDomain(row))} />{/if}
           </div>
         </div>
       {/if}
@@ -208,13 +231,13 @@
           <div class="v">
             {#each p?.mediated ?? [] as m (m.command)}<span class="chip-s"><code>{m.command}</code><span class="small">→ {m.action === 'deny' ? 'deny' : 'ask'}</span><button aria-label="Remove {m.command}" disabled={!online} onclick={() => change(row.scope, { kind: 'remove_mediated', command: m.command })}>×</button></span>{/each}
             {#if adding[row.key] === 'command'}
-              <input class="in" placeholder="+ command" aria-label="Add mediated command for {row.name}" disabled={!online} bind:value={command[row.key]} onkeydown={(e) => onEnter(e, () => addCommand(row))} />
-              <Dropdown small label="Action for {row.name}" value={action[row.key] ?? 'approve'} options={[{ value: 'approve', label: 'ask' }, { value: 'deny', label: 'deny' }]} onchange={(v) => (action[row.key] = v as MediationAction)} />
+              <input class="in" placeholder="+ command" aria-label="Add mediated command for {row.label}" disabled={!online} bind:value={command[row.key]} onkeydown={(e) => onEnter(e, () => addCommand(row))} />
+              <Dropdown small label="Action for {row.label}" value={action[row.key] ?? 'approve'} options={[{ value: 'approve', label: 'ask' }, { value: 'deny', label: 'deny' }]} onchange={(v) => (action[row.key] = v as MediationAction)} />
             {/if}
           </div>
         </div>
       {/if}
-      <div class="add"><ActionMenu text="+ rule" label="Add a rule for {row.name}" actions={ruleActions(row, paths, sockets)} /></div>
+      <div class="add"><ActionMenu text="+ rule" label="Add a rule for {row.label}" actions={ruleActions(row, paths, sockets)} /></div>
     </div>
   {/each}
 {/each}
