@@ -58,3 +58,8 @@ export function renderMarkdown(source: string): string {
 export function markdownFragment(source: string): DocumentFragment {
   return sanitizer().sanitize(toHtml(source), { ...CONFIG, RETURN_DOM_FRAGMENT: true });
 }
+
+/** The plain text of Markdown on one line, e.g. for a one-line stub. */
+export function markdownLine(source: string): string {
+  return (markdownFragment(source).textContent ?? '').replace(/\s+/g, ' ').trim();
+}

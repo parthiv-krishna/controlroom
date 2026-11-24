@@ -17,7 +17,7 @@ export const STATES: [string, string][] = [
 
 function stateTest(ctx: Ctx, key: string, s: FeedSession): boolean {
   switch (key) {
-    case 'needs': { const a = attentionOf(s); return a === 'approval' || a === 'problem'; }
+    case 'needs': { const a = attentionOf(s); return a === 'approval' || a === 'problem' || a === 'notice'; }
     case 'working': return s.state === 'working' || s.state === 'starting';
     case 'unread': return s.unread && s.state !== 'closed';
     case 'idle': return s.state === 'idle';
@@ -51,7 +51,7 @@ export function displayName(s: Pick<FeedSession, 'name' | 'title' | 'workspaces'
   return dir.split('/').filter(Boolean).pop() || dir || 'session';
 }
 
-const ORDER: Record<string, number> = { approval: 0, problem: 1, question: 2, unread: 3 };
+const ORDER: Record<string, number> = { approval: 0, problem: 1, notice: 2, question: 3, unread: 4 };
 
 /** The scope's sessions that pass the filters and match the search, most urgent first. */
 export function visibleSessions(ctx: Ctx, scope: Scope, f: Filters, q: string, keep: ReadonlySet<string>): FeedSession[] {
@@ -61,7 +61,7 @@ export function visibleSessions(ctx: Ctx, scope: Scope, f: Filters, q: string, k
     .sort((a, b) => rank(a) - rank(b) || b.updated_at - a.updated_at);
 }
 
-const rank = (s: FeedSession): number => ORDER[attentionOf(s) ?? ''] ?? 4;
+const rank = (s: FeedSession): number => ORDER[attentionOf(s) ?? ''] ?? 5;
 
 /** Name, every workspace as `machine:path`, and the linked tasks' titles. */
 function haystack(ctx: Ctx, s: FeedSession): string {

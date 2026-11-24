@@ -13,6 +13,7 @@ const circle = (cx: number, cy: number, r: number) => `M${cx - r} ${cy}a${r} ${r
 export const ICONS = {
   flag: [stroke('M4 1.8v12.6', 1.8), fill('M4.6 2.4h8.2l-2.1 3.1 2.1 3.1H4.6z')],
   flagOutline: [stroke('M4 1.8v12.6', 1.8), stroke('M4.9 2.6h7.4l-1.8 2.9 1.8 2.9H4.9z')],
+  warn: [stroke('M8 1.9 14.6 13.6H1.4z', 1.5), stroke('M8 6.2v3.6', 1.7), fill(circle(8, 11.7, 0.9))],
   check: [stroke('M3.2 8.6l3.1 3.1 6.6-7', 2.2)],
   cross: [stroke('M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6', 2.2)],
   clock: [stroke(circle(8, 8, 5.9), 1.6), stroke('M8 4.9V8l2.2 1.5', 1.6)],

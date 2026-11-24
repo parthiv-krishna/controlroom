@@ -42,20 +42,25 @@ export function inScope(s: FeedSession, scope: Scope): boolean {
 /** A scope's name; `all` names ∗ (a profile's, with several). */
 export const scopeName = (scope: Scope, all = 'All projects'): string => (!scope ? all : scope === UNASSIGNED ? 'Unassigned' : scope.name);
 
-/** Stoplight counts: red = problems, yellow = approvals (ring = only questions), green = unread. */
+/**
+ * Stoplight counts: red = problems, yellow = approvals and open agent notices (ring = only
+ * questions), green = unread.
+ */
 export interface Health {
   approvals: number;
+  notices: number;
   questions: number;
   problems: number;
   unread: number;
 }
 
 export function health(ctx: Ctx, scope: Scope): Health {
-  const h: Health = { approvals: 0, questions: 0, problems: 0, unread: 0 };
+  const h: Health = { approvals: 0, notices: 0, questions: 0, problems: 0, unread: 0 };
   for (const s of ctx.sessions) {
     const a = attentionOf(s);
     if (!a || !inScope(s, scope)) continue;
     if (a === 'approval') h.approvals++;
+    else if (a === 'notice') h.notices++;
     else if (a === 'question') h.questions++;
     else if (a === 'problem') h.problems++;
     else h.unread++;
@@ -71,7 +76,7 @@ export function needsYouElsewhere(all: Ctx, shown: Ctx, scope: Scope): number {
   const here = new Set(shown.sessions.filter((s) => inScope(s, scope)).map((s) => s.id));
   return all.sessions.filter((s) => {
     const a = attentionOf(s);
-    return (a === 'approval' || a === 'problem') && !here.has(s.id);
+    return (a === 'approval' || a === 'problem' || a === 'notice') && !here.has(s.id);
   }).length;
 }
 

@@ -134,6 +134,20 @@ describe('Timeline requests', () => {
   });
 });
 
+describe('Timeline pinned notices', () => {
+  it('keeps the latest state of each pinned notice and never folds them as repeats', () => {
+    const pinned = (id: string, seq: number, dismissed = false): TimelineItem => ({
+      ...base, id, seq_from: seq, seq_to: seq, kind: 'notice', level: 'warning', text: 'devbox is down', pinned: true, dismissed: dismissed ? { by: null, at: 1 } : null,
+    });
+    const t = new Timeline();
+    t.apply([up(pinned('a', 1)), up(pinned('b', 2))], 0);
+    expect(ids(t)).toEqual(['a', 'b']);
+    expect([...t.notices.keys()]).toEqual(['a', 'b']);
+    t.apply([up(pinned('a', 1, true))], 2);
+    expect(t.notices.get('a')?.dismissed).not.toBeNull();
+  });
+});
+
 describe('Timeline folding', () => {
   const run = (id: string, seq: number, actor = 'root'): TimelineItem => ({
     ...base, actor, id, seq_from: seq, seq_to: seq, kind: 'run', trigger: { kind: 'user', device: null }, state: 'settled', outcome: 'completed', error: null,

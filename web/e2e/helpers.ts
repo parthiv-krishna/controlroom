@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import type { ChangeBody, RecordedCall } from '../src/lib/api/fixture';
+import type { TimelineOp } from '../src/lib/protocol';
 
 /** Fixture ids (web/fixtures/controlroom.json). */
 export const M = { devbox: '01JAM000000000000000000001', buildbox: '01JAM000000000000000000002' };
@@ -19,6 +20,7 @@ export const S = {
   sweep8k: '01JAS000000000000000000013',
   dedupe: '01JAS000000000000000000014',
   deploy: '01JAS000000000000000000015',
+  inbox: '01JAS000000000000000000018',
 };
 
 /** Opens the fixture build with the scripted feed paused (deterministic), optionally at a session. */
@@ -36,6 +38,11 @@ export async function calls(page: Page, method?: string): Promise<RecordedCall[]
 /** Sends state changes on the fixture's state feed (numbered after the last revision). */
 export async function emitState(page: Page, changes: ChangeBody[]): Promise<void> {
   await page.evaluate((changes) => window.__fixture?.emitState(changes), changes);
+}
+
+/** Sends timeline ops on a subscribed session's feed (at its current head). */
+export async function emitSession(page: Page, id: string, ops: TimelineOp[]): Promise<void> {
+  await page.evaluate(({ id, ops }) => window.__fixture?.emitSession(id, ops), { id, ops });
 }
 
 /** Plays a session's next `n` recorded timeline steps (web/fixtures/timelines.json). */

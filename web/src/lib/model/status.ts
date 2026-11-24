@@ -4,7 +4,8 @@
 // unavailable, which the tooltip names.
 import type { Attention, FeedSession, Machine, MachineId, SessionState } from '../protocol';
 
-export type StatusKind = 'working' | 'attention' | 'asking' | 'complete' | 'done' | 'stopped' | 'idle' | 'offline' | 'archived';
+/** A session's or machine's icon (`notice`: an open agent warning or error). */
+export type StatusKind = 'working' | 'attention' | 'asking' | 'notice' | 'complete' | 'done' | 'stopped' | 'idle' | 'offline' | 'archived';
 
 /** The session's attention as the UI counts it: none while closed. */
 export function attentionOf(s: { state: SessionState; attention: Attention | null }): Exclude<Attention, 'unknown'> | null {
@@ -33,6 +34,7 @@ export function statusKind(s: FeedSession): StatusKind {
     default:
   }
   if (s.attention === 'question') return 'asking';
+  if (s.attention === 'notice') return 'notice';
   if (s.state !== 'idle') return 'idle';
   if (s.last_outcome && STOPPED_OUTCOMES.has(s.last_outcome)) return 'stopped';
   if (s.last_outcome === 'completed') return s.unread ? 'complete' : 'done';
@@ -45,6 +47,7 @@ export function statusLabel(s: FeedSession): string {
     case 'attention': return s.state === 'awaiting_input' ? 'Needs answer' : 'Needs approval';
     case 'working': return s.state === 'starting' ? 'Starting' : 'Working';
     case 'asking': return 'Question';
+    case 'notice': return 'Agent notice';
     case 'stopped':
       if (s.state === 'failed') return 'Failed';
       if (s.state === 'interrupted') return 'Interrupted';

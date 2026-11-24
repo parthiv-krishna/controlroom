@@ -37,11 +37,11 @@
     document.documentElement.dataset.theme = prefs.theme === 'system' ? (systemDark ? 'dark' : 'light') : prefs.theme;
   });
 
-  // The tab title counts what needs a decision or a fix (server-owned attention).
+  // The tab title counts what needs a decision, a fix or a look (server-owned attention).
   $effect(() => {
     const n = client.feed.sessionList.filter((s) => {
       const a = attentionOf(s);
-      return a === 'approval' || a === 'problem';
+      return a === 'approval' || a === 'problem' || a === 'notice';
     }).length;
     document.title = (n ? `(${n}) ` : '') + 'controlroom';
   });

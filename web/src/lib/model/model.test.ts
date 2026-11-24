@@ -83,17 +83,19 @@ describe('status and attention', () => {
     expect(statusKind(byName('blog: deep dive'))).toBe('asking');
     expect(statusKind(byName('NixOS module hardening'))).toBe('stopped');
     expect(statusKind(byName('migrate UI to Svelte 5 runes'))).toBe('complete');
-    expect(statusKind(byName('inbox triage'))).toBe('done');
+    expect(statusKind(byName('inbox triage'))).toBe('notice');
+    expect(statusLabel(byName('inbox triage'))).toBe('Agent notice');
+    expect(statusKind({ ...byName('inbox triage'), attention: null, notices: [] })).toBe('done');
     expect(statusKind(byName('rotate secrets'))).toBe('archived');
     expect(statusLabel(byName('lint cleanup'))).toBe('Asleep');
     expect(statusLabel(byName('e2e flake hunt'))).toBe('Needs answer');
   });
 
   it('counts stoplights from server attention per scope', () => {
-    expect(health(ctx, null)).toEqual({ approvals: 7, questions: 1, problems: 2, unread: 1 });
-    expect(health(ctx, project('Docs'))).toEqual({ approvals: 1, questions: 1, problems: 0, unread: 0 });
-    expect(health(ctx, UNASSIGNED)).toEqual({ approvals: 3, questions: 0, problems: 2, unread: 1 });
-    expect(needsYouElsewhere(ctx, ctx, project('Docs'))).toBe(8);
+    expect(health(ctx, null)).toEqual({ approvals: 7, notices: 1, questions: 1, problems: 2, unread: 1 });
+    expect(health(ctx, project('Docs'))).toEqual({ approvals: 1, notices: 0, questions: 1, problems: 0, unread: 0 });
+    expect(health(ctx, UNASSIGNED)).toEqual({ approvals: 3, notices: 1, questions: 0, problems: 2, unread: 1 });
+    expect(needsYouElsewhere(ctx, ctx, project('Docs'))).toBe(9);
     expect(needsYouElsewhere(ctx, ctx, null)).toBe(0);
   });
 
@@ -170,7 +172,7 @@ describe('projects, filters and grouping', () => {
   it('groups by state, listing sessions waiting on an unreachable machine together', () => {
     const list = visibleSessions(ctx, null, emptyFilters(), '', new Set());
     const groups = groupSessions(ctx, null, list, 'state', false);
-    expect(groups.map((g) => g.label)).toEqual(['Needs a decision', 'Failed or stopped', 'Open questions', 'Unread results', 'Working', 'Idle', 'Machine unreachable']);
+    expect(groups.map((g) => g.label)).toEqual(['Needs a decision', 'Failed or stopped', 'Agent notices', 'Open questions', 'Unread results', 'Working', 'Idle', 'Machine unreachable']);
     expect(groups.at(-1)!.items.map(displayName)).toEqual(['dataset dedupe']);
   });
 });
@@ -197,6 +199,7 @@ describe('notifications', () => {
     expect(n.blocking.filter((x) => x.req.title === 'Run ./sweep.sh --ctx 64k..128k?')).toHaveLength(1);
     expect(n.blocking.find((x) => x.req.origin_child)?.s.name).toBe('benchmark coordinator');
     expect(n.questions.map((x) => x.req.kind)).toEqual(['question']);
+    expect(n.notices.map((x) => [displayName(x.s), x.notice.level])).toEqual([['inbox triage', 'error'], ['inbox triage', 'warning']]);
     expect(n.problems.map(displayName)).toEqual(['NixOS module hardening', 'nightly data pipeline']);
     expect(n.finished.map(displayName)).toEqual(['migrate UI to Svelte 5 runes']);
     expect(n.offline.map((o) => [o.machine.name, o.sessions])).toEqual([['gpubox', 1]]);

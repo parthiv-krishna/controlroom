@@ -64,7 +64,7 @@ describe('profiles', () => {
     const q = scopeToProfile(all, quill.id);
     const sum = (c: Ctx) => Object.values(health(c, null)).reduce((a, b) => a + b, 0);
     expect(sum(scopeToProfile(all, orchard.id)) + sum(l) + sum(q)).toBe(sum(all));
-    const needs = (c: Ctx) => health(c, null).approvals + health(c, null).problems;
+    const needs = (c: Ctx) => health(c, null).approvals + health(c, null).problems + health(c, null).notices;
     expect(needsYouElsewhere(all, l, null)).toBe(needs(all) - needs(l));
     expect(needsYouElsewhere(all, l, null)).toBeGreaterThan(0);
     expect(needsYouElsewhere(all, all, null)).toBe(0);

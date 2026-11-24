@@ -1,6 +1,7 @@
 <script lang="ts">
-  // What hasn't been dealt with in the active project: Needs you (blocking requests), Questions
-  // (non-blocking; agents keep working), Failed or stopped, Finished; machines that need the user
+  // What hasn't been dealt with in the active project: Needs you (blocking requests), Agent notices
+  // (open warnings and errors, until dismissed), Questions (non-blocking; agents keep working),
+  // Failed or stopped, Finished; machines that need the user
   // or can't be reached; "N more in other projects". Clicking a card opens the session. Under ∗ it
   // aggregates every profile, each card tagged with its profile (opening one enters it); a project
   // stays scoped.
@@ -12,6 +13,7 @@
   import { ago, connLabel, statusKind } from '../model/status';
   import { machinesOf } from '../model/workspaces';
   import type { FeedSession } from '../protocol';
+  import NoticeCard from '../session/NoticeCard.svelte';
   import RequestCard from '../session/RequestCard.svelte';
   import MachineFix from '../settings/MachineFix.svelte';
   import ProfileChip from '../profiles/ProfileChip.svelte';
@@ -24,10 +26,8 @@
   const fixes = $derived(app.client.feed.machineList.filter((m) => m.connectivity.state === 'action_required'));
   const unreachable = $derived(n.offline.filter((o) => o.machine.connectivity.state !== 'action_required'));
   const online = $derived(app.client.online);
-  const sections = $derived<[string, string, RequestNote[]][]>([
-    ['blocking', 'Needs you', n.blocking],
-    ['questions', 'Questions', n.questions],
-  ]);
+  const blocking = $derived<[string, string, RequestNote[]]>(['blocking', 'Needs you', n.blocking]);
+  const questions = $derived<[string, string, RequestNote[]]>(['questions', 'Questions', n.questions]);
 
   function openCard(e: MouseEvent, s: FeedSession) {
     if ((e.target as HTMLElement).closest('button, input, textarea, a')) return;
@@ -44,23 +44,35 @@
   <div class="sub">{t ? `${t.title}, ` : ''}{machinesOf(s).map((id) => app.client.feed.machines.get(id)?.name ?? '?').join(', ')}</div>
 {/snippet}
 
+{#snippet requests([kind, label, cards]: [string, string, RequestNote[]])}
+  {#if cards.length}
+    <div class="sec">{label}</div>
+    {#each cards as c (c.s.id + c.req.id)}
+      <div class="card k-{kind}" class:on={isOn(c.s)} role="button" tabindex="0" onclick={(e) => openCard(e, c.s)} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(c.s); }}>
+        {@render head(c.s)}
+        <RequestCard req={c.req} s={c.s} compact />
+      </div>
+    {/each}
+  {/if}
+{/snippet}
+
 <aside class="np" class:overlay aria-label="Notifications" data-pane="notifications">
   <div class="nh">
     <b>Notifications</b>{#if n.total}<span class="count">{n.total}</span>{/if}<span class="sp"></span>
     {#if !app.desk}<button class="x" aria-label="Close" onclick={() => (app.view.notesOpen = false)}>×</button>{/if}
   </div>
   <div class="nb">
-    {#each sections as [kind, label, cards] (kind)}
-      {#if cards.length}
-        <div class="sec">{label}</div>
-        {#each cards as c (c.s.id + c.req.id)}
-          <div class="card k-{kind}" class:on={isOn(c.s)} role="button" tabindex="0" onclick={(e) => openCard(e, c.s)} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(c.s); }}>
-            {@render head(c.s)}
-            <RequestCard req={c.req} s={c.s} compact />
-          </div>
-        {/each}
-      {/if}
-    {/each}
+    {@render requests(blocking)}
+    {#if n.notices.length}
+      <div class="sec">Agent notices</div>
+      {#each n.notices as c (c.s.id + c.notice.item_id)}
+        <div class="card k-notice" class:on={isOn(c.s)} role="button" tabindex="0" onclick={(e) => openCard(e, c.s)} onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) app.open(c.s); }}>
+          {@render head(c.s)}
+          <NoticeCard notice={c.notice} s={c.s} compact />
+        </div>
+      {/each}
+    {/if}
+    {@render requests(questions)}
     {#if n.problems.length}
       <div class="sec">Failed or stopped</div>
       {#each n.problems as s (s.id)}

@@ -55,6 +55,7 @@ function byState(list: FeedSession[]): Group[] {
   const buckets: [string, string, (s: FeedSession) => boolean][] = [
     ['approval', 'Needs a decision', (s) => attentionOf(s) === 'approval'],
     ['problem', 'Failed or stopped', (s) => attentionOf(s) === 'problem'],
+    ['notice', 'Agent notices', (s) => attentionOf(s) === 'notice'],
     ['question', 'Open questions', (s) => attentionOf(s) === 'question'],
     ['unread', 'Unread results', (s) => attentionOf(s) === 'unread'],
     ['working', 'Working', (s) => !attentionOf(s) && (s.state === 'working' || s.state === 'starting')],

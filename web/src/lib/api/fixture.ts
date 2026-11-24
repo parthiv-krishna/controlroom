@@ -3,8 +3,8 @@
 // (web/fixtures/), plus recorded session timelines (see fixture-timelines.ts). It holds no backend
 // logic: mutations are only recorded (and answered with an ack, or a canned result when the
 // fixture has one), and the feeds change only by script. Tests can queue the next result of a
-// method (`reply`), and send state changes of their own (`emitState`); calls of `held` methods
-// (long polls) wait for one.
+// method (`reply`), and send state changes and timeline ops of their own (`emitState`,
+// `emitSession`); calls of `held` methods (long polls) wait for one.
 import type {
   SessionDetail,
   SessionEventsParams,
@@ -12,6 +12,7 @@ import type {
   StateCursor,
   StateEventsParams,
   StateSnapshot,
+  TimelineOp,
   UiHelloResult,
   UiMethod,
   UiMethods,
@@ -185,6 +186,12 @@ export class FixtureTransport implements Transport {
     if (sub) this.hub.emit('session.events', { subscription_id: sub.id, id, head_seq: this.replays.get(id)?.head ?? 0, ops: [], detail });
   }
 
+  /** Sends timeline ops on a session's feed at its current head, if it is subscribed. */
+  emitSession(id: string, ops: TimelineOp[]): void {
+    const sub = this.sessionSubs.get(id);
+    if (sub) this.hub.emit('session.events', { subscription_id: sub.id, id, head_seq: this.replays.get(id)?.head ?? 0, ops });
+  }
+
   /** Plays a session's next `n` live timeline steps now; returns how many there were. */
   advance(id: string, n = 1): number {
     let done = 0;
@@ -286,6 +293,6 @@ const ACK_METHODS = new Set<UiMethod>([
   'tasks.delete', 'grants.revoke', 'devices.remove', 'schedules.delete', 'client.focus', 'client.activity', 'session.cancel',
   'session.close', 'session.reopen', 'session.resume', 'session.delete', 'session.update', 'session.set_option', 'session.set_sandbox_level',
   'queue.edit', 'queue.remove', 'queue.reorder', 'queue.resume', 'todo.remove', 'todo.reorder', 'sandbox.revoke',
-  'session.terminal_close', 'profiles.delete',
+  'session.terminal_close', 'profiles.delete', 'notice.dismiss',
 ] satisfies AckMethod[]);
 const isAck = (method: UiMethod): boolean => ACK_METHODS.has(method);

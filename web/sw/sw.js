@@ -41,7 +41,7 @@ self.addEventListener('fetch', (event) => {
 // Payload: the protocol's PushPayload: { session_id, profile_id, state, url } plus
 // { kind: 'session', name, machine } (`machine`: the primary workspace's machine name), or
 // { kind: 'private', profile } for a private profile (metadata only).
-const STATE_LABELS = { approval: 'Needs you', question: 'Question', problem: 'Failed', finished: 'Finished' };
+const STATE_LABELS = { approval: 'Needs you', question: 'Question', problem: 'Failed', finished: 'Finished', notice: 'Agent notice' };
 self.addEventListener('push', (event) => {
   let data = {};
   try {

@@ -1,11 +1,12 @@
 <script lang="ts">
-  // Which events push (attention; non-blocking questions, off by default; finished runs), when
+  // Which events push (attention; the agent's notices: warnings and errors by default, errors only
+  // or none; non-blocking questions, off by default; finished runs), when
   // (a delay, and held while the user is active on any device), and Web Push on this device.
   // The preferences are the server's (the owner's), not this device's.
   import { useApp } from '../app/app.svelte';
   import { describeError } from '../api/errors';
   import { pushSubscription } from '../pwa';
-  import type { NotificationPreferences, NotificationsSetPreferencesParams } from '../protocol';
+  import type { NoticePush, NotificationPreferences, NotificationsSetPreferencesParams } from '../protocol';
   import Dropdown from '../ui/Dropdown.svelte';
 
   const app = useApp();
@@ -18,6 +19,11 @@
   const push = $derived(app.client.hello?.push ?? null);
   const thisDevice = $derived(app.client.feed.devices.get(app.client.device.id));
 
+  const NOTICES: { value: NoticePush; label: string }[] = [
+    { value: 'warning_and_error', label: 'Warning and error' },
+    { value: 'error', label: 'Errors only' },
+    { value: 'off', label: 'Off' },
+  ];
   const DELAYS: [string, number][] = [['None', 0], ['30 s', 30], ['1 min', 60], ['2 min', 120], ['5 min', 300]];
   const IDLE: [string, number][] = [['1 min', 60], ['2 min', 120], ['5 min', 300], ['10 min', 600]];
   /** The choices, plus the current value if it was set elsewhere. */
@@ -47,6 +53,9 @@
   {@const p = prefs}
   <div class="sec-h">Push</div>
   <label class="check"><input type="checkbox" checked={p.attention} disabled={!online} onchange={(e) => set({ attention: e.currentTarget.checked })} /> Needs you, failed or interrupted</label>
+  <div class="settings" title="The agent's warning and error notices">
+    <span>Agent notices</span><Dropdown small label="Push agent notices" value={p.agent_notices === 'unknown' ? 'warning_and_error' : p.agent_notices} disabled={!online} options={NOTICES} onchange={(v) => set({ agent_notices: v as NoticePush })} />
+  </div>
   <label class="check"><input type="checkbox" checked={p.questions} disabled={!online} onchange={(e) => set({ questions: e.currentTarget.checked })} /> Questions</label>
   <label class="check"><input type="checkbox" checked={p.turn_end} disabled={!online} onchange={(e) => set({ turn_end: e.currentTarget.checked })} /> Finished runs</label>
   <div class="sec-h">When</div>

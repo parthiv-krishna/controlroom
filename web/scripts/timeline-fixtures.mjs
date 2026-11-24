@@ -342,6 +342,21 @@ const fileDecisions = (s, ts) => {
 };
 
 /**
+ * A monitoring run's `notify_user` notices: an earlier warning dismissed on the phone, an info (only
+ * in the timeline), then a warning and an error still open (the summary's `notices` in
+ * controlroom.json name these items and times).
+ */
+const agentNotices = (s, ts) => {
+  const notice = (id, seq, at, level, text, extra = {}) => ({ ...base(id, seq, seq, at), kind: 'notice', level, text, ...extra });
+  return [
+    notice('an.dismissed', s + 1, ts, 'warning', 'devbox rebooted overnight; every unit came back.', { pinned: true, dismissed: { by: PHONE, at: ts + 20_000 } }),
+    notice('an.info', s + 2, ts + 30_000, 'info', 'Checked 4 units on devbox.'),
+    notice('an.warning', s + 3, ts + 60_000, 'warning', 'devbox has a failed unit: `backup.service` exited with code 1 at 03:00.', { pinned: true }),
+    notice('an.error', s + 4, ts + 120_000, 'error', 'The **disk on devbox** is 97% full.', { pinned: true }),
+  ];
+};
+
+/**
  * After the sandbox went off: notices that ride along into the user's next run (the sandbox level,
  * todo edits), a late tool result and an answered question that wake the agent.
  */
@@ -426,7 +441,8 @@ const timelines = Object.fromEntries([
     { name: 'steer-during-tool', origins: [{ kind: 'user', device: null }, { kind: 'steer', device: PHONE }] },
   ]),
   build(11, [{ synthetic: coordinator }, 'plain-text']),
-  build(18, [{ name: 'plain-text', trigger: { kind: 'schedule', schedule_id: '01JAY000000000000000000001', name: 'Inbox triage' } }, 'sigterm-idle']),
+  // Then the agent's notices: open ones are pinned above the composer.
+  build(18, [{ name: 'plain-text', trigger: { kind: 'schedule', schedule_id: '01JAY000000000000000000001', name: 'Inbox triage' } }, 'sigterm-idle', { synthetic: agentNotices }]),
   // File requests answered "Always allow" and "Never".
   // Then notices, a late tool result and an answer (one of each injection the runtime writes).
   build(15, [{ synthetic: fileDecisions }, { synthetic: wakes }]),

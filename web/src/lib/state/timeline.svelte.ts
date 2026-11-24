@@ -9,7 +9,7 @@
 //   applied are skipped, and an upsert older than the item it would replace is ignored.
 // - Memory is bounded: at most MAX_ITEMS items (the oldest are trimmed) and MAX_RAW raw frames.
 // - The reading view stays quiet: retries fold into their run, a notice repeated verbatim (an
-//   extension's "ready" at each agent start) shows once with a count, and a session-info item
+//   extension's "ready" at each agent start; never a pinned one) shows once with a count, and a session-info item
 //   shows only the values that changed (the first ones are what the header already shows); a new
 //   sandbox level (the user changed it) always shows.
 // - Text the system wrote for the agent (a schedule's prompt, a job wake, a notice) is an event: a
@@ -114,6 +114,8 @@ export class Timeline {
   repeats = $state.raw<ReadonlyMap<string, number>>(new Map());
   /** The latest state of every request in the timeline, by request id (a subagent's with its `origin_child`). */
   requests = $state.raw<ReadonlyMap<string, Request>>(new Map());
+  /** The latest state of every pinned notice (the agent's warnings and errors), by item id. */
+  notices = $state.raw<ReadonlyMap<string, ItemOf<'notice'>>>(new Map());
   /** The values a shown session-info item changed, by its id. */
   infoChanges = $state.raw<ReadonlyMap<string, SessionInfo>>(new Map());
   /** Messages shown as events, with their origin, by id. */
@@ -248,10 +250,12 @@ export class Timeline {
     }
     const tools = new Map<string, ItemCell>();
     const requests = new Map<string, Request>();
+    const pinned = new Map<string, ItemOf<'notice'>>();
     for (const cell of this.order) {
       const { item } = cell;
       if (item.kind === 'tool_call') tools.set(item.tool_call_id, cell);
       else if (item.kind === 'request') requests.set(item.request.id, requestOf(item));
+      else if (item.kind === 'notice' && item.pinned) pinned.set(item.id, item);
     }
     const rows: ItemCell[] = [];
     const children = new Map<string, ItemCell[]>();
@@ -313,7 +317,7 @@ export class Timeline {
           hosts.set(cell.id, run);
           continue;
         }
-      } else if (item.kind === 'notice') {
+      } else if (item.kind === 'notice' && !item.pinned) {
         const key = `${item.actor}\n${item.level}\n${item.text}`;
         const first = notices.get(key);
         if (first) {
@@ -363,6 +367,7 @@ export class Timeline {
     this.rows = shown;
     this.children = children;
     this.requests = requests;
+    this.notices = pinned;
     this.retries = retries;
     this.repeats = repeats;
     this.infoChanges = infoChanges;

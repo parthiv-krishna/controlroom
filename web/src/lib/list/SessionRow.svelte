@@ -65,7 +65,8 @@
       {#if idleJobs}<span class="mini jobs" title="{s.live_work.jobs} background job{s.live_work.jobs === 1 ? '' : 's'} running">⚙ {s.live_work.jobs}</span>{/if}
       {#if ru.approvals}<span class="ru approvals" title="Subagents that need your approval: {ru.approvals}">↳ ⚑{ru.approvals}</span>
       {:else if ru.questions}<span class="ru questions" title="Subagents asking a question: {ru.questions}">↳ ?{ru.questions}</span>
-      {:else if ru.problems}<span class="ru problems" title="Subagents that failed: {ru.problems}">↳ ✕{ru.problems}</span>{/if}
+      {:else if ru.problems}<span class="ru problems" title="Subagents that failed: {ru.problems}">↳ ✕{ru.problems}</span>
+      {:else if ru.notices}<span class="ru notices" title="Subagents with an agent notice: {ru.notices}">↳ ⚠{ru.notices}</span>{/if}
       {#if kids}<button class="fold" aria-expanded={!folded} aria-label="{folded ? 'Show' : 'Hide'} subagents" onclick={() => onfold?.()}>{folded ? '▸' : '▾'} {kids}</button>{/if}
     </div>
     <div class="prev">{s.preview}</div>
@@ -102,6 +103,7 @@
   .ru.approvals { color: #3a2a00; background: var(--warn); }
   .ru.questions { color: var(--warn); border: 1px solid var(--warn); }
   .ru.problems { color: var(--bad); border: 1px solid var(--bad); }
+  .ru.notices { color: var(--warn); border: 1px solid var(--warn); }
   .fold { font: inherit; font-size: 11px; color: var(--muted); background: none; border: 1px solid transparent; border-radius: 6px; padding: 0 5px; cursor: pointer; flex: none; }
   .fold:hover { border-color: var(--line); color: var(--fg); }
   .arch { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: none; place-items: center; width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg2); color: var(--muted); cursor: pointer; padding: 0; }

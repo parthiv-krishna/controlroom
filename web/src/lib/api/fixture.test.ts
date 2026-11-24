@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadFixture } from '../../test/fixture';
-import type { SessionEventsParams } from '../protocol';
+import type { SessionEventsParams, TimelineOp } from '../protocol';
 import { Timeline } from '../state/timeline.svelte';
 import { FixtureTransport } from './fixture';
 
@@ -46,6 +46,22 @@ describe('FixtureTransport', () => {
     const { subscription_id } = await t.request('state.subscribe', { since: null });
     expect(t.step()).toBe(true);
     expect(seen).toEqual([subscription_id]);
+  });
+
+  it("sends a test's timeline ops on a subscribed session's feed only", async () => {
+    const fixture = loadFixture();
+    const t = new FixtureTransport(fixture, { autoplay: false });
+    await open(t);
+    const events: SessionEventsParams[] = [];
+    t.subscribe('session.events', (p) => events.push(p));
+    const end: TimelineOp = { op: 'end', id: 'x', seq_from: 1, seq_to: 1 };
+    t.emitSession('nobody', [end]);
+    const id = Object.keys(fixture.details)[0];
+    const sub = await t.request('session.subscribe', { id, since_seq: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    events.length = 0;
+    t.emitSession(id, [end]);
+    expect(events).toEqual([{ subscription_id: sub.subscription_id, id, head_seq: sub.head_seq, ops: [end] }]);
   });
 
   it('numbers the state changes a test sends after the last revision', async () => {

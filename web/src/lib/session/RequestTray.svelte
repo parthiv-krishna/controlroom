@@ -1,21 +1,31 @@
 <script lang="ts">
-  // The session's open requests (its own and its subagents'), oldest first, pinned right above
-  // the composer so they don't scroll away with the timeline. The timeline shows a stub for each
-  // (`RequestItem`) that jumps here. Capped in height; it scrolls when there are many.
+  // The session's open requests and the agent's open warning and error notices (its own and its
+  // subagents'), oldest first, pinned right above the composer so they don't scroll away with the
+  // timeline. The timeline shows a stub for each (`RequestItem`, `NoticeItem`) that jumps here. A
+  // notice stays until the user dismisses it; opening the session doesn't. Capped in height; it
+  // scrolls when there are many.
   import { useApp } from '../app/app.svelte';
   import type { FeedSession } from '../protocol';
+  import NoticeCard from './NoticeCard.svelte';
   import RequestCard from './RequestCard.svelte';
-  import { openRequests } from './requests';
+  import { openNotices, openRequests, pinnedCount, pinnedItems } from './requests';
 
   let { s }: { s: FeedSession } = $props();
   const app = useApp();
-  const open = $derived(openRequests(s, app.client.sessions.get(s.id)?.timeline.requests ?? new Map()));
+  const timeline = $derived(app.client.sessions.get(s.id)?.timeline);
+  const requests = $derived(openRequests(s, timeline?.requests ?? new Map()));
+  const notices = $derived(openNotices(s, timeline?.notices ?? new Map()));
+  const pinned = $derived(pinnedItems(requests, notices));
 </script>
 
-{#if open.length}
+{#if pinned.length}
   <section class="tray" aria-label="Requests">
-    {#if open.length > 1}<div class="count small muted">{open.length} requests</div>{/if}
-    {#each open as req (req.id)}<div class="pin" data-pinned={req.id}><RequestCard {req} {s} /></div>{/each}
+    {#if pinned.length > 1}<div class="count small muted">{pinnedCount(requests.length, notices.length)}</div>{/if}
+    {#each pinned as p (p.id)}
+      <div class="pin" data-pinned={p.id}>
+        {#if p.kind === 'request'}<RequestCard req={p.req} {s} />{:else}<NoticeCard notice={p.notice} {s} />{/if}
+      </div>
+    {/each}
   </section>
 {/if}
 

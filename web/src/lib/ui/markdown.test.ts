@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markdownFragment, renderMarkdown } from './markdown';
+import { markdownFragment, markdownLine, renderMarkdown } from './markdown';
 import { morph } from './morph';
 
 /** Parses rendered HTML into a detached container. */
@@ -117,5 +117,11 @@ describe('morph', () => {
     morph(el, markdownFragment('Only'));
     expect(el.children).toHaveLength(1);
     expect(el.textContent?.trim()).toBe('Only');
+  });
+});
+
+describe('markdownLine', () => {
+  it('is the plain text on one line', () => {
+    expect(markdownLine('The **disk** is `97%` full.\n\n- see [the graph](https://example.com)')).toBe('The disk is 97% full. see the graph');
   });
 });

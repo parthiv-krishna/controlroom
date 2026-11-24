@@ -1,13 +1,13 @@
 <script lang="ts">
-  // One dot for the worst state, with its count: red = failed or stopped, yellow = needs you (a
-  // hollow ring when only non-blocking questions), green = finished and unread; nothing when all is
-  // quiet. The tooltip lists every count.
+  // One dot for the worst state, with its count: red = failed or stopped, yellow = needs you or an
+  // open agent notice (a hollow ring when only non-blocking questions), green = finished and
+  // unread; nothing when all is quiet. The tooltip lists every count.
   import type { Health } from '../model/projects';
 
   let { h, row = false }: { h: Health; row?: boolean } = $props();
   const worst = $derived.by((): { tone: string; n: number } | null => {
     if (h.problems) return { tone: 'red', n: h.problems };
-    if (h.approvals) return { tone: 'yellow', n: h.approvals };
+    if (h.approvals || h.notices) return { tone: 'yellow', n: h.approvals + h.notices };
     if (h.questions) return { tone: 'yellow ring', n: h.questions };
     if (h.unread) return { tone: 'green', n: h.unread };
     return null;
@@ -15,6 +15,7 @@
   const title = $derived(
     [
       h.approvals && `Need you: ${h.approvals}`,
+      h.notices && `Agent notices: ${h.notices}`,
       h.questions && `Questions: ${h.questions}`,
       h.problems && `Failed or stopped: ${h.problems}`,
       h.unread && `Finished: ${h.unread}`,
