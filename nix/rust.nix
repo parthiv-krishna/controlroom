@@ -307,4 +307,20 @@ in
         CR_TEST_PI_BUNDLE = piBundle;
       }
     );
+
+  # Two profiles across the real stack (controller, agent daemon, host daemons) with real pi on
+  # mock models: the e2e crate's ignored `profiles` scenario, run against `piBundle`. The
+  # binaries it runs are built first (the full `test` check builds them as part of the workspace).
+  e2eProfiles =
+    piBundle:
+    craneLib.cargoTest (
+      commonArgs
+      // {
+        pname = "controlroom-e2e-profiles";
+        inherit cargoArtifacts;
+        preCheck = "cargoWithProfile build --locked -p controlroom-agentd -p controlroomd -p controlroom-fake-agent";
+        cargoTestExtraArgs = "-p controlroom-e2e --test profiles -- --ignored";
+        CR_TEST_PI_BUNDLE = piBundle;
+      }
+    );
 }

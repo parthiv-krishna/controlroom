@@ -11,6 +11,7 @@
 //! - [`world::World`] starts and owns everything; dropping it kills every process it started,
 //!   pass or fail.
 //! - [`session`] creates, prompts and watches sessions through the UI API.
+//! - [`push::MockPush`] is the push service the controller delivers to.
 //!
 //! **Binaries.** `controlroom-agentd`, `controlroomd` and `controlroom-fake-agent` are taken
 //! from `target/<profile>/` (built by `cargo test --workspace` and crane's `cargoTest`; a
@@ -25,6 +26,7 @@
 pub mod agentd;
 pub mod held;
 pub mod procs;
+pub mod push;
 pub mod script;
 pub mod session;
 pub mod world;

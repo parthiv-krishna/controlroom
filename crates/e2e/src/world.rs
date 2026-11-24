@@ -3,6 +3,7 @@
 //! that can cut their links.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use controlroom_client_core::ssh::ConnectOptions;
@@ -17,6 +18,7 @@ use serde_json::json;
 
 use crate::agentd::Agentd;
 use crate::procs;
+use crate::push::MockPush;
 
 /// A machine: an SSH server with its own `$HOME`, where the controller installs and runs the
 /// real host daemon, behind a relay.
@@ -107,7 +109,7 @@ impl Host {
     }
 }
 
-/// The controller, the agent daemon, two hosts and one browser tab.
+/// The controller, the agent daemon, two hosts, the mock push service and one browser tab.
 pub struct World {
     /// A UI connection (next API) with the state feed mirrored.
     pub ui: UiDriver,
@@ -119,6 +121,9 @@ pub struct World {
     pub devbox: Host,
     /// The second machine.
     pub buildbox: Host,
+    /// The push service the controller delivers to (nothing is pushed until a device
+    /// subscribes).
+    pub push: Arc<MockPush>,
     store: tempfile::TempDir,
     bundled: tempfile::TempDir,
 }
@@ -153,28 +158,47 @@ impl World {
     /// Like [`World::start`], letting `configure` set up the agent daemon and the hosts before
     /// anything runs (e.g. real pi and nono).
     pub async fn start_with(configure: impl FnOnce(&mut Agentd, &Host, &Host)) -> Self {
+        let mut world = Self::fresh(configure).await;
+        // Setup creates the first profile; with one, every id may be omitted.
+        world.ui.ensure_profile().await;
+        world.add_machine(Which::Devbox, &[]).await;
+        world.add_machine(Which::Buildbox, &[]).await;
+        world
+    }
+
+    /// Starts everything on a fresh install: no profile and no machine yet (see
+    /// [`World::add_machine`]). `configure` sets up the agent daemon and the hosts first.
+    pub async fn fresh(configure: impl FnOnce(&mut Agentd, &Host, &Host)) -> Self {
         let mut agentd = Agentd::new();
         let (devbox, buildbox) = (Host::start("devbox").await, Host::start("buildbox").await);
         configure(&mut agentd, &devbox, &buildbox);
         agentd.start().await;
         let bundled = bundled_daemons();
         let store = tempfile::tempdir().unwrap();
-        let controller = start_controller(store.path(), bundled.path(), &agentd.socket());
+        let push = Arc::new(MockPush::default());
+        let controller = start_controller(store.path(), bundled.path(), &agentd.socket(), &push);
         let ui = open_ui(&controller).await;
-        let mut world = Self {
+        Self {
             ui,
             controller,
             agentd,
             devbox,
             buildbox,
+            push,
             store,
             bundled,
+        }
+    }
+
+    /// Adds `host` as a machine entry of `profile_ids` (none: the only profile); returns its
+    /// id once it is connected.
+    pub async fn add_machine(&mut self, host: Which, profile_ids: &[&str]) -> String {
+        let host = match host {
+            Which::Devbox => &mut self.devbox,
+            Which::Buildbox => &mut self.buildbox,
         };
-        // Setup creates the first profile; with one, every id may be omitted.
-        world.ui.ensure_profile().await;
-        world.devbox.id = add_machine(&mut world.ui, &world.devbox).await;
-        world.buildbox.id = add_machine(&mut world.ui, &world.buildbox).await;
-        world
+        host.id = add_machine(&mut self.ui, host, profile_ids).await;
+        host.id.clone()
     }
 
     /// Restarts the controller on the same store (a web restart): every connection closes,
@@ -186,6 +210,7 @@ impl World {
             self.store.path(),
             self.bundled.path(),
             &self.agentd.socket(),
+            &self.push,
         );
         self.ui = open_ui(&controller).await;
         self.controller = controller;
@@ -242,9 +267,9 @@ impl World {
     }
 }
 
-/// Adds `host` through its relay (authorizing the controlroom key first); returns the machine
-/// id once it is connected.
-async fn add_machine(ui: &mut UiDriver, host: &Host) -> String {
+/// Adds `host` through its relay (authorizing the controlroom key first) to `profile_ids` (none:
+/// the only profile); returns the machine id once it is connected.
+async fn add_machine(ui: &mut UiDriver, host: &Host, profile_ids: &[&str]) -> String {
     let key = ui.ok("keys.list", json!({})).await["controlroom"]["public_key"]
         .as_str()
         .unwrap()
@@ -252,6 +277,9 @@ async fn add_machine(ui: &mut UiDriver, host: &Host) -> String {
     host.remote.authorize(&key);
     let mut new = host.remote.new_machine(host.name);
     new["port"] = json!(host.relay.port);
+    if !profile_ids.is_empty() {
+        new["profile_ids"] = json!(profile_ids);
+    }
     let added = ui.ok("machines.add", new.clone()).await;
     let mut confirm = new;
     confirm["host_key_fingerprint"] = added["host_key"]["fingerprint"].clone();
@@ -288,8 +316,13 @@ pub async fn wait_contains(path: &Path, needle: &str) {
 }
 
 /// A controller on the store in `store`, installing the daemons in `bundled`, linked to the
-/// agent daemon at `agentd`.
-fn start_controller(store: &Path, bundled: &Path, agentd: &Path) -> Controller {
+/// agent daemon at `agentd`, pushing to `push`.
+fn start_controller(
+    store: &Path,
+    bundled: &Path,
+    agentd: &Path,
+    push: &Arc<MockPush>,
+) -> Controller {
     Controller::start(ControllerConfig {
         store_path: store.join("controller.sqlite"),
         master_key: MasterKey::from_bytes([7; 32]),
@@ -300,7 +333,7 @@ fn start_controller(store: &Path, bundled: &Path, agentd: &Path) -> Controller {
             allowed_subjects: vec![],
             allowed_groups: vec![],
         },
-        push: None,
+        push: Some(push.config()),
         key_comment: "controlroom@controlroom.example.com".into(),
         agentd_socket: Some(agentd.to_owned()),
         tuning: tuning(),
