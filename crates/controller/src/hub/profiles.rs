@@ -93,6 +93,13 @@ impl Hub {
 }
 
 impl HubState {
+    /// A machine's name for a message (its id once it is gone).
+    pub(crate) fn machine_label(&self, id: MachineId) -> String {
+        self.machines
+            .get(&id)
+            .map_or_else(|| id.to_string(), |e| e.record.name.clone())
+    }
+
     /// A machine's profiles (none for an unknown machine).
     pub(crate) fn machine_profiles(&self, id: MachineId) -> &[ProfileId] {
         self.machines

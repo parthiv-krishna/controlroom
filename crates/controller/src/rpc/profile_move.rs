@@ -167,10 +167,7 @@ fn plan(hub: &Hub, target: &Profile, p: &ProfilesMoveParams) -> Result<Plan, Rpc
         }
         for w in &session.workspaces {
             if !after(w.machine_id).contains(&target.id) {
-                let name = st
-                    .machines
-                    .get(&w.machine_id)
-                    .map_or_else(|| w.machine_id.to_string(), |e| e.record.name.clone());
+                let name = st.machine_label(w.machine_id);
                 return Err(policy_denied(
                     target.id,
                     format!("{name} isn't in {}; move or share it too", target.name),

@@ -16,7 +16,7 @@ use crate::hub::Hub;
 const CREATE_A_PROFILE_FIRST: &str = "create a profile first";
 
 /// The profile something new goes to: `id` (which must exist), or the only profile when it is
-/// omitted. With none, "create a profile first"; with several, the id is required.
+/// omitted. With none, "create a profile first"; with several, one must be named.
 pub(super) fn profile_or_only(hub: &Hub, id: Option<ProfileId>) -> Result<Profile, RpcError> {
     if let Some(id) = id {
         return hub.profile(id);
@@ -25,9 +25,7 @@ pub(super) fn profile_or_only(hub: &Hub, id: Option<ProfileId>) -> Result<Profil
     match profiles.len() {
         0 => Err(invalid_params(CREATE_A_PROFILE_FIRST)),
         1 => Ok(profiles.remove(0)),
-        _ => Err(invalid_params(
-            "profile_id is required with several profiles",
-        )),
+        _ => Err(invalid_params("name the profile: there are several")),
     }
 }
 
@@ -77,10 +75,7 @@ pub(super) fn check_machines_in(
     let st = hub.lock();
     for machine in machines {
         if !st.machine_profiles(*machine).contains(&profile.id) {
-            let name = st
-                .machines
-                .get(machine)
-                .map_or_else(|| machine.to_string(), |e| e.record.name.clone());
+            let name = st.machine_label(*machine);
             return Err(policy_denied(
                 profile.id,
                 format!("{name} isn't in {}", profile.name),
@@ -104,10 +99,7 @@ pub(super) fn check_level(
     let st = hub.lock();
     for machine in machines {
         if st.machine_profiles(*machine).len() > 1 {
-            let name = st
-                .machines
-                .get(machine)
-                .map_or_else(|| machine.to_string(), |e| e.record.name.clone());
+            let name = st.machine_label(*machine);
             return Err(policy_denied(
                 profile,
                 format!("{name} is shared with another profile; it can't run unsandboxed"),
@@ -139,10 +131,7 @@ pub(super) fn check_shareable(
             && s.workspaces.iter().any(|w| w.machine_id == machine)
     });
     if off_defaults || off_session {
-        let name = st
-            .machines
-            .get(&machine)
-            .map_or_else(|| machine.to_string(), |e| e.record.name.clone());
+        let name = st.machine_label(machine);
         return Err(policy_denied(
             profile,
             format!("{name} runs unsandboxed; a shared machine can't"),
