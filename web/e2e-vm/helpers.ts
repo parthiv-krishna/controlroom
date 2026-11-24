@@ -28,7 +28,10 @@ export async function signIn(browser: Browser, device: string): Promise<{ contex
   return { context, page };
 }
 
-/** Signs `page` in with the server's dev token and names its device on first load. */
+/**
+ * Signs `page` in with the server's dev token and names its device on first load. On a fresh
+ * install it also creates the first profile, as setup does.
+ */
 export async function login(page: Page, device: string): Promise<void> {
   const token = readFileSync(env('E2E_TOKEN_FILE'), 'utf8').trim();
   await page.goto(`/auth/dev-token?token=${encodeURIComponent(token)}`);
@@ -37,6 +40,48 @@ export async function login(page: Page, device: string): Promise<void> {
   await naming.getByLabel('Device name').fill(device);
   await naming.getByRole('button', { name: 'Save' }).click();
   await expect(naming).toHaveCount(0);
+  await ensureProfile(page);
+}
+
+/**
+ * Creates the first profile through the UI API when there is none: the server refuses machines,
+ * projects, tasks and sessions until one exists. (Setup's own "New profile" dialog is the UI's.)
+ */
+async function ensureProfile(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const url = new URL('api/ws', document.baseURI);
+    url.protocol = url.protocol.replace('http', 'ws');
+    const ws = new WebSocket(url);
+    const waiting = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+    ws.onmessage = (event) => {
+      let message: { id?: number; result?: unknown; error?: { message: string } };
+      try {
+        message = JSON.parse(String(event.data));
+      } catch {
+        return; // Not a response of ours.
+      }
+      const call = message.id === undefined ? undefined : waiting.get(message.id);
+      if (!call || message.id === undefined) return;
+      waiting.delete(message.id);
+      if (message.error) call.reject(new Error(message.error.message));
+      else call.resolve(message.result);
+    };
+    await new Promise((resolve, reject) => {
+      ws.onopen = resolve;
+      ws.onerror = () => reject(new Error('the UI API socket failed'));
+    });
+    let next = 0;
+    const call = (method: string, params: Record<string, unknown>) =>
+      new Promise<unknown>((resolve, reject) => {
+        const id = ++next;
+        waiting.set(id, { resolve, reject });
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+      });
+    await call('hello', { protocol_version: { major: 1, minor: 0 } });
+    const { profiles } = (await call('profiles.list', {})) as { profiles: unknown[] };
+    if (profiles.length === 0) await call('profiles.create', { name: 'Garden club', color: '#16a34a' });
+    ws.close();
+  });
 }
 
 /** Opens Settings › Machines. */
