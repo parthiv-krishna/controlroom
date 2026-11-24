@@ -123,8 +123,8 @@ started with. They are stored in `/var/lib/controlroom-agent/models/` (`keys.jso
 device that made them, never with a key. An added account's models are pi's own model list of
 its provider, fetched when Settings › Models is opened or changed (kept in
 `models/definitions.json`); after a pi upgrade, open Settings › Models once to refresh it. Only the presets and gateways you add get network routes from the UI, so
-the sandbox's allow-list stays deliberate. Sessions at sandbox level *off* use the server's own
-config only (sign-ins included, UI keys, gateways and defaults not).
+the sandbox's allow-list stays deliberate. Sessions at every sandbox level, *off* included, get
+them (pi always runs under nono on the server).
 
 **Declaratively, in Nix** (the alternative, or for what the UI shouldn't change):
 
@@ -179,6 +179,15 @@ keeps running sessions alive across restarts and upgrades of the daemon. There i
 pi with Landlock to its scratch directory, its agent socket and the model routes. The daemon's
 socket `/run/controlroom-agent/agentd.sock` is shared with the web server through the
 `controlroom-agent` group, and `services.controlroom` points `agentd_socket` at it.
+
+pi always runs under nono, at every sandbox level (level off unsandboxes only the hosts), on
+the session's own agent dir: a sign-in in the daemon's agent dir (`controlroom-agentd login`
+below) reaches sessions only through a credential route, i.e. a Settings › Models preset or
+account, or a `sandbox.routes` entry. The daemon removes provider keys (`OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`, …: every variable pi reads a key from) from its environment at startup, so
+put keys in Settings › Models or the agent dir's `models.json` (e.g. `!cat
+$CREDENTIALS_DIRECTORY/<name>`), never in the unit's environment. A session's profile decides
+which of these accounts its agent sees.
 
 To sign in to a subscription from a terminal instead of the UI (pi asks for `/login <provider>`):
 
@@ -325,12 +334,21 @@ journalctl -u controlroom -u controlroom-agent -e
 - The database has no migrations yet: a server version with a different schema refuses to start
   ("delete the database"). Moving to it means removing `controlroom.sqlite` and adding the
   machines again; the daemons and their sessions on the hosts are unaffected.
-- **The profiles release starts fresh** (`docs/design/profiles-tenants.md`). Its first step
-  already bumps the web server's schema (the sandbox defaults rename), and the agent daemon's
-  store follows when profiles land. Before upgrading, stop both services and delete
-  `/var/lib/private/controlroom/controlroom.sqlite` and, once the agent daemon's schema changes,
-  `/var/lib/controlroom-agent/agent.sqlite` (that deletes every session and transcript). After
-  the upgrade:
+- **The profiles release starts fresh** (`docs/design/profiles-tenants.md`). Both stores changed
+  schema with no upgrade: an older `controlroom.sqlite` or `agent.sqlite` is refused at startup
+  ("delete the database file to start over", "delete the agent daemon's state to start over").
+  Before upgrading:
+  - delete or close every session in the UI, so that no agent runs (supervisors outlive the
+    service; otherwise stop them with `pkill -u controlroom-agent -f 'controlroom-agentd
+    supervise'`);
+  - stop both services;
+  - delete `/var/lib/private/controlroom/controlroom.sqlite` and, from
+    `/var/lib/controlroom-agent`, `agent.sqlite` (with its `-wal` and `-shm` files),
+    `sessions/` and `run/`. That deletes every session and transcript; keep `agent/` and
+    `models/`.
+
+  After the upgrade:
+
   - create the first profile (setup asks for one);
   - add the machines again. The new database generates a new controlroom SSH key, so authorize
     it on every host (the add-machine flow shows the install command); remove the old key from

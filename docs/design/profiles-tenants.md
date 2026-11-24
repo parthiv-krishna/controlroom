@@ -1,9 +1,9 @@
 # Design: profiles as tenants
 
-Status: **accepted; P0 (contracts) and P1a (controller) done.** The protocol types and methods are in
-`crates/protocol` and `docs/protocol.md` (§"Profiles"). The controller implements its side (store, `profiles.*`,
-C1–C13, reports to the agent daemon, push redaction); the agent daemon answers `profiles.report` and `session.move`
-with `unsupported` until P1b (§12).
+Status: **accepted; P0 (contracts), P1a (controller) and P1b (agent daemon) done; P1c (UI) next.** The protocol
+types and methods are in `crates/protocol` and `docs/protocol.md` (§"Profiles"). The controller implements its side
+(store, `profiles.*`, C1–C13, reports to the agent daemon, push redaction); the agent daemon enforces its part
+(A1–A4, A6–A9; A5's inheritance) and answers `profiles.report` and `session.move` (§12).
 The sandbox defaults rename (decision 9) is done: `sandbox.defaults`, `sandbox.set_defaults`, `SandboxDefaults`,
 `DefaultsScope`, `DefaultsChange`, store table `sandbox_defaults`.
 
@@ -220,7 +220,12 @@ CREATE TABLE machine_profiles (
 
 ### Agent daemon store (`agent.sqlite`, schema bump, no migration)
 
-- `sessions.profile_id TEXT` (set at creation; `NULL` only for sessions a debug client created without one).
+- Like the client store, the schema is edited in place (`crates/runtime/src/store/schema.rs`, version 2; version 1
+  had a migration list, now gone). Any other version is refused with "delete the agent daemon's state to start
+  over".
+- `sessions.profile_id TEXT` (set at creation; `NULL` only for a session created while no profile was reported: a
+  debug client's, or one from a controller before profiles. Such a session is unrestricted while no profile is
+  reported, and admits no account and no machine once one is; `session.create` without a profile is then refused).
 - `CREATE TABLE profile_policies (profile_id TEXT PRIMARY KEY, models TEXT NOT NULL, model_defaults TEXT NOT NULL, private INTEGER NOT NULL, reported_at INTEGER NOT NULL)`.
 - Children are created with their parent's `profile_id`. A session whose profile has no reported policy admits no
   account (fail closed).
