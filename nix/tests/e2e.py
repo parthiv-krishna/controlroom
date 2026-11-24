@@ -235,14 +235,16 @@ def boot() -> None:
     as_alice(buildbox, f"mkdir -p {BUILD}/.gates {WEB}/.gates && echo \"const version = 'v1';\" > {WEB}/app.js")
 
 
-def add_machine(machine: Any, key_first: bool) -> None:
+def add_machine(machine: Any, key_first: bool, fresh: bool = False) -> None:
     """Add a machine: host key, then the key install command (after "permission denied", or up
-    front), then the server installs the host daemon and shows its doctor."""
+    front), then the server installs the host daemon and shows its doctor. On the fresh server
+    the UI first asks for the first profile (the user's first-run path)."""
     spec = Spec(
         "add-machine",
         E2E_HOST=machine.name,
         E2E_HOST_KEY=host_key(machine),
         E2E_KEY_FIRST="1" if key_first else "",
+        E2E_FRESH="1" if fresh else "",
     )
     command = spec.step("install-key")["command"]
     assert "authorized_keys" in command, command
@@ -571,7 +573,7 @@ def rollback() -> None:
 
 try:
     boot()
-    add_machine(devbox, key_first=False)
+    add_machine(devbox, key_first=False, fresh=True)
     assert current_daemon(devbox) == f"versions/{VERSION}"
     uploaded_nono(devbox)
     use_bundle(OLD_BUNDLE)

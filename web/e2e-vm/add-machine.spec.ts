@@ -4,14 +4,30 @@ import { env, login, machineCard, openMachines, step } from './helpers';
 // Add a machine through Settings › Machines: confirm its host key, install the controlroom key
 // (after "permission denied", or up front when E2E_KEY_FIRST is set), then the server installs
 // the host daemon and shows the doctor results: the host runs only controlroomd and the nono
-// uploaded with it (the doctor says it is the bundled one).
+// uploaded with it (the doctor says it is the bundled one). On a fresh server (E2E_FRESH set),
+// + Machine first asks for the first profile, as setup does, then carries on.
 //   E2E_HOST: the host (also its display name); E2E_HOST_KEY: its ed25519 fingerprint.
 test('add a machine', async ({ page }) => {
   const host = env('E2E_HOST');
   const keyFirst = env('E2E_KEY_FIRST') !== '';
+  const fresh = env('E2E_FRESH') !== '';
   await login(page, 'Laptop');
   const settings = await openMachines(page);
+  const pills = settings.getByRole('radiogroup', { name: 'Profile', exact: true }).getByRole('radio');
+  // A fresh server has no profile yet: the picker has only ＋.
+  if (fresh) await expect(pills).toHaveCount(0);
   await settings.getByRole('button', { name: '+ Machine' }).click();
+  const newProfile = page.getByRole('dialog', { name: 'New profile' });
+  if (fresh) {
+    await expect(newProfile).toBeVisible();
+    await newProfile.getByLabel('Name').fill('Garden club');
+    await newProfile.getByRole('button', { name: '↵ Create' }).click();
+    await expect(newProfile).toHaveCount(0);
+    await expect(pills).toHaveAccessibleName('Profile Garden club');
+  } else {
+    await expect(newProfile).toHaveCount(0);
+  }
+  await expect(settings.getByRole('heading', { name: 'Add machine' })).toBeVisible();
   await settings.getByLabel('Host').fill(host);
   await settings.getByLabel('User').fill('alice');
   await settings.getByLabel('Display name').fill(host);
