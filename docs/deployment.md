@@ -299,7 +299,118 @@ surprise:
   can be granted one by one, but no directory containing one (`~`, `~/.config`, `~/.local/share`):
   nono would refuse to start, so Settings refuses them with the reason.
 
-## 6. Phone: the installed app and push
+## 6. Profiles
+
+A **profile** separates agents, not people: work, personal and a private assistant can share one
+controlroom without their agents ever meeting. Each profile owns its machine entries, the model
+accounts its agents may use, its projects, tasks and sessions, and its sandbox defaults; contact
+never crosses profiles. Names, colors, privacy and accounts are all yours to choose
+(`docs/design/profiles-tenants.md`).
+
+**First run.** A fresh server has no profile. The first thing that needs one (adding a machine,
+creating a project, a task or a session) asks for it in a small "New profile" dialog, then carries
+on. Create more from the profile picker in Settings › Machines, Models or Sandbox (＋). Per
+profile:
+
+- **Machines:** a machine entry (host and user) belongs to one profile. The same host appears in
+  two profiles as two entries under two users (`alice@devbox` in Work, `agent@devbox` as
+  `devbox-agent` in Personal); names are unique across profiles. Sharing an entry with another
+  profile ("Share with…") is an explicit choice, never for a private profile, and a shared entry
+  never runs at level off.
+- **Models:** "Accounts in Work: Any / Only the checked ones" in Settings › Models. Accounts
+  (keys, sign-ins, gateways) stay global; a profile only picks which ones its agents may use.
+- **Private:** pushes name only the profile and the attention kind, its entries can't be shared,
+  and its accounts must be listed (never Any).
+- **Moving** a machine, a project (with its tasks) or a session to another profile is one action
+  with a preview ("Move to profile…"); a moved live agent restarts.
+
+The agent daemon and the controller enforce all of this; the UI only shows the current profile.
+pi's own sandbox on the server is always on, whatever a session's level.
+
+### Dedicated users on homelab hosts
+
+The uid is the boundary between profiles on a host. For a profile that should not touch your own
+files (a personal assistant, say), give it a user of its own on each host, e.g. `assistant` on
+`homelab`:
+
+- create the user in the host's NixOS configuration and put **controlroom's public key**
+  (Settings › Machines › SSH keys) in its `~/.ssh/authorized_keys`, or run the install command
+  the add-machine dialog shows, as that user;
+- add the entry in the profile (Settings › Machines, with the profile picked) as
+  `assistant@homelab`;
+- set its sandbox level to **off** (the profile's or the machine's defaults in Settings ›
+  Sandbox): the user exists only for agents, so the uid and the host's firewall are the boundary,
+  and nono would only get in the way. The warning names the user ("the agent can do anything
+  assistant can on homelab"), which is exactly the point.
+
+**The network boundary is the host's firewall, in the host's NixOS configuration**: controlroom
+configures no firewall, resolver or proxy. A recipe that holds up (validated in a VM by the
+profiles spike): nftables rules by socket owner (`meta skuid`) that let the assistant reach only a
+local allow-list proxy, which runs as a system service under its own user and resolves names
+itself.
+
+```nix
+# The assistant (uid 1102) reaches only the proxy on 127.0.0.1:3128; other users are untouched.
+networking.nftables = {
+  enable = true;
+  tables.agent-egress = {
+    family = "inet";
+    content = ''
+      chain output {
+        type filter hook output priority filter; policy accept;
+        meta skuid 1102 jump assistant
+      }
+      chain refuse {
+        meta l4proto tcp reject with tcp reset
+        reject with icmpx admin-prohibited
+      }
+      chain assistant {
+        ct state established,related accept
+        oif "lo" ip daddr 127.0.0.1 tcp dport 3128 accept
+        goto refuse
+      }
+    '';
+  };
+};
+```
+
+- **The proxy:** any forward proxy with a domain allow-list that answers `CONNECT` (for example
+  tinyproxy with a default-deny filter, or squid), as its own system user on `127.0.0.1:3128`.
+  Point the user's tools at it with `HTTPS_PROXY`/`HTTP_PROXY` in its login environment (e.g. its
+  home-manager `home.sessionVariables`). Tools that ignore the variables fail closed. Never let
+  the agent's own uid run or configure the proxy: its egress would then count as the agent's.
+- **No DNS for the user:** the proxy resolves names, and the rules above refuse port 53, so DNS
+  can't carry data out either.
+- **`reject`, not `drop`:** a dropped connection hangs a tool until its own timeout (bash's
+  `/dev/tcp` waited 135 s in the spike); a reject fails it at once.
+- **`ct state established,related accept`** keeps SSH working: the user's `sshd-session` replies
+  as that user.
+- **Daemons that act for users bypass per-uid rules.** Two leaks the spike showed, and their
+  fixes:
+  - **nscd** resolves names as its own user, so the user's lookups reach the resolver: disable it
+    on such hosts (`services.nscd.enable = false;` with `system.nssModules = lib.mkForce [ ];`),
+    so lookups leave from the caller's uid and the rules apply;
+  - **the nix daemon** fetches fixed-output derivations as its build users, so a URL the agent
+    chooses reaches the network: leave the user out of `nix.settings.allowed-users` (it then has
+    no nix daemon).
+
+  `systemd-resolved` and container engines act for users the same way; keep them off such hosts
+  or out of the user's reach.
+- **Stopping `nftables.service` fails open.** A backstop for processes of the user's login
+  sessions (everything started over SSH): `systemd.slices."user-1102".sliceConfig = {
+  IPAddressDeny = "any"; IPAddressAllow = "localhost"; };`. It doesn't cover processes started
+  outside a login session.
+
+### Work machines
+
+On a machine where you can't create users or change the firewall (no root), the entry is your
+own account and the agent runs as you. Keep the sandbox on (**strict**, or **relaxed** for your
+git identity): nono confines the agent's shells, jobs and file tools to the workspace and the
+grants of Settings › Sandbox, and its network to the allowed domains. Such machines usually
+belong to one profile; sharing one entry between profiles keeps the sandbox on by design, but
+both profiles' agents then run as the same user.
+
+## 7. Phone: the installed app and push
 
 1. Open the public URL in Safari and sign in.
 2. Share › **Add to Home Screen**, then open controlroom from the Home Screen icon and sign in
@@ -307,10 +418,11 @@ surprise:
 3. **Settings › Notifications › Enable on this device** (iOS asks for permission only after a
    tap inside the installed app).
 
-Notifications only carry metadata (session, machine, state); tapping one opens the session. When
+Notifications only carry metadata (session, machine, state; for a private profile only the
+profile's name and the state); tapping one opens the session. When
 the server can't be reached from the phone, the app shows "can't reach server" and retries.
 
-## 7. Checks after deploying
+## 8. Checks after deploying
 
 ```sh
 systemctl status controlroom controlroom-agent
@@ -319,7 +431,7 @@ systemd-analyze security controlroom
 journalctl -u controlroom -u controlroom-agent -e
 ```
 
-## 8. Upgrades and rollback
+## 9. Upgrades and rollback
 
 - The server is upgraded with the system. When it bundles a newer `controlroomd`, it upgrades
   each machine's daemon automatically once the machine is idle. It runs the new binary first and

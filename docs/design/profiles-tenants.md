@@ -1,9 +1,12 @@
 # Design: profiles as tenants
 
-Status: **accepted; P0 (contracts), P1a (controller) and P1b (agent daemon) done; P1c (UI) next.** The protocol
-types and methods are in `crates/protocol` and `docs/protocol.md` (§"Profiles"). The controller implements its side
-(store, `profiles.*`, C1–C13, reports to the agent daemon, push redaction); the agent daemon enforces its part
-(A1–A4, A6–A9; A5's inheritance) and answers `profiles.report` and `session.move` (§12).
+Status: **implemented (P0–P2).** The protocol types and methods are in `crates/protocol` and `docs/protocol.md`
+(§"Profiles"). The controller implements its side (store, `profiles.*`, C1–C13, reports to the agent daemon, push
+redaction) and announces it with the `profiles` capability in the UI `hello`; the agent daemon enforces its part
+(A1–A4, A6–A9; A5's inheritance) and answers `profiles.report` and `session.move`; the UI implements §6 and §10.
+`crates/e2e/tests/profiles.rs` (flake check `e2e-profiles`) checks two profiles across the real stack with real pi.
+The architecture (`docs/architecture.html` §2, §5, §10, §11, §12, §13) and `docs/deployment.md` ("Profiles")
+describe the result. Left for later: P3 (§12), and A5 and A10 with the subagent and mailbox lanes.
 The sandbox defaults rename (decision 9) is done: `sandbox.defaults`, `sandbox.set_defaults`, `SandboxDefaults`,
 `DefaultsScope`, `DefaultsChange`, store table `sandbox_defaults`.
 
