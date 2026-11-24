@@ -26,7 +26,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::host::{HostNotification, HostRequest};
-use crate::ids::{Epoch, HostOpId, MachineId, SessionId, SubscriptionId};
+use crate::ids::{Epoch, HostOpId, MachineId, ProfileId, SessionId, SubscriptionId};
 use crate::jsonrpc::RpcOutcome;
 use crate::session::Availability;
 
@@ -110,6 +110,11 @@ pub struct HostMachine {
     /// How long a tool call waits for this machine before it fails with `connection_lost`
     /// (default 600).
     pub grace_s: u32,
+    /// The profiles the machine entry belongs to (several when shared). A host call or a
+    /// workspace on a machine outside the session's profile is `policy_denied`. Empty from a
+    /// controller before profiles.
+    #[serde(default)]
+    pub profile_ids: Vec<ProfileId>,
 }
 
 /// Params of `hostops.machines`: the controller's machines, replacing the previous list.

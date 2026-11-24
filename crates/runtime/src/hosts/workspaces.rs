@@ -553,6 +553,7 @@ mod tests {
                         },
                         epoch: None,
                         grace_s: 600,
+                        profile_ids: Vec::new(),
                     },
                 )
             })

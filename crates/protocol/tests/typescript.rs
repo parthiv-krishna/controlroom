@@ -131,6 +131,13 @@ fn generated_files_cover_the_api() {
             "RpcResponse.ts",
             "RpcNotification.ts",
             "RemotePath.ts",
+            "ProfileId.ts",
+            "Profile.ts",
+            "ModelPolicy.ts",
+            "ProfilesMoveParams.ts",
+            "PushPayload.ts",
+            "SandboxDefaults.ts",
+            "DefaultsScope.ts",
         ],
     );
     // The UI API alone: no daemon map, no per-machine session wrapper or location prefixes.

@@ -54,6 +54,13 @@ import type { NotificationPreferences } from "./NotificationPreferences";
 import type { NotificationsSetPreferencesParams } from "./NotificationsSetPreferencesParams";
 import type { NotificationsSubscribeParams } from "./NotificationsSubscribeParams";
 import type { OnMachine } from "./OnMachine";
+import type { Profile } from "./Profile";
+import type { ProfilesCreateParams } from "./ProfilesCreateParams";
+import type { ProfilesDeleteParams } from "./ProfilesDeleteParams";
+import type { ProfilesListResult } from "./ProfilesListResult";
+import type { ProfilesMoveParams } from "./ProfilesMoveParams";
+import type { ProfilesMoveResult } from "./ProfilesMoveResult";
+import type { ProfilesUpdateParams } from "./ProfilesUpdateParams";
 import type { Project } from "./Project";
 import type { ProjectRef } from "./ProjectRef";
 import type { ProjectsCreateParams } from "./ProjectsCreateParams";
@@ -186,6 +193,26 @@ export type UiMethods = {
    * Delete an additional key.
    */
   "keys.delete": { params: KeysDeleteParams, result: Ack },
+  /**
+   * Every profile.
+   */
+  "profiles.list": { params: NoParams, result: ProfilesListResult },
+  /**
+   * Create a profile.
+   */
+  "profiles.create": { params: ProfilesCreateParams, result: Profile },
+  /**
+   * Rename, recolor, reorder a profile or change its privacy or models.
+   */
+  "profiles.update": { params: ProfilesUpdateParams, result: Profile },
+  /**
+   * Delete an empty profile (and its archived sessions).
+   */
+  "profiles.delete": { params: ProfilesDeleteParams, result: Ack },
+  /**
+   * Move machine entries, projects and sessions to a profile, atomically (or preview it).
+   */
+  "profiles.move": { params: ProfilesMoveParams, result: ProfilesMoveResult },
   /**
    * Create a project.
    */

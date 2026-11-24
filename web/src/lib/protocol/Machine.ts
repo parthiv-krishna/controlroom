@@ -7,6 +7,7 @@ import type { DoctorReport } from "./DoctorReport";
 import type { HostKeyInfo } from "./HostKeyInfo";
 import type { KeyId } from "./KeyId";
 import type { MachineId } from "./MachineId";
+import type { ProfileId } from "./ProfileId";
 import type { UnixMillis } from "./UnixMillis";
 
 /**
@@ -33,6 +34,12 @@ port: number,
  * SSH user; agents run as this user.
  */
 user: string, 
+/**
+ * The profiles this entry belongs to: one, or several when shared (never with a private
+ * profile; a shared entry never runs at level off). Empty from a controller before
+ * profiles.
+ */
+profile_ids: Array<ProfileId>, 
 /**
  * The additional key used for this machine; `null` means the controlroom key.
  */

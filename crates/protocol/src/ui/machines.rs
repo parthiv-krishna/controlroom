@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::host::DoctorReport;
-use crate::ids::{DaemonId, KeyId, MachineId, UnixMillis};
+use crate::ids::{DaemonId, KeyId, MachineId, ProfileId, UnixMillis};
 use crate::version::Capability;
 
 /// Why reconnecting stopped until the user acts.
@@ -99,6 +99,11 @@ pub struct Machine {
     pub port: u16,
     /// SSH user; agents run as this user.
     pub user: String,
+    /// The profiles this entry belongs to: one, or several when shared (never with a private
+    /// profile; a shared entry never runs at level off). Empty from a controller before
+    /// profiles.
+    #[serde(default)]
+    pub profile_ids: Vec<ProfileId>,
     /// The additional key used for this machine; `null` means the controlroom key.
     pub key_id: Option<KeyId>,
     /// The pinned host key; `null` until confirmed.
@@ -146,6 +151,10 @@ pub struct NewMachine {
     /// An additional key to use instead of the controlroom key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_id: Option<KeyId>,
+    /// The profiles to add it to (several share it). May be omitted while the owner has exactly
+    /// one profile.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profile_ids: Vec<ProfileId>,
 }
 
 /// Result of `machines.add`, step one: the host key to confirm. Nothing is saved yet.
@@ -232,4 +241,8 @@ pub struct MachinesSetSettingsParams {
     /// week).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grace_s: Option<u32>,
+    /// New profiles (at least one), to share the entry or stop sharing it. Moving a machine
+    /// with its sessions is `profiles.move`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_ids: Option<Vec<ProfileId>>,
 }

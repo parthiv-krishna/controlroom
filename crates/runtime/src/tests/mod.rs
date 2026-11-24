@@ -164,6 +164,7 @@ impl Harness {
                 .collect(),
             name: None,
             parent_id: None,
+            profile_id: None,
             sandbox_level: None,
             sandbox: None,
             prompt: None,

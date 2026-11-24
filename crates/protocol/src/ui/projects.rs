@@ -4,11 +4,15 @@
 //! projects of the tasks that link it (possibly several); a session no task links is
 //! **Unassigned**. The controller computes the membership ([`super::FeedSession::project_ids`]);
 //! clients derive nothing.
+//!
+//! Projects and tasks belong to one profile each: a task's projects are all in its profile, and
+//! a task links only sessions of its profile (`policy_denied` otherwise). They change profile
+//! only with `profiles.move`.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{ChecklistItemId, ProjectId, SessionId, TaskId, UnixMillis};
+use crate::ids::{ChecklistItemId, ProfileId, ProjectId, SessionId, TaskId, UnixMillis};
 
 /// A project: a named, colored group of tasks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -19,6 +23,9 @@ pub struct Project {
     pub name: String,
     /// A CSS color, e.g. `"#a78bfa"`.
     pub color: String,
+    /// Its profile; `null` from a controller before profiles.
+    #[serde(default)]
+    pub profile_id: Option<ProfileId>,
 }
 
 /// Params of `projects.create`.
@@ -28,6 +35,9 @@ pub struct ProjectsCreateParams {
     pub name: String,
     /// A CSS color.
     pub color: String,
+    /// Its profile. May be omitted while the owner has exactly one profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<ProfileId>,
 }
 
 /// Params of `projects.update`. Absent fields are left unchanged.
@@ -113,6 +123,9 @@ pub struct Task {
     pub priority: Priority,
     /// Assigned projects, in assignment order.
     pub project_ids: Vec<ProjectId>,
+    /// Its profile (its projects'); `null` from a controller before profiles.
+    #[serde(default)]
+    pub profile_id: Option<ProfileId>,
     /// Free-text notes.
     pub notes: String,
     /// Checklist.
@@ -142,6 +155,10 @@ pub struct TasksCreateParams {
     /// Assigned projects; default none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub project_ids: Vec<ProjectId>,
+    /// Its profile: its projects' (when given, it must match them). Required without projects
+    /// unless the owner has exactly one profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<ProfileId>,
     /// Notes; default empty.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub notes: String,

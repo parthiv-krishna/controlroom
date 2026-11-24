@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::agentd::{InitialPrompt, PromptResult};
-use crate::ids::{OpId, SessionId, WorkspaceId};
+use crate::ids::{OpId, ProfileId, SessionId, WorkspaceId};
 use crate::session::SessionSummary;
 use crate::session::{SandboxLevel, SandboxSpec, WorkspaceSpec};
 
@@ -23,6 +23,11 @@ pub struct SessionCreateParams {
     /// The parent session, for subagents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<SessionId>,
+    /// The session's profile; every workspace's machine must be in it (`policy_denied`). In the
+    /// UI API it may be omitted while the workspaces' machines name exactly one profile; the
+    /// controller always fills it in. A subagent's is its parent's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<ProfileId>,
     /// An explicit level chosen by the user (new-session dialog or template). Honored in either
     /// direction, and kept until changed with `session.set_sandbox_level`; absent: the default
     /// level applies.

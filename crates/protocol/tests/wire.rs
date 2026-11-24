@@ -105,6 +105,7 @@ fn summary() -> SessionSummary {
         updated_at: UnixMillis(2_000),
         closed_at: None,
         parent_id: None,
+        profile_id: None,
         state: SessionState::AwaitingPermission,
         last_outcome: Some(RunOutcome::Completed),
         last_error: None,
@@ -198,6 +199,7 @@ fn summary_json() -> Value {
         "updated_at": 2000,
         "closed_at": null,
         "parent_id": null,
+        "profile_id": null,
         "state": "awaiting_permission",
         "last_outcome": "completed",
         "last_error": null,
@@ -480,6 +482,7 @@ fn golden_session_create_with_a_first_prompt() {
         }],
         name: None,
         parent_id: None,
+        profile_id: None,
         sandbox_level: None,
         sandbox: None,
         prompt: Some(InitialPrompt {
@@ -1124,4 +1127,12 @@ fn golden_path_request_body_and_file_options() {
             "deny"
         ]
     );
+}
+
+#[test]
+fn a_summary_without_a_profile_decodes_with_none() {
+    let mut older = summary_json();
+    older.as_object_mut().unwrap().remove("profile_id");
+    let decoded: SessionSummary = serde_json::from_value(older).unwrap();
+    assert_eq!(decoded.profile_id, None);
 }

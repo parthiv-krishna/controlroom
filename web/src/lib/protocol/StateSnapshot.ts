@@ -4,6 +4,7 @@ import type { Device } from "./Device";
 import type { FeedSession } from "./FeedSession";
 import type { Machine } from "./Machine";
 import type { Overlap } from "./Overlap";
+import type { Profile } from "./Profile";
 import type { Project } from "./Project";
 import type { Schedule } from "./Schedule";
 import type { Task } from "./Task";
@@ -13,6 +14,10 @@ import type { Task } from "./Task";
  * sessions' `requests`.
  */
 export type StateSnapshot = { 
+/**
+ * Every profile, in `position` order (none on a fresh install).
+ */
+profiles: Array<Profile>, 
 /**
  * Every machine.
  */

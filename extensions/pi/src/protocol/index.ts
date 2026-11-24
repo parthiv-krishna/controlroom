@@ -57,6 +57,7 @@ export type * from "./NotifyParams";
 export type * from "./OptionStyle";
 export type * from "./PathAccess";
 export type * from "./PeerRef";
+export type * from "./ProfileId";
 export type * from "./ProtocolVersion";
 export type * from "./Question";
 export type * from "./QuestionAnswer";

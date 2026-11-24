@@ -4,9 +4,9 @@
 //! and session commands pass through to the agent daemon unchanged (no `machine_id`). The
 //! state feed (`state.subscribe`) aggregates the machines, the agent daemon's sessions with
 //! their project membership and the workspaces several sessions share ([`Overlap`]), and the
-//! controller's own data: keys, projects (named groups of tasks), tasks, contact grants,
-//! devices, schedules, sandbox defaults and push. `fs.list` goes to a machine's host daemon,
-//! `doctor.report` to a host or the server.
+//! controller's own data: profiles (tenants, see [`Profile`]), keys, projects (named groups of
+//! tasks), tasks, contact grants, devices, schedules, sandbox defaults and push. `fs.list` goes
+//! to a machine's host daemon, `doctor.report` to a host or the server.
 //!
 //! **Connection lifecycle:** `hello` (with the device id), `devices.register`, then
 //! `state.subscribe {since}` and `session.subscribe {id, since_seq}` per open session. Session
@@ -18,7 +18,9 @@ mod hello;
 mod keys;
 mod machines;
 mod people;
+mod profiles;
 mod projects;
+mod push;
 mod sandbox;
 mod schedules;
 mod sessions;
@@ -28,7 +30,9 @@ pub use hello::*;
 pub use keys::*;
 pub use machines::*;
 pub use people::*;
+pub use profiles::*;
 pub use projects::*;
+pub use push::*;
 pub use sandbox::*;
 pub use schedules::*;
 pub use sessions::*;
@@ -105,6 +109,17 @@ pub mod methods {
         KeysImport = "keys.import" (KeysImportParams) -> AdditionalKey;
         /// Delete an additional key.
         KeysDelete = "keys.delete" (KeysDeleteParams) -> Ack;
+
+        /// Every profile.
+        ProfilesList = "profiles.list" (NoParams) -> ProfilesListResult;
+        /// Create a profile.
+        ProfilesCreate = "profiles.create" (ProfilesCreateParams) -> Profile;
+        /// Rename, recolor, reorder a profile or change its privacy or models.
+        ProfilesUpdate = "profiles.update" (ProfilesUpdateParams) -> Profile;
+        /// Delete an empty profile (and its archived sessions).
+        ProfilesDelete = "profiles.delete" (ProfilesDeleteParams) -> Ack;
+        /// Move machine entries, projects and sessions to a profile, atomically (or preview it).
+        ProfilesMove = "profiles.move" (ProfilesMoveParams) -> ProfilesMoveResult;
 
         /// Create a project.
         ProjectsCreate = "projects.create" (ProjectsCreateParams) -> Project;

@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{GrantId, MachineId, ProjectId};
+use crate::ids::{GrantId, MachineId, ProfileId, ProjectId};
 use crate::session::{GrantKind, MediatedCommand, PathAccess, SandboxGrant, SandboxLevel};
 
 /// What a set of sandbox defaults belongs to.
@@ -23,6 +23,11 @@ pub enum DefaultsScope {
     Project {
         /// The project.
         project_id: ProjectId,
+    },
+    /// A profile: its defaults apply to every session of the profile.
+    Profile {
+        /// The profile.
+        profile_id: ProfileId,
     },
     /// A scope this build doesn't know.
     #[serde(other)]

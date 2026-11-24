@@ -112,6 +112,7 @@ impl Machine {
             },
             epoch: Some(self.epoch),
             grace_s: self.grace_s,
+            profile_ids: Vec::new(),
         }
     }
 }

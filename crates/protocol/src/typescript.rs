@@ -1,7 +1,7 @@
 //! TypeScript generation, in two sets (both read-only for their users):
 //!
-//! - [`generate`]: the UI API and the terminal streams' text frames ([`crate::terminal`]), for
-//!   `web/src/lib/protocol/`;
+//! - [`generate`]: the UI API, the terminal streams' text frames ([`crate::terminal`]) and the
+//!   Web Push payload ([`crate::ui::PushPayload`]), for `web/src/lib/protocol/`;
 //! - [`generate_agent`]: the agent API, for `extensions/pi/src/protocol/`.
 //!
 //! The host and agent daemon APIs have no TypeScript consumer, so no set.
@@ -28,7 +28,7 @@ use crate::agent::{AgentNotification, AgentRequest};
 use crate::error::RpcError;
 use crate::jsonrpc::{Method, NotificationMethod, RpcNotification, RpcRequest, RpcResponse};
 use crate::terminal::{TerminalCommand, TerminalEvent};
-use crate::ui::{UiNotification, UiRequest};
+use crate::ui::{PushPayload, UiNotification, UiRequest};
 use crate::version::{AGENT_PROTOCOL_VERSION, ProtocolVersion, UI_PROTOCOL_VERSION};
 
 /// The command that regenerates the checked-in TypeScript.
@@ -354,10 +354,11 @@ pub fn generate() -> Result<BTreeMap<PathBuf, String>, TsExportError> {
             methods: UiRequest::specs(),
             notifications: UiNotification::specs(),
         }],
-        // The terminal streams' text frames (`/api/stream/terminal/…`).
+        // The terminal streams' text frames (`/api/stream/terminal/…`) and the Web Push payload.
         |c| {
             c.visit::<TerminalCommand>();
             c.visit::<TerminalEvent>();
+            c.visit::<PushPayload>();
         },
         &[(
             "UI_PROTOCOL_VERSION",

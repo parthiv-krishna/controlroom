@@ -38,8 +38,10 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(caches.match(request).then((hit) => hit || fetch(request)));
 });
 
-// Payload: { title?, body?, session_id, name?, machine?, state? } (`machine`: the primary
-// workspace's machine name).
+// Payload: the protocol's PushPayload: { session_id, profile_id, state, url } plus
+// { kind: 'session', name, machine } (`machine`: the primary workspace's machine name), or
+// { kind: 'private', profile } for a private profile (metadata only).
+const STATE_LABELS = { approval: 'Needs you', question: 'Question', problem: 'Failed', finished: 'Finished' };
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -47,10 +49,12 @@ self.addEventListener('push', (event) => {
   } catch {
     data = { body: event.data && event.data.text() };
   }
-  const title = data.title || data.name || 'controlroom';
+  const isPrivate = data.kind === 'private';
+  const title = (isPrivate ? data.profile : data.name) || 'controlroom';
+  const body = isPrivate ? STATE_LABELS[data.state] || '' : [data.machine, data.state].filter(Boolean).join(' · ');
   event.waitUntil(
     self.registration.showNotification(title, {
-      body: data.body || [data.machine, data.state].filter(Boolean).join(' · '),
+      body: data.body || body,
       tag: data.session_id || undefined,
       data,
       icon: inScope('icon.svg'),

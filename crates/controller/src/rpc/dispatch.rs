@@ -24,7 +24,7 @@ use super::{
     Conn, Reply, board, keys, machines, passthrough, people, reply, sandbox, schedules, state,
     subscriptions,
 };
-use crate::errors::{call_error, internal, not_found, store_error};
+use crate::errors::{call_error, internal, not_found, store_error, unsupported};
 use crate::hub::Focus;
 use crate::store::NewTask;
 
@@ -58,6 +58,14 @@ pub(super) async fn dispatch(
         UiRequest::KeysGenerate(p) => reply(keys::generate(conn, p)?),
         UiRequest::KeysImport(p) => reply(keys::import(conn, p)?),
         UiRequest::KeysDelete(p) => reply(keys::delete(conn, p)?),
+
+        UiRequest::ProfilesList(_)
+        | UiRequest::ProfilesCreate(_)
+        | UiRequest::ProfilesUpdate(_)
+        | UiRequest::ProfilesDelete(_)
+        | UiRequest::ProfilesMove(_) => Err(unsupported(format!(
+            "{method} is not supported by this controller yet"
+        ))),
 
         UiRequest::ProjectsCreate(p) => reply(board::projects_create(conn, &p.name, &p.color)?),
         UiRequest::ProjectsUpdate(p) => reply(board::projects_update(
@@ -251,6 +259,7 @@ mod tests {
             "doctor.report",
         ];
         let namespaces = [
+            "profiles.",
             "machines.",
             "keys.",
             "projects.",

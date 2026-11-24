@@ -3,7 +3,9 @@
 //! Session, workspace, queue, request, todo, job and settings commands go to the runtime (a
 //! `job.kill` here is the user's). The host bridge (`hostops.*`) is the controller's only;
 //! debug clients get `unsupported`. `agents.list` and `doctor.report` run here on blocking
-//! threads. `models.*` go to Settings › Models ([`crate::models`]). `sandbox.revoke` (session grants) answers `unsupported` until grants land.
+//! threads. `models.*` go to Settings › Models ([`crate::models`]). `sandbox.revoke` (session grants)
+//! answers `unsupported` until grants land, and `profiles.report` and `session.move` until
+//! profiles do.
 
 use std::sync::Arc;
 
@@ -116,7 +118,9 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         AgentdRequest::JobFollowMethod(p) => json(runtime.job_follow(p).await),
         AgentdRequest::JobUnfollow(p) => json(runtime.job_unfollow(p).await),
 
-        AgentdRequest::SandboxRevoke(_) => Err(RpcError::new(
+        AgentdRequest::SandboxRevoke(_)
+        | AgentdRequest::SessionMove(_)
+        | AgentdRequest::ProfilesReport(_) => Err(RpcError::new(
             ErrorData::Unsupported,
             format!("{method} is not available in this version"),
         )),

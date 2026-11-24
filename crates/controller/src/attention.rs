@@ -12,6 +12,7 @@ use controlroom_protocol::ids::RequestId;
 use controlroom_protocol::session::{
     Attention, Request, RequestState, RunOutcome, SessionState, SessionSummary,
 };
+use controlroom_protocol::ui::PushState;
 
 /// What a notification is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,12 +29,12 @@ pub(crate) enum AttentionKind {
 
 impl AttentionKind {
     /// The `state` shown in a push.
-    pub(crate) fn as_str(self) -> &'static str {
+    pub(crate) fn push_state(self) -> PushState {
         match self {
-            AttentionKind::Approval => "approval",
-            AttentionKind::Question => "question",
-            AttentionKind::Problem => "problem",
-            AttentionKind::TurnEnd => "finished",
+            AttentionKind::Approval => PushState::Approval,
+            AttentionKind::Question => PushState::Question,
+            AttentionKind::Problem => PushState::Problem,
+            AttentionKind::TurnEnd => PushState::Finished,
         }
     }
 }

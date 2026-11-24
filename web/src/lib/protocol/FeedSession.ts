@@ -3,6 +3,7 @@ import type { Attention } from "./Attention";
 import type { AttentionRollup } from "./AttentionRollup";
 import type { ContextUsage } from "./ContextUsage";
 import type { LiveWork } from "./LiveWork";
+import type { ProfileId } from "./ProfileId";
 import type { ProjectId } from "./ProjectId";
 import type { QueueStatus } from "./QueueStatus";
 import type { Request } from "./Request";
@@ -64,6 +65,11 @@ closed_at: UnixMillis | null,
  * The parent session, for subagents.
  */
 parent_id: SessionId | null, 
+/**
+ * The session's profile, set at creation (a subagent's is its parent's) and changed only by
+ * moving the session. `null` from an agent daemon before profiles.
+ */
+profile_id: ProfileId | null, 
 /**
  * The state.
  */

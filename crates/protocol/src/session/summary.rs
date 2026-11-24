@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::ids::{Seq, SessionId, UnixMillis};
+use crate::ids::{ProfileId, Seq, SessionId, UnixMillis};
 use crate::session::{AutoContinueStatus, Request, SandboxInfo, Shell, Workspace};
 use crate::timeline::TokenUsage;
 
@@ -217,6 +217,10 @@ pub struct SessionSummary {
     pub closed_at: Option<UnixMillis>,
     /// The parent session, for subagents.
     pub parent_id: Option<SessionId>,
+    /// The session's profile, set at creation (a subagent's is its parent's) and changed only by
+    /// moving the session. `null` from an agent daemon before profiles.
+    #[serde(default)]
+    pub profile_id: Option<ProfileId>,
     /// The state.
     pub state: SessionState,
     /// How the last run ended.

@@ -686,6 +686,7 @@ impl Hub {
     pub(crate) fn snapshot(&self, st: &HubState) -> Result<StateSnapshot, RpcError> {
         let repo = self.repo();
         Ok(StateSnapshot {
+            profiles: Vec::new(),
             machines: st.machines.values().map(MachineEntry::view).collect(),
             sessions: st.global.feed(),
             overlaps: st.global.overlaps.clone(),

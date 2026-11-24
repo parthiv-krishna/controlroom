@@ -577,6 +577,7 @@ impl Core {
                 .map_or(data.created_at, |s| s.updated_at),
             closed_at: data.closed_at,
             parent_id: data.parent_id,
+            profile_id: None,
             state,
             last_outcome: data.last_outcome,
             last_error: data.last_error.clone(),

@@ -2,6 +2,7 @@
 import type { Connectivity } from "./Connectivity";
 import type { ControllerId } from "./ControllerId";
 import type { MachineId } from "./MachineId";
+import type { ProfileId } from "./ProfileId";
 import type { ProtocolVersion } from "./ProtocolVersion";
 import type { RemotePath } from "./RemotePath";
 import type { Request } from "./Request";
@@ -124,4 +125,12 @@ machine_id: MachineId,
 /**
  * Since when it has been unreachable.
  */
-since: UnixMillis, } | { "kind": "unknown" };
+since: UnixMillis, } | { "kind": "policy_denied", 
+/**
+ * The profile whose policy applies (for a session command, the session's own).
+ */
+profile_id: ProfileId, 
+/**
+ * Why, for the user, e.g. "Not available in this profile".
+ */
+reason: string, } | { "kind": "unknown" };

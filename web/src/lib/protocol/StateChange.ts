@@ -7,6 +7,8 @@ import type { GrantId } from "./GrantId";
 import type { Machine } from "./Machine";
 import type { MachineId } from "./MachineId";
 import type { Overlap } from "./Overlap";
+import type { Profile } from "./Profile";
+import type { ProfileId } from "./ProfileId";
 import type { Project } from "./Project";
 import type { ProjectId } from "./ProjectId";
 import type { Rev } from "./Rev";
@@ -23,7 +25,15 @@ export type StateChange = {
 /**
  * The revision within the current epoch.
  */
-rev: Rev, } & ({ "kind": "machine_upserted", 
+rev: Rev, } & ({ "kind": "profile_upserted", 
+/**
+ * The profile.
+ */
+profile: Profile, } | { "kind": "profile_removed", 
+/**
+ * The profile.
+ */
+profile_id: ProfileId, } | { "kind": "machine_upserted", 
 /**
  * The machine.
  */

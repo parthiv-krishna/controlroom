@@ -12,7 +12,8 @@
 //!    ([`ClientRole`]; `controlroom-agentd ctl` uses the debug role).
 //! 2. The controller subscribes with `sessions.subscribe {since_rev}`, `hostops.subscribe`,
 //!    and `session.subscribe {id, since_seq}` per open session, and reports its machines with
-//!    `hostops.machines`. After a reconnect it resubscribes with the last `rev` / `head_seq`.
+//!    `hostops.machines` and its profiles' policies with `profiles.report`. After a reconnect it
+//!    resubscribes with the last `rev` / `head_seq`.
 //! 3. Mutating commands carry an `op_id`; repeating one returns the original result.
 //!
 //! The session-scoped command types, the `hello` types and the settings live here; the UI API
@@ -24,6 +25,7 @@ mod feeds;
 mod handshake;
 mod hostops;
 mod models;
+mod profiles;
 mod runtime;
 mod sessions;
 mod settings;
@@ -35,6 +37,7 @@ pub use feeds::*;
 pub use handshake::*;
 pub use hostops::*;
 pub use models::*;
+pub use profiles::*;
 pub use runtime::*;
 pub use sessions::*;
 pub use settings::*;
@@ -92,6 +95,8 @@ pub mod methods {
         SessionSetOption = "session.set_option" (SessionSetOptionParams) -> Ack;
         /// Change the session's sandbox level (restarts its agent and the agent's shells).
         SessionSetSandboxLevel = "session.set_sandbox_level" (SessionSetSandboxLevelParams) -> Ack;
+        /// Move a session to another profile (restarts a live agent; controller only).
+        SessionMove = "session.move" (SessionMoveParams) -> Ack;
         /// Open a terminal of the user's own (sandboxed or not) in a workspace.
         SessionTerminalOpen = "session.terminal_open" (TerminalOpenParams) -> Shell;
         /// End one of the user's terminals.
@@ -180,6 +185,9 @@ pub mod methods {
         HostOpsNotify = "hostops.notify" (HostOpsNotifyParams) -> Ack;
         /// Report the controller's machines (controller only).
         HostOpsMachines = "hostops.machines" (HostOpsMachinesParams) -> Ack;
+
+        /// Report every profile's policy (controller only).
+        ProfilesReport = "profiles.report" (ProfilesReportParams) -> Ack;
     }
 }
 

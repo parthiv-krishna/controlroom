@@ -120,7 +120,7 @@ async fn the_feed_shows_global_sessions_with_projects_and_overlaps() {
         .await;
     assert_eq!(
         phone.mirror.projects[web["id"].as_str().unwrap()],
-        json!({"id": web["id"], "name": "web", "color": "#a78bfa"})
+        json!({"id": web["id"], "name": "web", "color": "#a78bfa", "profile_id": null})
     );
 
     // Closing a session ends its overlap; deleting it removes it.

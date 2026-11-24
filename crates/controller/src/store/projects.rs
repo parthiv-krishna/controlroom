@@ -21,6 +21,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         id: parsed_col(row, 0)?,
         name: row.get(1)?,
         color: row.get(2)?,
+        profile_id: None,
     })
 }
 
@@ -47,6 +48,7 @@ impl<'a> Projects<'a> {
             id,
             name: name.to_owned(),
             color: color.to_owned(),
+            profile_id: None,
         })
     }
 

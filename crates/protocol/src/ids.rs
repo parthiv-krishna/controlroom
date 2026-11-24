@@ -164,6 +164,12 @@ ulid_id! {
     ControllerId
 }
 ulid_id! {
+    /// A profile: a tenant of one owner that owns machine entries, model accounts, projects,
+    /// tasks and sessions (see `docs/design/profiles-tenants.md`). Profiles are created and named
+    /// by the user; none is built in.
+    ProfileId
+}
+ulid_id! {
     /// The controller's machine record. Not the same thing as the daemon's own [`DaemonId`].
     MachineId
 }

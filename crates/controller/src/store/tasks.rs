@@ -50,6 +50,7 @@ fn map(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
         order: row.get(3)?,
         priority: enum_col(row, 4)?,
         project_ids: Vec::new(),
+        profile_id: None,
         notes: row.get(5)?,
         checklist: Vec::new(),
         links: Vec::new(),

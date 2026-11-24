@@ -218,6 +218,7 @@ fn create(
         workspaces,
         name,
         parent_id: None,
+        profile_id: None,
         sandbox_level,
         sandbox: None,
         prompt: (!first_prompt.is_empty()).then(|| InitialPrompt {

@@ -18,6 +18,11 @@ pub(crate) fn invalid_params(message: impl Into<String>) -> RpcError {
     RpcError::new(ErrorData::InvalidParams, message)
 }
 
+/// A declared method or option this controller doesn't implement yet.
+pub(crate) fn unsupported(message: impl Into<String>) -> RpcError {
+    RpcError::new(ErrorData::Unsupported, message)
+}
+
 /// A referenced controller object doesn't exist.
 pub(crate) fn not_found(resource: Resource, id: impl ToString) -> RpcError {
     let id = id.to_string();

@@ -13,7 +13,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::ids::{ControllerId, MachineId, RemotePath, SessionId, UnixMillis};
+use crate::ids::{ControllerId, MachineId, ProfileId, RemotePath, SessionId, UnixMillis};
 use crate::session::{Request, SessionState};
 use crate::ui::Connectivity;
 use crate::version::ProtocolVersion;
@@ -120,6 +120,8 @@ pub enum Resource {
     Provider,
     /// A subscription sign-in (`models.login_*`).
     SignIn,
+    /// A profile (UI API).
+    Profile,
     /// A resource kind this build doesn't know.
     #[serde(other)]
     Unknown,
@@ -282,6 +284,15 @@ pub enum ErrorData {
         /// Since when it has been unreachable.
         since: UnixMillis,
     },
+    /// UI and agent daemon APIs: a profile's policy refuses the command (a machine, model,
+    /// session or task outside the profile; sharing a private profile's machine; level off on
+    /// a shared machine). The message names only `profile_id`'s profile, never another one.
+    PolicyDenied {
+        /// The profile whose policy applies (for a session command, the session's own).
+        profile_id: ProfileId,
+        /// Why, for the user, e.g. "Not available in this profile".
+        reason: String,
+    },
     /// An error kind this build doesn't know, or a known kind with malformed fields. The
     /// error's `code` and `message` are still available.
     #[serde(other)]
@@ -325,6 +336,7 @@ impl ErrorData {
             ErrorData::Lost { .. } => -32021,
             ErrorData::ShellGone { .. } => -32022,
             ErrorData::ConnectionLost { .. } => -32023,
+            ErrorData::PolicyDenied { .. } => -32024,
         }
     }
 }

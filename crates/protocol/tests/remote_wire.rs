@@ -12,8 +12,8 @@ use controlroom_protocol::host::{
     self, FsEntry, FsEntryKind, HostNotification, HostOp, HostRequest, HostResult,
 };
 use controlroom_protocol::ids::{
-    CallId, Epoch, HostOpId, JobId, MachineId, OpId, ProjectId, SessionId, ShellId, SubscriptionId,
-    WorkspaceId,
+    CallId, Epoch, HostOpId, JobId, MachineId, OpId, ProfileId, ProjectId, SessionId, ShellId,
+    SubscriptionId, WorkspaceId,
 };
 use controlroom_protocol::session::{
     Attention, AttentionRollup, Availability, ContentPart, LiveWork, PromptOrigin, QueueStatus,
@@ -48,6 +48,11 @@ const WID: &str = "01HZY3K6W8Q9X2V4N7B5C1D3EB";
 const JID: &str = "01HZY3K6W8Q9X2V4N7B5C1D3EC";
 const EPOCH: &str = "01HZY3K6W8Q9X2V4N7B5C1D3ED";
 const PID: &str = "01HZY3K6W8Q9X2V4N7B5C1D3EE";
+const PRID: &str = "01HZY3K6W8Q9X2V4N7B5C1D3EF";
+
+fn prid() -> ProfileId {
+    PRID.parse().unwrap()
+}
 
 fn sid() -> SessionId {
     SID.parse().unwrap()
@@ -135,6 +140,7 @@ fn summary() -> SessionSummary {
         updated_at: UnixMillis(2_000),
         closed_at: None,
         parent_id: None,
+        profile_id: Some(prid()),
         state: SessionState::Working,
         last_outcome: Some(RunOutcome::Completed),
         last_error: None,
@@ -177,6 +183,7 @@ fn summary_json() -> Value {
         "updated_at": 2000,
         "closed_at": null,
         "parent_id": null,
+        "profile_id": PRID,
         "state": "working",
         "last_outcome": "completed",
         "last_error": null,
@@ -679,6 +686,7 @@ fn golden_agentd_session_create() {
             ],
             name: None,
             parent_id: None,
+            profile_id: Some(prid()),
             sandbox_level: None,
             sandbox: None,
             prompt: Some(InitialPrompt {
@@ -699,6 +707,7 @@ fn golden_agentd_session_create() {
                     {"machine_id": MID, "path": "~/src/api"},
                     {"machine_id": MID, "path": "~/src/web"}
                 ],
+                "profile_id": PRID,
                 "prompt": {
                     "content": [{"kind": "text", "text": "Run the tests."}],
                     "origin": {"kind": "user", "device": null}
@@ -834,6 +843,7 @@ fn golden_hostops_round_trip() {
                 },
                 epoch: Some(EPOCH.parse().unwrap()),
                 grace_s: 600,
+                profile_ids: vec![prid()],
             }],
         },
         json!({
@@ -842,7 +852,8 @@ fn golden_hostops_round_trip() {
                 "name": "devbox",
                 "availability": {"connectivity": {"state": "unreachable"}, "since": 77},
                 "epoch": EPOCH,
-                "grace_s": 600
+                "grace_s": 600,
+                "profile_ids": [PRID]
             }]
         }),
     );
@@ -995,6 +1006,7 @@ fn golden_ui_state_events() {
                             id: PID.parse().unwrap(),
                             name: "API".into(),
                             color: "#a78bfa".into(),
+                            profile_id: Some(prid()),
                         },
                     },
                 },
@@ -1013,7 +1025,7 @@ fn golden_ui_state_events() {
                         "session_ids": [SID, "01HZY3K6W8Q9X2V4N7B5C1D3F0"]
                     }]},
                     {"rev": 5, "kind": "project_upserted",
-                     "project": {"id": PID, "name": "API", "color": "#a78bfa"}}
+                     "project": {"id": PID, "name": "API", "color": "#a78bfa", "profile_id": PRID}}
                 ]
             }
         }),
@@ -1245,7 +1257,8 @@ fn method_names_are_unique() {
 
 #[test]
 fn ui_passes_through_every_session_scoped_agentd_method() {
-    // Agent daemon methods that are connection- or controller-level and never passed through.
+    // Agent daemon methods that are connection- or controller-level and never passed through
+    // (the UI moves sessions with `profiles.move`).
     let agentd_only = [
         "hello",
         "sessions.subscribe",
@@ -1254,6 +1267,8 @@ fn ui_passes_through_every_session_scoped_agentd_method() {
         "hostops.notify",
         "hostops.machines",
         "doctor.report",
+        "session.move",
+        "profiles.report",
     ];
     let ui: BTreeSet<_> = ui::UiRequest::METHODS.iter().copied().collect();
     for method in AgentdRequest::METHODS {

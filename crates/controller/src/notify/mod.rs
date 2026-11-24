@@ -12,8 +12,8 @@
 //!   the store before sending (released again if the send fails, so a later change retries).
 //! - **Focus:** a device with a visible client showing the session is skipped.
 //! - **Restarts:** waiting pushes are rebuilt from current attention (`pending`).
-//! - **Payloads** carry metadata only: the session id, the session's and its primary machine's
-//!   names, the attention kind, and a deep link. Never code, prompts or tool output.
+//! - **Payloads** ([`PushPayload`]) carry metadata only: the session id, the session's and its
+//!   primary machine's names, the attention kind, and a deep link. Never code, prompts or tool output.
 //! - Subscriptions the push service reports gone (404/410) are deleted.
 //! - **SSRF guard:** endpoints must be public `https` host names, are checked again at send
 //!   time, must resolve to public addresses, and redirects aren't followed (`endpoint`).
@@ -34,9 +34,8 @@ use std::time::Duration;
 use controlroom_protocol::UnixMillis;
 use controlroom_protocol::ids::{DeviceId, SessionId};
 use controlroom_protocol::session::SessionSummary;
-use controlroom_protocol::ui::NotificationPreferences;
+use controlroom_protocol::ui::{NotificationPreferences, PushContent, PushPayload};
 use futures::future::BoxFuture;
-use serde::Serialize;
 use tokio::sync::broadcast;
 use tokio::time::Instant;
 
@@ -99,20 +98,6 @@ impl PushConfig {
     }
 }
 
-/// The JSON payload of a push. The service worker builds the deep link from it.
-#[derive(Debug, Clone, Serialize)]
-struct Payload<'a> {
-    session_id: SessionId,
-    /// The session's display name.
-    name: String,
-    /// The primary workspace's machine name.
-    machine: String,
-    /// The attention kind.
-    state: &'a str,
-    /// Deep link relative to the app root.
-    url: String,
-}
-
 fn wanted(prefs: &NotificationPreferences, kind: AttentionKind) -> bool {
     match kind {
         AttentionKind::Approval | AttentionKind::Problem => prefs.attention,
@@ -152,13 +137,17 @@ impl Subject {
         }
     }
 
-    fn payload<'a>(&self, kind: AttentionKind) -> Payload<'a> {
-        Payload {
+    /// The push payload. Sessions have no profile yet, so every push shows the session.
+    fn payload(&self, kind: AttentionKind) -> PushPayload {
+        PushPayload {
             session_id: self.session_id,
-            name: truncate(&self.name),
-            machine: truncate(&self.machine),
-            state: kind.as_str(),
+            profile_id: None,
+            state: kind.push_state(),
             url: format!("#/s/{}", self.session_id),
+            content: PushContent::Session {
+                name: truncate(&self.name),
+                machine: truncate(&self.machine),
+            },
         }
     }
 }

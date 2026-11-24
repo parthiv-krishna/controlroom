@@ -18,7 +18,7 @@ use controlroom_protocol::ui::{
 };
 
 use super::{Conn, defaults_paths};
-use crate::errors::{invalid_params, not_found, store_error};
+use crate::errors::{invalid_params, not_found, store_error, unsupported};
 use crate::hub::Hub;
 
 /// `sandbox.defaults`.
@@ -51,6 +51,11 @@ pub(super) fn set(
                 .get(*project_id)
                 .map_err(store_error)?
                 .ok_or_else(|| not_found(Resource::Project, project_id))?;
+        }
+        DefaultsScope::Profile { .. } => {
+            return Err(unsupported(
+                "profile sandbox defaults are not supported yet",
+            ));
         }
         DefaultsScope::Unknown => return Err(invalid_params("unknown sandbox defaults scope")),
     }
@@ -96,7 +101,8 @@ pub(crate) fn defaults(
     let applies = |scope: &DefaultsScope| match scope {
         DefaultsScope::Machine { machine_id } => machines.contains(machine_id),
         DefaultsScope::Project { project_id } => projects.contains(project_id),
-        DefaultsScope::Unknown => false,
+        // Sessions have no profile yet.
+        DefaultsScope::Profile { .. } | DefaultsScope::Unknown => false,
     };
     let mut spec = SandboxSpec {
         level: SandboxLevel::Strict,

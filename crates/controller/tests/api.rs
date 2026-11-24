@@ -313,3 +313,52 @@ async fn revocation_closes_clients() {
     // The trusted laptop tab was closed too.
     assert_eq!(laptop.closed().await, Some(CloseReason::Unauthenticated));
 }
+
+/// Profiles are declared but not implemented yet: their methods and the profile sandbox scope
+/// answer `unsupported`, the feed has no profiles, and projects, tasks and sessions are created
+/// as before (an ignored `profile_id` included).
+#[tokio::test]
+async fn profile_methods_are_declared_but_unsupported() {
+    let setup = controller(None, None);
+    let mut a = ui(&setup.controller, "laptop").await;
+    let profile = "01HZY3K6W8Q9X2V4N7B5C1D3F1";
+    for (method, params) in [
+        ("profiles.list", json!({})),
+        (
+            "profiles.create",
+            json!({"name": "Book club", "color": "#f59e0b", "private": true}),
+        ),
+        (
+            "profiles.update",
+            json!({"profile_id": profile, "name": "Reading"}),
+        ),
+        ("profiles.delete", json!({"profile_id": profile})),
+        (
+            "profiles.move",
+            json!({"profile_id": profile, "dry_run": true}),
+        ),
+        (
+            "sandbox.set_defaults",
+            json!({"scope": {"kind": "profile", "profile_id": profile},
+                   "change": {"kind": "set_level", "level": "relaxed"}}),
+        ),
+    ] {
+        a.err(method, params, "unsupported").await;
+    }
+    let fresh = a.ok("state.subscribe", json!({"since": null})).await;
+    assert_eq!(fresh["snapshot"]["profiles"], json!([]));
+    let project = a
+        .ok(
+            "projects.create",
+            json!({"name": "app", "color": "#a78bfa", "profile_id": profile}),
+        )
+        .await;
+    assert_eq!(project["profile_id"], Value::Null);
+    let task = a
+        .ok(
+            "tasks.create",
+            json!({"title": "ship", "profile_id": profile}),
+        )
+        .await;
+    assert_eq!(task["profile_id"], Value::Null);
+}

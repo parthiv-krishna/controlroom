@@ -306,6 +306,7 @@ mod tests {
                 id: ProjectId::generate(),
                 name: (*name).into(),
                 color: "#000".into(),
+                profile_id: None,
             })
             .collect();
         let (s1, s2) = (SessionId::generate(), SessionId::generate());
@@ -316,6 +317,7 @@ mod tests {
             order: 0.0,
             priority: Priority::P2,
             project_ids: projects,
+            profile_id: None,
             notes: String::new(),
             checklist: Vec::new(),
             links,

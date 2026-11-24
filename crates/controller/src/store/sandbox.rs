@@ -20,9 +20,9 @@ fn scope_key(scope: &DefaultsScope) -> StoreResult<(&'static str, String)> {
     match scope {
         DefaultsScope::Machine { machine_id } => Ok(("machine", machine_id.to_string())),
         DefaultsScope::Project { project_id } => Ok(("project", project_id.to_string())),
-        DefaultsScope::Unknown => Err(StoreError::InvalidValue {
+        DefaultsScope::Profile { .. } | DefaultsScope::Unknown => Err(StoreError::InvalidValue {
             column: "sandbox_defaults.scope",
-            value: "unknown".into(),
+            value: format!("{scope:?}"),
         }),
     }
 }

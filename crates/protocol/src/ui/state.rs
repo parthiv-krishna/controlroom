@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::ids::{
-    DeviceId, Epoch, GrantId, MachineId, ProjectId, RemotePath, Rev, ScheduleId, SessionId,
-    SubscriptionId, TaskId,
+    DeviceId, Epoch, GrantId, MachineId, ProfileId, ProjectId, RemotePath, Rev, ScheduleId,
+    SessionId, SubscriptionId, TaskId,
 };
 use crate::session::SessionSummary;
-use crate::ui::{ContactGrant, Device, Machine, Project, Schedule, Task};
+use crate::ui::{ContactGrant, Device, Machine, Profile, Project, Schedule, Task};
 
 /// A session in the state feed: the agent daemon's summary plus its project membership.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -57,6 +57,9 @@ pub struct StateSubscribeParams {
 /// sessions' `requests`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct StateSnapshot {
+    /// Every profile, in `position` order (none on a fresh install).
+    #[serde(default)]
+    pub profiles: Vec<Profile>,
     /// Every machine.
     pub machines: Vec<Machine>,
     /// Every session.
@@ -92,6 +95,16 @@ pub struct StateSubscribeResult {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StateEvent {
+    /// A profile was created or changed.
+    ProfileUpserted {
+        /// The profile.
+        profile: Profile,
+    },
+    /// A profile was deleted (with its archived sessions; it held nothing else).
+    ProfileRemoved {
+        /// The profile.
+        profile_id: ProfileId,
+    },
     /// A machine was added or changed. Sessions with a workspace on it are upserted too when
     /// their workspace availability changes.
     MachineUpserted {

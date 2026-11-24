@@ -260,6 +260,7 @@ mod tests {
             },
             epoch,
             grace_s: 600,
+            profile_ids: Vec::new(),
         }
     }
 
