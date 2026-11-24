@@ -325,3 +325,18 @@ journalctl -u controlroom -u controlroom-agent -e
 - The database has no migrations yet: a server version with a different schema refuses to start
   ("delete the database"). Moving to it means removing `controlroom.sqlite` and adding the
   machines again; the daemons and their sessions on the hosts are unaffected.
+- **The profiles release starts fresh** (`docs/design/profiles-tenants.md`). Its first step
+  already bumps the web server's schema (the sandbox defaults rename), and the agent daemon's
+  store follows when profiles land. Before upgrading, stop both services and delete
+  `/var/lib/private/controlroom/controlroom.sqlite` and, once the agent daemon's schema changes,
+  `/var/lib/controlroom-agent/agent.sqlite` (that deletes every session and transcript). After
+  the upgrade:
+  - create the first profile (setup asks for one);
+  - add the machines again. The new database generates a new controlroom SSH key, so authorize
+    it on every host (the add-machine flow shows the install command); remove the old key from
+    `~/.ssh/authorized_keys` there;
+  - recreate projects, tasks, schedules and the sandbox defaults (Settings › Sandbox), and import
+    additional SSH keys again;
+  - devices sign in again and re-enable push.
+
+  Model accounts and keys (Settings › Models) live in the agent daemon's agent dir and stay.

@@ -91,8 +91,8 @@ pub struct ProfilesUpdateParams {
 }
 
 /// Params of `profiles.delete`. Only an empty profile can be deleted: one with machine entries,
-/// projects, tasks or open sessions is `invalid_state`, and so is the last profile while
-/// anything exists. Its sandbox defaults and model policy go with it.
+/// projects, tasks or open sessions is `invalid_state`. Its sandbox defaults and model policy go
+/// with it; deleting the last one returns to the fresh-install state (no profiles).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ProfilesDeleteParams {
     /// The profile.
