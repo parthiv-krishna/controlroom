@@ -235,8 +235,9 @@ export const notifyUser: Tool<NotifyParams, NotifyDetails> = {
   name: 'notify_user',
   label: 'Notify user',
   description:
-    "Show the user a short notice in the session's timeline (progress, a heads-up, a result " +
-    'worth seeing). It asks nothing; use ask_user for questions.',
+    "Show the user a short notice in the session's timeline; it asks nothing (questions: ask_user). " +
+    "warning and error also reach the user's phone: use them sparingly, not for a routine check " +
+    'that found nothing.',
   promptSnippet: 'Show the user a notice without asking anything',
   parameters: {
     type: 'object',
