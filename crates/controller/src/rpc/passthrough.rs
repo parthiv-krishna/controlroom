@@ -51,9 +51,10 @@ pub(crate) enum Fill {
 struct Entry {
     method: &'static str,
     fill: Fill,
-    /// Needs the agent daemon to know the machines as the UI shows them (it refuses a machine
-    /// it doesn't see connected): waits for the queued machine reports first.
-    machines: bool,
+    /// Needs the agent daemon to know the machines and profiles as the UI shows them (it refuses
+    /// a machine it doesn't see connected, and checks models against the reported policy):
+    /// waits for the queued machine and profile reports first.
+    reports: bool,
     /// May take long on the agent daemon (a provider test, pi's sign-in): the slow timeout.
     slow: bool,
     /// What to log with the device that made the call.
@@ -64,7 +65,7 @@ const fn plain(method: &'static str) -> Entry {
     Entry {
         method,
         fill: Fill::None,
-        machines: false,
+        reports: false,
         slow: false,
         audit: Audit::None,
     }
@@ -113,7 +114,7 @@ const fn terminal(method: &'static str) -> Entry {
 const TABLE: &[Entry] = &[
     fill("session.prompt", Fill::PromptOrigin),
     Entry {
-        machines: true,
+        reports: true,
         ..plain("session.workspace_add")
     },
     plain("session.workspace_remove"),
@@ -126,7 +127,11 @@ const TABLE: &[Entry] = &[
     plain("session.update"),
     plain("session.mark_read"),
     plain("session.mark_unread"),
-    plain("session.set_option"),
+    // The model is checked against the profile's current policy (A3).
+    Entry {
+        reports: true,
+        ..plain("session.set_option")
+    },
     Entry {
         fill: Fill::Sandbox,
         audit: Audit::SandboxLevel,
@@ -208,7 +213,7 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
     let mut params = object(params)?;
     fill_params(conn, entry.fill, &mut params)?;
     check_profile(conn, method, &params)?;
-    if entry.machines {
+    if entry.reports {
         conn.hub.outbound.barrier().await;
     }
     if entry.audit == Audit::Models {
