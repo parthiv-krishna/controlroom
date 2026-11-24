@@ -60,14 +60,14 @@ Everything else is a major change. The agent daemon and the controller deploy to
 ## 3. Session model (`session`, `agentd`)
 
 **`SessionSummary`** (`session::SessionSummary`; every session, fed by `sessions.subscribe`, sent whole on each change; preview throttled to 1/s):
-`id, name?, title?, workspaces[], shells[], created_at, updated_at, closed_at?, parent_id?, profile_id?, state, last_outcome?, last_error?, read_seq, last_turn_end_seq, unread, preview, attention?, rollup, context?, queue, requests[], todo?, live_work, options[], agent_live, sandbox, resumable`.
+`id, name?, title?, workspaces[], shells[], created_at, updated_at, closed_at?, parent_id?, profile_id?, state, last_outcome?, last_error?, read_seq, last_turn_end_seq, unread, preview, attention?, rollup, context?, queue, requests[], notices[], todo?, live_work, options[], agent_live, sandbox, resumable`.
 Sessions are global: no `machine_id`, no `cwd`; a session never goes stale with a machine, only its workspaces become unavailable.
 
 - `workspaces[]` (`Workspace`): `{id, machine_id, path, root?, primary, added_at, availability}`. `path` as given, `root` resolved by the host (`null` until opened), the first is `primary` (relative paths and new shells default to it). `availability` = `{connectivity: Connectivity, since}`: the controller's link to that host and since when it has been in that state (a new `since` while connected means a new connection).
 - `shells[]` (`Shell`): `{name, workspace_id, owner, sandbox, cwd, state, reset_pending, foreground?}`. `state`: `idle · running{call_id} · waiting_input{call_id} · gone`. `reset_pending`: the shell was reopened and lost its variables (the next result says so). `foreground`: the PTY's foreground process name, for the terminal's key pass-through. The UI shows one terminal tab per shell. `owner`: `agent · user` (the user's own terminals, architecture §22.5; `unknown` counts as the user's); `sandbox`: `workspace · unsandboxed` (only the user's). The summary lists both for the UI; the agent's `session.info` and `shell.list` only its own (`owner: agent`).
 - `state`: `starting · idle · working · awaiting_permission · awaiting_input · failed · dormant · interrupted · closed`.
 - `last_outcome` (`RunOutcome`): `completed · cancelled · failed · max_tokens · refusal · unknown`.
-- `attention` (server-owned): `approval` (blocking request) › `question` (lighter tier) › `problem` (failed, interrupted, auto-continue paused) › `unread`. `rollup` counts the same over descendants.
+- `attention` (server-owned): `approval` (blocking request) › `question` (lighter tier) › `problem` (failed, interrupted, auto-continue paused) › `notice` (an open agent notice) › `unread`. `rollup` counts the same over descendants.
 - `queue` (`QueueStatus`): `len, paused, auto_send, send_now_pending`. The items are in the detail.
 - `requests[]`: pending requests, including descendants' (`origin_child`).
 - `todo`: `{done, total (excl. skipped), auto_continue: on|off|paused|stalled|budget}`. `live_work`: `{jobs, children, asks, host_calls}` (`host_calls`: tool calls waiting for an unreachable host or for their late result).
@@ -108,7 +108,7 @@ Answers are `Response`: `choice {option_id, reason?}` · `answers {answers[]}` �
 | `session_message` | `message_id, direction, peer, text, reply_to?, expects_reply, outcome?` (delivered · queued · connection_lost · denied · expired), `late` |
 | `usage` | `scope, tokens {input, output, cache_read, cache_write}, cost?, context?` |
 | `compaction` / `retry` | `reason, phase, tokens_before?, tokens_after?, error?` / `attempt, max_attempts?, phase, delay_ms?, error?` |
-| `notice` / `error` / `session_info` | `level, text` / `text` / `title?, model?, thinking?, sandbox?` (`sandbox`: the new level after `session.set_sandbox_level`, made by the agent daemon) |
+| `notice` / `error` / `session_info` | `level, text, pinned?, dismissed? {by, at}` (pinned: the agent's warning or error, open until `notice.dismiss`) / `text` / `title?, model?, thinking?, sandbox?` (`sandbox`: the new level after `session.set_sandbox_level`, made by the agent daemon) |
 
 **Message origins.** The agent daemon sets `origin` on the user message of every line it writes, so a client can show machine-written input as a compact row tied to its source (the full text on expand). `MessageOrigin`, tagged by `kind`:
 
@@ -152,6 +152,7 @@ Lifecycle: `hello` first (else `hello_required`), then subscriptions. Disconnect
 | `session.terminal_open {id, workspace_id, sandbox, confirm, by?}` → `Shell` · `session.terminal_close {id, name}` | the user's own terminals (architecture §22.5): named `you@<workspace's default shell>[-<n>]`, private to the user (the agent's tools refuse them as `shell_gone`), never reopened; `unsandboxed` needs `confirm: true` (`invalid_params`); the workspace's machine must be connected. `terminal_close` refuses the agent's shells (`invalid_params`). Each is logged with `by` |
 | `queue.send_now {queue_id, interrupt?}` · `queue.edit` · `queue.remove` · `queue.reorder` · `queue.resume` | queue |
 | `request.respond {request_id, response, then?, by?}` | answer any request kind (including host sandbox approvals and `terminal_input`); first answer wins (`already_resolved` carries the winner) |
+| `notice.dismiss {id, item_id, by?}` | unpin an open agent notice (`summary.notices[]`), recorded with the device; the agent isn't told; dismissing again is a no-op |
 | `todo.add {texts[], index?, by?}` · `todo.update` · `todo.remove` · `todo.reorder` | shared todo list |
 | `job.list` · `job.logs {from_line?, max_lines?}` · `job.kill` · `job.follow {buffer_seconds?, pattern?, from?}` · `job.unfollow` | jobs on the workspaces' hosts (`job.logs` reads the log from its host) |
 | `sandbox.revoke {grant_id}` | remove a session grant |
@@ -230,7 +231,7 @@ Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.
 | `state.subscribe {since: {epoch, rev}?}` | aggregated feed (below) |
 | `session.subscribe {id, since_seq, raw_since?, timeline?}` · `unsubscribe` | as in the agent daemon API |
 | `session.create {workspaces[], name?, parent_id?, profile_id?, sandbox_level?, prompt?, task_ids?}` | the agent daemon's create (the controller fills `sandbox` from the workspaces' machines and the tasks' projects, the prompt `origin`, and `profile_id` when the machines name exactly one profile), then links the tasks (moving `backlog`/`todo` tasks to `doing`); idempotent under one `op_id` |
-| *pass-through* | `session.*` (incl. `workspace_add`, `workspace_remove`, `terminal_open`, `terminal_close`), `queue.*`, `request.respond`, `todo.*`, `job.*`, `sandbox.revoke`, `agents.list`, `settings.get`, `settings.set`, `models.*`: the agent daemon's params unchanged, no `machine_id` (the controller fills `by` with the connection's device and logs `models.*` changes with it, never their params, the user's terminals opened or closed, and session level changes; it fills `sandbox` of `session.resume`, `session.start_fresh` and `session.set_sandbox_level` with the session's refreshed defaults). The agent daemon unreachable → `timeout` |
+| *pass-through* | `session.*` (incl. `workspace_add`, `workspace_remove`, `terminal_open`, `terminal_close`), `queue.*`, `request.respond`, `notice.dismiss`, `todo.*`, `job.*`, `sandbox.revoke`, `agents.list`, `settings.get`, `settings.set`, `models.*`: the agent daemon's params unchanged, no `machine_id` (the controller fills `by` with the connection's device and logs `models.*` changes with it, never their params, the user's terminals opened or closed, and session level changes; it fills `sandbox` of `session.resume`, `session.start_fresh` and `session.set_sandbox_level` with the session's refreshed defaults). The agent daemon unreachable → `timeout` |
 | `fs.list {machine_id, path, include_files?}` · `doctor.report {machine_id?}` | a host's listing; a host's or (without `machine_id`) the server's checks |
 | `machines.add` → `add_confirm` · `confirm_host_key` · `remove` · `reconnect` · `upgrade` · `set_settings {name?, key?, auto_upgrade?, grace_s?, profile_ids?}` | machines (`remove` leaves sessions; their workspaces there become unavailable). Names are unique and contain no `:`, `/`, whitespace or control characters (agents write `machine:path`); `grace_s` (default 600, at most a week) is the tool-call grace reported to the agent daemon. `machines.add` and `add_confirm` take `profile_ids?` (omitted: the only profile) |
 | `keys.list` · `rotate` · `generate` · `import` · `delete` | SSH keys |
@@ -238,7 +239,7 @@ Lifecycle: `hello {device_id}`, `devices.register`, `state.subscribe`, `session.
 | `tasks.create` · `update` · `move` · `delete` · `link {task_id, session_id}` · `unlink` · `checklist_add` · `checklist_update` · `checklist_remove` | tasks (`project_ids`, `profile_id`, `links: [session_id]`, checklist); `tasks.create {profile_id?}` (required without projects unless there is one profile) |
 | `grants.revoke` | contact grants |
 | `devices.register` · `rename` · `remove` | devices (remove signs the device out) |
-| `notifications.preferences` · `set_preferences` · `subscribe` · `unsubscribe` | Web Push: the owner's `{attention, questions, turn_end, hold_while_active, delay_s, idle_s}` (defaults on, off, off, on, 30, 120; `delay_s` ≤ 3600, `idle_s` 60–3600) |
+| `notifications.preferences` · `set_preferences` · `subscribe` · `unsubscribe` | Web Push: the owner's `{attention, questions, turn_end, agent_notices, hold_while_active, delay_s, idle_s}` (defaults on, off, off, `warning_and_error` (or `error`, `off`), on, 30, 120; `delay_s` ≤ 3600, `idle_s` 60–3600) |
 | `schedules.create {session_id, …}` · `update` · `delete` · `run_now` | schedules (§8.1, capability `schedules`): `Schedule {session_id, spec: cron{expr}·interval{every_s ≥ 60}, timezone, message, enabled, if_busy, missed, next_run, pending_run, recent_runs[]}`; fired as `session.prompt` with `origin: schedule` and `op_id = <schedule id>:<due ms>` |
 | `profiles.list` · `create` · `update` · `delete` · `move` | profiles (tenants), §7a |
 | `sandbox.defaults` · `sandbox.set_defaults {scope: machine·project·profile, change}` | sandbox defaults (§11.6) |
@@ -272,7 +273,7 @@ A **profile** is a tenant of one owner: it owns machine entries, which model acc
   - a session without a profile (created while no profile was reported: a debug client, or a controller from before profiles) is unrestricted only while no profile is reported; once one is, it admits no account and no machine, and `session.create` without `profile_id` is `invalid_params`;
   - `session.move` refuses (`busy`) while a run is active or the agent is starting; a live agent restarts resumed (as for a level change), a stopped one gets the policy at its next start.
 - Errors: `policy_denied {profile_id, reason}`; `not_found {resource: profile}`.
-- **Push payload** (`ui::PushPayload`, in the web TypeScript set for the service worker): `{session_id, profile_id, state: approval·question·problem·finished, url}` plus, by `kind`, `session {name, machine}` or `private {profile}` (metadata only: the notification shows the profile's name and the attention kind).
+- **Push payload** (`ui::PushPayload`, in the web TypeScript set for the service worker): `{session_id, profile_id, state: approval·question·problem·finished·notice, url}` plus, by `kind`, `session {name, machine}` or `private {profile}` (metadata only: the notification shows the profile's name and the attention kind).
 
 ## 8. Agent API (`agent`)
 
@@ -287,7 +288,7 @@ Mutating calls carry `call_id` (pi's tool call id) as their idempotency key: a c
 | `hello {protocol_version, token, client_name}` | → `daemon_version`, `protocol_version`, `session_id`, `capabilities` |
 | `question.ask {call_id, title?, questions[]}` · `question.withdraw {call_id, question_id}` | non-blocking questions (`ask_user`) |
 | `todo.list` · `todo.add {call_id, texts[]}` · `todo.update {call_id, todo_id, text?, status?, reason?}` | → `{todos[]}`, attributed to the agent |
-| `notify {call_id, text, level?}` | a `notice` item in the timeline |
+| `notify {call_id, text, level?}` | a `notice` item in the timeline; a `warning` or `error` is pinned (`summary.notices[]`, attention `notice`, a push) until the user dismisses it |
 | `job.run {call_id, command, machine?, cwd?, timeout_s?, name?}` | → `{job_id, log_path}`: on `machine`'s workspace (default the primary), under its sandbox; `cwd` relative to that workspace root |
 | `job.follow {call_id, job_id, buffer_seconds?, pattern?, from?}` · `job.unfollow` · `job.status {job_id?}` · `job.kill` | jobs; the agent's own kill sends no exit wake |
 | `session.info` | → `SessionInfo {workspaces[WorkspaceInfo], shells[AgentShell]}` (`remote_tools`) |
@@ -340,7 +341,7 @@ The R1/R2 lanes removed the per-machine model:
 7. **Daemon-raised requests and job items in the timeline** have no transcript record: they sit at the transcript head when raised (`seq_from = seq_to = head`), and each change counts as changed after the head, so a client resuming with `since_seq = head` still receives it.
 8. **Sandbox approval options.** File access offers "Allow for this session" (nono remembers a granted path); commands and endpoints "Allow once" only.
 9. **Agent API transport.** A per-session socket plus a per-launch token: an agent can't even name another session.
-10. **Todo notices don't wake the agent**; answers, wakes and continuations do. `notify` only adds a timeline notice.
+10. **Todo notices don't wake the agent**; answers, wakes and continuations do. `notify` only adds a timeline notice (a warning or an error pinned until dismissed); a dismissal doesn't reach the agent.
 11. **Host routing is generic.** The design note sketched `request.raise` for host-raised requests and separate `hostops.output` / `hostops.waiting_input` methods. Instead the controller forwards every host notification with `hostops.notify` and the agent daemon raises the requests itself (it already maps workspaces to sessions), so the controller stays a router that understands no host method. Machine names, epochs and the grace come with `hostops.machines` (the design's `hostops.connectivity`).
 12. **`session.info` is its own notification** rather than part of `state`: it changes independently and carries instruction files, which shouldn't be resent on every todo change. It groups context files and skills per workspace (the design listed them flat with a `machine` field); the extension dedups shared parent files.
 13. **One `HostOp` for both APIs.** `bash.shell` is the shell's name in both; the host resolves it in the call's session (`<session>/<name>`), so the agent daemon only rewrites the machine into a workspace. Job ops share the enum but `host.call` refuses them.
