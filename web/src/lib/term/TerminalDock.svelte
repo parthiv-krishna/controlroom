@@ -156,19 +156,19 @@
     {#if st.open && opening}
       <div class="banner" role="status">Opening terminal…</div>
     {:else if st.open && cur}
-      {#if isUnsandboxed(cur)}
-        {@const where = whereOf(cur)}
-        <div class="banner unsandboxed" role="status">UNSANDBOXED: your terminal as {where.user ?? 'your SSH user'} on {where.machine}</div>
-      {/if}
-      {#if !isMine(cur) && cur.state.state === 'waiting_input'}
-        <div class="banner wait" role="status" title="Passwords aren't echoed">⌨ <b>Waiting for input</b></div>
-      {/if}
+      <!-- One status at a time: the link first (nothing can be typed until it is live), then what
+           the agent's shell waits for, then the unsandboxed mark (its red edge stays regardless). -->
       {#if status.state === 'detached'}
         <div class="banner" role="status">⚠ {status.reason}</div>
       {:else if status.state === 'ended'}
         <div class="banner" role="status" title={isMine(cur) ? undefined : "Reopens with the agent's next command"}>{status.reason} <button class="btn xs" onclick={() => xterm?.reconnect()}>Reconnect</button></div>
       {:else if STATUS[status.state]}
         <div class="banner" role="status">{STATUS[status.state]}</div>
+      {:else if !isMine(cur) && cur.state.state === 'waiting_input'}
+        <div class="banner wait" role="status" title="Passwords aren't echoed">⌨ <b>Waiting for input</b></div>
+      {:else if isUnsandboxed(cur)}
+        {@const where = whereOf(cur)}
+        <div class="banner unsandboxed" role="status">UNSANDBOXED: your terminal as {where.user ?? 'your SSH user'} on {where.machine}</div>
       {/if}
       {#if fg}
         <div class="meta small" class:pass={passesKeys(fg)} title="Ctrl-\ then a key always goes to the terminal">
