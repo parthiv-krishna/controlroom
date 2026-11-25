@@ -16,7 +16,9 @@ test('a link blip mid-command pauses the call; the result arrives once', async (
 
   // Detected by the keepalives; the session keeps working, only devbox's calls wait.
   await expect(machineBanner(page, 'devbox')).toContainText('unreachable', { timeout: 180_000 });
-  await expect(header(page).getByLabel('Workspaces').locator('[data-workspace]').first()).toHaveClass(/\baway\b/);
+  const chip = header(page).getByRole('button', { name: /^2 workspaces/ });
+  await expect(chip).toHaveAccessibleName('2 workspaces, 1 unavailable');
+  await expect(chip.locator('.dot').first()).not.toHaveClass(/\bconnected\b/);
   await expect(header(page).locator('.status')).toHaveText('Working');
   await expect(slow).toHaveClass(/s-running/);
   await step('restore');

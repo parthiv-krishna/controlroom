@@ -296,7 +296,8 @@ def auto_upgrade() -> None:
 
 
 def workspaces() -> None:
-    """A session on both machines: files, named shells and sandboxes on each."""
+    """A session on devbox adds a workspace on buildbox (its ⋯ menu), then works on both:
+    files, named shells and sandboxes on each."""
     mock(
         tool("call_read", "read", {"path": "devbox:notes.txt"}),
         tool("call_edit", "edit", {"path": "buildbox:app.js", "edits": [{"oldText": "'v1'", "newText": "'v2'"}]}),
@@ -323,6 +324,8 @@ def workspaces() -> None:
     system = text(first["messages"][0])
     assert "devbox:~/work/api/AGENTS.md" in system and "make check" in system, system
     assert "<workspaces>" in system, system
+    assert 'buildbox:~/work/web (shell "buildbox")' in system, "the added workspace is listed"
+    assert "The user added the workspace buildbox:~/work/web" in json.dumps(first["messages"]), "its notice"
     assert "remote notes" in tool_result("call_read")
     assert "'v2'" in buildbox.succeed(f"cat {WEB}/app.js")
     assert f"{API}/src" in tool_result("call_cd")
