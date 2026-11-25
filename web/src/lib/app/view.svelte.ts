@@ -46,6 +46,8 @@ export type Modal =
   | { kind: 'move'; preset: MovePreset }
   | { kind: 'start-fresh'; session: SessionRef }
   | { kind: 'link-tasks'; session: SessionRef }
+  /** Another workspace for an existing session. */
+  | { kind: 'add-workspace'; session: SessionRef }
   /** The session's jobs, `job` open. */
   | { kind: 'jobs'; session: SessionRef; job: string | null }
   | { kind: 'task'; id: TaskId };

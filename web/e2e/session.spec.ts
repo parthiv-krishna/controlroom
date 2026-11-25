@@ -139,20 +139,11 @@ test('a question with several parts is answered in one go', async ({ page }) => 
   });
 });
 
-test('session header: every workspace with its availability, and the overlap warning', async ({ page }) => {
-  await start(page, S.auth);
-  const header = page.getByRole('banner');
-  const workspaces = header.getByLabel('Workspaces');
-  await expect(workspaces.locator('[data-workspace]')).toHaveText([/buildbox:~\/src\/acme-api/, /devbox:~\/src\/acme-web/]);
-  // Another open session works in the same directory: a warning, with a link to it.
-  await expect(workspaces.locator('[data-overlap]')).toHaveAttribute('title', /^buildbox:~\/src\/acme-api is shared with upgrade tokio to 1.47/);
-  await workspaces.locator('[data-overlap]').getByRole('button', { name: 'Shared with upgrade tokio to 1.47' }).click();
-  await workspaces.getByRole('dialog', { name: 'Shared directory' }).getByRole('button', { name: 'upgrade tokio to 1.47' }).click();
-  await expect(page.getByRole('option', { name: /upgrade tokio to 1.47/ })).toHaveAttribute('aria-selected', 'true');
-
-  // A workspace on an unreachable machine: the session keeps its state, the workspace waits.
+// The workspaces chip and its popover: e2e/workspaces.spec.ts.
+test('a workspace on an unreachable machine: the session keeps its state, the workspace waits', async ({ page }) => {
   await start(page, S.dedupe);
-  await expect(page.getByRole('banner').locator('[data-workspace]').first()).toContainText(/gpubox:~\/data\/dedupe\s*unreachable since/);
+  await page.getByRole('banner').getByRole('button', { name: '2 workspaces, 1 unavailable' }).click();
+  await expect(page.getByRole('dialog', { name: 'Session workspaces' }).locator('[data-workspace]').first()).toContainText(/gpubox:~\/data\/dedupe\s*primary\s*unreachable since/);
   await expect(page.locator('[data-machine-banner="gpubox"]')).toHaveAttribute('title', 'Tool calls there wait up to 10m');
   await expect(page.getByRole('banner').getByText('Needs approval')).toBeVisible();
 });

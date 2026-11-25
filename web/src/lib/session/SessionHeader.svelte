@@ -1,8 +1,9 @@
 <script lang="ts">
   // The session header, two lines. First: the editable title (it shrinks last), status and a ⋯ menu
-  // (schedules, jobs, link to task, mark read/unread, raw, archive). Second, wrapping: its workspaces
-  // (`machine:path` pills with each machine's availability and a ⚠ when another open session shares
-  // the directory), badges, options, parent and task chips, and the usage statusline. With several
+  // (schedules, jobs, link to task, + workspace, mark read/unread, raw, archive). Second, wrapping:
+  // its workspaces (one `machine:path` pill with its availability and a ⚠ when another open session
+  // shares the directory; several collapse into one chip whose popover lists and removes them),
+  // badges, options, parent and task chips, and the usage statusline. With several
   // profiles the second line starts with the session's profile chip (it leads to the profile's ∗),
   // and ⋯ offers "Move to profile…".
   import { useApp } from '../app/app.svelte';
@@ -36,6 +37,9 @@
     { label: schedules ? `Schedules (${schedules})` : 'Schedules', checked: schedulesShown, run: () => (app.view.panels['schedules:' + key] = !schedulesShown) },
     ...(jobs ? [{ label: `Jobs (${jobs})`, aria: `Background jobs (${jobs})`, run: () => (app.view.modal = { kind: 'jobs', session: { id: s.id }, job: null }) }] : []),
     { label: tasks.length ? 'Tasks…' : 'Link to task…', run: () => (app.view.modal = { kind: 'link-tasks', session: { id: s.id } }) },
+    ...(s.state !== 'closed'
+      ? [{ label: '+ Workspace', aria: 'Add workspace', disabled: !online, run: () => (app.view.modal = { kind: 'add-workspace', session: { id: s.id } }) }]
+      : []),
     s.unread
       ? { label: 'Mark read', disabled: !online, run: () => app.markRead(s) }
       : { label: 'Mark unread', disabled: !online, run: () => void app.client.call('session.mark_unread', onSession(s)) },

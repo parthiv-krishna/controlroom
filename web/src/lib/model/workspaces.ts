@@ -54,17 +54,53 @@ export const isAvailable = (w: Workspace): boolean => w.availability.connectivit
 /** The workspaces whose machine can't be reached now. */
 export const unavailable = (s: HasWorkspaces): Workspace[] => s.workspaces.filter((w) => !isAvailable(w));
 
+/** "connected", "unreachable since 2h ago", "needs attention since 5m ago", … */
+export function availabilityState(w: Workspace, now = Date.now()): string {
+  const state = w.availability.connectivity.state;
+  if (state === 'connected') return 'connected';
+  const what = state === 'action_required' ? 'needs attention' : state === 'incompatible' ? 'outdated' : state;
+  return `${what} since ${ago(w.availability.since, now)}`;
+}
+
 /** "devbox connected", "devbox unreachable since 2h ago", … */
 export function availabilityText(w: Workspace, machines: ReadonlyMap<MachineId, Machine>, now = Date.now()): string {
-  const name = machines.get(w.machine_id)?.name ?? 'a removed machine';
-  const state = w.availability.connectivity.state;
-  if (state === 'connected') return `${name} connected`;
-  const what = state === 'action_required' ? 'needs attention' : state === 'incompatible' ? 'outdated' : state;
-  return `${name} ${what} since ${ago(w.availability.since, now)}`;
+  return `${machines.get(w.machine_id)?.name ?? 'a removed machine'} ${availabilityState(w, now)}`;
 }
 
 /** The overlaps a session is part of. */
 export const overlapsOf = (s: HasWorkspaces, overlaps: readonly Overlap[]): Overlap[] => overlaps.filter((o) => o.session_ids.includes(s.id));
+
+/** The other sessions that use a workspace's directory (from the server's overlaps). */
+export function sharedWith<T extends HasWorkspaces>(
+  s: HasWorkspaces,
+  w: Workspace,
+  overlaps: readonly Overlap[],
+  sessions: ReadonlyMap<SessionId, T>,
+  machines: ReadonlyMap<MachineId, Machine>,
+): T[] {
+  const where = wsLabel(w, machines);
+  const o = overlapsOf(s, overlaps).find((o) => o.machine_id === w.machine_id && dirLabel(o.machine_id, o.path, machines) === where);
+  return (o?.session_ids ?? []).filter((id) => id !== s.id).map((id) => sessions.get(id)).filter((x): x is T => !!x);
+}
+
+/** A directory as typed, with home as `~` and without a trailing slash (to compare with workspaces). */
+const typedDir = (path: string, user: string): string => normPath(path.trim().replace(/(.)\/+$/, '$1'), user);
+
+/** The sessions with a workspace in the directory `path` (as typed) on a machine. */
+export function sessionsAt<T extends HasWorkspaces>(sessions: readonly T[], machine: MachineId, path: string, user: string): T[] {
+  const want = typedDir(path, user);
+  if (!want) return [];
+  return sessions.filter((s) => s.workspaces.some((w) => w.machine_id === machine && normPath(w.root ?? w.path, user) === want));
+}
+
+/** The directories recently used on a machine (home as `~`), most recent first. */
+export function recentDirs<T extends HasWorkspaces & { updated_at: number }>(sessions: readonly T[], machine: MachineId, user: string, max = 5): string[] {
+  const dirs = sessions
+    .flatMap((s) => s.workspaces.filter((w) => w.machine_id === machine).map((w) => ({ at: s.updated_at, dir: normPath(w.root ?? w.path, user) })))
+    .sort((a, b) => b.at - a.at)
+    .map((x) => x.dir);
+  return [...new Set(dirs)].slice(0, max);
+}
 
 /** One run of text: plain, or a `machine:path` naming a known machine. */
 export interface PathRun {

@@ -1,12 +1,13 @@
 <script lang="ts">
   // The open modal: new session, new task, project, profile, move to profile, start fresh, link to
-  // tasks, task detail, jobs.
+  // tasks, add a workspace, task detail, jobs.
   import { newOpId, useApp } from '../app/app.svelte';
   import { displayName } from '../model/filters';
   import { TASK_COLUMNS } from '../model/tasks';
   import JobsSheet from '../session/JobsSheet.svelte';
   import TaskDetail from '../tasks/TaskDetail.svelte';
   import Modal from '../ui/Modal.svelte';
+  import AddWorkspace from './AddWorkspace.svelte';
   import NewSession from './NewSession.svelte';
   import NewTask from './NewTask.svelte';
   import ProjectEditor from './ProjectEditor.svelte';
@@ -51,6 +52,8 @@
       <button class="btn primary" disabled={!app.client.online} onclick={startFresh}><span class="kbd">↵</span> Start fresh</button>
     </div>
   </Modal>
+{:else if md?.kind === 'add-workspace' && session}
+  <AddWorkspace s={session} />
 {:else if md?.kind === 'jobs' && session}
   <JobsSheet s={session} jobs={app.detail(session)?.jobs ?? []} job={md.job} onclose={close} />
 {:else if md?.kind === 'link-tasks' && session}

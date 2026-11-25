@@ -37,6 +37,15 @@ describe('FixtureTransport', () => {
     await expect(t.request('keys.list', {})).rejects.toMatchObject({ data: { kind: 'unsupported' } });
   });
 
+  it("answers a call with a test's queued result or error, in order", async () => {
+    const t = new FixtureTransport(loadFixture(), { autoplay: false });
+    await open(t);
+    const denied = { kind: 'policy_denied', profile_id: 'p', reason: 'Not available in Orchard' } as const;
+    t.fail('session.workspace_remove', 'denied', denied);
+    await expect(t.request('session.workspace_remove', { op_id: 'o', id: 's', workspace_id: 'w' })).rejects.toMatchObject({ data: denied });
+    await expect(t.request('session.workspace_remove', { op_id: 'o2', id: 's', workspace_id: 'w' })).resolves.toEqual({});
+  });
+
   it('plays scripted events with the subscription ids it handed out', async () => {
     const fixture = loadFixture();
     const t = new FixtureTransport(fixture, { autoplay: false });

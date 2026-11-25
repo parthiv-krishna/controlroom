@@ -2,10 +2,11 @@
 // session details, canned query results and scripted feed events from a JSON fixture
 // (web/fixtures/), plus recorded session timelines (see fixture-timelines.ts). It holds no backend
 // logic: mutations are only recorded (and answered with an ack, or a canned result when the
-// fixture has one), and the feeds change only by script. Tests can queue the next result of a
-// method (`reply`), and send state changes and timeline ops of their own (`emitState`,
-// `emitSession`); calls of `held` methods (long polls) wait for one.
+// fixture has one), and the feeds change only by script. Tests can queue the next result (`reply`)
+// or error (`fail`) of a method, and send state changes and timeline ops of their own
+// (`emitState`, `emitSession`); calls of `held` methods (long polls) wait for one.
 import type {
+  ErrorData,
   SessionDetail,
   SessionEventsParams,
   StateChange,
@@ -98,9 +99,9 @@ export class FixtureTransport implements Transport {
   private readonly replays: Map<string, TimelineReplay>;
   private readonly liveTimers = new Map<string, ReturnType<typeof setTimeout> | null>();
   private stateSub: string | null = null;
-  /** Results queued by `reply`, and calls of held methods waiting for one. */
+  /** Results (or errors) queued by `reply` and `fail`, and calls of held methods waiting for one. */
   private readonly replies = new Map<UiMethod, unknown[]>();
-  private readonly waiting = new Map<UiMethod, ((result: unknown) => void)[]>();
+  private readonly waiting = new Map<UiMethod, ((outcome: unknown) => void)[]>();
   private next = 0;
   private played = 0;
   /** The last revision sent on the state feed. */
@@ -121,9 +122,13 @@ export class FixtureTransport implements Transport {
     if (this.state !== 'open') return Promise.reject(new ConnectionError('offline'));
     this.calls.push({ method, params });
     const queued = this.replies.get(method)?.shift();
+    if (queued instanceof RpcError) return Promise.reject(queued);
     if (queued !== undefined) return Promise.resolve(queued as Result<M>);
     if (this.fixture.held?.includes(method)) {
-      return new Promise((resolve) => this.waiting.set(method, [...(this.waiting.get(method) ?? []), resolve as (r: unknown) => void]));
+      return new Promise((resolve, reject) => {
+        const settle = (outcome: unknown) => (outcome instanceof RpcError ? reject(outcome) : resolve(outcome as Result<M>));
+        this.waiting.set(method, [...(this.waiting.get(method) ?? []), settle]);
+      });
     }
     return Promise.resolve().then(() => this.answer(method, params));
   }
@@ -174,9 +179,18 @@ export class FixtureTransport implements Transport {
 
   /** Answers the oldest waiting call of `method` with `result`, or queues it for the next call. */
   reply<M extends UiMethod>(method: M, result: Result<M>): void {
+    this.settle(method, result);
+  }
+
+  /** Fails the oldest waiting call of `method` with a typed error, or queues it for the next call. */
+  fail(method: UiMethod, message: string, data: ErrorData): void {
+    this.settle(method, new RpcError(-32000, message, data));
+  }
+
+  private settle(method: UiMethod, outcome: unknown): void {
     const waiter = this.waiting.get(method)?.shift();
-    if (waiter) waiter(result);
-    else this.replies.set(method, [...(this.replies.get(method) ?? []), result]);
+    if (waiter) waiter(outcome);
+    else this.replies.set(method, [...(this.replies.get(method) ?? []), outcome]);
   }
 
   /** Replaces a session's detail (e.g. its jobs), and sends it if the session is subscribed. */
@@ -293,6 +307,6 @@ const ACK_METHODS = new Set<UiMethod>([
   'tasks.delete', 'grants.revoke', 'devices.remove', 'schedules.delete', 'client.focus', 'client.activity', 'session.cancel',
   'session.close', 'session.reopen', 'session.resume', 'session.delete', 'session.update', 'session.set_option', 'session.set_sandbox_level',
   'queue.edit', 'queue.remove', 'queue.reorder', 'queue.resume', 'todo.remove', 'todo.reorder', 'sandbox.revoke',
-  'session.terminal_close', 'profiles.delete', 'notice.dismiss',
+  'session.terminal_close', 'session.workspace_remove', 'profiles.delete', 'notice.dismiss',
 ] satisfies AckMethod[]);
 const isAck = (method: UiMethod): boolean => ACK_METHODS.has(method);

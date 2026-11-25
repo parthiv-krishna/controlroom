@@ -9,19 +9,18 @@
   // with the profile; changing it resets the workspaces.
   import { newOpId, useApp } from '../app/app.svelte';
   import type { NewSessionPreset } from '../app/view.svelte';
-  import { RpcError, describeError } from '../api/errors';
+  import { describeError, unreachableRefusal } from '../api/errors';
   import { displayName } from '../model/filters';
   import { textContent } from '../model/misc';
   import { LEVELS, defaultLevel, levelLabel, looser } from '../model/sandbox';
-  import { connKind, connLabel, isLive } from '../model/status';
+  import { connLabel, isLive } from '../model/status';
   import { columnLabel } from '../model/tasks';
-  import { normPath } from '../model/workspaces';
+  import { sessionsAt } from '../model/workspaces';
   import type { MachineId, SandboxLevel, SandboxDefaults } from '../protocol';
   import Dropdown, { type Option } from '../ui/Dropdown.svelte';
   import Modal from '../ui/Modal.svelte';
-  import PathCombo from '../ui/PathCombo.svelte';
-  import StatusIcon from '../ui/StatusIcon.svelte';
   import TagInput, { type Suggestion } from '../ui/TagInput.svelte';
+  import WorkspacePicker from './WorkspacePicker.svelte';
 
   let { preset }: { preset: NewSessionPreset } = $props();
   const app = useApp();
@@ -64,31 +63,14 @@
   /** Machines that can't take a workspace now (the server refuses them). */
   const away = $derived(machineIds.map((id) => feed.machines.get(id)).filter((m) => !m || !isLive(m)));
 
-  const machineOptions = $derived<Option[]>(scoped.machineList.map((m) => ({ value: m.id, label: m.name, disabled: !isLive(m), hint: isLive(m) ? undefined : connLabel(m) })));
   const levelOptions = $derived<Option[]>([
     { value: 'default', label: `Defaults (${levelLabel(defaults)})` },
     ...LEVELS.map((l) => ({ value: l.value, label: l.label, hint: l.hint })),
   ]);
 
-  /** Directories recently used on a machine, most recent first. */
-  function recent(machine: MachineId): string[] {
-    const user = feed.machines.get(machine)?.user ?? '';
-    const dirs = scoped.sessions
-      .flatMap((s) => s.workspaces.filter((w) => w.machine_id === machine).map((w) => ({ at: s.updated_at, dir: normPath(w.root ?? w.path, user) })))
-      .sort((a, b) => b.at - a.at)
-      .map((x) => x.dir);
-    return [...new Set(dirs)].slice(0, 5);
-  }
-
   /** Open sessions (of any profile: a machine may be shared) that already use a row's directory. */
-  function sharing(r: Row): string[] {
-    const user = feed.machines.get(r.machine)?.user ?? '';
-    const want = normPath(r.path.trim().replace(/(.)\/+$/, '$1'), user);
-    if (!want) return [];
-    return app.all.sessions
-      .filter((s) => s.state !== 'closed' && s.workspaces.some((w) => w.machine_id === r.machine && normPath(w.root ?? w.path, user) === want))
-      .map(displayName);
-  }
+  const sharing = (r: Row): string[] =>
+    sessionsAt(app.all.sessions.filter((s) => s.state !== 'closed'), r.machine, r.path, feed.machines.get(r.machine)?.user ?? '').map(displayName);
 
   function addRow() {
     const used = new Set(rows.map((r) => r.machine));
@@ -130,11 +112,8 @@
 
   /** A refusal in the user's terms: which machine couldn't be reached. */
   function refusal(e: unknown): string {
-    if (e instanceof RpcError && e.data.kind === 'machine_unavailable') {
-      const id = e.data.machine_id;
-      return `${feed.machines.get(id)?.name ?? 'A machine'} can't be reached (${e.data.connectivity.state.replace(/_/g, ' ')}); the session wasn't created`;
-    }
-    return describeError(e);
+    const away = unreachableRefusal(e, feed.machines);
+    return away ? `${away}; the session wasn't created` : describeError(e);
   }
 
   async function create() {
@@ -170,10 +149,6 @@
   }
 </script>
 
-{#snippet machineIcon(o: Option)}
-  {@const m = feed.machines.get(o.value)}
-  {#if m}<StatusIcon kind={connKind(m)} />{/if}
-{/snippet}
 {#snippet profileIcon(o: Option)}
   <span class="pdot" style:background={app.profiles.find((p) => p.id === o.value)?.color}></span>
 {/snippet}
@@ -191,9 +166,7 @@
     {#each rows as r, i (r.key)}
       {@const shared = sharing(r)}
       <div class="ws" data-workspace={i}>
-        <Dropdown id="ns-machine-{i}" label="Machine {i + 1}" value={r.machine} options={machineOptions} icon={machineIcon} onchange={(v) => (r.machine = v)} />
-        <span class="colon">:</span>
-        <PathCombo id="ns-path-{i}" label="Directory {i + 1}" autofocus={i === 0} bind:value={r.path} machineId={r.machine} recent={recent(r.machine)} />
+        <WorkspacePicker bind:machine={r.machine} bind:path={r.path} {profile} n={i + 1} autofocus={i === 0} />
         {#if i === 0}
           <span class="prim" title="Relative paths and new shells default to the primary workspace">primary</span>
         {:else}
@@ -227,7 +200,6 @@
   .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
   .field > :global(.dd) { display: flex; }
   .ws { display: grid; grid-template-columns: minmax(110px, 0.35fr) auto minmax(0, 1fr) auto auto; align-items: center; gap: 6px; color: var(--fg); }
-  .colon { font: 13px var(--mono); color: var(--muted); }
   .pdot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .prim { font-size: 11px; color: var(--muted); padding: 0 6px; }
   .add { align-self: flex-start; }
@@ -235,5 +207,5 @@
   .badge { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px dashed var(--warn); color: var(--warn); }
   .badge.off { border: 1px solid var(--bad); color: var(--bad); font-weight: 650; }
   .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
-  @media (max-width: 760px) { .ws { grid-template-columns: 1fr auto; } .colon { display: none; } }
+  @media (max-width: 760px) { .ws { grid-template-columns: 1fr auto; } }
 </style>

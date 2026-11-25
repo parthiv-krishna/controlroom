@@ -1,6 +1,6 @@
 // Errors a call can fail with: a typed protocol error from the server (or a client-side timeout,
 // which the protocol also reports as `timeout`), or a lost/absent connection.
-import type { ErrorData, RpcError as WireError } from '../protocol';
+import type { ErrorData, Machine, MachineId, RpcError as WireError } from '../protocol';
 
 /** A JSON-RPC error. `data` is the typed kind; unknown kinds decode as `{ kind: 'unknown' }`. */
 export class RpcError extends Error {
@@ -32,6 +32,13 @@ export class ConnectionError extends Error {
     super(reason === 'offline' ? 'Not connected' : reason === 'lost' ? 'Connection lost' : 'Connection closed');
     this.name = 'ConnectionError';
   }
+}
+
+/** For a refusal because a machine can't be reached: "devbox can't be reached (unreachable)". */
+export function unreachableRefusal(e: unknown, machines: ReadonlyMap<MachineId, Machine>): string | null {
+  if (!(e instanceof RpcError) || e.data.kind !== 'machine_unavailable') return null;
+  const name = machines.get(e.data.machine_id)?.name ?? 'A machine';
+  return `${name} can't be reached (${e.data.connectivity.state.replace(/_/g, ' ')})`;
 }
 
 /** A short human message for a failed call (toasts, inline errors). */
