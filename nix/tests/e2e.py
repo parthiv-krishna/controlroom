@@ -325,7 +325,8 @@ def workspaces() -> None:
     assert "devbox:~/work/api/AGENTS.md" in system and "make check" in system, system
     assert "<workspaces>" in system, system
     assert 'buildbox:~/work/web (shell "buildbox")' in system, "the added workspace is listed"
-    assert "The user added the workspace buildbox:~/work/web" in json.dumps(first["messages"]), "its notice"
+    # Its notice is steered into the run (the latest request carries the whole conversation).
+    assert "The user added the workspace buildbox:~/work/web" in json.dumps(mock_request()["messages"]), "its notice"
     assert "remote notes" in tool_result("call_read")
     assert "'v2'" in buildbox.succeed(f"cat {WEB}/app.js")
     assert f"{API}/src" in tool_result("call_cd")
