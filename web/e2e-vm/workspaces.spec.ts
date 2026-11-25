@@ -25,7 +25,7 @@ test('a session on devbox adds a workspace on buildbox, then from Unassigned to 
   await chip.click();
   const rows = page.getByRole('dialog', { name: 'Session workspaces' }).locator('[data-workspace]');
   await expect(rows).toHaveText([/devbox:~\/work\/api\s*primary/, /buildbox:~\/work\/web/]);
-  await expect(rows.nth(1)).toContainText(/connected$/);
+  await expect(rows.nth(1)).toContainText(/\bconnected\s*$/);
   await chip.click();
   await expect(rows).toHaveCount(0);
 
