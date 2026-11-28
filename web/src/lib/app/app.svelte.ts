@@ -36,7 +36,7 @@ export class App {
   readonly accounts: Accounts;
   /** User input, reported in the background (failures stay silent) so pushes wait while the user is here. */
   private readonly heartbeat = new InputHeartbeat(() => {
-    this.client.request('client.activity', {}).catch(() => {});
+    this.client.fire('client.activity', {}, { queue: false });
   });
 
   /** Profiles in the user's order: none on a fresh install or from a server before profiles. */
@@ -295,9 +295,18 @@ export class App {
     if (this.view.current?.id === s.id) this.view.current = null;
   }
 
-  /** Marks everything up to the last turn's end as read. */
+  /** Marks everything up to the last turn's end as read (opening a session does it too). */
   markRead(s: FeedSession): void {
-    void this.client.call('session.mark_read', { ...onSession(s), seq: s.last_turn_end_seq });
+    this.client.fire('session.mark_read', { ...onSession(s), seq: s.last_turn_end_seq });
+  }
+
+  /**
+   * Relaunches the session's agent (a fresh launch: credentials, model access, defaults) and
+   * resumes it; a running turn stops, after a confirm.
+   */
+  async restartAgent(s: FeedSession): Promise<void> {
+    if (busy(s) && !(await this.dialogs.confirm({ title: 'Stop the turn and restart the agent?', ok: 'Restart', danger: true }))) return;
+    await this.client.call('session.restart', onSession(s));
   }
 
   /** Reports what this tab shows, for push deduplication and presence. The next input reports at
@@ -308,11 +317,8 @@ export class App {
     const showing = c && (this.desk || this.view.phoneDetail) && !this.view.settings;
     const visible = typeof document === 'undefined' || pageShown();
     this.heartbeat.reset();
-    void this.client.call('client.focus', {
-      device_id: this.client.device.id,
-      session_id: showing ? c.id : null,
-      visible,
-    });
+    // Stale once the connection is back: the next change (or the reconnect) reports again.
+    this.client.fire('client.focus', { device_id: this.client.device.id, session_id: showing ? c.id : null, visible }, { queue: false });
   }
 
   /** Reports user input: throttled, and only while the tab is shown. */

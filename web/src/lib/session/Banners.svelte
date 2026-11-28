@@ -1,8 +1,9 @@
 <script lang="ts">
   // Banners above the timeline: each machine of the session's workspaces that can't be reached
   // (unreachable, connecting, action required, outdated; the session keeps running, only tool
-  // calls there wait), asleep, interrupted, failed, archived, and a send-now waiting for a safe
-  // point.
+  // calls there wait), asleep, interrupted, failed, archived, a send-now waiting for a safe point,
+  // and stale credentials (the agent's requests fail and its credentials changed after it started:
+  // a restart gives it the current ones).
   import { useApp } from '../app/app.svelte';
   import { onSession } from '../app/app.svelte';
   import { ago, connLabel, duration } from '../model/status';
@@ -49,6 +50,11 @@
   <div class="banner">Archived {s.closed_at ? ago(s.closed_at) : ''}
     <button class="btn sm" disabled={!online} onclick={() => app.unarchive(s)}>Unarchive</button>
     <button class="btn sm danger" disabled={!online} onclick={() => app.remove(s)}>Delete…</button>
+  </div>
+{/if}
+{#if s.stale_credentials}
+  <div class="banner warn" role="status" title="The agent keeps the credentials it started with until it restarts">⚠ Credentials changed since this agent started.
+    <button class="btn sm primary" disabled={!online} onclick={() => app.restartAgent(s)}>Restart agent</button>
   </div>
 {/if}
 {#if s.queue.send_now_pending}

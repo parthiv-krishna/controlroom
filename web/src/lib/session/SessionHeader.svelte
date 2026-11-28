@@ -1,9 +1,9 @@
 <script lang="ts">
   // The session header, two lines. First: the editable title (it shrinks last), status and a ⋯ menu
-  // (schedules, jobs, link to task, + workspace, mark read/unread, raw, archive). Second, wrapping:
-  // its workspaces (one `machine:path` pill with its availability and a ⚠ when another open session
-  // shares the directory; several collapse into one chip whose popover lists and removes them),
-  // badges, options, parent and task chips, and the usage statusline. With several
+  // (schedules, jobs, link to task, + workspace, restart agent, mark read/unread, raw, archive).
+  // Second, wrapping: its workspaces (one `machine:path` pill with its availability and a ⚠ when
+  // another open session shares the directory; several collapse into one chip whose popover lists
+  // and removes them), badges, options, parent and task chips, and the usage statusline. With several
   // profiles the second line starts with the session's profile chip (it leads to the profile's ∗),
   // and ⋯ offers "Move to profile…".
   import { useApp } from '../app/app.svelte';
@@ -39,6 +39,9 @@
     { label: tasks.length ? 'Tasks…' : 'Link to task…', run: () => (app.view.modal = { kind: 'link-tasks', session: { id: s.id } }) },
     ...(s.state !== 'closed'
       ? [{ label: '+ Workspace', aria: 'Add workspace', disabled: !online, run: () => (app.view.modal = { kind: 'add-workspace', session: { id: s.id } }) }]
+      : []),
+    ...(s.state !== 'closed'
+      ? [{ label: 'Restart agent', hint: 'Relaunch with the current credentials, model access and defaults', disabled: !online || s.state === 'starting', run: () => void app.restartAgent(s) }]
       : []),
     s.unread
       ? { label: 'Mark read', disabled: !online, run: () => app.markRead(s) }
