@@ -231,6 +231,7 @@ export type * from "./SessionMarkReadParams";
 export type * from "./SessionOpParams";
 export type * from "./SessionOption";
 export type * from "./SessionPromptParams";
+export type * from "./SessionRestartParams";
 export type * from "./SessionResumeParams";
 export type * from "./SessionSetOptionParams";
 export type * from "./SessionSetSandboxLevelParams";

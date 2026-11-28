@@ -146,4 +146,11 @@ sandbox: SandboxInfo,
 /**
  * Whether the agent session can be reattached after it stops.
  */
-resumable: boolean, };
+resumable: boolean, 
+/**
+ * The running agent's model requests failed at the connection level, and the credentials
+ * of its model's provider (Settings › Models) or its profile's model policy changed after
+ * it started: it still has its launch's credential routes, and a restart
+ * (`session.restart`) gives it the current ones. Cleared when the agent next starts.
+ */
+stale_credentials: boolean, };

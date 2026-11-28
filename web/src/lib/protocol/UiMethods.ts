@@ -87,6 +87,7 @@ import type { SessionEventsParams } from "./SessionEventsParams";
 import type { SessionMarkReadParams } from "./SessionMarkReadParams";
 import type { SessionOpParams } from "./SessionOpParams";
 import type { SessionPromptParams } from "./SessionPromptParams";
+import type { SessionRestartParams } from "./SessionRestartParams";
 import type { SessionResumeParams } from "./SessionResumeParams";
 import type { SessionSetOptionParams } from "./SessionSetOptionParams";
 import type { SessionSetSandboxLevelParams } from "./SessionSetSandboxLevelParams";
@@ -363,6 +364,11 @@ export type UiMethods = {
    * Pass-through: start a new agent session.
    */
   "session.start_fresh": { params: SessionStartFreshParams, result: StartFreshResult },
+  /**
+   * Pass-through: relaunch a session's agent and resume it (`sandbox` is filled in;
+   * logged with the device).
+   */
+  "session.restart": { params: SessionRestartParams, result: Ack },
   /**
    * Pass-through: delete a session.
    */

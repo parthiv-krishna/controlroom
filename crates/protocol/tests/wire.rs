@@ -175,6 +175,7 @@ fn summary() -> SessionSummary {
             grants: vec![],
         },
         resumable: true,
+        stale_credentials: false,
     }
 }
 
@@ -264,7 +265,8 @@ fn summary_json() -> Value {
             "looser_than_default": true,
             "grants": []
         },
-        "resumable": true
+        "resumable": true,
+        "stale_credentials": false
     })
 }
 

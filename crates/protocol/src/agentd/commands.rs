@@ -92,6 +92,25 @@ pub struct SessionResumeParams {
     pub sandbox: Option<SandboxSpec>,
 }
 
+/// Params of `session.restart`: relaunch the session's agent and resume its conversation. The
+/// launch is a fresh one (agent dir, credential routes, the profile's model policy and
+/// defaults), so changes that only apply at launch take effect. A live agent stops first (a
+/// running run stops with it, as for a sandbox level change); a stopped one starts.
+///
+/// `invalid_state` for a closed session; `busy` while the agent is starting or restarting;
+/// `not_resumable` when the agent can't resume its session (start fresh instead).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SessionRestartParams {
+    /// Idempotency key.
+    pub op_id: OpId,
+    /// The session.
+    pub id: SessionId,
+    /// Refreshed sandbox defaults to restart with; absent keeps the current ones. In the UI API
+    /// the controller always fills it, as for `session.resume`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<SandboxSpec>,
+}
+
 /// Params of `session.start_fresh`: a new agent session in the same controlroom session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct SessionStartFreshParams {

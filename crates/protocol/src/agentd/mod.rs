@@ -83,6 +83,9 @@ pub mod methods {
         SessionResume = "session.resume" (SessionResumeParams) -> Ack;
         /// Start a new agent session in the same controlroom session.
         SessionStartFresh = "session.start_fresh" (SessionStartFreshParams) -> StartFreshResult;
+        /// Relaunch a session's agent (a fresh launch: credentials, model policy, defaults) and
+        /// resume its conversation; a running run stops.
+        SessionRestart = "session.restart" (SessionRestartParams) -> Ack;
         /// Delete a session, its transcript and its workspaces' state on the hosts.
         SessionDelete = "session.delete" (SessionOpParams) -> Ack;
         /// Rename a session or change its queue and auto-continue settings.

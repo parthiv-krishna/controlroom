@@ -204,6 +204,9 @@ pub mod methods {
         SessionResume = "session.resume" (SessionResumeParams) -> Ack;
         /// Pass-through: start a new agent session.
         SessionStartFresh = "session.start_fresh" (SessionStartFreshParams) -> StartFreshResult;
+        /// Pass-through: relaunch a session's agent and resume it (`sandbox` is filled in;
+        /// logged with the device).
+        SessionRestart = "session.restart" (SessionRestartParams) -> Ack;
         /// Pass-through: delete a session.
         SessionDelete = "session.delete" (SessionOpParams) -> Ack;
         /// Pass-through: rename a session or change its settings.
