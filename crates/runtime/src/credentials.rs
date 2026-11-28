@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use controlroom_drivers::{DriverEvent, FoldOut, MODEL_OPTION, model_provider};
 use controlroom_protocol::ids::{ProfileId, SessionId, UnixMillis};
 use controlroom_protocol::session::{OptionControl, RunOutcome};
-use controlroom_protocol::timeline::{ItemBody, TimelineOp};
+use controlroom_protocol::timeline::{ItemBody, RetryPhase, TimelineOp};
 use serde::{Deserialize, Serialize};
 
 use crate::core::Core;
@@ -86,13 +86,17 @@ pub(crate) fn is_connection_error(text: &str) -> bool {
 }
 
 /// Notes in `process` what a folded record says about model requests: a run or a retry that
-/// failed at the connection level sets the flag, a run that completed clears it.
+/// failed at the connection level sets the flag (a retry that got through doesn't), a run that
+/// completed clears it.
 pub(crate) fn observe(process: &mut Process, out: &FoldOut) {
     for op in &out.ops {
         if let TimelineOp::Upsert { item } = op
             && let ItemBody::Retry {
-                error: Some(error), ..
+                error: Some(error),
+                phase,
+                ..
             } = &item.body
+            && *phase != RetryPhase::Succeeded
             && is_connection_error(error)
         {
             process.connection_failed = true;
@@ -182,6 +186,66 @@ mod tests {
         assert!(is_connection_error("connect ECONNREFUSED 127.0.0.1:443"));
         assert!(!is_connection_error("401 invalid x-api-key"));
         assert!(!is_connection_error("503 service unavailable"));
+    }
+
+    fn retry(phase: RetryPhase, error: &str) -> FoldOut {
+        let item = controlroom_protocol::timeline::TimelineItem {
+            id: controlroom_protocol::ids::ItemId::new("retry-1"),
+            seq_from: controlroom_protocol::Seq(1),
+            seq_to: controlroom_protocol::Seq(1),
+            actor: controlroom_protocol::timeline::Actor::Root,
+            ts: UnixMillis(1),
+            streaming: false,
+            body: ItemBody::Retry {
+                attempt: 1,
+                max_attempts: Some(3),
+                phase,
+                delay_ms: None,
+                error: Some(error.into()),
+            },
+        };
+        FoldOut {
+            ops: vec![TimelineOp::Upsert {
+                item: Box::new(item),
+            }],
+            events: Vec::new(),
+        }
+    }
+
+    fn settled(outcome: RunOutcome, error: Option<&str>) -> FoldOut {
+        FoldOut {
+            ops: Vec::new(),
+            events: vec![DriverEvent::RunSettled {
+                outcome,
+                error: error.map(str::to_owned),
+            }],
+        }
+    }
+
+    #[test]
+    fn retries_and_runs_set_and_clear_the_failure() {
+        let mut process = Process::default();
+        observe(
+            &mut process,
+            &retry(RetryPhase::Succeeded, "Connection error."),
+        );
+        assert!(!process.connection_failed, "it got through");
+        observe(&mut process, &retry(RetryPhase::Waiting, "503 overloaded"));
+        assert!(!process.connection_failed);
+        observe(
+            &mut process,
+            &retry(RetryPhase::Waiting, "Connection error."),
+        );
+        assert!(process.connection_failed);
+        observe(&mut process, &settled(RunOutcome::Completed, None));
+        assert!(!process.connection_failed);
+        observe(
+            &mut process,
+            &settled(RunOutcome::Failed, Some("Connection error.")),
+        );
+        assert!(process.connection_failed);
+        observe(&mut process, &settled(RunOutcome::Cancelled, None));
+        assert!(process.connection_failed, "a cancel says nothing");
     }
 
     #[test]
