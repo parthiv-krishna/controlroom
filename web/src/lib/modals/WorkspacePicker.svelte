@@ -17,7 +17,8 @@
     profile,
     n,
     autofocus = false,
-  }: { machine: MachineId; path: string; profile: ProfileId | null; n?: number; autofocus?: boolean } = $props();
+    above = false,
+  }: { machine: MachineId; path: string; profile: ProfileId | null; n?: number; autofocus?: boolean; above?: boolean } = $props();
   const app = useApp();
   const feed = app.client.feed;
   const scoped = $derived(app.ctxOf(profile));
@@ -34,7 +35,7 @@
 
 <Dropdown id="ws-machine{key}" label="Machine{suffix}" value={machine} {options} icon={machineIcon} onchange={(v) => (machine = v)} />
 <span class="colon">:</span>
-<PathCombo id="ws-path{key}" label="Directory{suffix}" {autofocus} bind:value={path} machineId={machine} {recent} />
+<PathCombo id="ws-path{key}" label="Directory{suffix}" {autofocus} {above} bind:value={path} machineId={machine} {recent} />
 
 <style>
   .colon { font: 13px var(--mono); color: var(--muted); }

@@ -72,6 +72,12 @@
     hi = 0;
     input?.focus();
   }
+  /** Closes the list shortly after the field loses focus, unless it has it back by then. */
+  function onblur() {
+    setTimeout(() => {
+      if (document.activeElement !== input) open = false;
+    }, 120);
+  }
   function onkey(e: KeyboardEvent) {
     const stop = () => {
       e.preventDefault();
@@ -118,7 +124,7 @@
       autocomplete="off"
       spellcheck="false"
       onfocus={() => (open = true)}
-      onblur={() => setTimeout(() => (open = false), 120)}
+      {onblur}
       oninput={() => { open = true; hi = 0; }}
       onkeydown={onkey}
     />

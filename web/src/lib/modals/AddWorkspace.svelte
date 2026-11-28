@@ -2,7 +2,7 @@
   // Another workspace for an existing session (its ⋯ menu): a machine of the session's profile and
   // a directory on it, picked as in the new-session dialog. The agent learns of it in its next
   // turn. A directory another open session uses is warned about; a refusal (not in the profile,
-  // machine unreachable, bad path) shows inline.
+  // machine unreachable, bad path) shows inline. The directory list opens above its field.
   import { newOpId, useApp } from '../app/app.svelte';
   import { describeError, unreachableRefusal } from '../api/errors';
   import { displayName } from '../model/filters';
@@ -59,7 +59,7 @@
 <Modal label="Add workspace" short oncancel={close} onprimary={add}>
   <h3>Add workspace</h3>
   <div class="ws" role="group" aria-label="Workspace">
-    <WorkspacePicker bind:machine bind:path profile={s.profile_id} autofocus />
+    <WorkspacePicker bind:machine bind:path profile={s.profile_id} autofocus above />
   </div>
   {#if shared.length}<div class="small warn-t" data-overlap>⚠ Also used by {shared.join(', ')}: edits can collide</div>{/if}
   {#if error}<div class="small bad-t" role="alert">{error}</div>{/if}

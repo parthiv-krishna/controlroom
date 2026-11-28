@@ -1,6 +1,8 @@
 <script lang="ts">
   // A directory field for one machine: browses its real directories (`fs.list` on that machine),
   // recent directories first. Tab or › opens a folder. Remote paths are POSIX strings (`/`, `~`).
+  // `above` opens the list above the field, shortened to fit the window: in a short dialog a list
+  // below would cover the dialog's buttons.
   import { useApp } from '../app/app.svelte';
   import type { MachineId } from '../protocol';
   import type { Suggestion } from './TagInput.svelte';
@@ -12,7 +14,8 @@
     recent = [],
     label = 'Directory',
     autofocus = false,
-  }: { value: string; machineId: MachineId; id: string; recent?: string[]; label?: string; autofocus?: boolean } = $props();
+    above = false,
+  }: { value: string; machineId: MachineId; id: string; recent?: string[]; label?: string; autofocus?: boolean; above?: boolean } = $props();
 
   const app = useApp();
   const listId = $props.id();
@@ -20,6 +23,8 @@
   let hi = $state(0);
   let items = $state<Suggestion[]>([]);
   let input: HTMLInputElement | undefined = $state();
+  /** With `above`: the list's room above the field, up to a margin from the window's top edge (px). */
+  let room = $state<number | null>(null);
   let request = 0;
 
   async function dirs(dir: string): Promise<string[]> {
@@ -52,6 +57,18 @@
     void machineId;
     if (open && app.client.online) void refresh();
   });
+  // Measured whenever the list changes: the dialog may have grown (a warning line) and moved.
+  $effect(() => {
+    void items;
+    if (above && open && input) room = Math.max(0, input.getBoundingClientRect().top - 12);
+  });
+
+  /** Closes the list shortly after the field loses focus, unless it has it back by then. */
+  function onblur() {
+    setTimeout(() => {
+      if (document.activeElement !== input) open = false;
+    }, 120);
+  }
 
   function set(v: string, keepOpen: boolean) {
     value = v;
@@ -99,12 +116,12 @@
     aria-expanded={open}
     aria-label={label}
     onfocus={() => (open = true)}
-    onblur={() => setTimeout(() => (open = false), 120)}
+    {onblur}
     oninput={() => { open = true; hi = 0; }}
     onkeydown={onkey}
   />
   {#if open && items.length}
-    <div class="dd" id={listId} role="listbox" aria-label="Directories">
+    <div class="dd" class:above style:max-height={above && room !== null ? `min(260px, ${room}px)` : undefined} id={listId} role="listbox" aria-label="Directories">
       {#each items as it, i (it.value)}
         <div class="opt" role="option" tabindex="-1" aria-selected={i === hi} class:hi={i === hi} onmousedown={(e) => { e.preventDefault(); set(it.value, false); }}>
           <span class="l">{it.label}{#if it.drill}<span class="dim">/</span>{/if}</span>
@@ -120,6 +137,7 @@
   .combo { position: relative; }
   input { font-family: var(--mono); font-size: 13px; }
   .dd { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 120; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); max-height: 260px; overflow-y: auto; padding: 4px; }
+  .dd.above { top: auto; bottom: calc(100% + 4px); }
   .opt { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
   .opt.hi { background: var(--bg3); }
   .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px var(--mono); }

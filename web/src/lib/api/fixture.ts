@@ -3,8 +3,9 @@
 // (web/fixtures/), plus recorded session timelines (see fixture-timelines.ts). It holds no backend
 // logic: mutations are only recorded (and answered with an ack, or a canned result when the
 // fixture has one), and the feeds change only by script. Tests can queue the next result (`reply`)
-// or error (`fail`) of a method, and send state changes and timeline ops of their own
-// (`emitState`, `emitSession`); calls of `held` methods (long polls) wait for one.
+// or error (`fail`) of a method, answer all its later calls (`respond`), and send state changes and
+// timeline ops of their own (`emitState`, `emitSession`); calls of `held` methods (long polls) wait
+// for one.
 import type {
   ErrorData,
   SessionDetail,
@@ -102,6 +103,8 @@ export class FixtureTransport implements Transport {
   /** Results (or errors) queued by `reply` and `fail`, and calls of held methods waiting for one. */
   private readonly replies = new Map<UiMethod, unknown[]>();
   private readonly waiting = new Map<UiMethod, ((outcome: unknown) => void)[]>();
+  /** Standing answers set by `respond`. */
+  private readonly handlers = new Map<UiMethod, (params: unknown) => unknown>();
   private next = 0;
   private played = 0;
   /** The last revision sent on the state feed. */
@@ -124,6 +127,8 @@ export class FixtureTransport implements Transport {
     const queued = this.replies.get(method)?.shift();
     if (queued instanceof RpcError) return Promise.reject(queued);
     if (queued !== undefined) return Promise.resolve(queued as Result<M>);
+    const handler = this.handlers.get(method);
+    if (handler) return Promise.resolve().then(() => handler(params) as Result<M>);
     if (this.fixture.held?.includes(method)) {
       return new Promise((resolve, reject) => {
         const settle = (outcome: unknown) => (outcome instanceof RpcError ? reject(outcome) : resolve(outcome as Result<M>));
@@ -180,6 +185,15 @@ export class FixtureTransport implements Transport {
   /** Answers the oldest waiting call of `method` with `result`, or queues it for the next call. */
   reply<M extends UiMethod>(method: M, result: Result<M>): void {
     this.settle(method, result);
+  }
+
+  /**
+   * Answers every later call of `method` with `handler(params)` once its queued results are used up
+   * (for fields that call again on every change, like a directory list).
+   */
+  respond<M extends UiMethod>(method: M, handler: (params: Params<M>) => Result<M>): void {
+    // SAFETY: `request` only calls it with the params of `method`.
+    this.handlers.set(method, handler as (params: unknown) => unknown);
   }
 
   /** Fails the oldest waiting call of `method` with a typed error, or queues it for the next call. */

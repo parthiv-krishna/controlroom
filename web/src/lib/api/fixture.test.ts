@@ -46,6 +46,18 @@ describe('FixtureTransport', () => {
     await expect(t.request('session.workspace_remove', { op_id: 'o2', id: 's', workspace_id: 'w' })).resolves.toEqual({});
   });
 
+  it("answers every later call with a test's standing answer, after its queued results", async () => {
+    const t = new FixtureTransport(loadFixture(), { autoplay: false });
+    await open(t);
+    const queued = { path: '~/q', entries: [] };
+    t.reply('fs.list', queued);
+    t.respond('fs.list', ({ path }) => ({ path, entries: [{ name: 'src', kind: 'dir', size: null, mtime: null }] }));
+    await expect(t.request('fs.list', { machine_id: 'm', path: '~/a' })).resolves.toEqual(queued);
+    for (const path of ['~/a', '~/b']) {
+      await expect(t.request('fs.list', { machine_id: 'm', path })).resolves.toMatchObject({ path, entries: [{ name: 'src' }] });
+    }
+  });
+
   it('plays scripted events with the subscription ids it handed out', async () => {
     const fixture = loadFixture();
     const t = new FixtureTransport(fixture, { autoplay: false });

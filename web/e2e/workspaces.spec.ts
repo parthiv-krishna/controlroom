@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import fixture from '../fixtures/controlroom.json' with { type: 'json' };
 import type { FeedSession, Workspace } from '../src/lib/protocol';
 import { M, S, calls, emitState, start } from './helpers';
@@ -155,6 +155,117 @@ test('⋯ › + Workspace adds one on a machine of the session’s profile; a re
   );
   await setWorkspaces(page, S.blog, [...session(S.blog).workspaces, added]);
   await expect(chip(page)).toHaveAccessibleName('2 workspaces');
+});
+
+/**
+ * Opens ⋯ › + Workspace on "blog: deep dive" (Lantern: devbox only), with devbox picked. Picking
+ * it takes the focus from the directory field; a test's next `fill` gives it back at once, and the
+ * list must stay open.
+ */
+async function addWorkspaceDialog(page: Page) {
+  await start(page, S.blog, 'paused&profiles=3');
+  await header(page).getByRole('button', { name: 'Session actions' }).click();
+  await header(page).getByRole('menu').getByRole('menuitem', { name: 'Add workspace' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add workspace' });
+  await dialog.getByRole('button', { name: 'Machine', exact: true }).click();
+  await dialog.getByRole('listbox', { name: 'Machine', exact: true }).getByRole('option', { name: 'devbox' }).click();
+  return dialog;
+}
+
+/** Every directory has `drafts-0` … `drafts-11`: enough for the list's full height, on every refresh. */
+const manyDirs = (page: Page) =>
+  page.evaluate(() =>
+    window.__fixture!.respond('fs.list', ({ path }) => ({
+      path,
+      entries: Array.from({ length: 12 }, (_, i) => ({ name: `drafts-${i}`, kind: 'dir' as const, size: null, mtime: null })),
+    })),
+  );
+
+type Box = { x: number; y: number; width: number; height: number };
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+async function box(l: Locator): Promise<Box> {
+  const b = await l.boundingBox();
+  if (!b) throw new Error('not rendered');
+  return b;
+}
+
+test('the directory suggestions never cover the Add workspace dialog’s buttons: Add works while they are open', async ({ page }) => {
+  const dialog = await addWorkspaceDialog(page);
+  await manyDirs(page);
+  await dialog.getByLabel('Directory').fill('~/src/docs/dra');
+  const list = dialog.getByRole('listbox', { name: 'Directories' });
+  await expect(list.getByRole('option')).toHaveCount(12);
+  // Fully in the window, and clear of both buttons.
+  const l = await box(list);
+  expect(l.y).toBeGreaterThanOrEqual(0);
+  expect(l.y + l.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  for (const name of [/Cancel$/, /Add$/]) expect(overlaps(l, await box(dialog.getByRole('button', { name })))).toBe(false);
+  // A plain click on Add, with the list still open, lands on the button.
+  const added = workspace('01JAW0000000000000000000A3', M.devbox, '~/src/docs/dra', 'connected');
+  await page.evaluate((w) => window.__fixture!.reply('session.workspace_add', w), added);
+  await expect(list).toBeVisible();
+  await dialog.getByRole('button', { name: /Add$/ }).click({ timeout: 5_000 });
+  await expect(dialog).toHaveCount(0);
+  expect((await calls(page, 'session.workspace_add')).map((c) => c.params)).toEqual([
+    expect.objectContaining({ id: S.blog, workspace: { machine_id: M.devbox, path: '~/src/docs/dra' } }),
+  ]);
+});
+
+test('in a short window the directory suggestions shrink to stay fully visible', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 420 });
+  const dialog = await addWorkspaceDialog(page);
+  await manyDirs(page);
+  await dialog.getByLabel('Directory').fill('~/src/docs/dra');
+  const list = dialog.getByRole('listbox', { name: 'Directories' });
+  await expect(list.getByRole('option')).toHaveCount(12);
+  const l = await box(list);
+  expect(l.y).toBeGreaterThanOrEqual(0);
+  expect(l.height).toBeLessThan(260);
+  expect(overlaps(l, await box(dialog.getByRole('button', { name: /Add$/ })))).toBe(false);
+});
+
+test('the directory field’s keys: arrows pick, Tab drills in, Escape closes the list, Enter adds', async ({ page }) => {
+  const dialog = await addWorkspaceDialog(page);
+  await manyDirs(page);
+  const field = dialog.getByLabel('Directory');
+  const list = dialog.getByRole('listbox', { name: 'Directories' });
+  await field.fill('~/src/docs/dra');
+  await expect(list.getByRole('option')).toHaveCount(12);
+  await field.press('ArrowDown');
+  await expect(list.getByRole('option', { selected: true })).toHaveText(/^~\/src\/docs\/drafts-1\//);
+  await field.press('Tab');
+  await expect(field).toHaveValue('~/src/docs/drafts-1/');
+  await expect(field).toBeFocused();
+  await expect(list.getByRole('option').first()).toHaveText(/^~\/src\/docs\/drafts-1\/drafts-0\//);
+  // Escape closes the list only; Enter picks the highlighted entry, then adds.
+  await field.press('Escape');
+  await expect(list).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await field.press('ArrowDown');
+  await expect(list.getByRole('option', { selected: true })).toHaveText(/^~\/src\/docs\/drafts-1\/drafts-1\//);
+  await field.press('Enter');
+  await expect(field).toHaveValue('~/src/docs/drafts-1/drafts-1');
+  await expect(list).toHaveCount(0);
+  const added = workspace('01JAW0000000000000000000A4', M.devbox, '~/src/docs/drafts-1/drafts-1', 'connected');
+  await page.evaluate((w) => window.__fixture!.reply('session.workspace_add', w), added);
+  await field.press('Enter');
+  await expect(dialog).toHaveCount(0);
+});
+
+test('in the new-session dialog the last of several workspaces’ suggestions stay clear of Create', async ({ page }) => {
+  await start(page);
+  await page.getByRole('button', { name: 'New session', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New session' });
+  for (let i = 0; i < 3; i++) await dialog.getByRole('button', { name: '+ Workspace' }).click();
+  await manyDirs(page);
+  const field = dialog.getByLabel('Directory 4');
+  await field.fill('~/src/docs/dra');
+  const list = dialog.getByRole('listbox', { name: 'Directories' });
+  await expect(list.getByRole('option')).toHaveCount(12);
+  // Below the field, as in any form; clear of the dialog's buttons.
+  const l = await box(list);
+  expect(l.y).toBeGreaterThan((await box(field)).y);
+  for (const name of [/Cancel$/, /Create$/]) expect(overlaps(l, await box(dialog.getByRole('button', { name })))).toBe(false);
 });
 
 test('⋯ has no + Workspace on an archived session', async ({ page }) => {
