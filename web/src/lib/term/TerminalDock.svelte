@@ -162,7 +162,8 @@
         <div class="banner" role="status">⚠ {status.reason}</div>
       {:else if status.state === 'ended'}
         <div class="banner" role="status" title={isMine(cur) ? undefined : "Reopens with the agent's next command"}>{status.reason} <button class="btn xs" onclick={() => xterm?.reconnect()}>Reconnect</button></div>
-      {:else if STATUS[status.state]}
+      {:else if STATUS[status.state] && !(status.state === 'offline' && app.client.conn !== 'open')}
+        <!-- While the server can't be reached, its indicator says so for the terminal too. -->
         <div class="banner" role="status">{STATUS[status.state]}</div>
       {:else if !isMine(cur) && cur.state.state === 'waiting_input'}
         <div class="banner wait" role="status" title="Passwords aren't echoed">⌨ <b>Waiting for input</b></div>

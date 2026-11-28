@@ -26,10 +26,14 @@ export class RpcError extends Error {
   }
 }
 
-/** The call never reached the server, or the connection dropped before its response. */
+/**
+ * `offline`: the call never left (no connection until its timeout); `lost`: the connection dropped
+ * after it was sent, so it may have been applied; `closed`: the transport was closed or the user
+ * signed out.
+ */
 export class ConnectionError extends Error {
   constructor(readonly reason: 'offline' | 'lost' | 'closed') {
-    super(reason === 'offline' ? 'Not connected' : reason === 'lost' ? 'Connection lost' : 'Connection closed');
+    super(reason === 'offline' ? "Not sent: can't reach server" : reason === 'lost' ? 'Connection lost; it may not have gone through' : 'Connection closed');
     this.name = 'ConnectionError';
   }
 }

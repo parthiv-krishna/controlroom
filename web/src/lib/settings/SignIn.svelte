@@ -1,8 +1,10 @@
 <script lang="ts">
   // A subscription sign-in, driven by pi on the server: pick a method, open the sign-in page and
   // paste the URL the browser ends on (the callback listener is on the server), or enter a device
-  // code. Follows the steps with long polls until done, failed, cancelled or timed out.
+  // code. Follows the steps with long polls until done, failed, cancelled or timed out; a lost
+  // connection only pauses the polls (the offline indicator shows it).
   import { onDestroy } from 'svelte';
+  import { ConnectionError, RpcError } from '../api/errors';
   import { useApp } from '../app/app.svelte';
   import { isFinal } from '../model/models';
   import type { LoginState, ModelProvider } from '../protocol';
@@ -34,6 +36,9 @@
       try {
         take(await app.client.request('models.login_wait', { login_id, after: seq }));
       } catch (e) {
+        // Waiting for the connection (or a half-open one, dropped by the timeout): poll again.
+        const cutOff = (e instanceof ConnectionError && e.reason !== 'closed') || (e instanceof RpcError && e.data.kind === 'timeout');
+        if (cutOff) continue;
         if (alive) app.toasts.show(`Sign-in: ${e instanceof Error ? e.message : String(e)}`, 'error');
         return;
       }

@@ -5,6 +5,7 @@
 // - Unexpected closes reconnect with exponential backoff; every (re)connect starts with a fresh
 //   replay (`attached {reset: true}`), and the last size is sent again.
 // - `ended` and close code 4401 (signed out) stop reconnecting until reconnect().
+// - When the page comes back (`onWake`), a stream waiting out its backoff reconnects at once.
 import type { TerminalCommand, TerminalEvent } from '../protocol';
 import type { LinkStatus, TerminalHandlers, TerminalLink, TerminalTarget } from './link';
 
@@ -15,6 +16,8 @@ export interface SocketOptions {
   WebSocketImpl?: typeof WebSocket;
   minBackoffMs?: number;
   maxBackoffMs?: number;
+  /** Subscribes to the page coming back (see ws.ts); returns the unsubscribe function. */
+  onWake?: (wake: () => void) => () => void;
 }
 
 /** The stream's URL under the SPA root `base`. */
@@ -101,6 +104,12 @@ export function openTerminalSocket(base: string, target: TerminalTarget, handler
   }
 
   connect();
+  const unwake = options.onWake?.(() => {
+    if (closed || !retry) return;
+    clearTimeout(retry);
+    backoff = minBackoff;
+    connect();
+  });
   return {
     input(data) {
       if (live && socket?.readyState === WS.OPEN) socket.send(typeof data === 'string' ? encoder.encode(data) : data);
@@ -116,6 +125,7 @@ export function openTerminalSocket(base: string, target: TerminalTarget, handler
     },
     close() {
       closed = true;
+      unwake?.();
       if (retry) clearTimeout(retry);
       const ws = socket;
       socket = null;

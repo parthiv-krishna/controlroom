@@ -16,12 +16,21 @@ export type AuthState = { status: 'unknown' } | { status: 'ok' } | { status: 'lo
 export interface CallOptions {
   /** Overrides the method's default timeout. */
   timeoutMs?: number;
+  /**
+   * While disconnected, wait for the reconnect (until the timeout; the default). `false` fails at
+   * once with `offline`: for reports that are stale by the time the connection is back.
+   */
+  queue?: boolean;
 }
 
 export interface Transport {
   readonly state: ConnState;
   readonly auth: AuthState;
-  /** A call. Rejects with RpcError (incl. timeout) or ConnectionError; never hangs. */
+  /**
+   * A call. Rejects with RpcError (incl. timeout) or ConnectionError; never hangs. A call made
+   * while disconnected waits for the reconnect; one cut off by a drop is sent again when that is
+   * safe (see policy.ts), else it fails with `lost`.
+   */
   request<M extends UiMethod>(method: M, params: Params<M>, options?: CallOptions): Promise<Result<M>>;
   /** Server notifications (subscription feeds). Returns an unsubscribe function. */
   subscribe<N extends UiNotificationName>(name: N, handler: (params: UiNotifications[N]) => void): () => void;

@@ -1,7 +1,13 @@
 // The sync engine: on every (re)connect it says hello, registers this device, subscribes to the
-// state feed from the last cursor and resumes the open session feeds. Calls go through `call`,
-// typed by UiMethods; a failure is reported once through `onError` and resolves to undefined.
-import { describeError } from '../api/errors';
+// state feed from the last cursor and resumes the open session feeds. Calls go through `call`
+// (a user's action: a failure is reported through `onError` and resolves to undefined) or
+// `fire` (a background report: failures stay silent), typed by UiMethods.
+//
+// The connection's state shows once, in the offline indicator: a read cut off by the connection
+// is never reported (the transport sends it again after the reconnect, see api/policy.ts), and
+// neither is a call refused because the user signed out (the login screen shows).
+import { ConnectionError, describeError } from '../api/errors';
+import { isRead } from '../api/policy';
 import type { AuthState, CallOptions, ConnState, Params, Result, Transport } from '../api/transport';
 import { UI_PROTOCOL_VERSION, type DeviceRef, type UiHelloResult, type UiMethod } from '../protocol';
 import { rememberLabel, type LocalDevice } from './device';
@@ -40,7 +46,8 @@ export class Client {
     transport.onState((s) => this.onState(s));
     transport.subscribe('state.events', (p) => {
       if (p.subscription_id !== this.stateSub) return;
-      if (this.feed.apply(p.changes) === 'gap') void this.syncState();
+      // A gap resubscribes (a drop meanwhile is the next sync's).
+      if (this.feed.apply(p.changes) === 'gap') this.syncState().catch(() => {});
       // A removed session's timeline is never shown again.
       for (const c of p.changes) if (c.kind === 'session_removed') this.sessions.drop(c.session_id);
     });
@@ -67,14 +74,19 @@ export class Client {
     return { device_id: this.device.id, label: this.serverLabel() };
   }
 
-  /** A call; errors are reported through onError and resolve to undefined. */
+  /** A user's action; a failure is reported through onError and resolves to undefined. */
   async call<M extends UiMethod>(method: M, params: Params<M>, options?: CallOptions): Promise<Result<M> | undefined> {
     try {
       return await this.transport.request(method, params, options);
     } catch (e) {
-      this.onError(describeError(e));
+      this.report(method, e);
       return undefined;
     }
+  }
+
+  /** A background report (focus, presence, read cursors): fire and forget, failures stay silent. */
+  fire<M extends UiMethod>(method: M, params: Params<M>, options?: CallOptions): void {
+    this.transport.request(method, params, options).catch(() => {});
   }
 
   /** A call whose error the caller handles itself (wizards, inline errors). */
@@ -99,15 +111,26 @@ export class Client {
     return this.feed.devices.get(this.device.id)?.label ?? this.device.label;
   }
 
+  /** Reports a failed call, unless the offline indicator or the login screen already says it. */
+  private report(method: UiMethod, e: unknown): void {
+    if (e instanceof ConnectionError && (isRead(method) || e.reason === 'closed')) return;
+    this.onError(describeError(e));
+  }
+
   private onState(state: ConnState): void {
     this.conn = state;
     if (state === 'open') void this.sync();
     else if (state === 'closed' && this.offlineSince === null) this.offlineSince = Date.now();
   }
 
+  /** Syncs on the current connection, after a sync still running on an earlier one. */
   private sync(): Promise<void> {
-    this.syncing ??= this.runSync().finally(() => (this.syncing = null));
-    return this.syncing;
+    const run = (this.syncing ?? Promise.resolve()).then(() => (this.transport.state === 'open' ? this.runSync() : undefined));
+    const syncing = run.finally(() => {
+      if (this.syncing === syncing) this.syncing = null;
+    });
+    this.syncing = syncing;
+    return syncing;
   }
 
   private async runSync(): Promise<void> {
@@ -123,8 +146,8 @@ export class Client {
       this.everConnected = true;
       this.offlineSince = null;
     } catch (e) {
-      // The connection dropped or the server refused; the next `open` retries.
-      if (this.transport.state === 'open') this.onError(describeError(e));
+      // The connection dropped (the next `open` syncs again), or the server refused.
+      if (!(e instanceof ConnectionError) && this.transport.state === 'open') this.onError(describeError(e));
     }
   }
 

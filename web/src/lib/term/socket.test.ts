@@ -122,6 +122,29 @@ describe('terminal socket', () => {
     expect(FakeSocket.all).toHaveLength(3);
   });
 
+  it('reconnects at once when the page comes back, and close() stops listening', async () => {
+    const wakes = new Set<() => void>();
+    const { h, state } = handlers();
+    const link = openTerminalSocket('http://h/app/', { session: 's1', shell: 'dev' }, h, {
+      WebSocketImpl: FakeSocket as unknown as typeof WebSocket,
+      minBackoffMs: 60_000,
+      onWake: (wake) => {
+        wakes.add(wake);
+        return () => wakes.delete(wake);
+      },
+    });
+    last().open();
+    last().drop();
+    expect(state()).toBe('offline');
+    for (const wake of wakes) wake();
+    expect(FakeSocket.all).toHaveLength(2);
+    // Live: nothing to do.
+    for (const wake of wakes) wake();
+    expect(FakeSocket.all).toHaveLength(2);
+    link.close();
+    expect(wakes.size).toBe(0);
+  });
+
   it('stops after ended or a sign-out until reconnect(), and close() ends it', async () => {
     const { h, state } = handlers();
     const link = open(h);

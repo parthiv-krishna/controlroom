@@ -121,8 +121,9 @@
 {:else if !client.everConnected}
   <Offline link={deepLink} />
 {:else}
+  <!-- The one place the lost connection shows: nothing else reports it (see state/client). -->
   {#if client.conn !== 'open'}
-    <div class="conn" role="status"><span class="spin"></span> Can't reach server · retrying…</div>
+    <div class="conn" role="status" title="Retrying; actions wait until the server is back"><span class="spin"></span> Can't reach server</div>
   {/if}
   {#if settingsPage}
     <div class="settings-page"><Rail /><Settings page /></div>

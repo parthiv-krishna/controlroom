@@ -45,17 +45,29 @@ export interface Toast {
   session?: SessionRef;
 }
 
+/** How long a toast shows. */
+export const TOAST_MS = 4500;
+
+/** Toasts; an identical one (text, level and session) while one shows collapses into it. */
 export class Toasts {
   list = $state<Toast[]>([]);
   private next = 1;
+  private readonly timers = new Map<number, ReturnType<typeof setTimeout>>();
 
   show(text: string, level: Toast['level'] = 'info', session?: SessionRef): void {
-    const id = this.next++;
-    this.list.push({ id, text, level, session });
-    setTimeout(() => this.dismiss(id), 4500);
+    const same = this.list.find((t) => t.text === text && t.level === level && t.session?.id === session?.id);
+    const id = same?.id ?? this.next++;
+    if (!same) this.list.push({ id, text, level, session });
+    clearTimeout(this.timers.get(id));
+    this.timers.set(
+      id,
+      setTimeout(() => this.dismiss(id), TOAST_MS),
+    );
   }
 
   dismiss(id: number): void {
+    clearTimeout(this.timers.get(id));
+    this.timers.delete(id);
     this.list = this.list.filter((t) => t.id !== id);
   }
 }

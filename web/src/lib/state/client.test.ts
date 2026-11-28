@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ConnectionError } from '../api/errors';
 import { Listeners, NotificationHub, type AuthState, type ConnState, type Params, type Result, type Transport } from '../api/transport';
 import type { StateSubscribeResult, UiMethod, UiNotificationName, UiNotifications } from '../protocol';
 import { loadFixture } from '../../test/fixture';
@@ -17,8 +18,12 @@ class FakeTransport implements Transport {
   /** A server before profiles doesn't announce them in its `hello`. */
   profiles = true;
 
+  /** Fails the next calls (of any method) with this error. */
+  failWith: Error | null = null;
+
   request<M extends UiMethod>(method: M, params: Params<M>): Promise<Result<M>> {
     this.calls.push({ method, params });
+    if (this.failWith) return Promise.reject(this.failWith);
     if (this.state !== 'open') return Promise.reject(new Error('offline'));
     const f = loadFixture();
     const answers: Partial<Record<UiMethod, () => unknown>> = {
@@ -127,5 +132,44 @@ describe('Client sync', () => {
     client.onError = (m) => errors.push(m);
     await expect(client.call('keys.list', {})).resolves.toBeUndefined();
     expect(errors).toEqual(['offline']);
+  });
+
+  it('leaves the lost connection to the offline indicator: reads, sign-outs and reports are silent', async () => {
+    const t = new FakeTransport();
+    const client = new Client(t, device);
+    const errors: string[] = [];
+    client.onError = (m) => errors.push(m);
+    t.failWith = new ConnectionError('offline');
+    await client.call('models.list', {});
+    client.fire('client.focus', { device_id: 'dev-1', session_id: null, visible: true });
+    t.failWith = new ConnectionError('closed');
+    await client.call('tasks.delete', { task_id: 't1' });
+    await settle();
+    expect(errors).toEqual([]);
+    // A user's action that may not have gone through is reported, once per call.
+    t.failWith = new ConnectionError('lost');
+    await client.call('tasks.delete', { task_id: 't1' });
+    expect(errors).toEqual(['Connection lost; it may not have gone through']);
+  });
+
+  it('a sync cut off by a drop stays silent and the next connection syncs again', async () => {
+    const f = loadFixture();
+    const t = new FakeTransport();
+    const errors: string[] = [];
+    let n = 0;
+    t.subscribeResult = () => {
+      if (++n === 1) throw new ConnectionError('lost');
+      return { subscription_id: 'sub-2', cursor: f.cursor, snapshot: f.snapshot };
+    };
+    const client = new Client(t, device);
+    client.onError = (m) => errors.push(m);
+    t.set('open');
+    await settle();
+    expect(client.everConnected).toBe(false);
+    t.set('closed');
+    t.set('open');
+    await settle();
+    expect(client.everConnected).toBe(true);
+    expect(errors).toEqual([]);
   });
 });
