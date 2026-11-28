@@ -28,6 +28,7 @@ pub mod scenario;
 mod session;
 mod wire;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -65,6 +66,17 @@ pub struct Config {
     pub cwd: PathBuf,
 }
 
+/// The providers the session's `auth.json` has an entry for (none when it can't be read).
+fn credentials(agent_dir: &std::path::Path) -> HashSet<String> {
+    std::fs::read_to_string(agent_dir.join("auth.json"))
+        .ok()
+        .and_then(|text| {
+            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text).ok()
+        })
+        .map(|auth| auth.into_iter().map(|(provider, _)| provider).collect())
+        .unwrap_or_default()
+}
+
 /// Serve the RPC protocol on stdin/stdout until stdin closes or a
 /// terminating signal arrives; returns the exit code pi would use.
 pub async fn serve(config: Config) -> Result<i32> {
@@ -96,11 +108,16 @@ pub async fn serve(config: Config) -> Result<i32> {
             (session, Some(project_dir))
         }
     };
+    let credentials = config
+        .scenario
+        .needs_credentials
+        .then(|| credentials(&config.agent_dir));
     let agent = Agent::new(
         config.scenario,
         config.gates,
         sessions_dir,
         cwd,
+        credentials,
         session,
         out::Out::stdout(),
     );

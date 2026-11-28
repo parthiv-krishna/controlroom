@@ -1,7 +1,7 @@
 //! Shared agent state and the helpers every task uses: emitting records,
 //! persisting messages, dialogs, gates and side steps.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -72,6 +72,9 @@ pub struct Agent {
     /// The project's sessions directory; `None` with `--no-session`.
     pub sessions_dir: Option<PathBuf>,
     pub cwd: String,
+    /// The providers the session's `auth.json` has a credential for, when the scenario
+    /// `needs_credentials`.
+    credentials: Option<HashSet<String>>,
     out: Out,
     state: Mutex<State>,
 }
@@ -88,6 +91,7 @@ impl Agent {
         gates: Option<Gates>,
         sessions_dir: Option<PathBuf>,
         cwd: String,
+        credentials: Option<HashSet<String>>,
         session: Session,
         out: Out,
     ) -> Arc<Self> {
@@ -121,6 +125,7 @@ impl Agent {
             gates,
             sessions_dir,
             cwd,
+            credentials,
             out,
             state: Mutex::new(state),
         })
@@ -134,6 +139,13 @@ impl Agent {
     /// Write one record to stdout.
     pub fn emit(&self, record: &Value) {
         self.out.emit(record);
+    }
+
+    /// Whether a model request to `provider` gets through (see `Scenario::needs_credentials`).
+    pub fn has_credential(&self, provider: &str) -> bool {
+        self.credentials
+            .as_ref()
+            .is_none_or(|providers| providers.contains(provider))
     }
 
     /// The current model.

@@ -18,6 +18,8 @@ use crate::wire;
 const ABORTED_CALL: &str = "This operation was aborted";
 /// pi's error text for a stream cut by an abort.
 const ABORTED_STREAM: &str = "Request was aborted";
+/// pi's error text for a request that never reached the provider.
+const CONNECTION_ERROR: &str = "Connection error.";
 
 /// Error messages pi treats as transient (a subset of pi-ai's pattern).
 const RETRYABLE: &[&str] = &[
@@ -303,6 +305,9 @@ async fn respond(
     };
     if *abort.borrow() {
         return failed(agent, messages, ABORTED_CALL, false);
+    }
+    if !agent.has_credential(&model.provider) {
+        return failed(agent, messages, CONNECTION_ERROR, true);
     }
     if let Some(error) = &reply.error {
         return failed(agent, messages, error, true);

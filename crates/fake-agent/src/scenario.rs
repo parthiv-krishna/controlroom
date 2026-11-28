@@ -49,6 +49,10 @@ pub struct Scenario {
     pub replies: Vec<Reply>,
     /// Used once `replies` is exhausted. Defaults to the text `ok`.
     pub default_reply: Option<Reply>,
+    /// Model requests fail at the connection level ("Connection error.", as when nono's proxy
+    /// has no route for the provider) unless the session's `auth.json` (in
+    /// `$PI_CODING_AGENT_DIR`, read at start) holds a credential for the model's provider.
+    pub needs_credentials: bool,
 }
 
 impl Default for Scenario {
@@ -66,6 +70,7 @@ impl Default for Scenario {
             commands: Vec::new(),
             replies: Vec::new(),
             default_reply: None,
+            needs_credentials: false,
         }
     }
 }
