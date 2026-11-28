@@ -172,4 +172,28 @@ describe('Client sync', () => {
     expect(client.everConnected).toBe(true);
     expect(errors).toEqual([]);
   });
+
+  it('stays in one offline state across failed reconnect attempts', async () => {
+    const f = loadFixture();
+    const t = new FakeTransport();
+    t.subscribeResult = () => ({ subscription_id: 'sub-1', cursor: f.cursor, snapshot: f.snapshot });
+    const client = new Client(t, device);
+    const errors: string[] = [];
+    client.onError = (m) => errors.push(m);
+    t.set('open');
+    await settle();
+    t.set('closed');
+    const since = client.offlineSince;
+    expect(since).not.toBeNull();
+    for (let i = 0; i < 3; i++) {
+      t.set('connecting');
+      t.set('closed');
+    }
+    expect(client.offlineSince).toBe(since);
+    expect(client.online).toBe(false);
+    t.set('open');
+    await settle();
+    expect(client.offlineSince).toBeNull();
+    expect(errors).toEqual([]);
+  });
 });

@@ -1,6 +1,7 @@
 // What a call may do across a dropped connection (spec §13, protocol §7):
 //
-// - reads change nothing, so they are sent again after a reconnect;
+// - reads (and previews: `dry_run: true`) change nothing, so they are sent again after a
+//   reconnect;
 // - commands carrying an `op_id` are idempotent on the server (a repeat returns the first
 //   result), so they are sent again too;
 // - anything else sent before the drop has an unknown outcome, so it fails (`lost`).
@@ -36,5 +37,7 @@ export const isRead = (method: UiMethod): boolean => READS.has(method);
 /** Whether a call sent before a drop is sent again after the reconnect. */
 export function resendable(method: UiMethod, params: unknown): boolean {
   if (READS.has(method)) return true;
-  return typeof params === 'object' && params !== null && typeof (params as { op_id?: unknown }).op_id === 'string';
+  if (typeof params !== 'object' || params === null) return false;
+  const p = params as { op_id?: unknown; dry_run?: unknown };
+  return typeof p.op_id === 'string' || p.dry_run === true;
 }
