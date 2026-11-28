@@ -21,10 +21,17 @@ use crate::procs;
 const LOGIN_SHELL: &str = "#!/bin/sh\n[ \"$1\" = -lc ] || { echo \"bad shell args: $*\" >&2; exit 99; }\nexec /bin/sh -c \"$2\"\n";
 
 /// A stand-in nono (`sandbox.toml` `nono`): pi always runs under nono on the server, and these
-/// tests have none, so it runs the command after `--` unconfined. Its arguments are checked
-/// by `launch`'s unit tests.
-const STAND_IN_NONO: &str =
-    "#!/bin/sh\nwhile [ $# -gt 0 ] && [ \"$1\" != -- ]; do shift; done\nshift\nexec \"$@\"\n";
+/// tests have none, so it runs the command after `--` unconfined. Of the profile's environment
+/// it sets the session's agent dir (`<session>/agent`, next to `<session>/profile.json`), where
+/// the agent finds its `auth.json`. Its arguments are checked by `launch`'s unit tests.
+const STAND_IN_NONO: &str = "#!/bin/sh
+while [ $# -gt 0 ] && [ \"$1\" != -- ]; do
+  [ \"$1\" = --profile ] && export PI_CODING_AGENT_DIR=\"${2%/*}/agent\"
+  shift
+done
+shift
+exec \"$@\"
+";
 
 /// The built `controlroom-agentd` (`$CONTROLROOM_AGENTD_BIN` overrides it).
 pub fn binary() -> &'static Path {
