@@ -59,6 +59,9 @@ use crate::dirs::{Dirs, create_private_dir, home};
 use crate::launch::find_program;
 use crate::shell::login_shell;
 
+/// Called with the provider (account) id whose credential or route changed.
+pub type CredentialsChanged = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// pi's thinking levels.
 pub const THINKING_LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -85,6 +88,8 @@ pub struct Models {
     programs: Mutex<Programs>,
     /// The sessions' usage per provider, when sessions run here.
     usage: Option<UsageSource>,
+    /// Told which provider's credential or route changed, when sessions run here.
+    credentials: Option<CredentialsChanged>,
 }
 
 #[derive(Default)]
@@ -143,12 +148,20 @@ impl Models {
             catalog: tokio::sync::Mutex::new(None),
             programs: Mutex::new(Programs::default()),
             usage: None,
+            credentials: None,
         }
     }
 
     /// Reports each account's usage from `source` (the sessions').
     pub fn with_usage(mut self, source: UsageSource) -> Self {
         self.usage = Some(source);
+        self
+    }
+
+    /// Tells `changed` the provider whose credential or route changed (a key, gateway or
+    /// sign-in set or removed), so running agents launched before can say they are stale.
+    pub fn with_credential_changes(mut self, changed: CredentialsChanged) -> Self {
+        self.credentials = Some(changed);
         self
     }
 
@@ -196,6 +209,7 @@ impl Models {
             _ => "API key set",
         };
         self.changed(&p.by, id, what);
+        self.credential_changed(id);
         self.list().await
     }
 
@@ -241,6 +255,7 @@ impl Models {
         entry.test = None;
         self.store.save(&stored).map_err(internal)?;
         self.changed(&p.by, id, "gateway saved");
+        self.credential_changed(id);
         self.list().await
     }
 
@@ -290,6 +305,7 @@ impl Models {
                 "removed"
             },
         );
+        self.credential_changed(id);
         self.list().await
     }
 
@@ -305,6 +321,7 @@ impl Models {
         let helper = self.models_helper(&ctx.sandbox)?;
         helper.logout(&dir, &signed_in).await.map_err(internal)?;
         self.changed(&p.by, id, "signed out");
+        self.credential_changed(id);
         self.list().await
     }
 
@@ -463,6 +480,7 @@ impl Models {
         let mut command = self.models_helper(&ctx.sandbox)?.command("login", &dir);
         command.arg("--provider").arg(&signed_in);
         let generation = self.generation.clone();
+        let credentials = self.credentials.clone();
         let (provider, by) = (id.to_owned(), device(&p.by));
         let state = self
             .logins
@@ -472,6 +490,9 @@ impl Models {
                 LOGIN_TIMEOUT,
                 Box::new(move |state| {
                     generation.fetch_add(1, Ordering::SeqCst);
+                    if let (LoginStep::Done { .. }, Some(changed)) = (&state.step, &credentials) {
+                        changed(&provider);
+                    }
                     tracing::info!(%provider, %by, "models: sign-in ended: {}", outcome(&state.step));
                 }),
             )
@@ -538,6 +559,13 @@ impl Models {
             ))
         } else {
             Ok((agent_dir(&ctx.sandbox)?, id.to_owned()))
+        }
+    }
+
+    /// Tells running agents' summaries that `provider`'s credential or route changed.
+    fn credential_changed(&self, provider: &str) {
+        if let Some(changed) = &self.credentials {
+            changed(provider);
         }
     }
 

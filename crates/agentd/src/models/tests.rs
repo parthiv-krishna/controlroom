@@ -741,3 +741,30 @@ async fn usage_per_account() {
     );
     assert!(row(&state, "openai").usage.is_none());
 }
+
+#[tokio::test]
+async fn credential_changes_are_reported_and_other_edits_are_not() {
+    let f = fixture();
+    let changed = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let models = Models::new(f.dirs.clone()).with_credential_changes(std::sync::Arc::new({
+        let changed = changed.clone();
+        move |provider| changed.lock().unwrap().push(provider.to_owned())
+    }));
+    models
+        .set_key(key("anthropic", "sk-ant-secret-4f2a"))
+        .await
+        .unwrap();
+    models
+        .set_defaults(ModelsSetDefaultsParams {
+            defaults: ModelDefaults::default(),
+            by: laptop(),
+        })
+        .await
+        .unwrap();
+    models
+        .add_account(add_account("anthropic", "work"))
+        .await
+        .unwrap();
+    models.remove(provider("anthropic")).await.unwrap();
+    assert_eq!(*changed.lock().unwrap(), ["anthropic", "anthropic"]);
+}

@@ -91,6 +91,7 @@ pub async fn handle(conn: &Arc<Conn>, request: RpcRequest<Value>) {
         AgentdRequest::SessionClose(p) => ack(runtime.close(p).await),
         AgentdRequest::SessionReopen(p) => ack(runtime.reopen(p).await),
         AgentdRequest::SessionResume(p) => ack(runtime.resume(p).await),
+        AgentdRequest::SessionRestart(p) => ack(runtime.restart(p).await),
         AgentdRequest::SessionStartFresh(p) => json(runtime.start_fresh(p).await),
         AgentdRequest::SessionDelete(p) => ack(runtime.delete(p).await),
         AgentdRequest::SessionUpdate(p) => ack(runtime.update(p).await),
