@@ -17,6 +17,7 @@ mod queue;
 mod raised;
 mod recovery;
 mod requests;
+mod restart;
 mod sandbox_level;
 mod sessions;
 mod terminals;

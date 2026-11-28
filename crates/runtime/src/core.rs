@@ -23,6 +23,7 @@ use controlroom_protocol::ids::{CallId, DaemonId, HostOpId, MachineId, Rev, Sess
 use controlroom_protocol::session::{AttentionRollup, OpenNotice, SessionDetail, SessionSummary};
 use tokio::sync::{broadcast, watch};
 
+use crate::credentials::CredentialChanges;
 use crate::errors::{internal, unknown_session};
 use crate::hosts::{Bridge, HostSync, LateCall, Machines};
 use crate::model::SessionData;
@@ -99,6 +100,8 @@ struct TxState {
     settings: Option<DaemonSettings>,
     /// The profiles' policies before the transaction changed them.
     profiles: Option<Profiles>,
+    /// The credential changes before the transaction changed them.
+    credentials: Option<CredentialChanges>,
     rev: Option<Rev>,
     /// Sessions whose summary may have changed.
     touched: BTreeSet<SessionId>,
@@ -121,6 +124,8 @@ pub(crate) struct Core {
     pub machines: Arc<Machines>,
     /// The profiles' policies, as last reported.
     pub profiles: Profiles,
+    /// When credentials and model policies last changed (see `credentials`).
+    pub credentials: CredentialChanges,
     /// Pending host requests (outside the lock; staged by transactions).
     pub bridge: Arc<Bridge>,
     /// Per host: results to release with `journal.ack`.
@@ -152,6 +157,7 @@ impl Core {
             agents,
             machines: Arc::new(Machines::default()),
             profiles: Profiles::default(),
+            credentials: CredentialChanges::default(),
             bridge,
             acks: BTreeMap::new(),
             sync: BTreeMap::new(),
@@ -247,6 +253,13 @@ impl Core {
             .settings
             .get_or_insert_with(|| self.settings.clone());
         &mut self.settings
+    }
+
+    pub(crate) fn credentials_mut(&mut self) -> &mut CredentialChanges {
+        self.tx
+            .credentials
+            .get_or_insert_with(|| self.credentials.clone());
+        &mut self.credentials
     }
 
     pub(crate) fn profiles_mut(&mut self) -> &mut Profiles {
@@ -350,6 +363,11 @@ impl Core {
         {
             let now = self.clock.now();
             self.store.save_profiles(&self.profiles.policies(), now)?;
+        }
+        if let Some(before) = &self.tx.credentials
+            && *before != self.credentials
+        {
+            self.credentials.save(&self.store)?;
         }
         self.emit_summaries()
     }
@@ -544,6 +562,9 @@ impl Core {
         if let Some(profiles) = tx.profiles {
             self.profiles = profiles;
         }
+        if let Some(credentials) = tx.credentials {
+            self.credentials = credentials;
+        }
         if let Some(rev) = tx.rev {
             self.rev = rev;
         }
@@ -632,6 +653,7 @@ impl Core {
             agent_live: session.agent_live(),
             sandbox: data.sandbox_info(),
             resumable: session.resumable(),
+            stale_credentials: self.stale_credentials(id),
         }
     }
 

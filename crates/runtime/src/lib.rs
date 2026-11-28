@@ -24,7 +24,9 @@
 //! `commands`, `lifecycle` and `io` (agent processes and supervisor attachments),
 //! `policy` (the tick: idle-stop, retention, pruning), `timeline` (materialization), `store`
 //! (SQLite; the schema is edited in place until the first release), `profiles` (the reported
-//! profile policies and the checks that keep a session inside its profile), `preview`, `history` (start-fresh export), `raised`
+//! profile policies and the checks that keep a session inside its profile), `credentials`
+//! (whether a running agent's credentials are stale: changed after its launch, and its requests
+//! fail at the connection level), `preview`, `history` (start-fresh export), `raised`
 //! (requests the daemon raises itself: questions and host requests), `hosts` (workspaces,
 //! shells, host calls with grace and late results, the host bridge, approvals), `jobs`
 //! (background jobs on hosts: the job event log and wakes).
@@ -43,6 +45,7 @@ mod attribution;
 mod auto;
 mod commands;
 mod core;
+mod credentials;
 mod errors;
 mod history;
 mod hosts;

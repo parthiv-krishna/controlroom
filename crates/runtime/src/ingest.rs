@@ -56,9 +56,11 @@ impl Core {
         let before = session.data.clone();
         let mut out = session.fold(record);
         crate::attribution::enrich(session, &mut out);
+        let at = UnixMillis(i64::try_from(record.ts).unwrap_or(i64::MAX));
         if let Body::Meta(_) = &record.body {
             session.derived.process = crate::session::Process {
                 meta_seq: Some(seq),
+                started_at: Some(at),
                 live: true,
                 ..Default::default()
             };
@@ -73,8 +75,8 @@ impl Core {
         for op in &out.ops {
             session.derived.preview.apply(op);
         }
+        crate::credentials::observe(&mut session.derived.process, &out);
         let finished = finished_tool_ids(&out.ops);
-        let at = UnixMillis(i64::try_from(record.ts).unwrap_or(i64::MAX));
         for event in &out.events {
             observe(session, event, at);
         }

@@ -9,9 +9,9 @@ use controlroom_protocol::agentd::{
     DaemonSettings, HostMachine, HostOpRequest, ProfilePolicy, PromptResult, QueueEditParams,
     QueueRemoveParams, QueueReorderParams, QueueSendNowParams, ReadCursor, RequestRespondParams,
     RequestRespondResult, RetentionPolicy, SendNowResult, SessionMarkReadParams, SessionMoveParams,
-    SessionOpParams, SessionPromptParams, SessionResumeParams, SessionSetOptionParams,
-    SessionSetSandboxLevelParams, SessionStartFreshParams, SessionUpdateParams, SessionsChange,
-    SessionsSnapshot, SettingsSetParams, StartFreshResult,
+    SessionOpParams, SessionPromptParams, SessionRestartParams, SessionResumeParams,
+    SessionSetOptionParams, SessionSetSandboxLevelParams, SessionStartFreshParams,
+    SessionUpdateParams, SessionsChange, SessionsSnapshot, SettingsSetParams, StartFreshResult,
 };
 use controlroom_protocol::ids::{DaemonId, HostOpId, Rev, Seq, SessionId, SubscriptionId};
 use controlroom_protocol::jsonrpc::RpcOutcome;
@@ -160,6 +160,7 @@ impl Runtime {
         let rev = store.last_rev()?;
         let sessions = store.load_sessions()?;
         let profiles = crate::profiles::Profiles::new(store.load_profiles()?);
+        let credentials = crate::credentials::CredentialChanges::load(&store)?;
         let bridge = Arc::new(Bridge::default());
         let now = config.clock.now();
         let mut core = Core::new(
@@ -174,6 +175,7 @@ impl Runtime {
         core.load_machines(now)
             .map_err(|e| OpenError::Database(e.message))?;
         core.profiles = profiles;
+        core.credentials = credentials;
         for data in sessions {
             let driver = config.agents.driver(data.driver);
             let mut session = Session::new(data, driver, core.machines.clone());
@@ -449,6 +451,16 @@ impl Runtime {
         })
     }
 
+    /// Settings › Models changed the credentials or routes of these providers (account ids):
+    /// running agents launched before keep their old ones until restarted, which their summary
+    /// tells once their model requests fail at the connection level (`stale_credentials`).
+    pub fn credentials_changed(&self, providers: Vec<String>) -> Result<(), RpcError> {
+        self.inner.transact(|core| {
+            core.credentials_changed(&providers);
+            Ok(())
+        })
+    }
+
     // -----------------------------------------------------------------------------------------
     // Commands
     // -----------------------------------------------------------------------------------------
@@ -541,6 +553,14 @@ impl Runtime {
                 history_path.clone(),
             )?;
             Ok(StartFreshResult { history_path })
+        })
+        .await
+    }
+
+    /// `session.restart`.
+    pub async fn restart(&self, params: SessionRestartParams) -> Result<(), RpcError> {
+        self.command("session.restart", &params.op_id, &params, |core| {
+            core.restart(&params)
         })
         .await
     }

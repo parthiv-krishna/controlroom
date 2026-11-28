@@ -92,10 +92,23 @@ fn denied(profile: Option<ProfileId>, reason: String) -> RpcError {
 impl Core {
     /// `profiles.report`: replaces the policies (saved with the transaction). Launches and
     /// restarts from now on use them, and so do the checks.
+    /// A profile whose model policy changed is recorded for `stale_credentials`.
     pub(crate) fn set_profiles(&mut self, report: Vec<ProfilePolicy>) {
         let profiles = Profiles::new(report);
-        if profiles != self.profiles {
-            *self.profiles_mut() = profiles;
+        if profiles == self.profiles {
+            return;
+        }
+        let changed: Vec<ProfileId> = profiles
+            .0
+            .values()
+            .filter(|p| {
+                self.profiles.0.get(&p.profile_id).map(|old| &old.models) != Some(&p.models)
+            })
+            .map(|p| p.profile_id)
+            .collect();
+        *self.profiles_mut() = profiles;
+        if !changed.is_empty() {
+            self.policies_changed(&changed);
         }
     }
 

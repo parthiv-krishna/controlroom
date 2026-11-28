@@ -7,6 +7,7 @@
 mod moving;
 mod queue;
 mod requests;
+mod restart;
 mod sandbox;
 mod session;
 

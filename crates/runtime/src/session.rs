@@ -128,6 +128,10 @@ pub(crate) struct Ended {
 pub(crate) struct Process {
     /// The `meta` record that started it.
     pub meta_seq: Option<Seq>,
+    /// When it started (its `meta` record's time).
+    pub started_at: Option<UnixMillis>,
+    /// Its last failed model request failed at the connection level (see `credentials`).
+    pub connection_failed: bool,
     /// Started and not ended.
     pub live: bool,
     /// It answered at least once.
