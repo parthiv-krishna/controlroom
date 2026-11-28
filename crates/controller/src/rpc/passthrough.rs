@@ -11,7 +11,8 @@
 //! opened or closed (`session.terminal_*`; the device also fills `by`, for the agent daemon's
 //! and the host's logs).
 //!
-//! So is every sandbox level change of a session (`session.set_sandbox_level`, with the level).
+//! So is every sandbox level change of a session (`session.set_sandbox_level`, with the level)
+//! and every restart of a session's agent (`session.restart`).
 //!
 //! An answered `request.respond` may also change the sandbox defaults: "Always allow" and
 //! "Never" on a file request (see [`sandbox_decisions`]).
@@ -99,6 +100,8 @@ enum Audit {
     Terminal,
     /// A session's sandbox level changed, once it succeeded.
     SandboxLevel,
+    /// A session's agent restarted, once it succeeded.
+    Restart,
 }
 
 /// One of the user's terminals: the device fills `by`, and it is logged.
@@ -123,6 +126,13 @@ const TABLE: &[Entry] = &[
     plain("session.reopen"),
     fill("session.resume", Fill::Sandbox),
     fill("session.start_fresh", Fill::Sandbox),
+    // A fresh launch: it gets the profile's policy as the UI shows it.
+    Entry {
+        fill: Fill::Sandbox,
+        reports: true,
+        audit: Audit::Restart,
+        ..plain("session.restart")
+    },
     plain("session.delete"),
     plain("session.update"),
     plain("session.mark_read"),
@@ -220,8 +230,11 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
     if entry.audit == Audit::Models {
         audit(conn, method, &params);
     }
-    let logged =
-        matches!(entry.audit, Audit::Terminal | Audit::SandboxLevel).then(|| params.clone());
+    let logged = matches!(
+        entry.audit,
+        Audit::Terminal | Audit::SandboxLevel | Audit::Restart
+    )
+    .then(|| params.clone());
     let options = CallOptions {
         timeout: if entry.slow {
             CallTimeout::After(conn.hub.services.tuning.slow_call_timeout)
@@ -237,10 +250,10 @@ pub(crate) async fn pass(conn: &Arc<Conn>, method: &str, params: Value) -> Resul
         .await
         .map_err(agentd_error)?;
     if let Some(params) = logged {
-        if entry.audit == Audit::SandboxLevel {
-            log_sandbox_level(conn, &params);
-        } else {
-            log_terminal(conn, method, &params, &value);
+        match entry.audit {
+            Audit::SandboxLevel => log_sandbox_level(conn, &params),
+            Audit::Restart => log_restart(conn, &params),
+            _ => log_terminal(conn, method, &params, &value),
         }
     }
     if method == "request.respond" {
@@ -258,6 +271,12 @@ fn log_sandbox_level(conn: &Conn, params: &Map<String, Value>) {
         .and_then(Value::as_str)
         .unwrap_or("defaults");
     tracing::info!(%session, %level, device = %device(conn), "session sandbox level changed");
+}
+
+/// Logs a session's agent restarted with its device.
+fn log_restart(conn: &Conn, params: &Map<String, Value>) {
+    let session = params.get("id").and_then(Value::as_str).unwrap_or("-");
+    tracing::info!(%session, device = %device(conn), "session agent restarted");
 }
 
 /// Logs one of the user's terminals opened or closed, with its device and sandbox mode.
