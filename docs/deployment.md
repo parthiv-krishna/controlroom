@@ -118,7 +118,16 @@ Sessions need a model provider. There are two ways to configure them, and they c
   offers with what is configured.
 
 Changes apply to new sessions and to restarts of existing ones; running agents keep what they
-started with. They are stored in `/var/lib/controlroom-agent/models/` (`keys.json` is mode
+started with (agents outlive restarts of both services, so restarting `controlroom` or
+`controlroom-agent` doesn't relaunch them). To give a running session a new key, sign-in, route,
+profile model access or defaults, use the session's *⋯ › Restart agent*: it relaunches the agent
+with a fresh launch and resumes its conversation (a running turn stops, after a confirm). When a
+session's model requests fail at the connection level (pi's "Connection error.": nono's proxy
+has no route for the provider) and its provider's credentials or its profile's model access
+changed after the agent started, the session says *Credentials changed since this agent
+started.* with a *Restart agent* button. Changes to the server's own files (`sandbox.toml`
+routes, `LoadCredential`) aren't tracked for that hint: restart the session's agent after them.
+They are stored in `/var/lib/controlroom-agent/models/` (`keys.json` is mode
 0600, `accounts/` 0700, readable by the agent user only) and logged by both services with the
 device that made them, never with a key. An added account's models are pi's own model list of
 its provider, fetched when Settings › Models is opened or changed (kept in
